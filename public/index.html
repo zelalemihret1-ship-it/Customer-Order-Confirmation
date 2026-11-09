@@ -68,7 +68,8 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Location<input name="location"></label>
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
-<label class="full">Customer Telegram Chat ID<input name="telegramChatId" required placeholder="Customer numeric Telegram chat ID"><div class="small">Required: the customer must already have a private conversation with the connected admin/business account. Use that customer chat ID. Telegram Business reply permissions and Telegram time limits apply.</div></label>
+<label class="full">Select customer (people who messaged the admin account)<select id="customerPick"><option value="">— Choose a customer —</option></select><div class="small">The card is sent from the connected admin Telegram account to this customer.</div></label>
+<label class="full">Customer Telegram Chat ID<input name="telegramChatId" placeholder="Auto-filled when you pick a customer, or type the numeric chat ID / known @username"><div class="small">Required: the customer must already have a private conversation with the connected admin/business account. Use that customer chat ID. Telegram Business reply permissions and Telegram time limits apply.</div></label>
 </div></div>
 
 <div class="card"><h2>Service Information</h2><div class="grid">
@@ -109,6 +110,9 @@ async function loadBusinessStatus(){
  }catch(e){businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26">Status unavailable</span><div class="small">${esc(e.message||"Server error")}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Retry</button>`;document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus,{once:true});}
 }
 loadBusinessStatus();
+(async()=>{try{const list=await (await fetch("/api/customers")).json();const sel=document.getElementById("customerPick");
+ for(const c of list){const o=document.createElement("option");o.value=c.id;o.textContent=(c.name||"Customer")+(c.username?" (@"+c.username+")":"")+" — "+c.id;o.dataset.name=c.name||"";o.dataset.user=c.username?"@"+c.username:"";sel.appendChild(o);}
+ sel.addEventListener("change",()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;const f=document.getElementById("orderForm").elements;f.telegramChatId.value=o.value;if(o.dataset.user)f.telegramUsername.value=o.dataset.user;if(o.dataset.name&&f.customerName&&!f.customerName.value)f.customerName.value=o.dataset.name;});}catch{}})();
 const form=document.getElementById("orderForm"),preview=document.getElementById("preview"),result=document.getElementById("result");
 const photoInput=document.getElementById("productPhoto"),photoStatus=document.getElementById("photoStatus"),photoPreview=document.getElementById("selectedPhotoPreview");
 let photoUrl=null;
@@ -177,7 +181,7 @@ document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventLis
 deliveryFeeField.style.display="none";
 form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
- e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()){result.textContent="❌ Enter the customer's numeric Telegram Chat ID.";form.elements.telegramChatId.focus();return;}
+ e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()){result.textContent="❌ Enter the customer's numeric Telegram Chat ID.";form.elements.telegramChatId.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
  try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.textContent="✅ Generated PNG order card sent from the connected administrator/business account to the customer.";form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
