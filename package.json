@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "session": "node tools/gen-session.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
-    "@supabase/supabase-js": "^2.57.4"
+    "@supabase/supabase-js": "^2.57.4",
+    "telegram": "^2.26.22",
+    "big-integer": "^1.6.52"
   },
   "engines": {
     "node": ">=20"
