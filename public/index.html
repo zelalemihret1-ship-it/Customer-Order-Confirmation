@@ -46,7 +46,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Door<input name="door"></label>
 <label>Partition<input name="partition"></label>
 <label>Drawer<input name="drawer"></label>
-<label class="full">Product Photo<input type="file" name="productPhoto" accept="image/*"></label>
+<label class="full">Product Photo<input type="file" name="productPhoto" accept="image/jpeg,image/png,image/webp" required></label>
 </div></div>
 
 <div class="card"><h2>Customer Information</h2><div class="grid">
@@ -104,4 +104,17 @@ ${customerFields?`<div class="divider"></div><div class="section-title">Customer
 ${serviceFields?`<div class="section-title">Service Information</div><div class="info-grid">${serviceFields}</div>`:""}
 <div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!<br><span style="font-weight:500;font-size:11px;opacity:.75">Please review your order details before confirming.</span></div>
 </div>
-<div class="action-row"><div class="action confirm">✓ CONFIRM ORDER</div><div class="action reject">✕ REJECT ORDER</div><div class="action comment"
+<div class="action-row"><div class="action confirm">✓ CONFIRM ORDER</div><div class="action reject">✕ REJECT ORDER</div><div class="action comment">💬 COMMENT</div></div>
+</div>`;
+}
+form.addEventListener("input",()=>previewCard());
+form.addEventListener("submit",async e=>{
+ e.preventDefault(); result.textContent="Sending…";
+ const fd=new FormData(form);
+ if(!form.productPhoto.files[0]){result.textContent="❌ Please select a product photo. The app sends a designed photo card, not a text-only message.";return;}
+ if(!String(fd.get("telegramChatId")||"").trim()){result.textContent="❌ Enter the customer Telegram Chat ID. The customer must have started the bot first.";return;}
+ try{const r=await fetch("/api/orders",{method:"POST",body:fd});const d=await r.json();if(!d.ok)throw Error(d.error);result.textContent="✅ Customer order card sent directly to the customer’s Telegram chat.";form.reset();}catch(err){result.textContent="❌ "+err.message;}
+});
+</script>
+</body>
+</html>
