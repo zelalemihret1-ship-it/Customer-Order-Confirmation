@@ -1,24 +1,22 @@
-# Ambar Furniture Telegram Mini App
+# Ambar Furniture Telegram Order Card
 
-This version fixes product-photo delivery and sends the order as a native Telegram photo card:
-- Product photo is uploaded as file bytes directly to Telegram (no localhost/public URL dependency).
-- Order details appear as the photo caption.
-- Confirm / Reject / Comment buttons are attached to the photo card.
-- Delivery goes only to the customer's Telegram private chat ID. It no longer silently falls back to the admin chat.
-- Admin notifications for customer comments can still go to `ADMIN_CHAT_ID`.
+## What this version actually sends
+- Requires a product photo. The server reads the uploaded image and creates a designed PNG order card containing the photo and order details.
+- Sends that generated PNG using Telegram `sendPhoto`, not a plain text order message.
+- Adds Confirm / Reject / Comment inline buttons to the photo card.
+- Sends to the customer's private Telegram chat ID only; it does not redirect delivery to the admin.
+- Optional `ADMIN_CHAT_ID` receives customer comment notifications.
 
-## Important Telegram limitation
+## Run / deploy
+1. Use Node.js 20 or newer.
+2. Run `npm install` and then `npm start`.
+3. Configure `BOT_TOKEN` from BotFather. Optionally configure `ADMIN_CHAT_ID`.
+4. Host over HTTPS and set the Telegram Mini App URL.
+5. Set the bot webhook to `https://YOUR_DOMAIN/api/telegram/webhook`.
+6. Each customer must open the bot and press Start. Enter their numeric private `telegramChatId` in the order form. A username or phone number cannot be used by the Bot API to initiate a private conversation.
 
-This app uses the Telegram **Bot API**. The sender shown to the customer is the bot, not the administrator's personal Telegram account. A bot cannot initiate a private conversation by `@username` or phone number. The customer must open the bot and press **Start** first; then obtain that customer's numeric Telegram chat ID and enter it in the form.
+## Sending as the administrator's business account
+A normal bot token cannot send as a personal Telegram user account. To send as the administrator's Telegram Business account, enable Telegram Business for the account, connect this bot in Telegram Business settings, grant the required messaging permission, and set `BUSINESS_CONNECTION_ID` to the connection ID received in the bot's `business_connection` update. The code passes that ID to `sendPhoto`. Without this Business connection, the sender shown is the bot. Do not paste personal account login codes or session strings into this app.
 
-Sending from an administrator's personal account instead of the bot requires a separately authenticated Telegram user/Business integration. A normal bot token cannot send as a personal account. Do not put a personal account session or credentials in this app.
-
-## Setup
-
-1. Install Node.js 18 or newer.
-2. Run `npm install`, then `npm start`.
-3. Configure these server environment variables:
-   - `BOT_TOKEN` — token from BotFather.
-   - `ADMIN_CHAT_ID` — optional; receives customer comment notifications only.
-4. Host the app over HTTPS and set your Telegram Mini App URL.
-5. Set the b
+## Important
+Orders are held in memory and reset when the server restarts. Add a database, authentication, persistent uploads, and production webhook verification before public deployment.
