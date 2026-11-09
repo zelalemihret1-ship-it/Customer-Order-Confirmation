@@ -15,7 +15,7 @@ label{font-weight:700;font-size:13px}input,select,textarea{width:100%;padding:11
 textarea{min-height:80px}.full{grid-column:1/-1}
 button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
 .primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
-.desktop-photo-button{display:inline-block}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
+.desktop-photo-button{display:none}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
 .order-card{background:#fff;border:1px solid #ddd5c8;border-radius:18px;overflow:hidden;box-shadow:0 8px 26px #00000012;max-width:650px;margin:auto}
 .order-head{background:#153a2e;color:#f4efe3;padding:20px 22px;display:flex;justify-content:space-between;align-items:center;gap:15px}
 .brand{font-size:20px;font-weight:800;letter-spacing:.8px}.tag{font-size:11px;letter-spacing:1.2px;opacity:.78;text-transform:uppercase;margin-top:4px}
@@ -38,7 +38,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 .photo-name{font-size:12px;color:#6d675d}
 .photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:11px 8px;border-radius:9px;font-size:12px;font-weight:800}.confirm{background:#e5f1e8;color:#205c39}.reject{background:#f5e4e4;color:#7a2630}.comment{background:#eee9df;color:#5b4d38}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
-@media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:block}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:inline-block}}</style>
+@media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
 </head>
 <body>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
@@ -59,7 +59,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Door<input name="door"></label>
 <label>Partition<input name="partition"></label>
 <label>Drawer<input name="drawer"></label>
-<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📱 Choose Photo on Phone</label><input id="productPhoto" name="productPhoto" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required hidden><label class="photo-button desktop-photo-button" for="productPhoto">💻 Choose Photo from PC</label><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Select a JPG, JPEG, PNG or WebP image. You can also drag and drop it here.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
+<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📷 Choose Product Photo</label><input id="productPhoto" name="productPhoto" type="file" accept="image/*" required hidden><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Choose one photo from your phone or PC. All image formats supported by your browser. You can also drag and drop on PC.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
 </div></div>
 
 <div class="card"><h2>Customer Information</h2><div class="grid">
@@ -120,11 +120,10 @@ function field(k,v){return v?`<div class="info"><b>${esc(k)}</b><br>${esc(v)}</d
 function setPhoto(file){
  if(photoUrl){URL.revokeObjectURL(photoUrl);photoUrl=null;}
  photoPreview.hidden=true; photoPreview.removeAttribute("src"); photoName.textContent="No photo selected";
- if(!file){photoStatus.textContent="Select a JPG, JPEG, PNG or WebP image.";previewCard();return;}
- const allowed=["image/jpeg","image/png","image/webp"];
- const ext=/\\.(jpe?g|png|webp)$/i.test(file.name);
- if(!allowed.includes(file.type) || !ext){photoInput.value="";photoStatus.textContent="❌ Please choose a JPG, JPEG, PNG or WebP image.";return;}
- if(file.size>12*1024*1024){photoInput.value="";photoStatus.textContent="❌ Image must be smaller than 12 MB.";return;}
+ if(!file){photoStatus.textContent="Choose any photo format supported by your browser (image/*).";previewCard();return;}
+ const isImage=(file.type||"").toLowerCase().startsWith("image/");
+ if(!isImage){photoInput.value="";photoStatus.textContent="❌ Please choose a photo/image file supported by your browser.";return;}
+ if(file.size>15*1024*1024){photoInput.value="";photoStatus.textContent="❌ Image must be 15 MB or smaller.";return;}
  photoUrl=URL.createObjectURL(file);
  photoPreview.src=photoUrl; photoPreview.hidden=false;
  photoName.textContent=file.name;
@@ -178,7 +177,7 @@ form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
  e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()){result.textContent="❌ Enter the customer's numeric Telegram Chat ID.";form.elements.telegramChatId.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
- try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.textContent="✅ Generated PNG order card sent from the connected administrator/business account to the customer.";form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Select a JPG, JPEG, PNG or WebP image.";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.textContent="✅ Generated PNG order card sent from the connected administrator/business account to the customer.";form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
 previewCard();
 </script>
