@@ -15,7 +15,7 @@ label{font-weight:700;font-size:13px}input,select,textarea{width:100%;padding:11
 textarea{min-height:80px}.full{grid-column:1/-1}
 button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
 .primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
-.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
+.desktop-photo-button{display:inline-block}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
 .order-card{background:#fff;border:1px solid #ddd5c8;border-radius:18px;overflow:hidden;box-shadow:0 8px 26px #00000012;max-width:650px;margin:auto}
 .order-head{background:#153a2e;color:#f4efe3;padding:20px 22px;display:flex;justify-content:space-between;align-items:center;gap:15px}
 .brand{font-size:20px;font-weight:800;letter-spacing:.8px}.tag{font-size:11px;letter-spacing:1.2px;opacity:.78;text-transform:uppercase;margin-top:4px}
@@ -38,12 +38,12 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 .photo-name{font-size:12px;color:#6d675d}
 .photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:11px 8px;border-radius:9px;font-size:12px;font-weight:800}.confirm{background:#e5f1e8;color:#205c39}.reject{background:#f5e4e4;color:#7a2630}.comment{background:#eee9df;color:#5b4d38}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
-</style>
+@media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:block}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:inline-block}}</style>
 </head>
 <body>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
-<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Telegram Business sender:</b> Checking connection…<div class="small">Order cards are sent as the connected administrator account, never from the bot. Telegram Business must be connected and authorized.</div></div>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh Business connection</button><b>Telegram Business sender:</b> Checking connection…<div class="small">Order cards are sent as the connected administrator account, never from the bot. Telegram Business must be connected and authorized.</div></div>
 <form id="orderForm">
 <div class="card"><h2>Product Information</h2><div class="grid">
 <label>Order ID<input name="orderId" placeholder="Z-001"></label>
@@ -59,7 +59,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Door<input name="door"></label>
 <label>Partition<input name="partition"></label>
 <label>Drawer<input name="drawer"></label>
-<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📷 Choose Photo from PC</label><input id="productPhoto" name="productPhoto" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required hidden><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Select a JPG, JPEG, PNG or WebP image. You can also drag and drop it here.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
+<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📱 Choose Photo on Phone</label><input id="productPhoto" name="productPhoto" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required hidden><label class="photo-button desktop-photo-button" for="productPhoto">💻 Choose Photo from PC</label><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Select a JPG, JPEG, PNG or WebP image. You can also drag and drop it here.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
 </div></div>
 
 <div class="card"><h2>Customer Information</h2><div class="grid">
@@ -94,12 +94,17 @@ const businessStatus=document.getElementById("businessStatus");
 async function loadBusinessStatus(){
  try{
   const r=await fetch("/api/business/status"); const s=await r.json();
-  if(s.connected && s.canReply !== false){
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span><div class="small">Order cards will be sent as the connected administrator/business account, not as the bot.</div>`;
+  if(!s.botBusinessEnabled){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Business Mode NOT enabled</span><div class="small"><b>Required:</b> Open @BotFather → select this bot → enable <b>Business/Secretary Mode</b>. Telegram only allows a bot to be connected to an administrator Business account when this capability is enabled.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
+  } else if(!s.connected){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small">Bot <b>@${esc(s.botUsername||"")}</b> is Business-enabled, but this server has not received the administrator's Business connection. In Telegram: Settings → Telegram Business → Chatbots → connect this bot → grant <b>Reply to messages</b>. Then send one message from a customer chat and press Check again.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
+  } else if(!s.canReply){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected, but <span style="color:#9a3c26;font-weight:700">Reply permission is OFF</span><div class="small">Edit the connected bot permissions in Telegram Business and enable <b>Reply to messages</b>.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
   } else {
-    businessStatus.innerHTML='<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small"><b>Important:</b> Telegram only sends the Business connection ID to the bot when the connection is created/changed. After deploying this version, open the administrator Telegram account → Settings → Telegram Business → Chatbots, remove this bot, then add/connect it again and grant <b>Reply to messages</b> permission. Then send one message in a customer chat and reload this page. The server will capture and save the Business connection automatically.</div>';
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span><div class="small">Business Mode enabled • Reply permission enabled • Webhook ${s.webhookReady?"ready":"needs attention"} • Cards are sent as the administrator account.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh</button>`;
   }
- }catch(e){businessStatus.innerHTML='<b>Telegram Business sender:</b> Status unavailable. Check the server connection.';}
+  document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus, {once:true});
+ }catch(e){businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26">Status unavailable</span><div class="small">${esc(e.message||"Server error")}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Retry</button>`;document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus,{once:true});}
 }
 loadBusinessStatus();
 const form=document.getElementById("orderForm"),preview=document.getElementById("preview"),result=document.getElementById("result");
@@ -142,16 +147,23 @@ function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,
 function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=()=>{URL.revokeObjectURL(u);no(Error("Unable to read selected photo."))};i.src=u;});}
 function drawWrap(ctx,text,x,y,max){const words=String(text).split(/\s+/);let line="";for(const word of words){const t=line?line+" "+word:word;if(ctx.measureText(t).width>max&&line){ctx.fillText(line,x,y);line=word;y+=32;}else line=t;}if(line){ctx.fillText(line,x,y);y+=40;}return y;}
 async function makeCard(v,file){
- const img=await loadImg(file),c=document.createElement("canvas");c.width=1200;c.height=1600;const x=c.getContext("2d");if(!x)throw Error("Canvas image generation is not supported in this browser.");
- x.fillStyle="#f4f0e8";x.fillRect(0,0,1200,1600);x.fillStyle="#153a2e";x.fillRect(0,0,1200,170);x.fillStyle="#fff";x.font="bold 54px Arial";x.fillText("AMBAR FURNITURE",65,85);x.font="24px Arial";x.fillText("CUSTOMER ORDER CARD",68,130);
- x.fillStyle="#b89552";rounded(x,930,48,210,70,18);x.fillStyle="#fff";x.font="bold 30px Arial";x.textAlign="center";x.fillText(v.orderId||"Z-001",1035,94);x.textAlign="left";
- x.fillStyle="#fff";rounded(x,65,205,1070,610,22);const scale=Math.min(1040/img.width,580/img.height),iw=img.width*scale,ih=img.height*scale;x.drawImage(img,600-iw/2,510-ih/2,iw,ih);
- let y=875;const section=t=>{x.fillStyle="#b89552";x.font="bold 25px Arial";x.fillText(t.toUpperCase(),70,y);y+=42;};
- const line=(k,v)=>{if(!String(v||"").trim())return;x.fillStyle="#153a2e";x.font="bold 23px Arial";x.fillText(k+":",75,y);x.fillStyle="#303b35";x.font="23px Arial";y=Math.max(y+36,drawWrap(x,v,260,y,850));};
- section("Product information");line("Product",v.product);line("Size",`L ${v.length||"—"} cm × W ${v.width||"—"} cm × H ${v.height||"—"} cm`);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));
- y+=8;x.strokeStyle="#d8d0c2";x.beginPath();x.moveTo(70,y);x.lineTo(1130,y);x.stroke();y+=38;section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);
- if(y<1370){y+=8;section("Service information");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Delivery type",v.deliveryType);line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);}
- x.fillStyle="#153a2e";rounded(x,65,1460,1070,90,16);x.fillStyle="#fff";x.font="bold 25px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE!",600,1515);
+ const img=await loadImg(file),c=document.createElement("canvas");c.width=1080;c.height=1920;const x=c.getContext("2d");if(!x)throw Error("Canvas image generation is not supported in this browser.");
+ const W=1080,pad=64; x.fillStyle="#f4efe3";x.fillRect(0,0,W,1920);
+ x.fillStyle="#153a2e";x.fillRect(0,0,W,180);x.fillStyle="#b89552";x.fillRect(0,176,W,4);
+ x.fillStyle="#fff";x.font="800 44px Arial";x.fillText("AMBAR FURNITURE",pad,72);x.font="24px Arial";x.fillText("CUSTOMER ORDER CARD",pad,112);
+ x.fillStyle="#b89552";rounded(x,790,48,226,72,18);x.fillStyle="#fff";x.font="800 28px Arial";x.textAlign="center";x.fillText(v.orderId||"Z-001",903,94);x.textAlign="left";
+ // Product image panel
+ x.fillStyle="#fff";rounded(x,pad,216,W-pad*2,590,24);
+ const maxW=W-pad*2-36,maxH=540,scale=Math.min(maxW/img.width,maxH/img.height),iw=img.width*scale,ih=img.height*scale;
+ x.save();x.beginPath();x.roundRect(pad+18,234,maxW,maxH,16);x.clip();x.drawImage(img,pad+18+(maxW-iw)/2,234+(maxH-ih)/2,iw,ih);x.restore();
+ let y=846;
+ const section=t=>{x.fillStyle="#b89552";x.font="800 22px Arial";x.fillText(t.toUpperCase(),pad,y);y+=38;};
+ const line=(k,val)=>{if(!String(val??"").trim())return;const text=String(val);x.fillStyle="#153a2e";x.font="800 21px Arial";x.fillText(k,pad,y);x.fillStyle="#303b35";x.font="21px Arial";let yy=y;const max=850;const words=text.split(/\s+/);let line="";for(const w of words){const t=line?line+" "+w:w;if(x.measureText(t).width>max&&line){x.fillText(line,pad+190,yy);yy+=29;line=w}else line=t}if(line)x.fillText(line,pad+190,yy);y=Math.max(y+32,yy+38)};
+ const divider=()=>{x.strokeStyle="#d8d0c2";x.lineWidth=1;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
+ section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));
+ divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
+ divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Delivery type",v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
+ x.fillStyle="#153a2e";rounded(x,pad,1790,W-pad*2,74,16);x.fillStyle="#fff";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
  return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate PNG card.")),"image/png"));
 }
 const deliveryFeeField=document.getElementById("deliveryFeeField");
