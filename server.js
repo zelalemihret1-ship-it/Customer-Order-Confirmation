@@ -2,8 +2,145 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const { createClient } = require("@supabase/supabase-js");
-const { createTelegram, canReply, isUsable, friendlyError } = require("./telegram");
+let createClient = null;
+try { ({ createClient } = require("@supabase/supabase-js")); } catch (e) { console.error("Supabase library unavailable, continuing without it:", e.message); }
+const crypto = require("crypto");
+
+
+const ALLOWED_UPDATES = [
+  "message", "callback_query", "business_connection", "business_message",
+  "edited_business_message", "deleted_business_messages"
+];
+
+// Tokens pasted into hosting dashboards often carry quotes, spaces or a stray "bot" prefix.
+function cleanToken(raw = "") {
+  return String(raw).trim().replace(/^["']|["']$/g, "").trim().replace(/^bot(?=\d+:)/i, "");
+}
+
+// Telegram only accepts secret tokens made of A-Z a-z 0-9 _ - (1..256 chars). A secret with any
+// other character makes setWebhook fail, which silently leaves the OLD webhook in place and
+// breaks every Business update. Anything invalid is hashed into a valid token; the same
+// function is used for registering and for verifying, so the two always agree.
+function normalizeSecret(raw = "") {
+  const s = String(raw).trim();
+  if (!s) return "";
+  if (/^[A-Za-z0-9_-]{1,256}$/.test(s)) return s;
+  return crypto.createHash("sha256").update(s).digest("hex");
+}
+
+// Bot API 7.2 – 8.x exposed BusinessConnection.can_reply; newer versions use rights.can_reply.
+function canReply(connection) {
+  if (!connection) return false;
+  if (connection.rights && typeof connection.rights.can_reply === "boolean") return connection.rights.can_reply;
+  if (typeof connection.can_reply === "boolean") return connection.can_reply;
+  return connection.rights ? false : true; // unknown shape: let Telegram decide at send time
+}
+function isUsable(connection) {
+  return !!connection && connection.is_enabled !== false && canReply(connection);
+}
+
+function friendlyError(message = "") {
+  const m = String(message);
+  if (/BUSINESS_PEER_USAGE_MISSING/i.test(m))
+    return "Telegram refused: the admin account has not chatted with this customer recently. Ask the customer to send a message to the admin account first, then try again.";
+  if (/BUSINESS_PEER_INVALID|chat not found|PEER_ID_INVALID/i.test(m))
+    return "Telegram could not find that customer chat. Check the numeric Customer Telegram Chat ID and make sure the customer has messaged the admin account.";
+  if (/BUSINESS_CONNECTION_INVALID|BUSINESS_CONNECTION_NOT_ALLOWED|business connection (not found|is invalid)/i.test(m))
+    return "The Telegram Business connection is no longer valid. In Telegram: Settings → Business → Chatbots, remove and re-add the bot with Reply permission, then press Refresh.";
+  if (/not enough rights|CHAT_WRITE_FORBIDDEN|BOT_ACCESS_FORBIDDEN/i.test(m))
+    return "The bot has no permission to reply in that chat. Enable \"Reply to messages\" for the bot in Telegram Business → Chatbots.";
+  if (/bot was blocked/i.test(m)) return "The customer has blocked the bot.";
+  if (/Unauthorized/i.test(m)) return "BOT_TOKEN is invalid or revoked. Copy the current token from @BotFather into the BOT_TOKEN environment variable.";
+  return m;
+}
+
+function createTelegram({ token, publicBaseUrl, secret, apiBase, log = console }) {
+  const TOKEN = cleanToken(token);
+  const BASE = String(apiBase || process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/$/, "");
+  const SECRET = normalizeSecret(secret);
+  const PUBLIC = String(publicBaseUrl || "").trim().replace(/\/+$/, "");
+  const WEBHOOK_URL = PUBLIC ? `${PUBLIC}/api/telegram/webhook` : "";
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function request(method, makeInit, { retry = true, timeoutMs = 25000 } = {}) {
+    if (!TOKEN) throw new Error("BOT_TOKEN is not configured on the server.");
+    let lastError;
+    const attempts = retry ? 3 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        const response = await fetch(`${BASE}/bot${TOKEN}/${method}`, { ...makeInit(), signal: AbortSignal.timeout(timeoutMs) });
+        let data;
+        try { data = await response.json(); } catch { throw Object.assign(new Error(`Telegram ${method} returned a non-JSON response (HTTP ${response.status}).`), { transient: response.status >= 500 }); }
+        if (data.ok) return data.result;
+        const err = new Error(data.description || `Telegram ${method} failed.`);
+        err.code = data.error_code;
+        err.retryAfter = data.parameters?.retry_after;
+        if (data.error_code === 429 && attempt < attempts) { await sleep(Math.min((err.retryAfter || 1) * 1000, 10000)); lastError = err; continue; }
+        if (data.error_code >= 500 && attempt < attempts) { await sleep(500 * attempt); lastError = err; continue; }
+        throw err;
+      } catch (error) {
+        if (error.code) throw error; // a real Telegram API answer: do not retry
+        lastError = error;
+        if (attempt < attempts && (retry || false)) { await sleep(500 * attempt); continue; }
+        if (error.name === "TimeoutError" || error.name === "AbortError") throw new Error(`Telegram ${method} timed out.`);
+        throw error;
+      }
+    }
+    throw lastError;
+  }
+
+  const call = (method, body = {}, opts) => request(method, () => ({
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  }), opts);
+
+  // Sending is not retried on network errors: a lost response could otherwise deliver the card twice.
+  const sendForm = (method, buildForm) => request(method, () => ({ method: "POST", body: buildForm() }), { retry: false, timeoutMs: 60000 });
+
+  async function configureWebhook() {
+    if (!TOKEN || !PUBLIC) {
+      log.log("Telegram webhook auto-configuration skipped: set BOT_TOKEN and PUBLIC_BASE_URL (or use RENDER_EXTERNAL_URL).");
+      return { ok: false, reason: "missing BOT_TOKEN or PUBLIC_BASE_URL" };
+    }
+    if (!/^https:\/\//i.test(PUBLIC)) {
+      const reason = `PUBLIC_BASE_URL must start with https:// (got "${PUBLIC}"). Telegram only delivers webhooks to HTTPS URLs.`;
+      log.error("Telegram webhook configuration failed:", reason);
+      return { ok: false, reason };
+    }
+    const payload = { url: WEBHOOK_URL, allowed_updates: ALLOWED_UPDATES, drop_pending_updates: false };
+    if (SECRET) payload.secret_token = SECRET;
+    let lastError;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        // setWebhook atomically replaces any previous webhook (no deleteWebhook gap where updates are lost).
+        await call("setWebhook", payload, { retry: false });
+        log.log("Telegram webhook configured:", WEBHOOK_URL);
+        return { ok: true, url: WEBHOOK_URL };
+      } catch (error) {
+        lastError = error;
+        log.error(`Telegram webhook configuration attempt ${attempt} failed:`, error.message);
+        if (error.code && error.code < 429 && error.code !== 408) break; // 4xx (bad token/url): retrying cannot help
+        await sleep(2000 * attempt);
+      }
+    }
+    return { ok: false, reason: lastError?.message || "unknown error" };
+  }
+
+  let lastHeal = 0;
+  // Called from the status endpoint: if Telegram points anywhere else than this server, repair it.
+  async function healWebhookIfNeeded(info) {
+    const wrongUrl = !info || info.url !== WEBHOOK_URL;
+    const missing = !info || !ALLOWED_UPDATES.filter(x => x.startsWith("business")).every(x => (info.allowed_updates || []).includes(x));
+    const erroring = info?.last_error_message && /401|unauthorized|wrong response|forbidden/i.test(info.last_error_message);
+    if (!(wrongUrl || missing || erroring) || !WEBHOOK_URL) return false;
+    if (Date.now() - lastHeal < 60000) return false;
+    lastHeal = Date.now();
+    return (await configureWebhook()).ok;
+  }
+
+  return { call, sendForm, configureWebhook, healWebhookIfNeeded, webhookUrl: WEBHOOK_URL, secret: SECRET, hasToken: !!TOKEN };
+}
+
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,7 +155,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "order-images";
 const tgApi = createTelegram({ token: BOT_TOKEN, publicBaseUrl: PUBLIC_BASE_URL, secret: WEBHOOK_SECRET });
-const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+const supabase = createClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
 
@@ -121,6 +258,38 @@ function saveBusinessConnections() {
   }
 }
 loadBusinessConnections();
+
+// Customers who have chatted with the admin account (learned from business_message updates).
+// Lets the admin pick the recipient by name/@username instead of typing a numeric chat ID.
+const customers = new Map();
+const CUSTOMER_STORE = path.join(BUSINESS_STORE_DIR, "customers.json");
+try { for (const c of JSON.parse(fs.readFileSync(CUSTOMER_STORE, "utf8"))) customers.set(String(c.id), c); } catch {}
+async function persistCustomers() {
+  const list = [...customers.values()];
+  try { fs.writeFileSync(CUSTOMER_STORE, JSON.stringify(list)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "telegram_customers", value: list, updated_at: new Date().toISOString() }); } catch {} }
+}
+async function restoreCustomers() {
+  if (!supabase) return;
+  try {
+    const { data } = await supabase.from("app_settings").select("value").eq("key", "telegram_customers").maybeSingle();
+    if (Array.isArray(data?.value)) for (const c of data.value) if (c?.id && !customers.has(String(c.id))) customers.set(String(c.id), c);
+  } catch {}
+}
+function rememberCustomer(chat = {}, from = {}) {
+  if (!chat.id || String(from.id ?? chat.id) !== String(chat.id)) return;
+  const name = [chat.first_name || from.first_name, chat.last_name || from.last_name].filter(Boolean).join(" ");
+  customers.set(String(chat.id), { id: String(chat.id), name, username: chat.username || from.username || "", at: new Date().toISOString() });
+  persistCustomers();
+}
+function resolveChatId(input = "", username = "") {
+  const raw = String(input).trim();
+  if (/^-?\d+$/.test(raw)) return raw;
+  const handle = String(raw || username).trim().replace(/^@/, "").toLowerCase();
+  if (!handle) return "";
+  return [...customers.values()].find(c => (c.username || "").toLowerCase() === handle)?.id || "";
+}
+app.get("/api/customers", (req, res) => res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
 
 function esc(value = "") {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -291,7 +460,8 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     const cardImage = req.files?.cardImage?.[0];
     if (!productPhoto) return res.status(400).json({ ok: false, error: "Product photo is missing. Please select it again." });
     if (!cardImage) return res.status(400).json({ ok: false, error: "Generated PNG card is missing. Please try again." });
-    if (!order.telegramChatId?.trim()) return res.status(400).json({ ok: false, error: "Enter the customer's Telegram private chat ID." });
+    order.telegramChatId = resolveChatId(order.telegramChatId, order.telegramUsername);
+    if (!order.telegramChatId) return res.status(400).json({ ok: false, error: "Select the customer from the list, or enter their numeric Telegram chat ID. A @username only works for customers who have already messaged the admin account." });
     if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
     const connection = activeBusinessConnection();
     if (!connection) return res.status(409).json({ ok: false, error: "Admin Telegram Business is not connected. Connect this bot in Telegram Business and grant permission to reply. The app will not send the card from the bot account." });
@@ -396,6 +566,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
     if (businessMessage) {
       const connectionId = businessMessage.business_connection_id;
       const chatId = businessMessage.chat?.id;
+      rememberCustomer(businessMessage.chat, businessMessage.from);
 
       // A business message is a reliable way to learn the connection ID after a redeploy,
       // even when Telegram did not resend the original business_connection update.
@@ -436,7 +607,7 @@ process.on("uncaughtException", error => console.error("Uncaught exception:", er
 if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
   console.log(`Ambar Furniture app running on port ${PORT}`);
   supabaseReady = supabase
-    ? Promise.all([loadOrders(), restoreBusinessConnections()]).then(() => console.log("Supabase data restored."), error => console.error("Supabase restore failed:", error.message))
+    ? Promise.all([loadOrders(), restoreBusinessConnections(), restoreCustomers()]).then(() => console.log("Supabase data restored."), error => console.error("Supabase restore failed:", error.message))
     : Promise.resolve();
   tgApi.configureWebhook();
 });
