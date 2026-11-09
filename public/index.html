@@ -94,14 +94,16 @@ const businessStatus=document.getElementById("businessStatus");
 async function loadBusinessStatus(){
  try{
   const r=await fetch("/api/business/status"); const s=await r.json();
-  if(!s.botBusinessEnabled){
+  if(s.error){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Telegram connection problem</span><div class="small">${esc(s.error)}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
+  } else if(!s.botBusinessEnabled){
     businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Business Mode NOT enabled</span><div class="small"><b>Required:</b> Open @BotFather → select this bot → enable <b>Business/Secretary Mode</b>. Telegram only allows a bot to be connected to an administrator Business account when this capability is enabled.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
   } else if(!s.connected){
     businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small">Bot <b>@${esc(s.botUsername||"")}</b> is Business-enabled, but this server has not received the administrator's Business connection. In Telegram: Settings → Telegram Business → Chatbots → connect this bot → grant <b>Reply to messages</b>. Then send one message from a customer chat and press Check again.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
   } else if(!s.canReply){
     businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected, but <span style="color:#9a3c26;font-weight:700">Reply permission is OFF</span><div class="small">Edit the connected bot permissions in Telegram Business and enable <b>Reply to messages</b>.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
   } else {
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span><div class="small">Business Mode enabled • Reply permission enabled • Webhook ${s.webhookReady?"ready":"needs attention"} • Cards are sent as the administrator account.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh</button>`;
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span>${s.warning?`<div class="small" style="color:#9a3c26">${esc(s.warning)}</div>`:""}<div class="small">Business Mode enabled • Reply permission enabled • Webhook ${s.webhookReady?"ready":"needs attention"+(s.webhookLastError?" ("+esc(s.webhookLastError)+")":"")} • Cards are sent as the administrator account.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh</button>`;
   }
   document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus, {once:true});
  }catch(e){businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26">Status unavailable</span><div class="small">${esc(e.message||"Server error")}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Retry</button>`;document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus,{once:true});}
