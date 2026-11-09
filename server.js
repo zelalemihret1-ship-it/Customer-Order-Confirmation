@@ -740,10 +740,13 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!productPhoto) return res.status(400).json({ ok: false, error: "Product photo is missing. Please select it again." });
     if (!cardImage) return res.status(400).json({ ok: false, error: "Generated PNG card is missing. Please try again." });
     order.telegramChatId = resolveChatId(order.telegramChatId, order.telegramUsername);
-    if (!order.telegramChatId) return res.status(400).json({ ok: false, error: "Select the customer from the list, or enter their numeric Telegram chat ID. A @username only works for customers who have already messaged the admin account." });
+    const hasContact = String(order.telegramUsername || "").trim() || String(order.telegramPhone || "").replace(/\D/g, "").length >= 8 || String(order.phone || "").replace(/\D/g, "").length >= 8;
+    if (!order.telegramChatId && !hasContact) return res.status(400).json({ ok: false, error: "Enter the customer's Telegram @username or phone number (or pick them from the list)." });
+    if (!order.telegramChatId && !userbotReady) return res.status(400).json({ ok: false, error: "Without a numeric chat ID the admin account must be logged in. Open /setup.html and connect it, or pick the customer from the list." });
     if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
-    if (isAdminOwnId(order.telegramChatId)) return res.status(400).json({ ok: false, error: "That chat ID belongs to the administrator's own Telegram account. Enter the CUSTOMER's numeric ID (pick them from the customer list)." });
-    const connection = await businessConnectionForCustomer(order.telegramChatId);
+    if (order.telegramChatId && isAdminOwnId(order.telegramChatId)) return res.status(400).json({ ok: false, error: "That chat ID belongs to the administrator's own Telegram account. Enter the CUSTOMER's numeric ID (pick them from the customer list)." });
+    const connection = order.telegramChatId ? await businessConnectionForCustomer(order.telegramChatId) : null;
+    order.telegramChatId = order.telegramChatId || "";
 
     if (supabase) await loadOrders(); // another instance may have created orders; avoid id collisions
     order.id = nextId++;
@@ -759,10 +762,10 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
 
     let sentMessage = null, via = "", warning = "", businessError = "", rawError = "", triedCount = 0;
     // 1) Preferred: as the administrator through Telegram Business.
-    if (connection) {
+    if (connection && order.telegramChatId) {
       try { sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection); via = "admin_business_account"; }
       catch (error) { businessError = error.message; rawError = error.raw || error.message; triedCount = error.tried || 0; }
-    } else businessError = "No usable Telegram Business connection.";
+    } else businessError = order.telegramChatId ? "No usable Telegram Business connection." : "No numeric chat ID, skipped Business route.";
     // 2) Admin's own account (MTProto): reaches any customer by @username / phone, no prior message needed.
     if (!sentMessage && userbotReady) {
       try {
