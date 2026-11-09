@@ -348,6 +348,58 @@ function candidateConnections(chatId, primary) {
   if (BUSINESS_CONNECTION_ID) add({ id: BUSINESS_CONNECTION_ID, is_enabled: true, rights: { can_reply: true }, configured: true });
   return list;
 }
+// ── App admins: people the owner assigns to use the app ──────────────────────────
+// Owner = whoever holds ADMIN_SETUP_KEY (or a Telegram ID in OWNER_TELEGRAM_IDS). The owner assigns
+// admins by Telegram ID at /setup.html. Until at least one admin/owner ID exists the app stays open.
+const APP_ADMINS_FILE = path.join(__dirname, "data", "app-admins.json");
+let appAdmins = []; // [{ telegramId, name, accountId }]
+const OWNER_IDS = String(process.env.OWNER_TELEGRAM_IDS || "").split(",").map(x => x.trim()).filter(Boolean);
+async function loadAppAdmins() {
+  let list = [];
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "app_admins").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
+  if (!list.length) { try { list = JSON.parse(fs.readFileSync(APP_ADMINS_FILE, "utf8")); } catch {} }
+  appAdmins = list.filter(a => a?.telegramId);
+}
+async function saveAppAdmins() {
+  try { fs.mkdirSync(path.dirname(APP_ADMINS_FILE), { recursive: true }); fs.writeFileSync(APP_ADMINS_FILE, JSON.stringify(appAdmins)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "app_admins", value: appAdmins, updated_at: new Date().toISOString() }); } catch {} }
+}
+function verifyInitData(initData) {
+  try {
+    if (!initData || !BOT_TOKEN) return null;
+    const p = new URLSearchParams(initData); const hash = p.get("hash"); if (!hash) return null; p.delete("hash");
+    const str = [...p.entries()].map(([k, v]) => `${k}=${v}`).sort().join("\n");
+    const secret = crypto.createHmac("sha256", "WebAppData").update(BOT_TOKEN).digest();
+    const calc = crypto.createHmac("sha256", secret).update(str).digest("hex");
+    if (calc.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calc), Buffer.from(hash))) return null;
+    if (Date.now() / 1000 - Number(p.get("auth_date") || 0) > 7 * 86400) return null;
+    return JSON.parse(p.get("user") || "null");
+  } catch { return null; }
+}
+const accessEnforced = () => appAdmins.length > 0 || OWNER_IDS.length > 0;
+function identify(req) {
+  const setupKey = String(process.env.ADMIN_SETUP_KEY || "");
+  const given = String(req.get("x-setup-key") || "");
+  if (setupKey && given && given.length === setupKey.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(setupKey))) return { role: "owner", name: "Owner", telegramId: "", accountId: "" };
+  const user = verifyInitData(req.get("x-telegram-init-data"));
+  if (!user) return { telegramId: "" };
+  const id = String(user.id), name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || id;
+  if (OWNER_IDS.includes(id)) return { role: "owner", name, telegramId: id, accountId: "" };
+  const a = appAdmins.find(x => String(x.telegramId) === id);
+  return a ? { role: "admin", name: a.name || name, telegramId: id, accountId: a.accountId || "" } : { telegramId: id, name };
+}
+function requireAccess(req, res, next) {
+  if (!accessEnforced()) { req.actor = { role: "open", name: "", telegramId: "", accountId: "" }; return next(); }
+  const a = identify(req);
+  if (!a.role) return res.status(401).json({ ok: false, code: "UNAUTHORISED", error: "You are not an assigned admin. Send the owner your Telegram ID" + (a.telegramId ? `: ${a.telegramId}` : ".") });
+  req.actor = a; next();
+}
+app.get("/api/me", (req, res) => {
+  const a = identify(req);
+  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "" });
+});
+app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business"], requireAccess);
+
 app.get("/api/customers", (req, res) => res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
 
 function esc(value = "") {
@@ -512,7 +564,7 @@ async function startAdmin(record) {
           await saveOrderRecord(order);
           await reply(`Thank you, your comment on ${order.orderId} was received.`);
         }
-        if (ADMIN_CHAT_ID) await safely("Admin notification", () => telegram("sendMessage", { chat_id: ADMIN_CHAT_ID, text: `📩 ${order.orderId} (${order.status}) via ${admin.label} from ${senderId}:\n${text}` }));
+        for (const to of new Set([ADMIN_CHAT_ID, order.createdByTelegramId].filter(Boolean).map(String))) await safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text: `📩 ${order.orderId} (${order.status}) via ${admin.label} from ${senderId}:\n${text}` }));
       } catch (error) { console.warn("Admin message handler failed:", error.message); }
     }, new NewMessage({ incoming: true }));
   } catch (error) { admin.error = error.message; console.error(`Admin ${admin.label} unavailable:`, error.message); }
@@ -561,7 +613,10 @@ function setupAuth(req, res) {
   return true;
 }
 // Public: the order form uses this to list admins (labels only, no secrets).
-app.get("/api/admins", (req, res) => res.json({ ok: true, admins: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: a.ready })) }));
+app.get("/api/admins", (req, res) => {
+  const mine = req.actor?.role === "admin" && req.actor.accountId ? [...admins.values()].filter(a => a.id === req.actor.accountId) : [...admins.values()];
+  res.json({ ok: true, admins: mine.map(a => ({ id: a.id, label: a.label, ready: a.ready })) });
+});
 let pendingLogin = null;
 app.get("/api/setup/status", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -640,6 +695,23 @@ app.post("/api/setup/test", async (req, res) => {
   } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
 });
 
+app.get("/api/setup/app-admins", (req, res) => { if (!setupAuth(req, res)) return; res.json({ ok: true, enforced: accessEnforced(), owners: OWNER_IDS, appAdmins, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label })) }); });
+app.post("/api/setup/app-admins/add", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  if (!telegramId) return res.status(400).json({ ok: false, error: "Enter the person's numeric Telegram ID." });
+  const rec = { telegramId, name: String(req.body?.name || "").trim().slice(0, 60), accountId: String(req.body?.accountId || "") };
+  appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat(rec);
+  await saveAppAdmins();
+  res.json({ ok: true, message: `${rec.name || telegramId} is now an admin.` });
+});
+app.post("/api/setup/app-admins/remove", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId);
+  await saveAppAdmins();
+  res.json({ ok: true, message: "Admin removed." });
+});
 app.get("/api/business/status", async (req, res) => {
   await supabaseReady;
   let connection = activeBusinessConnection();
@@ -766,6 +838,8 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
   try {
     await supabaseReady;
     const order = { ...req.body };
+    order.createdByName = req.actor?.name || ""; order.createdByTelegramId = req.actor?.telegramId || "";
+    if (req.actor?.role === "admin" && req.actor.accountId) order.adminId = req.actor.accountId; // assigned admins can only send from their own account
     const productPhoto = req.files?.productPhoto?.[0];
     const cardImage = req.files?.cardImage?.[0];
     if (!productPhoto) return res.status(400).json({ ok: false, error: "Product photo is missing. Please select it again." });
@@ -977,5 +1051,6 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     : Promise.resolve();
   tgApi.configureWebhook();
   initAdmins();
+  loadAppAdmins();
 });
 module.exports = app;
