@@ -42,8 +42,13 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 .photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:11px 8px;border-radius:9px;font-size:12px;font-weight:800}.confirm{background:#e5f1e8;color:#205c39}.reject{background:#f5e4e4;color:#7a2630}.comment{background:#eee9df;color:#5b4d38}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
 @media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
+<style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
 </head>
 <body>
+<div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
+<script>
+(async()=>{const gate=document.getElementById("ambarAccessGate"),msg=document.getElementById("ambarAccessMessage");gate.style.display="flex";try{const r=await fetch("/api/me");const m=await r.json();if(r.ok&&(m.role==="owner"||m.role==="admin")){document.body.classList.add("ambar-authorized");gate.style.display="none";window.AMBAR_ROLE=m.role;window.AMBAR_TELEGRAM_ID=m.telegramId||"";if(m.role!=="owner"){const bs=document.getElementById("businessStatus");if(bs)bs.style.display="none";}}else{msg.textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}}catch(e){msg.textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}})();
+</script>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
 <div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh Business connection</button><b>Telegram Business sender:</b> Checking connection…<div class="small">Order cards are sent as the connected administrator account, never from the bot. Telegram Business must be connected and authorized.</div></div>
@@ -95,6 +100,8 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </main>
 <script>
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
+// Authenticate every API request with Telegram's signed Mini App initData. Keep FormData headers untouched.
+(()=>{const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const h=new Headers(init.headers||{});const data=window.Telegram?.WebApp?.initData||"";if(data)h.set("x-telegram-init-data",data);try{const k=localStorage.getItem("ownerKey");if(k)h.set("x-setup-key",k);}catch{}return nativeFetch(input,{...init,headers:h});};})();
 const businessStatus=document.getElementById("businessStatus");
 async function loadBusinessStatus(){
  try{
@@ -191,7 +198,7 @@ form.addEventListener("submit",async e=>{
 });
 previewCard();
 </script>
-<button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#1a73e8;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙️ Setup</button>
+<button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #c18b3a;color:#f3c77c;font:600 14px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(14px)">👥 Manage Assigned Admins</button>
 <div id="acOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="acBox" style="background:#fff;max-width:560px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
 <script>
@@ -208,12 +215,12 @@ async function render(keepMsg){
   const [a,s]=await Promise.all([api("/api/setup/app-admins"),api("/api/setup/status")]);
   if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
   const accs=s.admins||[];
-  const people=(a.appAdmins||[]).map(p=>{const ac=accs.find(x=>x.id==="u"+p.telegramId&&x.ownerTelegramId===String(p.telegramId));return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>ID '+esc(p.telegramId)+' · own Telegram account: '+(ac&&ac.ready?'connected ('+esc(ac.label)+')':'not connected yet')+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>';}).join("")||'<p><small>No admins assigned yet.</small></p>';
+  const people=(a.appAdmins||[]).map(p=>{const ac=accs.find(x=>x.id===p.accountId);return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>ID '+esc(p.telegramId)+' · sends from: '+esc(ac?ac.label:"their choice")+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>';}).join("")||'<p><small>No admins assigned yet.</small></p>';
   const accounts=accs.map(x=>'<div class="row"><div><b>'+esc(x.label)+'</b> '+(x.ready?'✅':'❌')+(x.error?'<br><small>'+esc(x.error)+'</small>':'')+'</div><button class="del" data-a="delacc" data-id="'+esc(x.id)+'">Delete</button></div>').join("")||'<p><small>No sending accounts logged in yet.</small></p>';
-  box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Setup</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
-  +'<small>Access control is <b>ON — only the main admin and assigned admins can use the app</b>.</small>'
+  box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
+  +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
   +'<h3>👥 Admins who can use the app</h3>'+people
-  +'<h3>➕ Assign a new admin</h3><input id="nId" inputmode="numeric" placeholder="Their numeric Telegram ID"><input id="nName" placeholder="Their name"><p><small>After assignment, each admin opens AMBAR Furniture using their own Telegram account and connects their own Telegram sending account. The main admin account is never shared.</small></p><button data-a="addperson">Assign admin</button>'
+  +'<h3>➕ Assign a new admin</h3><input id="nId" inputmode="numeric" placeholder="Their numeric Telegram ID"><input id="nName" placeholder="Their name"><p><small>Each assigned admin must open the mini app with their own Telegram account and connect that same account. They will never use your Telegram sender session.</small></p><button data-a="addperson">Assign admin</button>'
   +'<h3>📤 Sending accounts (Telegram accounts cards are sent from)</h3>'+accounts
   +'<h3>➕ Add a sending account</h3><input id="sLabel" placeholder="Name (e.g. Zilasun)"><input id="sPhone" placeholder="Phone with country code, +2519..."><button data-a="sendcode">Send login code</button><input id="sCode" placeholder="Code from Telegram"><input id="sPw" type="password" placeholder="2-step password (only if they have one)"><button data-a="verify">Verify &amp; add</button>'
   +'<div id="acMsg" class="msg"></div>';
@@ -265,7 +272,7 @@ ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]")
 openBtn.onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 (async()=>{try{const m=await api("/api/me");
   if(m.role==="admin"){openBtn.style.display="block";const bs=document.getElementById("businessStatus");if(bs)bs.style.display="none";
-    const s=await api("/api/my-account");if(s.ok&&!s.connected){const n=document.createElement("div");n.style.cssText="padding:10px 14px;background:#fff3cd;font:14px system-ui";n.textContent="Connect your own Telegram account (green button, bottom-left) before sending orders.";document.body.prepend(n);}}
+    const s=await api("/api/my-account");if(s.ok&&!s.connected){const n=document.createElement("div");n.style.cssText="padding:10px 14px;background:#fff3cd;font:14px system-ui";n.textContent="Connect your own Telegram account (green button) before sending orders. Your orders are sent only from your account.";document.body.prepend(n);}}
 }catch{}})();
 })();
 </script>
