@@ -168,9 +168,13 @@ Set `TG_API_ID`, `TG_API_HASH` and `ADMIN_SETUP_KEY` (any long secret) in Render
 check status → Send code → enter the code (and 2-step password) → Verify → send a test message. The login is stored in Supabase.
 
 
-### Several admins
-Open `/setup.html` and repeat step 2 for each admin (give each a name, enter that admin's phone, then the code they receive). In the order form, choose **Send from admin account**; the card is sent from that admin, and customer replies (CONFIRM / REJECT / comments) are handled on that same admin account.
+### Main admin sending account
+The main admin may connect or manage the main sending account from the owner-only Setup section. Assigned admins do not log in through this shared setup flow; they connect their own accounts inside the Mini App using the green **Connect my Telegram account** control.
 
 
 ### Assigning admins who can use the app
-Open `/setup.html` → **5. Assign people**. Add each person's numeric Telegram ID and name (optionally the sending admin account they use). Once someone is assigned, only assigned admins (and the owner) can use the app. Unassigned people see their own Telegram ID so they can send it to you. The owner is whoever holds `ADMIN_SETUP_KEY` (enter it on the lock screen) or is listed in `OWNER_TELEGRAM_IDS`.
+In Render, set `OWNER_TELEGRAM_IDS` to the main admin's numeric Telegram user ID (not the username), for example `123456789`. Keep `ADMIN_SETUP_KEY` as a long random secret for the separate setup page. Redeploy, then open `/setup.html` and use the setup key to assign each person's numeric Telegram ID and name. The app fails closed: if a Telegram account is not the main admin or an assigned admin, the app page and protected APIs are denied.
+
+
+### Access rules
+Only the main admin (the Telegram ID in `OWNER_TELEGRAM_IDS`) and assigned admins can use the Mini App. The **⚙️ Setup** button is shown in the index only to the main admin. Each assigned admin taps **🔗 Connect my Telegram account** and logs in with the same Telegram account that was assigned. The server verifies that the connected Telegram user ID matches the Mini App user's ID; a different account is rejected. Orders submitted by an assigned admin are sent strictly from that admin's own connected Telegram account. The main admin's account is never selectable or used as a fallback for an assigned admin. Assigned admins only see their own orders and cannot open owner-only Business or Setup APIs.
