@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,7 +11,14 @@ const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || "";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
 const BUSINESS_CONNECTION_ID = process.env.ADMIN_BUSINESS_CONNECTION_ID || "";
-const BUSINESS_STORE = path.join(process.env.BUSINESS_STORE_DIR || __dirname, "business-connections.json");
+const BUSINESS_STORE_DIR = process.env.BUSINESS_STORE_DIR || path.join(__dirname, "data");
+const BUSINESS_STORE = path.join(BUSINESS_STORE_DIR, "business-connections.json");
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "order-images";
+const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -31,11 +39,56 @@ const upload = multer({
 
 let orders = [];
 let nextId = 1;
+let supabaseReady = Promise.resolve();
+
+async function persistBusinessConnections() {
+  if (!supabase) { saveBusinessConnections(); return; }
+  const enabled = [...businessConnections.values()].filter(c => c?.is_enabled !== false);
+  const { error } = await supabase.from("app_settings").upsert({ key: "telegram_business_connections", value: enabled, updated_at: new Date().toISOString() });
+  if (error) console.error("Supabase business connection save failed:", error.message);
+}
+async function restoreBusinessConnections() {
+  if (!supabase) return;
+  const { data, error } = await supabase.from("app_settings").select("value").eq("key", "telegram_business_connections").maybeSingle();
+  if (error) { console.error("Supabase business connection restore failed:", error.message); return; }
+  if (Array.isArray(data?.value)) {
+    businessConnections.clear();
+    for (const c of data.value) if (c?.id && c.is_enabled !== false) businessConnections.set(String(c.id), c);
+  }
+}
+async function uploadToSupabase(file, folder, contentType) {
+  if (!supabase) return `/uploads/${file.filename}`;
+  const objectPath = `${folder}/${Date.now()}-${file.filename}`;
+  const bytes = await fs.promises.readFile(file.path);
+  const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(objectPath, bytes, { contentType: contentType || file.mimetype || "application/octet-stream", upsert: true });
+  if (error) throw new Error(`Supabase Storage upload failed: ${error.message}`);
+  const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(objectPath);
+  return data.publicUrl;
+}
+async function saveOrderRecord(order) {
+  if (!supabase) {
+    const index = orders.findIndex(x => String(x.id) === String(order.id));
+    if (index >= 0) orders[index] = order; else orders.push(order);
+    return order;
+  }
+  const row = { id: order.id, order_id: order.orderId, status: order.status || "Pending", telegram_chat_id: String(order.telegramChatId || ""), business_connection_id: order.businessConnectionId || null, telegram_message_id: order.telegramMessageId || null, sent: !!order.sent, photo_url: order.photo || null, card_image_url: order.cardImage || null, comments: order.comments || [], order_data: order };
+  const { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
+  if (error) throw new Error(`Supabase order save failed: ${error.message}`);
+  return order;
+}
+async function loadOrders() {
+  if (!supabase) return;
+  const { data, error } = await supabase.from("orders").select("order_data,id,status,comments,photo_url,card_image_url,business_connection_id,telegram_message_id,sent").order("id", { ascending: true });
+  if (error) { console.error("Supabase order restore failed:", error.message); return; }
+  orders = (data || []).map(row => ({ ...(row.order_data || {}), id: row.id, status: row.status, comments: row.comments || [], photo: row.photo_url || row.order_data?.photo, cardImage: row.card_image_url || row.order_data?.cardImage, businessConnectionId: row.business_connection_id, telegramMessageId: row.telegram_message_id, sent: row.sent }));
+  nextId = Math.max(0, ...orders.map(o => Number(o.id) || 0)) + 1;
+}
 
 // Telegram sends this object when the admin connects/disconnects the bot in Telegram Business.
 // Persisting the connection prevents a normal server restart from making the dashboard say
 // "Not connected". ADMIN_BUSINESS_CONNECTION_ID can also be supplied as a production fallback.
 let businessConnections = new Map();
+try { fs.mkdirSync(BUSINESS_STORE_DIR, { recursive: true }); } catch {}
 
 function loadBusinessConnections() {
   try {
@@ -109,6 +162,7 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
 }
 
 app.get("/api/business/status", async (req, res) => {
+  await supabaseReady;
   let connection = activeBusinessConnection();
   let bot = null;
   let botBusinessEnabled = false;
@@ -128,8 +182,8 @@ app.get("/api/business/status", async (req, res) => {
     try {
       const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
       if (fresh.is_enabled && fresh.rights?.can_reply) {
-        businessConnections.set(String(fresh.id), fresh); saveBusinessConnections(); connection = fresh;
-      } else { businessConnections.delete(String(connection.id)); saveBusinessConnections(); connection = null; }
+        businessConnections.set(String(fresh.id), fresh); await persistBusinessConnections(); connection = fresh;
+      } else { businessConnections.delete(String(connection.id)); await persistBusinessConnections(); connection = null; }
     } catch (error) { console.warn("Business connection status refresh failed:", error.message); }
   }
   const webhookReady = !!webhook && webhook.url === `${PUBLIC_BASE_URL}/api/telegram/webhook` &&
@@ -156,16 +210,17 @@ app.get("/api/business/status", async (req, res) => {
 
 app.post("/api/business/refresh", async (req, res) => {
   try {
+    await supabaseReady;
     const connection = activeBusinessConnection();
     if (!connection?.id) return res.status(409).json({ ok: false, error: "No Telegram Business connection ID is known yet. Connect the bot in Telegram Business and send/receive a message once." });
     const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
     if (!fresh.is_enabled) {
       businessConnections.delete(String(fresh.id));
-      saveBusinessConnections();
+      await persistBusinessConnections();
       return res.json({ ok: true, connected: false });
     }
     businessConnections.set(String(fresh.id), fresh);
-    saveBusinessConnections();
+    await persistBusinessConnections();
     res.json({ ok: true, connected: true, sender: [fresh.user?.first_name, fresh.user?.last_name].filter(Boolean).join(" "), canReply: !!fresh.rights?.can_reply });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
@@ -174,6 +229,7 @@ app.post("/api/business/refresh", async (req, res) => {
 
 app.get("/api/business/diagnostics", async (req, res) => {
   try {
+    await supabaseReady;
     const webhook = await telegram("getWebhookInfo", {});
     const me = await telegram("getMe", {});
     const connections = [...businessConnections.values()].map(c => ({
@@ -218,11 +274,14 @@ async function configureTelegramWebhook() {
     return;
   }
   try {
-    const result = await telegram("setWebhook", {
+    // Replace any old webhook configuration so Business updates are not trapped by an older URL.
+    await telegram("deleteWebhook", { drop_pending_updates: false });
+    const payload = {
       url: `${PUBLIC_BASE_URL}/api/telegram/webhook`,
-      secret_token: WEBHOOK_SECRET || undefined,
       allowed_updates: ["message", "callback_query", "business_connection", "business_message", "edited_business_message", "deleted_business_messages"]
-    });
+    };
+    if (WEBHOOK_SECRET) payload.secret_token = WEBHOOK_SECRET;
+    const result = await telegram("setWebhook", payload);
     console.log("Telegram webhook configured:", result);
   } catch (error) {
     console.error("Telegram webhook configuration failed:", error.message);
@@ -231,6 +290,7 @@ async function configureTelegramWebhook() {
 
 app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
   try {
+    await supabaseReady;
     const order = { ...req.body };
     const productPhoto = req.files?.productPhoto?.[0];
     const cardImage = req.files?.cardImage?.[0];
@@ -245,34 +305,46 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.orderId = order.orderId || `Z-${String(order.id).padStart(3, "0")}`;
     order.status = "Pending";
     order.comments = [];
-    order.photo = `/uploads/${productPhoto.filename}`;
-    order.cardImage = `/uploads/${cardImage.filename}`;
+    order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
+    order.cardImage = await uploadToSupabase(cardImage, "cards", "image/png");
     order.sender = "admin_business_account";
-    orders.push(order);
-
-    // IMPORTANT: business_connection_id makes Telegram deliver the generated image as the admin account.
+    order.businessConnectionId = connection.id;
+    // Persist before sending so a failed Telegram request does not erase the submitted order.
+    await saveOrderRecord(order);
     const sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection);
     order.sent = true;
-    order.businessConnectionId = connection.id;
     order.telegramMessageId = sentMessage.message_id;
+    await saveOrderRecord(order);
     res.json({ ok: true, order, sentAs: "admin_business_account" });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
 });
 
-app.get("/api/orders", (req, res) => res.json(orders));
-app.post("/api/orders/:id/comment", (req, res) => {
-  const order = orders.find(item => item.id == req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
-  const comment = String(req.body.comment || "").trim();
-  if (!comment) return res.status(400).json({ error: "Comment is required" });
-  order.comments.push({ comment, at: new Date().toISOString() });
-  res.json({ ok: true, order });
+app.get("/api/orders", async (req, res) => {
+  try {
+    await supabaseReady;
+    if (supabase) await loadOrders();
+    res.json(orders);
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+app.post("/api/orders/:id/comment", async (req, res) => {
+  try {
+    await supabaseReady;
+    if (supabase) await loadOrders();
+    const order = orders.find(item => String(item.id) === String(req.params.id));
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    const comment = String(req.body.comment || "").trim();
+    if (!comment) return res.status(400).json({ error: "Comment is required" });
+    order.comments.push({ comment, at: new Date().toISOString() });
+    await saveOrderRecord(order);
+    res.json({ ok: true, order });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 app.post("/api/telegram/webhook", async (req, res) => {
   try {
+    // Require Telegram webhook authentication whenever a secret is configured.
     if (WEBHOOK_SECRET && req.get("X-Telegram-Bot-Api-Secret-Token") !== WEBHOOK_SECRET) return res.sendStatus(401);
     const update = req.body;
 
@@ -280,7 +352,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const connection = update.business_connection;
       if (connection.is_enabled) businessConnections.set(String(connection.id), connection);
       else businessConnections.delete(String(connection.id));
-      saveBusinessConnections();
+      await persistBusinessConnections();
       console.log("Telegram Business connection update:", {
         id: connection.id,
         enabled: connection.is_enabled,
@@ -292,11 +364,14 @@ app.post("/api/telegram/webhook", async (req, res) => {
     const callback = update.callback_query;
     if (callback) {
       const [action, id] = String(callback.data || "").split(":");
-      const order = orders.find(item => item.id == id);
+      await supabaseReady;
+      if (supabase) await loadOrders();
+      const order = orders.find(item => String(item.id) === String(id));
       if (order) {
         const connectionId = callback.message?.business_connection_id || order.businessConnectionId;
         if (action === "confirm" || action === "reject") {
           order.status = action === "confirm" ? "Confirmed" : "Rejected";
+          await saveOrderRecord(order);
           await telegram("answerCallbackQuery", { callback_query_id: callback.id, text: `Order ${order.status}.` });
           if (connectionId) {
             await telegram("editMessageReplyMarkup", { business_connection_id: connectionId, chat_id: callback.message.chat.id,
@@ -325,7 +400,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           const fresh = await telegram("getBusinessConnection", { business_connection_id: connectionId });
           if (fresh.is_enabled && fresh.rights?.can_reply) {
             businessConnections.set(String(fresh.id), fresh);
-            saveBusinessConnections();
+            await persistBusinessConnections();
           }
         } catch (error) {
           console.warn("Could not refresh Business connection from business_message:", error.message);
@@ -333,10 +408,13 @@ app.post("/api/telegram/webhook", async (req, res) => {
       }
 
       if (businessMessage.text) {
+        await supabaseReady;
+        if (supabase) await loadOrders();
         const list = orders.filter(item => String(item.telegramChatId) === String(chatId));
         const order = list[list.length - 1];
         if (order) {
           order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
+          await saveOrderRecord(order);
           if (ADMIN_CHAT_ID) await telegram("sendMessage", { chat_id: ADMIN_CHAT_ID,
             text: `💬 Comment on ${esc(order.orderId)} from customer ${esc(chatId)}:\n${esc(businessMessage.text)}` });
         }
@@ -353,5 +431,8 @@ app.use((error, req, res, next) => res.status(400).json({ ok: false, error: erro
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Ambar Furniture app running on port ${PORT}`);
+  if (supabase) {
+    supabaseReady = Promise.all([loadOrders(), restoreBusinessConnections()]).then(() => console.log("Supabase data restored."));
+  }
   configureTelegramWebhook();
 });
