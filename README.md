@@ -161,3 +161,8 @@ Never put `SUPABASE_SERVICE_ROLE_KEY` in `public/index.html`, frontend JavaScrip
 
 Order of delivery: Telegram Business (buttons) → admin user account (customer replies CONFIRM / REJECT / comment) → copy to admin chat.
 Keep volume low and only message real customers; Telegram can limit or ban accounts that send unsolicited bulk messages.
+
+
+### Easier: log in from the app (no computer commands)
+Set `TG_API_ID`, `TG_API_HASH` and `ADMIN_SETUP_KEY` (any long secret) in Render, redeploy, then open `https://YOUR-APP.onrender.com/setup.html`:
+check status → Send code → enter the code (and 2-step password) → Verify → send a test message. The login is stored in Supabase.
