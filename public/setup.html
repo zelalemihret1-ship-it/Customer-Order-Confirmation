@@ -10,7 +10,7 @@
 <input id="target" placeholder="@username or +phone of someone to test"><button onclick="test()">Send test message</button>
 <h2>5. Assign people who can USE the app</h2>
 <div style="font-size:14px">Each person opens the app from Telegram; if they are not assigned they see their Telegram ID to send you.</div>
-<input id="aid" placeholder="Person's numeric Telegram ID"><input id="aname" placeholder="Their name"><p>Each assigned admin must open the Mini App with that same Telegram account and connect their own Telegram sending account. The main admin account is never assigned to another person.</p>
+<input id="aid" placeholder="Person's numeric Telegram ID"><input id="aname" placeholder="Their name"><input id="aacc" placeholder="Send-from admin account name (optional — leave empty to let them choose)">
 <button onclick="addApp()">Assign as admin</button><button onclick="listApp()" style="background:#555">Show assigned admins</button><input id="arm" placeholder="Telegram ID to remove"><button onclick="rmApp()" style="background:#c62828">Remove assigned admin</button>
 <h2>4. Remove an admin account</h2><input id="rm" placeholder="Admin name to remove"><button onclick="rem()">Remove admin</button>
 <pre id="out"></pre>
@@ -23,8 +23,8 @@ const l=(n,v)=>(v?"✅ ":"❌ ")+n;$("status").textContent=[l("BOT_TOKEN",d.botT
 async function sendCode(){show(await call("/api/setup/send-code",{phone:$("phone").value,label:$("label").value}))}
 async function verify(){show(await call("/api/setup/verify",{code:$("code").value,password:$("pw").value}));status()}
 async function rem(){const s=await call("/api/setup/status?key="+encodeURIComponent($("key").value));const a=(s.admins||[]).find(x=>x.label.toLowerCase()===$("rm").value.trim().toLowerCase());if(!a){show({ok:false,error:"No admin with that name."});return}show(await call("/api/setup/remove",{id:a.id}));status()}
-async function addApp(){show(await call("/api/setup/app-admins/add",{telegramId:$("aid").value,name:$("aname").value}))}
-async function listApp(){const d=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));$("out").className=d.ok?"ok":"bad";$("out").textContent=d.ok?("Access control: "+(d.enforced?"ON":"OFF (open to everyone until you assign someone)")+"\n"+(d.appAdmins.map(a=>{const own=(d.accounts||[]).find(x=>x.id==="u"+a.telegramId&&x.ownerTelegramId===String(a.telegramId));return a.telegramId+" — "+(a.name||"")+" — own Telegram: "+(own&&own.ready?"connected":"not connected");}).join("\n")||"No assigned admins yet")):d.error}
+async function addApp(){const s=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));let acc="";const n=$("aacc").value.trim().toLowerCase();if(n){const st=await call("/api/setup/status?key="+encodeURIComponent($("key").value));const a=(st.admins||[]).find(x=>x.label.toLowerCase()===n);if(!a){show({ok:false,error:"No sending account with that name."});return}acc=a.id}show(await call("/api/setup/app-admins/add",{telegramId:$("aid").value,name:$("aname").value,accountId:acc}))}
+async function listApp(){const d=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));$("out").className=d.ok?"ok":"bad";$("out").textContent=d.ok?("Access control: "+(d.enforced?"ON":"OFF (open to everyone until you assign someone)")+"\n"+(d.appAdmins.map(a=>a.telegramId+" — "+(a.name||"")+(a.accountId?" → sends from "+((d.accounts.find(x=>x.id===a.accountId)||{}).label||a.accountId):"")).join("\n")||"No assigned admins yet")):d.error}
 async function rmApp(){show(await call("/api/setup/app-admins/remove",{telegramId:$("arm").value}))}
 async function test(){show(await call("/api/setup/test",{target:$("target").value}))}
 </script></body></html>
