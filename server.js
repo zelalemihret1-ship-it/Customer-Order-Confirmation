@@ -3,11 +3,13 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { randomUUID } = require("crypto");
+const sharp = require("sharp");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || ""; // Used only for admin notifications/comments.
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || ""; // Receives comment notifications.
+const BUSINESS_CONNECTION_ID = process.env.BUSINESS_CONNECTION_ID || ""; // Optional Telegram Business connection: sends as the connected business account.
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -30,32 +32,48 @@ let orders = [];
 let nextId = 1;
 
 function esc(s = "") {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s ?? "—").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
-function cardCaption(o) {
-  // Telegram photo captions are limited to 1024 characters. Keep this concise
-  // so the product photo is delivered as a native Telegram photo card.
-  const lines = [
-    `AMBAR FURNITURE  |  ORDER ${o.orderId}`,
-    `Product: ${o.product || "—"}`,
-    `Size: L ${o.length || "—"} × W ${o.width || "—"} × H ${o.height || "—"} cm`,
-    `Material: ${o.material || "—"}   Color: ${o.color || "—"}`,
-    `Customer: ${o.customerName || "—"}`,
-    `Phone: ${o.phone || "—"}`,
-    `Location: ${o.location || "—"}`,
-    `Payment: ${o.payment ? `${o.payment} Birr` : "—"}   Advance: ${o.advance ? `${o.advance} Birr` : "—"}`,
-    `Delivery: ${o.deliveryDate || "—"}`,
-    `Status: ${o.status}`,
-    "Thank you for choosing Ambar Furniture!"
+function cardSvg(o, photoDataUri) {
+  const rows = [
+    ["PRODUCT", o.product], ["SIZE", `L ${o.length || "—"} × W ${o.width || "—"} × H ${o.height || "—"} cm`],
+    ["MATERIAL", o.material], ["COLOR", o.color], ["STYLE / DESIGN", [o.style, o.design].filter(Boolean).join(" / ")],
+    ["HANDLE / DOOR", [o.handle, o.door].filter(Boolean).join(" / ")], ["PARTITION / DRAWER", [o.partition, o.drawer].filter(Boolean).join(" / ")],
+    ["CUSTOMER", o.customerName], ["PHONE", o.phone], ["LOCATION", o.location],
+    ["PAYMENT", o.payment ? `${o.payment} Birr` : "—"], ["ADVANCE", o.advance ? `${o.advance} Birr` : "—"],
+    ["DELIVERY FEE", o.deliveryFee ? `${o.deliveryFee} Birr` : "—"], ["DELIVERY DATE", o.deliveryDate]
   ];
-  return lines.join("\n").slice(0, 1024);
+  const rowSvg = rows.map(([label, value], i) => {
+    const col = i % 2, row = Math.floor(i / 2), x = col ? 635 : 75, y = 1035 + row * 76;
+    return `<text x="${x}" y="${y}" class="label">${esc(label)}</text><text x="${x}" y="${y+32}" class="value">${esc(value || "—").slice(0, 48)}</text>`;
+  }).join("");
+  return `<svg width="1200" height="1660" viewBox="0 0 1200 1660" xmlns="http://www.w3.org/2000/svg">
+  <defs><clipPath id="photo"><rect x="70" y="250" width="1060" height="700" rx="28"/></clipPath></defs>
+  <rect width="1200" height="1660" fill="#f5f1e8"/><rect x="28" y="28" width="1144" height="1604" rx="38" fill="#fff" stroke="#e5ddcf" stroke-width="3"/>
+  <path d="M28 66 Q28 28 66 28 H1134 Q1172 28 1172 66 V220 H28Z" fill="#153a2e"/>
+  <text x="75" y="105" fill="#fff" font-family="Arial" font-size="48" font-weight="700">AMBAR FURNITURE</text>
+  <text x="77" y="157" fill="#e8dfce" font-family="Arial" font-size="24" letter-spacing="4">CUSTOMER ORDER CARD</text>
+  <rect x="900" y="76" width="220" height="70" rx="35" fill="#b89552"/><text x="1010" y="121" fill="#fff" text-anchor="middle" font-family="Arial" font-size="27" font-weight="700">${esc(o.orderId)}</text>
+  <image href="${photoDataUri}" x="70" y="250" width="1060" height="700" preserveAspectRatio="xMidYMid meet" clip-path="url(#photo)"/>
+  <rect x="70" y="250" width="1060" height="700" rx="28" fill="none" stroke="#e7e0d5" stroke-width="3"/>
+  <text x="75" y="1000" fill="#b89552" font-family="Arial" font-size="25" font-weight="700" letter-spacing="3">ORDER DETAILS</text>
+  ${rowSvg}
+  <rect x="70" y="1535" width="1060" height="65" rx="18" fill="#f7f2e8"/><text x="600" y="1577" text-anchor="middle" fill="#153a2e" font-family="Arial" font-size="24" font-weight="700">Thank you for choosing Ambar Furniture!</text>
+  </svg>`;
+}
+async function buildCardImage(o, file) {
+  if (!file) throw new Error("Please select a product photo. A photo is required to create the order card.");
+  const input = await fs.promises.readFile(file.path);
+  const meta = await sharp(input).metadata();
+  if (!meta.width || !meta.height) throw new Error("The selected photo could not be read. Please choose a JPG, PNG, or WebP image.");
+  const photo = await sharp(input).rotate().resize(1060, 700, { fit: "contain", background: "#f1ede5" }).png().toBuffer();
+  const dataUri = `data:image/png;base64,${photo.toString("base64")}`;
+  return sharp(Buffer.from(cardSvg(o, dataUri))).png().toBuffer();
 }
 async function telegram(method, body) {
   if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not configured on the server.");
   const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
   });
   const data = await r.json();
   if (!data.ok) throw new Error(data.description || "Telegram API error");
@@ -63,36 +81,19 @@ async function telegram(method, body) {
 }
 async function sendCustomerCard(o, file) {
   if (!o.telegramChatId || !String(o.telegramChatId).trim()) {
-    throw new Error("Customer Telegram Chat ID is required. A username or phone number alone cannot be used by the Telegram Bot API to start a private chat.");
+    throw new Error("Customer Telegram Chat ID is required. The customer must start the bot first; a username alone cannot be used by the Bot API.");
   }
   if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not configured on the server.");
-
-  const chatId = String(o.telegramChatId).trim();
-  const caption = cardCaption(o);
-  let result;
-
-  if (file) {
-    // Upload the actual image bytes to Telegram. Do not give Telegram a localhost
-    // URL or depend on PUBLIC_BASE_URL being publicly reachable.
-    const bytes = await fs.promises.readFile(file.path);
-    const form = new FormData();
-    form.append("chat_id", chatId);
-    form.append("photo", new Blob([bytes], { type: file.mimetype }), file.originalname || "product-photo.jpg");
-    form.append("caption", caption);
-    form.append("reply_markup", JSON.stringify(keyboard(o.id)));
-    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-      method: "POST",
-      body: form
-    });
-    result = await response.json();
-    if (!result.ok) throw new Error(result.description || "Telegram photo upload failed.");
-  } else {
-    result = await telegram("sendMessage", {
-      chat_id: chatId,
-      text: caption,
-      reply_markup: keyboard(o.id)
-    });
-  }
+  const card = await buildCardImage(o, file);
+  const form = new FormData();
+  form.append("chat_id", String(o.telegramChatId).trim());
+  form.append("photo", new Blob([card], { type: "image/png" }), `${o.orderId}-ambar-order-card.png`);
+  form.append("caption", `Ambar Furniture · ${o.orderId}\nPlease review your order card.`);
+  form.append("reply_markup", JSON.stringify(keyboard(o.id)));
+  if (BUSINESS_CONNECTION_ID) form.append("business_connection_id", BUSINESS_CONNECTION_ID);
+  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
+  const result = await response.json();
+  if (!result.ok) throw new Error(result.description || "Telegram could not deliver the order card.");
   return result;
 }
 function keyboard(id) {
@@ -109,6 +110,7 @@ app.post("/api/orders", upload.single("productPhoto"), async (req, res) => {
   let file = req.file;
   try {
     const o = { ...req.body };
+    if (!file) return res.status(400).json({ ok: false, error: "Please select a product photo. The order is sent as a designed photo card, not as a text message." });
     if (!o.telegramChatId || !String(o.telegramChatId).trim()) {
       return res.status(400).json({
         ok: false,
