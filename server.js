@@ -276,11 +276,44 @@ async function restoreCustomers() {
     if (Array.isArray(data?.value)) for (const c of data.value) if (c?.id && !customers.has(String(c.id))) customers.set(String(c.id), c);
   } catch {}
 }
-function rememberCustomer(chat = {}, from = {}) {
+function rememberCustomer(chat = {}, from = {}, businessConnectionId = "") {
   if (!chat.id || String(from.id ?? chat.id) !== String(chat.id)) return;
   const name = [chat.first_name || from.first_name, chat.last_name || from.last_name].filter(Boolean).join(" ");
-  customers.set(String(chat.id), { id: String(chat.id), name, username: chat.username || from.username || "", at: new Date().toISOString() });
+  const previous = customers.get(String(chat.id)) || {};
+  customers.set(String(chat.id), {
+    ...previous,
+    id: String(chat.id),
+    name: name || previous.name || "",
+    username: chat.username || from.username || previous.username || "",
+    // A customer belongs to the Business connection that delivered their chat update.
+    // Reusing a different connection can make Telegram return BUSINESS_PEER_INVALID,
+    // even when the numeric customer chat ID itself is correct.
+    businessConnectionId: String(businessConnectionId || previous.businessConnectionId || ""),
+    at: new Date().toISOString()
+  });
   persistCustomers();
+}
+
+async function businessConnectionForCustomer(chatId) {
+  const customer = customers.get(String(chatId));
+  const customerConnectionId = customer?.businessConnectionId;
+  if (customerConnectionId) {
+    const cached = businessConnections.get(String(customerConnectionId));
+    if (cached && isUsable(cached)) return cached;
+    // Refresh the exact connection associated with this customer rather than accidentally
+    // sending through another connected Business account.
+    try {
+      const fresh = await telegram("getBusinessConnection", { business_connection_id: String(customerConnectionId) });
+      if (isUsable(fresh)) {
+        businessConnections.set(String(fresh.id || customerConnectionId), fresh);
+        await persistBusinessConnections();
+        return fresh;
+      }
+    } catch (error) {
+      console.error("Could not refresh customer's Telegram Business connection:", error.message);
+    }
+  }
+  return activeBusinessConnection();
 }
 function resolveChatId(input = "", username = "") {
   const raw = String(input).trim();
@@ -463,8 +496,8 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.telegramChatId = resolveChatId(order.telegramChatId, order.telegramUsername);
     if (!order.telegramChatId) return res.status(400).json({ ok: false, error: "Select the customer from the list, or enter their numeric Telegram chat ID. A @username only works for customers who have already messaged the admin account." });
     if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
-    const connection = activeBusinessConnection();
-    if (!connection) return res.status(409).json({ ok: false, error: "Admin Telegram Business is not connected. Connect this bot in Telegram Business and grant permission to reply. The app will not send the card from the bot account." });
+    const connection = await businessConnectionForCustomer(order.telegramChatId);
+    if (!connection) return res.status(409).json({ ok: false, error: "The Telegram Business connection for this customer is unavailable. Refresh the Business connection and have the customer send a new message to the connected admin account." });
 
     if (supabase) await loadOrders(); // another instance may have created orders; avoid id collisions
     order.id = nextId++;
@@ -566,7 +599,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
     if (businessMessage) {
       const connectionId = businessMessage.business_connection_id;
       const chatId = businessMessage.chat?.id;
-      rememberCustomer(businessMessage.chat, businessMessage.from);
+      rememberCustomer(businessMessage.chat, businessMessage.from, connectionId);
 
       // A business message is a reliable way to learn the connection ID after a redeploy,
       // even when Telegram did not resend the original business_connection update.
