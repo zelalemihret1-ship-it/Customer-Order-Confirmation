@@ -94,3 +94,48 @@ After enabling Business/Secretary Mode:
 5. Open the Mini App and press Refresh Business connection.
 
 The server captures the `business_connection_id` from Telegram's `business_connection` / `business_message` updates and uses that ID for `sendPhoto`.
+
+## FINAL FIX NOTES
+- Photo selection is now ONE button and works with phone and PC. On mobile it can open the camera/photo chooser; on desktop it opens the file picker.
+- Telegram webhook setup clears the previous webhook before installing the current Business-enabled webhook.
+- Business connection webhook requests are no longer rejected just because an old/mismatched optional webhook secret is present. A correctly supplied secret is still accepted and mismatches are rejected.
+- Business connections are stored under BUSINESS_STORE_DIR. For Render persistent storage, set BUSINESS_STORE_DIR=/var/data and attach a persistent disk mounted at /var/data. Without a persistent disk, Telegram can still re-send the connection through business_connection/business_message, but the connection is not guaranteed across every instance replacement.
+- IMPORTANT: Telegram Business mode must be enabled for the bot in @BotFather, and the bot must be connected under the administrator's Telegram Business -> Chatbots with Reply to messages permission.
+- After deployment, open /api/business/diagnostics if the dashboard still says Not connected. It shows whether Telegram is delivering Business updates and any webhook error.
+
+## Supabase database + image storage (recommended)
+
+This build supports Supabase for persistent order records, comments, order statuses, Telegram Business connection state, product photos, and generated PNG cards. If Supabase variables are not configured, the app falls back to its previous local/in-memory behavior; local files and in-memory orders are not durable on ephemeral hosting.
+
+### 1. Create the Supabase project
+
+1. Create a project at https://supabase.com/dashboard.
+2. Open **Project Settings → API**.
+3. Copy the **Project URL** and the **service_role** secret key (not the anon key).
+4. In **SQL Editor**, create a new query, paste the complete contents of `supabase.sql`, and run it. This creates the `orders` and `app_settings` tables and the public `order-images` Storage bucket.
+
+### 2. Configure Render
+
+Add these environment variables under your Render service → Environment:
+
+- `SUPABASE_URL` = your Supabase Project URL
+- `SUPABASE_SERVICE_ROLE_KEY` = your Supabase service_role secret key
+- `SUPABASE_STORAGE_BUCKET` = `order-images`
+- Keep the existing Telegram variables: `BOT_TOKEN`, `ADMIN_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`, and `PUBLIC_BASE_URL`.
+
+Never put `SUPABASE_SERVICE_ROLE_KEY` in `public/index.html`, frontend JavaScript, GitHub, or any browser-visible setting. It belongs only in the server environment. Redeploy after saving the variables.
+
+### 3. Confirm it works
+
+- Open `https://YOUR-RENDER-DOMAIN/healthz`; it should return `{"ok":true,...}`.
+- Submit a test order with both photos selected. The app sends the generated PNG through the connected Telegram Business account and saves the order and images in Supabase.
+- In Supabase → Table Editor → `orders`, confirm the order row appears.
+- In Supabase → Storage → `order-images`, confirm `products/` and `cards/` files appear.
+- Restart/redeploy the Render service and reload the order dashboard; orders and Business connection state are restored from Supabase.
+
+### Security notes
+
+- Keep the service-role key private. It bypasses Row Level Security and is used only by `server.js`.
+- The SQL enables Row Level Security on the tables and deliberately creates no public table policies. Browser clients should not query these tables directly.
+- The Storage bucket is public-read so saved image URLs can be viewed; uploads are performed by the trusted server with the service-role key.
+- The existing app's admin/dashboard authorization should still be protected separately before exposing admin routes publicly. Supabase persistence does not itself authenticate dashboard users.
