@@ -166,3 +166,7 @@ Keep volume low and only message real customers; Telegram can limit or ban accou
 ### Easier: log in from the app (no computer commands)
 Set `TG_API_ID`, `TG_API_HASH` and `ADMIN_SETUP_KEY` (any long secret) in Render, redeploy, then open `https://YOUR-APP.onrender.com/setup.html`:
 check status → Send code → enter the code (and 2-step password) → Verify → send a test message. The login is stored in Supabase.
+
+
+### Several admins
+Open `/setup.html` and repeat step 2 for each admin (give each a name, enter that admin's phone, then the code they receive). In the order form, choose **Send from admin account**; the card is sent from that admin, and customer replies (CONFIRM / REJECT / comments) are handled on that same admin account.
