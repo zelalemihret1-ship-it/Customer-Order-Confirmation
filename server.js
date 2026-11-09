@@ -404,6 +404,11 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
   throw new Error(base + checklist);
 }
 
+let cachedBotUsername = "";
+async function botStartLink(order) {
+  try { if (!cachedBotUsername) cachedBotUsername = (await telegram("getMe", {})).username || ""; } catch {}
+  return cachedBotUsername ? `https://t.me/${cachedBotUsername}?start=o${order.id}` : "";
+}
 async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKeyboard = true) {
   const bytes = await fs.promises.readFile(filePath);
   const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending${extraCaption}`;
@@ -585,14 +590,15 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
       order.sent = false;
       await saveOrderRecord(order);
       let adminCopy = false;
+      const startLink = await botStartLink(order);
       if (ADMIN_CHAT_ID) {
         try {
-          await sendCardViaBot(ADMIN_CHAT_ID, cardImage.path, order, `\n\n⚠️ NOT delivered to customer chat ${esc(order.telegramChatId)}. Please forward this card manually.`, false);
+          await sendCardViaBot(ADMIN_CHAT_ID, cardImage.path, order, `\n\n⚠️ NOT delivered to customer chat ${esc(order.telegramChatId)}.\nSend the customer this link — when they tap Start, the card is delivered automatically:\n${startLink}`, false);
           adminCopy = true;
         } catch (error) { console.warn("Admin copy failed:", error.message); }
       }
-      return res.json({ ok: true, delivered: false, order, cardUrl: order.cardImage, adminCopy,
-        warning: `Order ${order.orderId} was saved but could not be delivered automatically. ${businessError || ""}` + (adminCopy ? " A copy of the card was sent to your admin chat — forward it to the customer." : " Download the card with the link below and send it manually.") });
+      return res.json({ ok: true, delivered: false, order, cardUrl: order.cardImage, adminCopy, startLink,
+        warning: `Order ${order.orderId} was saved but the customer ID was not reachable. Send the customer this link; when they tap Start, the card is delivered automatically: ${startLink || "(bot username unavailable)"}` + (adminCopy ? " A copy of the card was also sent to your admin chat." : "") });
     }
     order.sent = true;
     order.telegramMessageId = sentMessage.message_id;
@@ -674,6 +680,40 @@ app.post("/api/telegram/webhook", async (req, res) => {
           if (chatId) await safely("sendMessage", () => telegram("sendMessage", { ...(connectionId ? { business_connection_id: connectionId } : {}), chat_id: chatId,
             text: `Please reply with your comment for <b>${esc(order.orderId)}</b>.`, parse_mode: "HTML" }));
         }
+      }
+    }
+
+
+    // Customer opened the deep link / pressed Start on the bot: learn their REAL chat id and deliver the card.
+    const plain = update.message;
+    if (plain && plain.chat?.type === "private" && plain.from && !plain.from.is_bot) {
+      rememberCustomer(plain.chat, plain.from, "");
+      const m = String(plain.text || "").match(/^\/start(?:@\w+)?\s+o(\d+)/i);
+      if (m) {
+        await supabaseReady;
+        if (supabase) await loadOrders();
+        const order = orders.find(item => String(item.id) === m[1]);
+        if (order && !order.sent) {
+          order.telegramChatId = String(plain.chat.id);
+          if (!order.customerName && plain.from.first_name) order.customerName = plain.from.first_name;
+          const local = order.cardImage && order.cardImage.startsWith("/uploads/") ? path.join(__dirname, "public", order.cardImage) : null;
+          try {
+            let filePath = local;
+            if (!filePath) {
+              const resp = await fetch(order.cardImage);
+              filePath = path.join(uploadDir, `deeplink-${order.id}.png`);
+              await fs.promises.writeFile(filePath, Buffer.from(await resp.arrayBuffer()));
+            }
+            const sent = await sendCardViaBot(plain.chat.id, filePath, order);
+            order.sent = true; order.sender = "bot"; order.businessConnectionId = null; order.telegramMessageId = sent.message_id;
+            await saveOrderRecord(order);
+            if (ADMIN_CHAT_ID) await safely("Admin notification", () => telegram("sendMessage", { chat_id: ADMIN_CHAT_ID, text: `✅ ${order.orderId} delivered to ${plain.from.first_name || "customer"} (chat ${plain.chat.id}).` }));
+          } catch (error) { console.warn("Deep-link delivery failed:", error.message); }
+        } else if (order?.sent) {
+          await safely("start reply", () => telegram("sendMessage", { chat_id: plain.chat.id, text: "This order card was already delivered." }));
+        }
+      } else if (/^\/start/i.test(plain.text || "")) {
+        await safely("start reply", () => telegram("sendMessage", { chat_id: plain.chat.id, text: "Welcome to Ambar Furniture! 🛋️ You will receive your order card here." }));
       }
     }
 
