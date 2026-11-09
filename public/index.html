@@ -55,7 +55,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Location<input name="location"></label>
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
-<label class="full">Customer Telegram Chat ID<input name="telegramChatId" placeholder="Optional — best for direct delivery"><div class="small">Username/phone can be stored on the order card. Direct bot delivery requires a Telegram chat ID or a customer who has started/interacted with the bot.</div></label>
+<label class="full">Customer Telegram Chat ID<input name="telegramChatId" placeholder="Required — customer private chat ID"><div class="small">Enter the customer’s numeric Telegram Chat ID. The customer must first open your bot and press Start. A bot cannot start a private chat using only @username or phone number.</div></label>
 </div></div>
 
 <div class="card"><h2>Service Information</h2><div class="grid">
@@ -104,15 +104,4 @@ ${customerFields?`<div class="divider"></div><div class="section-title">Customer
 ${serviceFields?`<div class="section-title">Service Information</div><div class="info-grid">${serviceFields}</div>`:""}
 <div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!<br><span style="font-weight:500;font-size:11px;opacity:.75">Please review your order details before confirming.</span></div>
 </div>
-<div class="action-row"><div class="action confirm">✓ CONFIRM ORDER</div><div class="action reject">✕ REJECT ORDER</div><div class="action comment">💬 COMMENT</div></div>
-</div>`;
-}
-form.addEventListener("input",()=>previewCard());
-form.addEventListener("submit",async e=>{
- e.preventDefault(); result.textContent="Sending…";
- const fd=new FormData(form);
- try{const r=await fetch("/api/orders",{method:"POST",body:fd});const d=await r.json();if(!d.ok)throw Error(d.error);result.textContent=d.order.sent?"✅ Order created and sent to Telegram.":"✅ Order created. Configure BOT_TOKEN/ADMIN_CHAT_ID or provide a customer Telegram Chat ID to send it.";form.reset();}catch(err){result.textContent="❌ "+err.message;}
-});
-</script>
-</body>
-</html>
+<div class="action-row"><div class="action confirm">✓ CONFIRM ORDER</div><div class="action reject">✕ REJECT ORDER</div><div class="action comment"
