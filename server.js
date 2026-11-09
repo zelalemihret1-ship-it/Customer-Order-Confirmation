@@ -444,6 +444,83 @@ async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKe
   });
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// Optional "admin account" sender (MTProto user login). Lets the ADMIN'S OWN Telegram account
+// message any customer by @username or phone, even if they never wrote first. Enabled only when
+// TG_API_ID, TG_API_HASH and TG_SESSION are set (see README / `npm run session`).
+// User accounts cannot send inline buttons, so the customer replies CONFIRM / REJECT / a comment.
+// ───────────────────────────────────────────────────────────────────────────────
+let userClient = null, userbotReady = false, userbotError = "";
+async function initUserbot() {
+  const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "", session = (process.env.TG_SESSION || "").trim();
+  if (!apiId || !apiHash || !session) return;
+  try {
+    const { TelegramClient } = require("telegram");
+    const { StringSession } = require("telegram/sessions");
+    const { NewMessage } = require("telegram/events");
+    userClient = new TelegramClient(new StringSession(session), apiId, apiHash, { connectionRetries: 5 });
+    await userClient.connect();
+    if (!(await userClient.checkAuthorization())) throw new Error("TG_SESSION is not logged in. Run `npm run session` again.");
+    userbotReady = true;
+    console.log("Admin user-account sender ready.");
+    userClient.addEventHandler(async event => {
+      try {
+        const msg = event.message;
+        if (!msg || msg.out || !msg.isPrivate) return;
+        const senderId = String(msg.senderId);
+        const text = String(msg.message || "").trim();
+        if (!text) return;
+        await supabaseReady;
+        if (supabase) await loadOrders();
+        const mine = orders.filter(o => o.sender === "admin_user_account" && String(o.telegramChatId) === senderId);
+        const order = mine[mine.length - 1];
+        if (!order) return;
+        const reply = t => userClient.sendMessage(msg.senderId, { message: t });
+        if (/^\s*(confirm|confirmed|yes|ok|okay|1|✅|አዎ|አረጋግጣለሁ)\b/i.test(text) || /^\s*(✅|1)\s*$/.test(text)) {
+          order.status = "Confirmed"; await saveOrderRecord(order);
+          await reply(`${order.orderId} is now Confirmed ✅. Thank you for choosing Ambar Furniture!`);
+        } else if (/^\s*(reject|rejected|cancel|no|2|❌|አይ|እሰርዛለሁ)\b/i.test(text) || /^\s*(❌|2)\s*$/.test(text)) {
+          order.status = "Rejected"; await saveOrderRecord(order);
+          await reply(`${order.orderId} is now Rejected ❌.`);
+        } else {
+          order.comments = order.comments || [];
+          order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId });
+          await saveOrderRecord(order);
+          await reply(`Thank you, your comment on ${order.orderId} was received.`);
+        }
+        if (ADMIN_CHAT_ID) await safely("Admin notification", () => telegram("sendMessage", { chat_id: ADMIN_CHAT_ID, text: `📩 ${order.orderId} (${order.status}) from ${senderId}:\n${text}` }));
+      } catch (error) { console.warn("User-account message handler failed:", error.message); }
+    }, new NewMessage({ incoming: true }));
+  } catch (error) {
+    userbotError = error.message;
+    console.error("Admin user-account sender unavailable:", error.message);
+  }
+}
+async function resolveUserEntity(order) {
+  const username = String(order.telegramUsername || "").trim().replace(/^@/, "").replace(/^https?:\/\/t\.me\//i, "");
+  const phone = String(order.telegramPhone || order.phone || "").replace(/[^\d+]/g, "");
+  const id = /^\d+$/.test(String(order.telegramChatId || "")) ? String(order.telegramChatId) : "";
+  const tries = [];
+  if (username) tries.push(() => userClient.getEntity(username));
+  if (phone.replace(/\D/g, "").length >= 8) tries.push(async () => {
+    const { Api } = require("telegram"); const bigInt = require("big-integer");
+    const res = await userClient.invoke(new Api.contacts.ImportContacts({ contacts: [new Api.InputPhoneContact({ clientId: bigInt(Date.now()), phone: phone.startsWith("+") ? phone : "+" + phone, firstName: order.customerName || "Customer", lastName: "" })] }));
+    if (!res.users?.length) throw new Error("That phone number is not on Telegram (or hides itself from contact lookup).");
+    return res.users[0];
+  });
+  if (id) tries.push(() => userClient.getEntity(BigInt(id)));
+  let last;
+  for (const t of tries) { try { return await t(); } catch (e) { last = e; } }
+  throw new Error(last?.message || "Enter the customer's @username or phone number so the admin account can find them.");
+}
+async function sendCardViaUserAccount(order, filePath) {
+  if (!userbotReady) throw new Error(userbotError || "Admin user-account sender is not configured.");
+  const entity = await resolveUserEntity(order);
+  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}\nStatus: Pending\n\nPlease reply:\n✅ CONFIRM — to confirm the order\n❌ REJECT — to reject it\n💬 or write your comment`;
+  const sent = await userClient.sendFile(entity, { file: filePath, caption, forceDocument: false });
+  return { message_id: sent.id, chatId: String(entity.id) };
+}
+
 app.get("/api/business/status", async (req, res) => {
   await supabaseReady;
   let connection = activeBusinessConnection();
@@ -598,6 +675,15 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
       try { sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection); via = "admin_business_account"; }
       catch (error) { businessError = error.message; rawError = error.raw || error.message; triedCount = error.tried || 0; }
     } else businessError = "No usable Telegram Business connection.";
+    // 2) Admin's own account (MTProto): reaches any customer by @username / phone, no prior message needed.
+    if (!sentMessage && userbotReady) {
+      try {
+        const r = await sendCardViaUserAccount(order, cardImage.path);
+        sentMessage = { message_id: r.message_id }; via = "admin_user_account";
+        order.telegramChatId = r.chatId; order.sender = "admin_user_account"; order.businessConnectionId = null;
+        rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, "");
+      } catch (error) { rawError = `${rawError} | admin-account: ${error.message}`; }
+    }
     // 3) Last resort: keep the order and hand the card to the admin to forward manually.
     if (!sentMessage) {
       order.sent = false;
@@ -762,5 +848,6 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     ? Promise.all([loadOrders(), restoreBusinessConnections(), restoreCustomers()]).then(() => console.log("Supabase data restored."), error => console.error("Supabase restore failed:", error.message))
     : Promise.resolve();
   tgApi.configureWebhook();
+  initUserbot();
 });
 module.exports = app;
