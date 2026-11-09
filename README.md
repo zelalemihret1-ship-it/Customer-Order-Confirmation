@@ -81,3 +81,16 @@ The product photo field now supports JPG/JPEG/PNG/WebP, a visible Choose Photo f
 Build: `npm install`
 Start: `npm start`
 Health check: `/healthz`
+
+## IMPORTANT: Telegram Business connection
+
+The bot must be Business/Secretary Mode enabled in @BotFather before an administrator can connect it to Telegram Business. The app now checks `getMe.can_connect_to_business` and reports the exact problem in the dashboard.
+
+After enabling Business/Secretary Mode:
+1. Deploy the app.
+2. In the administrator Telegram account, open Settings → Telegram Business → Chatbots.
+3. Connect this bot and grant Reply to messages.
+4. Send a message from a customer chat managed by the business account.
+5. Open the Mini App and press Refresh Business connection.
+
+The server captures the `business_connection_id` from Telegram's `business_connection` / `business_message` updates and uses that ID for `sendPhoto`.
