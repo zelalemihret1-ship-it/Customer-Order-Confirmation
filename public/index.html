@@ -69,7 +69,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
 <label class="full">Select customer (people who messaged the admin account)<select id="customerPick"><option value="">— Choose a customer —</option></select><div class="small">The card is sent from the connected admin Telegram account to this customer.</div></label>
-<label class="full">Customer Telegram Chat ID<input name="telegramChatId" placeholder="Auto-filled when you pick a customer, or type the numeric chat ID / known @username"><div class="small">Required: the customer must already have a private conversation with the connected admin/business account. Use that customer chat ID. Telegram Business reply permissions and Telegram time limits apply.</div></label>
+<label class="full">Customer Telegram Chat ID (optional)<input name="telegramChatId" placeholder="Auto-filled when you pick a customer, or type the numeric chat ID / known @username"><div class="small">Optional. Easiest: fill the customer\u2019s Telegram @username or phone above — the card is sent from the admin account.</div></label>
 </div></div>
 
 <div class="card"><h2>Service Information</h2><div class="grid">
@@ -181,7 +181,7 @@ document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventLis
 deliveryFeeField.style.display="none";
 form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
- e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()){result.textContent="❌ Pick the customer from the list, or enter their numeric Telegram Chat ID.";form.elements.telegramChatId.focus();return;}
+ e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
  try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered===false?("⚠️ "+esc(d.warning||"Saved, but not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("✅ Order card sent"+(d.sentAs==="bot"?" from the bot":" from the administrator account")+" to the customer."+(d.warning?" "+esc(d.warning):""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
