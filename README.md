@@ -170,3 +170,7 @@ check status → Send code → enter the code (and 2-step password) → Verify �
 
 ### Several admins
 Open `/setup.html` and repeat step 2 for each admin (give each a name, enter that admin's phone, then the code they receive). In the order form, choose **Send from admin account**; the card is sent from that admin, and customer replies (CONFIRM / REJECT / comments) are handled on that same admin account.
+
+
+### Assigning admins who can use the app
+Open `/setup.html` → **5. Assign people**. Add each person's numeric Telegram ID and name (optionally the sending admin account they use). Once someone is assigned, only assigned admins (and the owner) can use the app. Unassigned people see their own Telegram ID so they can send it to you. The owner is whoever holds `ADMIN_SETUP_KEY` (enter it on the lock screen) or is listed in `OWNER_TELEGRAM_IDS`.
