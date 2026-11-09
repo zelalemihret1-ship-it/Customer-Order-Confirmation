@@ -97,7 +97,7 @@ async function loadBusinessStatus(){
   if(s.connected && s.canReply !== false){
     businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span><div class="small">Order cards will be sent as the connected administrator/business account, not as the bot.</div>`;
   } else {
-    businessStatus.innerHTML='<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small">In the administrator Telegram account go to Settings → Telegram Business → Chatbots, connect this bot and grant permission to reply. Then reload this page.</div>';
+    businessStatus.innerHTML='<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small"><b>Important:</b> Telegram only sends the Business connection ID to the bot when the connection is created/changed. After deploying this version, open the administrator Telegram account → Settings → Telegram Business → Chatbots, remove this bot, then add/connect it again and grant <b>Reply to messages</b> permission. Then send one message in a customer chat and reload this page. The server will capture and save the Business connection automatically.</div>';
   }
  }catch(e){businessStatus.innerHTML='<b>Telegram Business sender:</b> Status unavailable. Check the server connection.';}
 }
