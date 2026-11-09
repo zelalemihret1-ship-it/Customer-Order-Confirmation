@@ -10,7 +10,7 @@ const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || "";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
 const BUSINESS_CONNECTION_ID = process.env.ADMIN_BUSINESS_CONNECTION_ID || "";
-const BUSINESS_STORE = path.join(__dirname, "business-connections.json");
+const BUSINESS_STORE = path.join(process.env.BUSINESS_STORE_DIR || __dirname, "business-connections.json");
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -133,7 +133,9 @@ app.get("/api/business/status", async (req, res) => {
     sender: connection?.user ? [connection.user.first_name, connection.user.last_name].filter(Boolean).join(" ") : null,
     canReply: !!connection?.rights?.can_reply,
     connectionId: connection?.id || null,
-    webhookConfigured: !!PUBLIC_BASE_URL
+    webhookConfigured: !!PUBLIC_BASE_URL,
+    needsReconnect: !connection && !!PUBLIC_BASE_URL,
+    instructions: !connection ? "Reconnect the bot from the administrator Telegram Business settings after this deployment so Telegram sends a business_connection update." : null
   });
 });
 
@@ -152,6 +154,44 @@ app.post("/api/business/refresh", async (req, res) => {
     res.json({ ok: true, connected: true, sender: [fresh.user?.first_name, fresh.user?.last_name].filter(Boolean).join(" "), canReply: !!fresh.rights?.can_reply });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.get("/api/business/diagnostics", async (req, res) => {
+  try {
+    const webhook = await telegram("getWebhookInfo", {});
+    const connections = [...businessConnections.values()].map(c => ({
+      id: c.id,
+      enabled: !!c.is_enabled,
+      canReply: !!c.rights?.can_reply,
+      user: c.user?.username || c.user?.first_name || null
+    }));
+    res.json({
+      ok: true,
+      webhook: {
+        url: webhook.url || null,
+        hasCustomCertificate: !!webhook.has_custom_certificate,
+        pendingUpdateCount: webhook.pending_update_count || 0,
+        lastErrorDate: webhook.last_error_date || null,
+        lastErrorMessage: webhook.last_error_message || null,
+        allowedUpdates: webhook.allowed_updates || []
+      },
+      configuredBusinessConnectionId: BUSINESS_CONNECTION_ID || null,
+      savedConnections: connections,
+      publicBaseUrl: PUBLIC_BASE_URL || null
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post("/api/business/reconfigure-webhook", async (req, res) => {
+  try {
+    await configureTelegramWebhook();
+    const webhook = await telegram("getWebhookInfo", {});
+    res.json({ ok: true, webhook });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
   }
 });
 
