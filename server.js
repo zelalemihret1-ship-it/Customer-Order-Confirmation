@@ -401,7 +401,10 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
   }
   const base = friendlyError(lastError?.message);
   const checklist = " Checklist: (1) use the customer's own numeric user ID (not the admin's, not the bot's); (2) the customer must have sent a message to the admin account recently (Telegram allows replies for ~24h after their last message); (3) in Telegram → Settings → Business → Chatbots, the bot must be allowed to access this chat (not excluded) with 'Reply to messages' on. Best fix: pick the customer from the dropdown after they message the admin account.";
-  throw new Error(base + checklist);
+  const err = new Error(base + checklist);
+  err.raw = lastError?.message || "unknown";
+  err.tried = attempts.length;
+  throw err;
 }
 
 function adminContactLink(order) {
@@ -589,11 +592,11 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     // Persist before sending so a failed Telegram request does not erase the submitted order.
     await saveOrderRecord(order);
 
-    let sentMessage = null, via = "", warning = "", businessError = "";
+    let sentMessage = null, via = "", warning = "", businessError = "", rawError = "", triedCount = 0;
     // 1) Preferred: as the administrator through Telegram Business.
     if (connection) {
       try { sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection); via = "admin_business_account"; }
-      catch (error) { businessError = error.message; }
+      catch (error) { businessError = error.message; rawError = error.raw || error.message; triedCount = error.tried || 0; }
     } else businessError = "No usable Telegram Business connection.";
     // 3) Last resort: keep the order and hand the card to the admin to forward manually.
     if (!sentMessage) {
@@ -608,7 +611,8 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
         } catch (error) { console.warn("Admin copy failed:", error.message); }
       }
       return res.json({ ok: true, delivered: false, order, cardUrl: order.cardImage, adminCopy, startLink,
-        warning: `Order ${order.orderId} was saved, but Telegram would not let your admin account message that ID. Ask the customer to open this link and send the pre-filled message to your account; the card is then sent from your admin account automatically: ${startLink || "(set ADMIN_USERNAME in Render to your @username)"}` + (adminCopy ? " A copy of the card was also sent to your admin chat." : "") });
+        warning: `Order ${order.orderId} was saved, but Telegram would not let your admin account message that ID. Ask the customer to open this link and send the pre-filled message to your account; the card is then sent from your admin account automatically: ${startLink || "(set ADMIN_USERNAME in Render to your @username)"}` + (adminCopy ? " A copy of the card was also sent to your admin chat." : "") +
+          ` | DIAGNOSIS — Telegram said: "${rawError || "no Business connection available"}"; connections tried: ${triedCount}; customer ${customers.has(String(order.telegramChatId)) ? "IS" : "is NOT"} in your known-customers list (${customers.size} known).` });
     }
     order.sent = true;
     order.telegramMessageId = sentMessage.message_id;
