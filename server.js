@@ -1,340 +1,186 @@
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ambar Furniture — Telegram Mini App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:24px 18px;text-align:center;border-bottom:4px solid #b89552}
+h1{margin:0;font-size:26px;letter-spacing:.5px}.sub{opacity:.82;margin-top:6px;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+main{max-width:920px;margin:auto;padding:20px}.card{background:white;border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+h2{margin-top:0;color:#153a2e}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+label{font-weight:700;font-size:13px}input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px}
+textarea{min-height:80px}.full{grid-column:1/-1}
+button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
+.primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
+.desktop-photo-button{display:inline-block}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
+.order-card{background:#fff;border:1px solid #ddd5c8;border-radius:18px;overflow:hidden;box-shadow:0 8px 26px #00000012;max-width:650px;margin:auto}
+.order-head{background:#153a2e;color:#f4efe3;padding:20px 22px;display:flex;justify-content:space-between;align-items:center;gap:15px}
+.brand{font-size:20px;font-weight:800;letter-spacing:.8px}.tag{font-size:11px;letter-spacing:1.2px;opacity:.78;text-transform:uppercase;margin-top:4px}
+.order-id{background:#b89552;color:white;border-radius:20px;padding:8px 12px;font-size:12px;font-weight:800;white-space:nowrap}
+.photo-wrap{background:#f1ede5;padding:16px;text-align:center}.order-photo{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:12px;display:block;background:#fff;box-shadow:0 3px 12px #00000010}
+.order-body{padding:20px 22px}.section-title{font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#b89552;font-weight:800;margin:18px 0 9px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 20px}.info{font-size:13px;line-height:1.5}.info b{color:#153a2e}.divider{height:1px;background:#ebe5da;margin:18px 0}
+.thanks{background:#f7f2e8;padding:13px;border-radius:10px;text-align:center;font-size:13px;color:#153a2e;font-weight:700}
+.action-row{display:flex;gap:8px;padding:14px 18px;background:#faf8f3;border-top:1px solid #e7e0d5}
+.delivery-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.delivery-option{position:relative;display:block}
+.delivery-option input{position:absolute;opacity:0;pointer-events:none}
+.delivery-option-card{display:block;border:1.5px solid #ddd4c4;border-radius:12px;padding:16px;background:#fff;cursor:pointer;transition:.15s}
+.delivery-option input:checked + .delivery-option-card{border-color:#b89552;box-shadow:0 0 0 2px #b8955226;background:#fbf7ef}
+.delivery-title{font-weight:800;color:#153a2e;font-size:15px}
+.delivery-desc{display:block;margin-top:5px;font-size:12px;color:#6d675d}
+.photo-box{border:1.5px dashed #b9af9d;border-radius:14px;padding:16px;background:#fbf9f4}
+.photo-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.photo-button{display:inline-block;background:#153a2e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800;cursor:pointer}
+.photo-name{font-size:12px;color:#6d675d}
+.photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:11px 8px;border-radius:9px;font-size:12px;font-weight:800}.confirm{background:#e5f1e8;color:#205c39}.reject{background:#f5e4e4;color:#7a2630}.comment{background:#eee9df;color:#5b4d38}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
+@media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:block}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:inline-block}}</style>
+</head>
+<body>
+<header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
+<main>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh Business connection</button><b>Telegram Business sender:</b> Checking connection…<div class="small">Order cards are sent as the connected administrator account, never from the bot. Telegram Business must be connected and authorized.</div></div>
+<form id="orderForm">
+<div class="card"><h2>Product Information</h2><div class="grid">
+<label>Order ID<input name="orderId" placeholder="Z-001"></label>
+<label>Product<input name="product"></label>
+<label>Length (cm)<input name="length" value="120"></label>
+<label>Width (cm)<input name="width" value="35"></label>
+<label>Height (cm)<input name="height" value="124"></label>
+<label>Material<input name="material"></label>
+<label>Color<input name="color"></label>
+<label>Style<input name="style"></label>
+<label>Design<input name="design"></label>
+<label>Handle<input name="handle"></label>
+<label>Door<input name="door"></label>
+<label>Partition<input name="partition"></label>
+<label>Drawer<input name="drawer"></label>
+<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📱 Choose Photo on Phone</label><input id="productPhoto" name="productPhoto" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" required hidden><label class="photo-button desktop-photo-button" for="productPhoto">💻 Choose Photo from PC</label><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Select a JPG, JPEG, PNG or WebP image. You can also drag and drop it here.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
+</div></div>
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const BOT_TOKEN = process.env.BOT_TOKEN || "";
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || "";
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
-const BUSINESS_CONNECTION_ID = process.env.ADMIN_BUSINESS_CONNECTION_ID || "";
-const BUSINESS_STORE = path.join(process.env.BUSINESS_STORE_DIR || __dirname, "business-connections.json");
+<div class="card"><h2>Customer Information</h2><div class="grid">
+<label>Name<input name="customerName" required></label>
+<label>Phone<input name="phone"></label>
+<label>Location<input name="location"></label>
+<label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
+<label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
+<label class="full">Customer Telegram Chat ID<input name="telegramChatId" required placeholder="Customer numeric Telegram chat ID"><div class="small">Required: the customer must already have a private conversation with the connected admin/business account. Use that customer chat ID. Telegram Business reply permissions and Telegram time limits apply.</div></label>
+</div></div>
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
+<div class="card"><h2>Service Information</h2><div class="grid">
+<label>Payment (Birr)<input name="payment" type="number"></label>
+<label>Advance (Birr)<input name="advance" type="number"></label>
+<div class="full"><label>Delivery Type</label><div class="delivery-options">
+<label class="delivery-option"><input type="radio" name="deliveryType" value="Self Pick Up" checked><span class="delivery-option-card"><span class="delivery-title">🏠 Self Pick Up</span><span class="delivery-desc">Customer collects the furniture from Ambar Furniture.</span></span></label>
+<label class="delivery-option"><input type="radio" name="deliveryType" value="By Ambar Delivery"><span class="delivery-option-card"><span class="delivery-title">🚚 By Ambar Delivery</span><span class="delivery-desc">Ambar Furniture delivers the order to the customer.</span></span></label>
+</div></div>
+<label id="deliveryFeeField">Delivery fee (Birr)<input name="deliveryFee" type="number" min="0" step="0.01"></label>
+<label>Order Date<input name="orderDate" type="date"></label>
+<label>Delivery Date<input name="deliveryDate" type="date"></label>
+</div></div>
 
-app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
-
-const uploadDir = path.join(__dirname, "public", "uploads");
-fs.mkdirSync(uploadDir, { recursive: true });
-const upload = multer({
-  dest: uploadDir,
-  limits: { fileSize: 15 * 1024 * 1024, files: 2 },
-  fileFilter: (req, file, cb) => {
-    if (["productPhoto", "cardImage"].includes(file.fieldname) && file.mimetype?.startsWith("image/")) return cb(null, true);
-    cb(new Error("Please upload a valid image file."));
+<div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
+<div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
+<p id="result"></p>
+</form>
+</main>
+<script>
+const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
+const businessStatus=document.getElementById("businessStatus");
+async function loadBusinessStatus(){
+ try{
+  const r=await fetch("/api/business/status"); const s=await r.json();
+  if(!s.botBusinessEnabled){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Business Mode NOT enabled</span><div class="small"><b>Required:</b> Open @BotFather → select this bot → enable <b>Business/Secretary Mode</b>. Telegram only allows a bot to be connected to an administrator Business account when this capability is enabled.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
+  } else if(!s.connected){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small">Bot <b>@${esc(s.botUsername||"")}</b> is Business-enabled, but this server has not received the administrator's Business connection. In Telegram: Settings → Telegram Business → Chatbots → connect this bot → grant <b>Reply to messages</b>. Then send one message from a customer chat and press Check again.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
+  } else if(!s.canReply){
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected, but <span style="color:#9a3c26;font-weight:700">Reply permission is OFF</span><div class="small">Edit the connected bot permissions in Telegram Business and enable <b>Reply to messages</b>.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
+  } else {
+    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span><div class="small">Business Mode enabled • Reply permission enabled • Webhook ${s.webhookReady?"ready":"needs attention"} • Cards are sent as the administrator account.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh</button>`;
   }
-});
-
-let orders = [];
-let nextId = 1;
-
-// Telegram sends this object when the admin connects/disconnects the bot in Telegram Business.
-// Persisting the connection prevents a normal server restart from making the dashboard say
-// "Not connected". ADMIN_BUSINESS_CONNECTION_ID can also be supplied as a production fallback.
-let businessConnections = new Map();
-
-function loadBusinessConnections() {
-  try {
-    if (fs.existsSync(BUSINESS_STORE)) {
-      const saved = JSON.parse(fs.readFileSync(BUSINESS_STORE, "utf8"));
-      if (Array.isArray(saved)) {
-        for (const connection of saved) {
-          if (connection?.id && connection.is_enabled !== false) {
-            businessConnections.set(String(connection.id), connection);
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Could not load Telegram Business connections:", error.message);
-  }
+  document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus, {once:true});
+ }catch(e){businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26">Status unavailable</span><div class="small">${esc(e.message||"Server error")}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Retry</button>`;document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus,{once:true});}
 }
-function saveBusinessConnections() {
-  try {
-    const enabled = [...businessConnections.values()].filter(c => c?.is_enabled !== false);
-    fs.writeFileSync(BUSINESS_STORE, JSON.stringify(enabled, null, 2));
-  } catch (error) {
-    console.error("Could not persist Telegram Business connections:", error.message);
-  }
+loadBusinessStatus();
+const form=document.getElementById("orderForm"),preview=document.getElementById("preview"),result=document.getElementById("result");
+const photoInput=document.getElementById("productPhoto"),photoStatus=document.getElementById("photoStatus"),photoPreview=document.getElementById("selectedPhotoPreview");
+let photoUrl=null;
+function vals(){
+ const v=Object.fromEntries(new FormData(form).entries());
+ if(v.deliveryType==="Self Pick Up") v.deliveryFee="";
+ return v;
 }
-loadBusinessConnections();
-
-function esc(value = "") {
-  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function esc(v){return String(v??"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function field(k,v){return v?`<div class="info"><b>${esc(k)}</b><br>${esc(v)}</div>`:"";}
+function setPhoto(file){
+ if(photoUrl){URL.revokeObjectURL(photoUrl);photoUrl=null;}
+ photoPreview.hidden=true; photoPreview.removeAttribute("src"); photoName.textContent="No photo selected";
+ if(!file){photoStatus.textContent="Select a JPG, JPEG, PNG or WebP image.";previewCard();return;}
+ const allowed=["image/jpeg","image/png","image/webp"];
+ const ext=/\\.(jpe?g|png|webp)$/i.test(file.name);
+ if(!allowed.includes(file.type) || !ext){photoInput.value="";photoStatus.textContent="❌ Please choose a JPG, JPEG, PNG or WebP image.";return;}
+ if(file.size>12*1024*1024){photoInput.value="";photoStatus.textContent="❌ Image must be smaller than 12 MB.";return;}
+ photoUrl=URL.createObjectURL(file);
+ photoPreview.src=photoUrl; photoPreview.hidden=false;
+ photoName.textContent=file.name;
+ photoStatus.textContent=`Selected: ${file.name} (${(file.size/1048576).toFixed(2)} MB)`;
+ previewCard();
 }
-function keyboard(id) {
-  return { inline_keyboard: [
-    [{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }],
-    [{ text: "💬 Comment", callback_data: `comment:${id}` }]
-  ] };
+photoInput.addEventListener("change",()=>setPhoto(photoInput.files?.[0]||null));
+const photoDropZone=document.getElementById("photoDropZone"), photoName=document.getElementById("photoName");
+["dragenter","dragover"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="#b89552";}));
+["dragleave","drop"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="";}));
+photoDropZone.addEventListener("drop",e=>{const f=e.dataTransfer.files?.[0];if(!f)return;try{const dt=new DataTransfer();dt.items.add(f);photoInput.files=dt.files;}catch(_){}setPhoto(f);});
+function previewCard(){
+ const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
+ const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k])))].filter(Boolean).join("");
+ const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
+ const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Delivery Type",v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
+ preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Z-001")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div><div class="action-row"><div class="action confirm">✓ CONFIRM ORDER</div><div class="action reject">✕ REJECT ORDER</div><div class="action comment">💬 COMMENT</div></div></div>`;
 }
-function activeBusinessConnection() {
-  // Prefer the explicitly configured connection when present.
-  if (BUSINESS_CONNECTION_ID) {
-    const configured = businessConnections.get(String(BUSINESS_CONNECTION_ID));
-    if (configured?.is_enabled && configured?.rights?.can_reply !== false) return configured;
-    // We may not have received a business_connection update after a server restart.
-    return { id: String(BUSINESS_CONNECTION_ID), is_enabled: true, rights: { can_reply: true } };
-  }
-  return [...businessConnections.values()].find(c =>
-    c?.is_enabled && c?.rights?.can_reply === true
-  );
+function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
+function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=()=>{URL.revokeObjectURL(u);no(Error("Unable to read selected photo."))};i.src=u;});}
+function drawWrap(ctx,text,x,y,max){const words=String(text).split(/\s+/);let line="";for(const word of words){const t=line?line+" "+word:word;if(ctx.measureText(t).width>max&&line){ctx.fillText(line,x,y);line=word;y+=32;}else line=t;}if(line){ctx.fillText(line,x,y);y+=40;}return y;}
+async function makeCard(v,file){
+ const img=await loadImg(file),c=document.createElement("canvas");c.width=1080;c.height=1920;const x=c.getContext("2d");if(!x)throw Error("Canvas image generation is not supported in this browser.");
+ const W=1080,pad=64; x.fillStyle="#f4efe3";x.fillRect(0,0,W,1920);
+ x.fillStyle="#153a2e";x.fillRect(0,0,W,180);x.fillStyle="#b89552";x.fillRect(0,176,W,4);
+ x.fillStyle="#fff";x.font="800 44px Arial";x.fillText("AMBAR FURNITURE",pad,72);x.font="24px Arial";x.fillText("CUSTOMER ORDER CARD",pad,112);
+ x.fillStyle="#b89552";rounded(x,790,48,226,72,18);x.fillStyle="#fff";x.font="800 28px Arial";x.textAlign="center";x.fillText(v.orderId||"Z-001",903,94);x.textAlign="left";
+ // Product image panel
+ x.fillStyle="#fff";rounded(x,pad,216,W-pad*2,590,24);
+ const maxW=W-pad*2-36,maxH=540,scale=Math.min(maxW/img.width,maxH/img.height),iw=img.width*scale,ih=img.height*scale;
+ x.save();x.beginPath();x.roundRect(pad+18,234,maxW,maxH,16);x.clip();x.drawImage(img,pad+18+(maxW-iw)/2,234+(maxH-ih)/2,iw,ih);x.restore();
+ let y=846;
+ const section=t=>{x.fillStyle="#b89552";x.font="800 22px Arial";x.fillText(t.toUpperCase(),pad,y);y+=38;};
+ const line=(k,val)=>{if(!String(val??"").trim())return;const text=String(val);x.fillStyle="#153a2e";x.font="800 21px Arial";x.fillText(k,pad,y);x.fillStyle="#303b35";x.font="21px Arial";let yy=y;const max=850;const words=text.split(/\s+/);let line="";for(const w of words){const t=line?line+" "+w:w;if(x.measureText(t).width>max&&line){x.fillText(line,pad+190,yy);yy+=29;line=w}else line=t}if(line)x.fillText(line,pad+190,yy);y=Math.max(y+32,yy+38)};
+ const divider=()=>{x.strokeStyle="#d8d0c2";x.lineWidth=1;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
+ section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));
+ divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
+ divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Delivery type",v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
+ x.fillStyle="#153a2e";rounded(x,pad,1790,W-pad*2,74,16);x.fillStyle="#fff";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
+ return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate PNG card.")),"image/png"));
 }
-async function telegram(method, body) {
-  if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not configured on the server.");
-  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
-  });
-  const data = await response.json();
-  if (!data.ok) throw new Error(data.description || `Telegram ${method} failed.`);
-  return data.result;
-}
-async function sendCardAsAdmin(chatId, filePath, order, connection) {
-  const bytes = await fs.promises.readFile(filePath);
-  const body = new FormData();
-  body.append("business_connection_id", connection.id);
-  body.append("chat_id", String(chatId));
-  body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath));
-  body.append("caption", `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending\nPlease review the attached order card.`);
-  body.append("parse_mode", "HTML");
-  body.append("reply_markup", JSON.stringify(keyboard(order.id)));
-  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: "POST", body });
-  const data = await response.json();
-  if (!data.ok) throw new Error(data.description || "Telegram Business photo delivery failed.");
-  return data.result;
-}
-
-app.get("/api/business/status", async (req, res) => {
-  let connection = activeBusinessConnection();
-  // Revalidate a saved connection so a revoked Business authorization is not shown as connected.
-  if (connection?.id && BOT_TOKEN) {
-    try {
-      const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
-      if (fresh.is_enabled && fresh.rights?.can_reply) {
-        businessConnections.set(String(fresh.id), fresh);
-        saveBusinessConnections();
-        connection = fresh;
-      } else {
-        businessConnections.delete(String(connection.id));
-        saveBusinessConnections();
-        connection = null;
-      }
-    } catch (error) {
-      // Keep the last known connection when Telegram is temporarily unavailable.
-      console.warn("Business connection status refresh failed:", error.message);
-    }
-  }
-  res.json({
-    connected: !!connection,
-    sender: connection?.user ? [connection.user.first_name, connection.user.last_name].filter(Boolean).join(" ") : null,
-    canReply: !!connection?.rights?.can_reply,
-    connectionId: connection?.id || null,
-    webhookConfigured: !!PUBLIC_BASE_URL,
-    needsReconnect: !connection && !!PUBLIC_BASE_URL,
-    instructions: !connection ? "Reconnect the bot from the administrator Telegram Business settings after this deployment so Telegram sends a business_connection update." : null
-  });
+const deliveryFeeField=document.getElementById("deliveryFeeField");
+document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventListener("change",()=>{
+ const isDelivery=document.querySelector('input[name="deliveryType"]:checked')?.value==="By Ambar Delivery";
+ deliveryFeeField.style.display=isDelivery?"":"none";
+ if(!isDelivery) form.elements.deliveryFee.value="";
+ previewCard();
+}));
+deliveryFeeField.style.display="none";
+form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
+form.addEventListener("submit",async e=>{
+ e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()){result.textContent="❌ Enter the customer's numeric Telegram Chat ID.";form.elements.telegramChatId.focus();return;}
+ const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.textContent="✅ Generated PNG order card sent from the connected administrator/business account to the customer.";form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Select a JPG, JPEG, PNG or WebP image.";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
-
-app.post("/api/business/refresh", async (req, res) => {
-  try {
-    const connection = activeBusinessConnection();
-    if (!connection?.id) return res.status(409).json({ ok: false, error: "No Telegram Business connection ID is known yet. Connect the bot in Telegram Business and send/receive a message once." });
-    const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
-    if (!fresh.is_enabled) {
-      businessConnections.delete(String(fresh.id));
-      saveBusinessConnections();
-      return res.json({ ok: true, connected: false });
-    }
-    businessConnections.set(String(fresh.id), fresh);
-    saveBusinessConnections();
-    res.json({ ok: true, connected: true, sender: [fresh.user?.first_name, fresh.user?.last_name].filter(Boolean).join(" "), canReply: !!fresh.rights?.can_reply });
-  } catch (error) {
-    res.status(400).json({ ok: false, error: error.message });
-  }
-});
-
-app.get("/api/business/diagnostics", async (req, res) => {
-  try {
-    const webhook = await telegram("getWebhookInfo", {});
-    const connections = [...businessConnections.values()].map(c => ({
-      id: c.id,
-      enabled: !!c.is_enabled,
-      canReply: !!c.rights?.can_reply,
-      user: c.user?.username || c.user?.first_name || null
-    }));
-    res.json({
-      ok: true,
-      webhook: {
-        url: webhook.url || null,
-        hasCustomCertificate: !!webhook.has_custom_certificate,
-        pendingUpdateCount: webhook.pending_update_count || 0,
-        lastErrorDate: webhook.last_error_date || null,
-        lastErrorMessage: webhook.last_error_message || null,
-        allowedUpdates: webhook.allowed_updates || []
-      },
-      configuredBusinessConnectionId: BUSINESS_CONNECTION_ID || null,
-      savedConnections: connections,
-      publicBaseUrl: PUBLIC_BASE_URL || null
-    });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-app.post("/api/business/reconfigure-webhook", async (req, res) => {
-  try {
-    await configureTelegramWebhook();
-    const webhook = await telegram("getWebhookInfo", {});
-    res.json({ ok: true, webhook });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-async function configureTelegramWebhook() {
-  if (!BOT_TOKEN || !PUBLIC_BASE_URL) {
-    console.log("Telegram webhook auto-configuration skipped: set BOT_TOKEN and PUBLIC_BASE_URL (or use RENDER_EXTERNAL_URL).");
-    return;
-  }
-  try {
-    const result = await telegram("setWebhook", {
-      url: `${PUBLIC_BASE_URL}/api/telegram/webhook`,
-      secret_token: WEBHOOK_SECRET || undefined,
-      allowed_updates: ["message", "callback_query", "business_connection", "business_message"]
-    });
-    console.log("Telegram webhook configured:", result);
-  } catch (error) {
-    console.error("Telegram webhook configuration failed:", error.message);
-  }
-}
-
-app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
-  try {
-    const order = { ...req.body };
-    const productPhoto = req.files?.productPhoto?.[0];
-    const cardImage = req.files?.cardImage?.[0];
-    if (!productPhoto) return res.status(400).json({ ok: false, error: "Product photo is missing. Please select it again." });
-    if (!cardImage) return res.status(400).json({ ok: false, error: "Generated PNG card is missing. Please try again." });
-    if (!order.telegramChatId?.trim()) return res.status(400).json({ ok: false, error: "Enter the customer's Telegram private chat ID." });
-    if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
-    const connection = activeBusinessConnection();
-    if (!connection) return res.status(409).json({ ok: false, error: "Admin Telegram Business is not connected. Connect this bot in Telegram Business and grant permission to reply. The app will not send the card from the bot account." });
-
-    order.id = nextId++;
-    order.orderId = order.orderId || `Z-${String(order.id).padStart(3, "0")}`;
-    order.status = "Pending";
-    order.comments = [];
-    order.photo = `/uploads/${productPhoto.filename}`;
-    order.cardImage = `/uploads/${cardImage.filename}`;
-    order.sender = "admin_business_account";
-    orders.push(order);
-
-    // IMPORTANT: business_connection_id makes Telegram deliver the generated image as the admin account.
-    const sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection);
-    order.sent = true;
-    order.businessConnectionId = connection.id;
-    order.telegramMessageId = sentMessage.message_id;
-    res.json({ ok: true, order, sentAs: "admin_business_account" });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message });
-  }
-});
-
-app.get("/api/orders", (req, res) => res.json(orders));
-app.post("/api/orders/:id/comment", (req, res) => {
-  const order = orders.find(item => item.id == req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
-  const comment = String(req.body.comment || "").trim();
-  if (!comment) return res.status(400).json({ error: "Comment is required" });
-  order.comments.push({ comment, at: new Date().toISOString() });
-  res.json({ ok: true, order });
-});
-
-app.post("/api/telegram/webhook", async (req, res) => {
-  try {
-    if (WEBHOOK_SECRET && req.get("X-Telegram-Bot-Api-Secret-Token") !== WEBHOOK_SECRET) return res.sendStatus(401);
-    const update = req.body;
-
-    if (update.business_connection) {
-      const connection = update.business_connection;
-      if (connection.is_enabled) businessConnections.set(String(connection.id), connection);
-      else businessConnections.delete(String(connection.id));
-      saveBusinessConnections();
-      console.log("Telegram Business connection update:", {
-        id: connection.id,
-        enabled: connection.is_enabled,
-        canReply: !!connection.rights?.can_reply,
-        user: connection.user?.username || connection.user?.first_name || null
-      });
-    }
-
-    const callback = update.callback_query;
-    if (callback) {
-      const [action, id] = String(callback.data || "").split(":");
-      const order = orders.find(item => item.id == id);
-      if (order) {
-        const connectionId = callback.message?.business_connection_id || order.businessConnectionId;
-        if (action === "confirm" || action === "reject") {
-          order.status = action === "confirm" ? "Confirmed" : "Rejected";
-          await telegram("answerCallbackQuery", { callback_query_id: callback.id, text: `Order ${order.status}.` });
-          if (connectionId) {
-            await telegram("editMessageReplyMarkup", { business_connection_id: connectionId, chat_id: callback.message.chat.id,
-              message_id: callback.message.message_id, reply_markup: { inline_keyboard: [] } });
-            await telegram("sendMessage", { business_connection_id: connectionId, chat_id: callback.message.chat.id,
-              text: `<b>${esc(order.orderId)}</b> is now <b>${esc(order.status)}</b>.`, parse_mode: "HTML" });
-          }
-        } else if (action === "comment") {
-          await telegram("answerCallbackQuery", { callback_query_id: callback.id, text: "Please reply in this chat with your comment." });
-          if (connectionId) await telegram("sendMessage", { business_connection_id: connectionId, chat_id: callback.message.chat.id,
-            text: `Please reply with your comment for <b>${esc(order.orderId)}</b>.`, parse_mode: "HTML" });
-        }
-      }
-    }
-
-    // Business messages are messages sent by customers to the admin account.
-    const businessMessage = update.business_message;
-    if (businessMessage) {
-      const connectionId = businessMessage.business_connection_id;
-      const chatId = businessMessage.chat?.id;
-
-      // A business message is also a reliable way to learn the connection ID after a
-      // redeploy, even when Telegram did not resend the original business_connection update.
-      if (connectionId) {
-        try {
-          const fresh = await telegram("getBusinessConnection", { business_connection_id: connectionId });
-          if (fresh.is_enabled && fresh.rights?.can_reply) {
-            businessConnections.set(String(fresh.id), fresh);
-            saveBusinessConnections();
-          }
-        } catch (error) {
-          console.warn("Could not refresh Business connection from business_message:", error.message);
-        }
-      }
-
-      if (businessMessage.text) {
-        const list = orders.filter(item => String(item.telegramChatId) === String(chatId));
-        const order = list[list.length - 1];
-        if (order) {
-          order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
-          if (ADMIN_CHAT_ID) await telegram("sendMessage", { chat_id: ADMIN_CHAT_ID,
-            text: `💬 Comment on ${esc(order.orderId)} from customer ${esc(chatId)}:\n${esc(businessMessage.text)}` });
-        }
-      }
-    }
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("Telegram webhook error:", error);
-    res.sendStatus(200);
-  }
-});
-
-app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Ambar Furniture app running on port ${PORT}`);
-  configureTelegramWebhook();
-});
+previewCard();
+</script>
+</body>
+</html>
