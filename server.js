@@ -404,10 +404,28 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
   throw new Error(base + checklist);
 }
 
-let cachedBotUsername = "";
-async function botStartLink(order) {
-  try { if (!cachedBotUsername) cachedBotUsername = (await telegram("getMe", {})).username || ""; } catch {}
-  return cachedBotUsername ? `https://t.me/${cachedBotUsername}?start=o${order.id}` : "";
+function adminContactLink(order) {
+  const conn = activeBusinessConnection();
+  const user = (process.env.ADMIN_USERNAME || conn?.user?.username || "").replace(/^@/, "");
+  const text = encodeURIComponent(`Order ${order.orderId}`);
+  return user ? `https://t.me/${user}?text=${text}` : "";
+}
+async function cardFileFor(order) {
+  if (order.cardImage && order.cardImage.startsWith("/uploads/")) return path.join(__dirname, "public", order.cardImage);
+  const resp = await fetch(order.cardImage);
+  const filePath = path.join(uploadDir, `card-${order.id}.png`);
+  await fs.promises.writeFile(filePath, Buffer.from(await resp.arrayBuffer()));
+  return filePath;
+}
+// Deliver a waiting order through the admin's Business account once the customer's real chat is known.
+async function deliverPendingOrder(order, chatId, connectionId) {
+  const conn = businessConnections.get(String(connectionId)) || { id: String(connectionId), is_enabled: true, rights: { can_reply: true } };
+  order.telegramChatId = String(chatId);
+  const file = await cardFileFor(order);
+  const sent = await sendCardAsAdmin(chatId, file, order, conn);
+  order.sent = true; order.sender = "admin_business_account"; order.telegramMessageId = sent.message_id;
+  await saveOrderRecord(order);
+  if (ADMIN_CHAT_ID) await safely("Admin notification", () => telegram("sendMessage", { chat_id: ADMIN_CHAT_ID, text: `✅ ${order.orderId} delivered from your admin account to chat ${chatId}.` }));
 }
 async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKeyboard = true) {
   const bytes = await fs.promises.readFile(filePath);
@@ -577,28 +595,20 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
       try { sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection); via = "admin_business_account"; }
       catch (error) { businessError = error.message; }
     } else businessError = "No usable Telegram Business connection.";
-    // 2) Fallback: directly from the bot (works if the customer has ever pressed Start on the bot).
-    if (!sentMessage) {
-      try {
-        sentMessage = await sendCardViaBot(order.telegramChatId, cardImage.path, order);
-        via = "bot"; order.sender = "bot"; order.businessConnectionId = null;
-        warning = "Sent from the bot account because the admin Business chat was not available.";
-      } catch (error) { console.warn("Bot fallback failed:", error.message); }
-    }
     // 3) Last resort: keep the order and hand the card to the admin to forward manually.
     if (!sentMessage) {
       order.sent = false;
       await saveOrderRecord(order);
       let adminCopy = false;
-      const startLink = await botStartLink(order);
+      const startLink = adminContactLink(order);
       if (ADMIN_CHAT_ID) {
         try {
-          await sendCardViaBot(ADMIN_CHAT_ID, cardImage.path, order, `\n\n⚠️ NOT delivered to customer chat ${esc(order.telegramChatId)}.\nSend the customer this link — when they tap Start, the card is delivered automatically:\n${startLink}`, false);
+          await sendCardViaBot(ADMIN_CHAT_ID, cardImage.path, order, `\n\n⚠️ NOT delivered to customer chat ${esc(order.telegramChatId)}.\nAsk the customer to open this link and send the message — the card is then sent from YOUR account automatically:\n${startLink}`, false);
           adminCopy = true;
         } catch (error) { console.warn("Admin copy failed:", error.message); }
       }
       return res.json({ ok: true, delivered: false, order, cardUrl: order.cardImage, adminCopy, startLink,
-        warning: `Order ${order.orderId} was saved but the customer ID was not reachable. Send the customer this link; when they tap Start, the card is delivered automatically: ${startLink || "(bot username unavailable)"}` + (adminCopy ? " A copy of the card was also sent to your admin chat." : "") });
+        warning: `Order ${order.orderId} was saved, but Telegram would not let your admin account message that ID. Ask the customer to open this link and send the pre-filled message to your account; the card is then sent from your admin account automatically: ${startLink || "(set ADMIN_USERNAME in Render to your @username)"}` + (adminCopy ? " A copy of the card was also sent to your admin chat." : "") });
     }
     order.sent = true;
     order.telegramMessageId = sentMessage.message_id;
@@ -684,39 +694,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
     }
 
 
-    // Customer opened the deep link / pressed Start on the bot: learn their REAL chat id and deliver the card.
-    const plain = update.message;
-    if (plain && plain.chat?.type === "private" && plain.from && !plain.from.is_bot) {
-      rememberCustomer(plain.chat, plain.from, "");
-      const m = String(plain.text || "").match(/^\/start(?:@\w+)?\s+o(\d+)/i);
-      if (m) {
-        await supabaseReady;
-        if (supabase) await loadOrders();
-        const order = orders.find(item => String(item.id) === m[1]);
-        if (order && !order.sent) {
-          order.telegramChatId = String(plain.chat.id);
-          if (!order.customerName && plain.from.first_name) order.customerName = plain.from.first_name;
-          const local = order.cardImage && order.cardImage.startsWith("/uploads/") ? path.join(__dirname, "public", order.cardImage) : null;
-          try {
-            let filePath = local;
-            if (!filePath) {
-              const resp = await fetch(order.cardImage);
-              filePath = path.join(uploadDir, `deeplink-${order.id}.png`);
-              await fs.promises.writeFile(filePath, Buffer.from(await resp.arrayBuffer()));
-            }
-            const sent = await sendCardViaBot(plain.chat.id, filePath, order);
-            order.sent = true; order.sender = "bot"; order.businessConnectionId = null; order.telegramMessageId = sent.message_id;
-            await saveOrderRecord(order);
-            if (ADMIN_CHAT_ID) await safely("Admin notification", () => telegram("sendMessage", { chat_id: ADMIN_CHAT_ID, text: `✅ ${order.orderId} delivered to ${plain.from.first_name || "customer"} (chat ${plain.chat.id}).` }));
-          } catch (error) { console.warn("Deep-link delivery failed:", error.message); }
-        } else if (order?.sent) {
-          await safely("start reply", () => telegram("sendMessage", { chat_id: plain.chat.id, text: "This order card was already delivered." }));
-        }
-      } else if (/^\/start/i.test(plain.text || "")) {
-        await safely("start reply", () => telegram("sendMessage", { chat_id: plain.chat.id, text: "Welcome to Ambar Furniture! 🛋️ You will receive your order card here." }));
-      }
-    }
-
     // Business messages are messages exchanged in the admin's chats with customers.
     const businessMessage = update.business_message;
     if (businessMessage) {
@@ -735,6 +712,21 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
       // Only customer messages count as comments (ignore the admin's own messages in that chat).
       const fromCustomer = businessMessage.from?.id === undefined || String(businessMessage.from.id) === String(chatId);
+
+      // A customer just wrote to the admin account: send any waiting order card from the admin account.
+      if (fromCustomer && connectionId) {
+        await supabaseReady;
+        if (supabase) await loadOrders();
+        const uname = String(businessMessage.chat?.username || "").toLowerCase();
+        const typed = String(businessMessage.text || "");
+        const waiting = orders.filter(o => !o.sent && o.sender !== "bot" && (
+          (typed && typed.toLowerCase().includes(String(o.orderId).toLowerCase())) ||
+          (uname && String(o.telegramUsername || "").replace(/^@/, "").toLowerCase() === uname) ||
+          String(o.telegramChatId) === String(chatId)));
+        for (const o of waiting) {
+          try { await deliverPendingOrder(o, chatId, connectionId); } catch (error) { console.warn(`Auto-delivery of ${o.orderId} failed:`, error.message); }
+        }
+      }
       if (businessMessage.text && fromCustomer) {
         await supabaseReady;
         if (supabase) await loadOrders();
