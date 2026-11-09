@@ -451,10 +451,24 @@ async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKe
 // User accounts cannot send inline buttons, so the customer replies CONFIRM / REJECT / a comment.
 // ───────────────────────────────────────────────────────────────────────────────
 let userClient = null, userbotReady = false, userbotError = "";
-async function initUserbot() {
-  const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "", session = (process.env.TG_SESSION || "").trim();
-  if (!apiId || !apiHash || !session) return;
+const USERBOT_SESSION_FILE = path.join(DATA_DIR_FOR_SESSION(), "admin-session.txt");
+function DATA_DIR_FOR_SESSION() { const d = path.join(__dirname, "data"); try { fs.mkdirSync(d, { recursive: true }); } catch {} return d; }
+async function loadStoredSession() {
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "admin_user_session").maybeSingle(); if (data?.value?.session) return String(data.value.session); } catch {} }
+  try { return fs.readFileSync(USERBOT_SESSION_FILE, "utf8").trim(); } catch { return ""; }
+}
+async function storeSession(session) {
+  try { fs.writeFileSync(USERBOT_SESSION_FILE, session); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "admin_user_session", value: { session }, updated_at: new Date().toISOString() }); } catch {} }
+}
+async function initUserbot(sessionOverride = "") {
+  const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+  const session = (sessionOverride || process.env.TG_SESSION || await loadStoredSession() || "").trim();
+  if (!apiId || !apiHash) { userbotError = "TG_API_ID / TG_API_HASH are not set in Render."; return; }
+  if (!session) { userbotError = "Admin account is not logged in yet. Open /setup.html to log in."; return; }
   try {
+    if (userClient) { try { await userClient.disconnect(); } catch {} userClient = null; userbotReady = false; }
+    userbotError = "";
     const { TelegramClient } = require("telegram");
     const { StringSession } = require("telegram/sessions");
     const { NewMessage } = require("telegram/events");
@@ -520,6 +534,80 @@ async function sendCardViaUserAccount(order, filePath) {
   const sent = await userClient.sendFile(entity, { file: filePath, caption, forceDocument: false });
   return { message_id: sent.id, chatId: String(entity.id) };
 }
+
+
+// ── Setup page API (protected by ADMIN_SETUP_KEY) ─────────────────────────────
+function setupAuth(req, res) {
+  const key = String(process.env.ADMIN_SETUP_KEY || "");
+  if (!key) { res.status(403).json({ ok: false, error: "Set ADMIN_SETUP_KEY in Render (any long secret) and redeploy, then enter it here." }); return false; }
+  const given = String(req.body?.key || req.query?.key || "");
+  if (given !== key) { res.status(401).json({ ok: false, error: "Wrong setup key." }); return false; }
+  return true;
+}
+let pendingLogin = null;
+app.get("/api/setup/status", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  let webhook = null; try { webhook = await telegram("getWebhookInfo", {}); } catch (e) { webhook = { error: e.message }; }
+  const conns = [...businessConnections.values()];
+  res.json({ ok: true,
+    botToken: !!BOT_TOKEN, adminChatId: !!ADMIN_CHAT_ID, supabase: !!supabase,
+    tgApiId: !!process.env.TG_API_ID, tgApiHash: !!process.env.TG_API_HASH,
+    adminAccountLoggedIn: userbotReady, adminAccountError: userbotReady ? "" : userbotError,
+    webhookUrl: webhook?.url || "", webhookError: webhook?.last_error_message || webhook?.error || "",
+    businessConnections: conns.length, usableBusinessConnections: conns.filter(isUsable).length, knownCustomers: customers.size });
+});
+app.post("/api/setup/send-code", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  try {
+    const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "Add TG_API_ID and TG_API_HASH in Render first (from my.telegram.org → API development tools)." });
+    const phone = String(req.body?.phone || "").replace(/[^\d+]/g, "");
+    if (!phone) return res.status(400).json({ ok: false, error: "Enter the admin phone number with country code, e.g. +2519..." });
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
+    if (pendingLogin?.client) { try { await pendingLogin.client.disconnect(); } catch {} }
+    const client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5 });
+    await client.connect();
+    const r = await client.sendCode({ apiId, apiHash }, phone.startsWith("+") ? phone : "+" + phone);
+    pendingLogin = { client, phone: phone.startsWith("+") ? phone : "+" + phone, phoneCodeHash: r.phoneCodeHash, needPassword: false };
+    res.json({ ok: true, message: "Code sent. Check your Telegram app (or SMS) and enter it below." });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+app.post("/api/setup/verify", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  try {
+    if (!pendingLogin) return res.status(400).json({ ok: false, error: "Press 'Send code' first." });
+    const { Api } = require("telegram"); const apiId = Number(process.env.TG_API_ID), apiHash = process.env.TG_API_HASH;
+    const code = String(req.body?.code || "").replace(/\D/g, ""), password = String(req.body?.password || "");
+    const p = pendingLogin;
+    if (!p.needPassword) {
+      try { await p.client.invoke(new Api.auth.SignIn({ phoneNumber: p.phone, phoneCodeHash: p.phoneCodeHash, phoneCode: code })); }
+      catch (e) {
+        if (e.errorMessage === "SESSION_PASSWORD_NEEDED") p.needPassword = true; else throw e;
+      }
+    }
+    if (p.needPassword) {
+      if (!password) return res.json({ ok: false, needPassword: true, error: "This account has 2-step verification. Enter the 2-step password and press Verify again." });
+      await p.client.signInWithPassword({ apiId, apiHash }, { password: async () => password, onError: async e => { throw e; } });
+    }
+    const session = p.client.session.save();
+    await storeSession(session);
+    try { await p.client.disconnect(); } catch {}
+    pendingLogin = null;
+    await initUserbot(session);
+    res.json({ ok: userbotReady, message: userbotReady ? "Admin account connected ✅" : "Logged in, but could not start: " + userbotError });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+app.post("/api/setup/test", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  try {
+    if (!userbotReady) return res.status(400).json({ ok: false, error: userbotError || "Admin account not connected." });
+    const target = String(req.body?.target || "").trim();
+    if (!target) return res.status(400).json({ ok: false, error: "Enter an @username or phone to test." });
+    const entity = await resolveUserEntity({ telegramUsername: target.startsWith("+") || /^\d{8,}$/.test(target) ? "" : target, telegramPhone: target.startsWith("+") || /^\d{8,}$/.test(target) ? target : "", customerName: "Test" });
+    await userClient.sendMessage(entity, { message: "✅ Test message from Ambar Furniture (sent from the admin account)." });
+    res.json({ ok: true, message: "Test message sent from your admin account." });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
 
 app.get("/api/business/status", async (req, res) => {
   await supabaseReady;
