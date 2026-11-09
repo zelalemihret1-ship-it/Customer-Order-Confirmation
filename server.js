@@ -404,6 +404,20 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
   throw new Error(base + checklist);
 }
 
+async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKeyboard = true) {
+  const bytes = await fs.promises.readFile(filePath);
+  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending${extraCaption}`;
+  return tgApi.sendForm("sendPhoto", () => {
+    const body = new FormData();
+    body.append("chat_id", String(chatId).trim());
+    body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
+    body.append("caption", caption);
+    body.append("parse_mode", "HTML");
+    if (withKeyboard) body.append("reply_markup", JSON.stringify(keyboard(order.id)));
+    return body;
+  });
+}
+
 app.get("/api/business/status", async (req, res) => {
   await supabaseReady;
   let connection = activeBusinessConnection();
@@ -539,7 +553,6 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
     if (isAdminOwnId(order.telegramChatId)) return res.status(400).json({ ok: false, error: "That chat ID belongs to the administrator's own Telegram account. Enter the CUSTOMER's numeric ID (pick them from the customer list)." });
     const connection = await businessConnectionForCustomer(order.telegramChatId);
-    if (!connection) return res.status(409).json({ ok: false, error: "The Telegram Business connection for this customer is unavailable. Refresh the Business connection and have the customer send a new message to the connected admin account." });
 
     if (supabase) await loadOrders(); // another instance may have created orders; avoid id collisions
     order.id = nextId++;
@@ -549,14 +562,42 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
     order.cardImage = await uploadToSupabase(cardImage, "cards", "image/png");
     order.sender = "admin_business_account";
-    order.businessConnectionId = connection.id;
+    order.businessConnectionId = connection?.id || null;
     // Persist before sending so a failed Telegram request does not erase the submitted order.
     await saveOrderRecord(order);
-    const sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection);
+
+    let sentMessage = null, via = "", warning = "", businessError = "";
+    // 1) Preferred: as the administrator through Telegram Business.
+    if (connection) {
+      try { sentMessage = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, connection); via = "admin_business_account"; }
+      catch (error) { businessError = error.message; }
+    } else businessError = "No usable Telegram Business connection.";
+    // 2) Fallback: directly from the bot (works if the customer has ever pressed Start on the bot).
+    if (!sentMessage) {
+      try {
+        sentMessage = await sendCardViaBot(order.telegramChatId, cardImage.path, order);
+        via = "bot"; order.sender = "bot"; order.businessConnectionId = null;
+        warning = "Sent from the bot account because the admin Business chat was not available.";
+      } catch (error) { console.warn("Bot fallback failed:", error.message); }
+    }
+    // 3) Last resort: keep the order and hand the card to the admin to forward manually.
+    if (!sentMessage) {
+      order.sent = false;
+      await saveOrderRecord(order);
+      let adminCopy = false;
+      if (ADMIN_CHAT_ID) {
+        try {
+          await sendCardViaBot(ADMIN_CHAT_ID, cardImage.path, order, `\n\n⚠️ NOT delivered to customer chat ${esc(order.telegramChatId)}. Please forward this card manually.`, false);
+          adminCopy = true;
+        } catch (error) { console.warn("Admin copy failed:", error.message); }
+      }
+      return res.json({ ok: true, delivered: false, order, cardUrl: order.cardImage, adminCopy,
+        warning: `Order ${order.orderId} was saved but could not be delivered automatically. ${businessError || ""}` + (adminCopy ? " A copy of the card was sent to your admin chat — forward it to the customer." : " Download the card with the link below and send it manually.") });
+    }
     order.sent = true;
     order.telegramMessageId = sentMessage.message_id;
     await saveOrderRecord(order);
-    res.json({ ok: true, order, sentAs: "admin_business_account" });
+    res.json({ ok: true, delivered: true, order, sentAs: via, warning: warning || undefined, cardUrl: order.cardImage });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -616,21 +657,21 @@ app.post("/api/telegram/webhook", async (req, res) => {
       if (!order) {
         await safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text: "This order was not found." }));
       } else {
-        const connectionId = callback.message?.business_connection_id || order.businessConnectionId;
+        const connectionId = callback.message?.business_connection_id || (order.sender === "bot" ? null : order.businessConnectionId);
         const chatId = callback.message?.chat?.id;
         if (action === "confirm" || action === "reject") {
           order.status = action === "confirm" ? "Confirmed" : "Rejected";
           await saveOrderRecord(order);
           await safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text: `Order ${order.status}.` }));
-          if (connectionId && chatId) {
-            await safely("editMessageReplyMarkup", () => telegram("editMessageReplyMarkup", { business_connection_id: connectionId, chat_id: chatId,
+          if (chatId) {
+            await safely("editMessageReplyMarkup", () => telegram("editMessageReplyMarkup", { ...(connectionId ? { business_connection_id: connectionId } : {}), chat_id: chatId,
               message_id: callback.message.message_id, reply_markup: { inline_keyboard: [] } }));
-            await safely("sendMessage", () => telegram("sendMessage", { business_connection_id: connectionId, chat_id: chatId,
+            await safely("sendMessage", () => telegram("sendMessage", { ...(connectionId ? { business_connection_id: connectionId } : {}), chat_id: chatId,
               text: `<b>${esc(order.orderId)}</b> is now <b>${esc(order.status)}</b>.`, parse_mode: "HTML" }));
           }
         } else if (action === "comment") {
           await safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text: "Please reply in this chat with your comment." }));
-          if (connectionId && chatId) await safely("sendMessage", () => telegram("sendMessage", { business_connection_id: connectionId, chat_id: chatId,
+          if (chatId) await safely("sendMessage", () => telegram("sendMessage", { ...(connectionId ? { business_connection_id: connectionId } : {}), chat_id: chatId,
             text: `Please reply with your comment for <b>${esc(order.orderId)}</b>.`, parse_mode: "HTML" }));
         }
       }
