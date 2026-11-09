@@ -315,12 +315,38 @@ async function businessConnectionForCustomer(chatId) {
   }
   return activeBusinessConnection();
 }
-function resolveChatId(input = "", username = "") {
-  const raw = String(input).trim();
+// Accepts "123456789", " 123 456 789 ", "ID: 123456789", "tg://user?id=123456789" and strips
+// invisible characters (RTL marks, zero-width spaces) that Telegram clients add when copying.
+function sanitizeChatId(input = "") {
+  let raw = String(input).normalize("NFKC").replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "").trim();
+  if (!raw) return "";
+  const fromLink = raw.match(/[?&]id=(-?\d+)/);
+  if (fromLink) return fromLink[1];
   if (/^-?\d+$/.test(raw)) return raw;
-  const handle = String(raw || username).trim().replace(/^@/, "").toLowerCase();
+  const compact = raw.replace(/[\s,._]/g, "");
+  if (/^-?\d{5,}$/.test(compact)) return compact;
+  const labelled = raw.match(/(?:id|chat)\D{0,6}(-?\d{5,})/i);
+  return labelled ? labelled[1] : "";
+}
+function resolveChatId(input = "", username = "") {
+  const numeric = sanitizeChatId(input);
+  if (numeric) return numeric;
+  const handle = String(input || username).trim().replace(/^@/, "").replace(/^https?:\/\/t\.me\//i, "").toLowerCase();
   if (!handle) return "";
   return [...customers.values()].find(c => (c.username || "").toLowerCase() === handle)?.id || "";
+}
+function isAdminOwnId(chatId) {
+  const id = String(chatId);
+  return [...businessConnections.values()].some(c => String(c.user?.id || "") === id || String(c.user_chat_id || "") === id);
+}
+function candidateConnections(chatId, primary) {
+  const list = [];
+  const add = c => { if (c?.id && !list.some(x => String(x.id) === String(c.id))) list.push(c); };
+  add(primary);
+  add(businessConnections.get(String(customers.get(String(chatId))?.businessConnectionId || "")));
+  for (const c of businessConnections.values()) if (isUsable(c)) add(c);
+  if (BUSINESS_CONNECTION_ID) add({ id: BUSINESS_CONNECTION_ID, is_enabled: true, rights: { can_reply: true }, configured: true });
+  return list;
 }
 app.get("/api/customers", (req, res) => res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
 
@@ -347,20 +373,35 @@ const telegram = (method, body, opts) => tgApi.call(method, body, opts);
 async function sendCardAsAdmin(chatId, filePath, order, connection) {
   const bytes = await fs.promises.readFile(filePath);
   const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending\nPlease review the attached order card.`;
-  try {
-    return await tgApi.sendForm("sendPhoto", () => {
-      const body = new FormData();
-      body.append("business_connection_id", connection.id);
-      body.append("chat_id", String(chatId).trim());
-      body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
-      body.append("caption", caption);
-      body.append("parse_mode", "HTML");
-      body.append("reply_markup", JSON.stringify(keyboard(order.id)));
-      return body;
-    });
-  } catch (error) {
-    throw new Error(friendlyError(error.message));
+  const peerProblem = /BUSINESS_PEER_INVALID|chat not found|PEER_ID_INVALID|BUSINESS_PEER_USAGE_MISSING/i;
+  const attempts = candidateConnections(chatId, connection);
+  let lastError;
+  for (const conn of attempts) {
+    try {
+      const sent = await tgApi.sendForm("sendPhoto", () => {
+        const body = new FormData();
+        body.append("business_connection_id", String(conn.id));
+        body.append("chat_id", String(chatId).trim());
+        body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
+        body.append("caption", caption);
+        body.append("parse_mode", "HTML");
+        body.append("reply_markup", JSON.stringify(keyboard(order.id)));
+        return body;
+      });
+      // Remember which connection really worked for this customer.
+      const known = customers.get(String(chatId));
+      if (known && known.businessConnectionId !== String(conn.id)) { known.businessConnectionId = String(conn.id); persistCustomers(); }
+      order.businessConnectionId = String(conn.id);
+      return sent;
+    } catch (error) {
+      lastError = error;
+      console.warn(`sendPhoto via connection ${conn.id} failed:`, error.message);
+      if (!peerProblem.test(error.message) && !/BUSINESS_CONNECTION_INVALID/i.test(error.message)) break; // other errors: another connection will not help
+    }
   }
+  const base = friendlyError(lastError?.message);
+  const checklist = " Checklist: (1) use the customer's own numeric user ID (not the admin's, not the bot's); (2) the customer must have sent a message to the admin account recently (Telegram allows replies for ~24h after their last message); (3) in Telegram → Settings → Business → Chatbots, the bot must be allowed to access this chat (not excluded) with 'Reply to messages' on. Best fix: pick the customer from the dropdown after they message the admin account.";
+  throw new Error(base + checklist);
 }
 
 app.get("/api/business/status", async (req, res) => {
@@ -496,6 +537,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.telegramChatId = resolveChatId(order.telegramChatId, order.telegramUsername);
     if (!order.telegramChatId) return res.status(400).json({ ok: false, error: "Select the customer from the list, or enter their numeric Telegram chat ID. A @username only works for customers who have already messaged the admin account." });
     if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
+    if (isAdminOwnId(order.telegramChatId)) return res.status(400).json({ ok: false, error: "That chat ID belongs to the administrator's own Telegram account. Enter the CUSTOMER's numeric ID (pick them from the customer list)." });
     const connection = await businessConnectionForCustomer(order.telegramChatId);
     if (!connection) return res.status(409).json({ ok: false, error: "The Telegram Business connection for this customer is unavailable. Refresh the Business connection and have the customer send a new message to the connected admin account." });
 
