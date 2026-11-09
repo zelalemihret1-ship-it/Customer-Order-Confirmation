@@ -150,3 +150,14 @@ Never put `SUPABASE_SERVICE_ROLE_KEY` in `public/index.html`, frontend JavaScrip
 - A temporary Telegram error no longer makes a valid connection show as "Not connected"; connections are saved to disk and Supabase, and restore merges instead of wiping.
 - Admin's own messages are no longer logged as customer comments; BOT_TOKEN with quotes/spaces is cleaned; `PUBLIC_BASE_URL` must be https.
 - Dashboard shows the real Telegram error (bad token, etc.) instead of "Business Mode NOT enabled".
+
+
+## Send to ANY customer from the admin account (optional)
+
+1. Go to https://my.telegram.org → API development tools → create an app; copy `api_id` and `api_hash`.
+2. On your computer: `npm install`, then `TG_API_ID=... TG_API_HASH=... npm run session`. Log in as the admin account; copy the printed `TG_SESSION`.
+3. In Render set `TG_API_ID`, `TG_API_HASH`, `TG_SESSION`. Redeploy.
+4. In the form, fill the customer's **@username** or **phone** (the numeric ID is not needed).
+
+Order of delivery: Telegram Business (buttons) → admin user account (customer replies CONFIRM / REJECT / comment) → copy to admin chat.
+Keep volume low and only message real customers; Telegram can limit or ban accounts that send unsolicited bulk messages.
