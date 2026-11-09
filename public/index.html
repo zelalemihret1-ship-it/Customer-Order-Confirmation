@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ambar Furniture — Telegram Mini App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:24px 18px;text-align:center;border-bottom:4px solid #b89552}
+h1{margin:0;font-size:26px;letter-spacing:.5px}.sub{opacity:.82;margin-top:6px;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+main{max-width:920px;margin:auto;padding:20px}.card{background:white;border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+h2{margin-top:0;color:#153a2e}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+label{font-weight:700;font-size:13px}input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px}
+textarea{min-height:80px}.full{grid-column:1/-1}
+button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
+.primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
+.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
+.order-card{background:#fff;border:1px solid #ddd5c8;border-radius:18px;overflow:hidden;box-shadow:0 8px 26px #00000012;max-width:650px;margin:auto}
+.order-head{background:#153a2e;color:#f4efe3;padding:20px 22px;display:flex;justify-content:space-between;align-items:center;gap:15px}
+.brand{font-size:20px;font-weight:800;letter-spacing:.8px}.tag{font-size:11px;letter-spacing:1.2px;opacity:.78;text-transform:uppercase;margin-top:4px}
+.order-id{background:#b89552;color:white;border-radius:20px;padding:8px 12px;font-size:12px;font-weight:800;white-space:nowrap}
+.photo-wrap{background:#f1ede5;padding:16px;text-align:center}.order-photo{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:12px;display:block;background:#fff;box-shadow:0 3px 12px #00000010}
+.order-body{padding:20px 22px}.section-title{font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#b89552;font-weight:800;margin:18px 0 9px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 20px}.info{font-size:13px;line-height:1.5}.info b{color:#153a2e}.divider{height:1px;background:#ebe5da;margin:18px 0}
+.thanks{background:#f7f2e8;padding:13px;border-radius:10px;text-align:center;font-size:13px;color:#153a2e;font-weight:700}
+.action-row{display:flex;gap:8px;padding:14px 18px;background:#faf8f3;border-top:1px solid #e7e0d5}.action{flex:1;text-align:center;padding:11px 8px;border-radius:9px;font-size:12px;font-weight:800}.confirm{background:#e5f1e8;color:#205c39}.reject{background:#f5e4e4;color:#7a2630}.comment{background:#eee9df;color:#5b4d38}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
+</style>
+</head>
+<body>
+<header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
+<main>
+<form id="orderForm">
+<div class="card"><h2>Product Information</h2><div class="grid">
+<label>Order ID<input name="orderId" placeholder="Z-001"></label>
+<label>Product<input name="product"></label>
+<label>Length (cm)<input name="length" value="120"></label>
+<label>Width (cm)<input name="width" value="35"></label>
+<label>Height (cm)<input name="height" value="124"></label>
+<label>Material<input name="material"></label>
+<label>Color<input name="color"></label>
+<label>Style<input name="style"></label>
+<label>Design<input name="design"></label>
+<label>Handle<input name="handle"></label>
+<label>Door<input name="door"></label>
+<label>Partition<input name="partition"></label>
+<label>Drawer<input name="drawer"></label>
+<label class="full">Product Photo<input type="file" name="productPhoto" accept="image/*"></label>
+</div></div>
+
+<div class="card"><h2>Customer Information</h2><div class="grid">
+<label>Name<input name="customerName" required></label>
+<label>Phone<input name="phone"></label>
+<label>Location<input name="location"></label>
+<label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
+<label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
+<label class="full">Customer Telegram Chat ID<input name="telegramChatId" placeholder="Optional — best for direct delivery"><div class="small">Username/phone can be stored on the order card. Direct bot delivery requires a Telegram chat ID or a customer who has started/interacted with the bot.</div></label>
+</div></div>
+
+<div class="card"><h2>Service Information</h2><div class="grid">
+<label>Payment (Birr)<input name="payment" type="number"></label>
+<label>Advance (Birr)<input name="advance" type="number"></label>
+<label>Delivery fee (Birr)<input name="deliveryFee" type="number"></label>
+<label>Order Date<input name="orderDate" type="date"></label>
+<label>Delivery Date<input name="deliveryDate" type="date"></label>
+</div></div>
+
+<div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
+<div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
+<p id="result"></p>
+</form>
+</main>
+<script>
+const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();}
+const form=document.getElementById("orderForm"), preview=document.getElementById("preview"), result=document.getElementById("result");
+function vals(){return Object.fromEntries(new FormData(form).entries())}
+function previewCard(){
+ const v=vals(); const file=form.productPhoto.files[0];
+ const val=x => (x && String(x).trim()) ? String(x).trim() : "";
+ const field=(label,value)=>value?`<div class="info"><b>${label}</b><br>${value}</div>`:"";
+ const size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
+ const productFields=[
+   field("Product",val(v.product)), field("Size",size), field("Material",val(v.material)),
+   field("Color",val(v.color)), field("Style",val(v.style)), field("Design",val(v.design)),
+   field("Handle",val(v.handle)), field("Door",val(v.door)), field("Partition",val(v.partition)),
+   field("Drawer",val(v.drawer))
+ ].filter(Boolean).join("");
+ const customerFields=[
+   field("Name",val(v.customerName)), field("Phone",val(v.phone)), field("Location",val(v.location)),
+   field("Telegram",val(v.telegramUsername)), field("Telegram Phone",val(v.telegramPhone))
+ ].filter(Boolean).join("");
+ const serviceFields=[
+   field("Payment",v.payment?`${v.payment} Birr`:""), field("Advance",v.advance?`${v.advance} Birr`:""),
+   field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""), field("Order Date",val(v.orderDate)),
+   field("Delivery Date",val(v.deliveryDate))
+ ].filter(Boolean).join("");
+ preview.innerHTML=`<div class="order-card">
+<div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${val(v.orderId)||"Z-001"}</div></div>
+${file?`<div class="photo-wrap"><img class="order-photo" src="${URL.createObjectURL(file)}"></div>`:""}
+<div class="order-body">
+${productFields?`<div class="section-title">Product Information</div><div class="info-grid">${productFields}</div>`:""}
+${customerFields?`<div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customerFields}</div>`:""}
+${serviceFields?`<div class="section-title">Service Information</div><div class="info-grid">${serviceFields}</div>`:""}
+<div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!<br><span style="font-weight:500;font-size:11px;opacity:.75">Please review your order details before confirming.</span></div>
+</div>
+<div class="action-row"><div class="action confirm">✓ CONFIRM ORDER</div><div class="action reject">✕ REJECT ORDER</div><div class="action comment">💬 COMMENT</div></div>
+</div>`;
+}
+form.addEventListener("input",()=>previewCard());
+form.addEventListener("submit",async e=>{
+ e.preventDefault(); result.textContent="Sending…";
+ const fd=new FormData(form);
+ try{const r=await fetch("/api/orders",{method:"POST",body:fd});const d=await r.json();if(!d.ok)throw Error(d.error);result.textContent=d.order.sent?"✅ Order created and sent to Telegram.":"✅ Order created. Configure BOT_TOKEN/ADMIN_CHAT_ID or provide a customer Telegram Chat ID to send it.";form.reset();}catch(err){result.textContent="❌ "+err.message;}
+});
+</script>
+</body>
+</html>
