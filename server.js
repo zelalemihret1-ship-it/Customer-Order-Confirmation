@@ -8,6 +8,9 @@ const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || "";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
+const BUSINESS_CONNECTION_ID = process.env.ADMIN_BUSINESS_CONNECTION_ID || "";
+const BUSINESS_STORE = path.join(__dirname, "business-connections.json");
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -28,8 +31,37 @@ const upload = multer({
 
 let orders = [];
 let nextId = 1;
+
 // Telegram sends this object when the admin connects/disconnects the bot in Telegram Business.
+// Persisting the connection prevents a normal server restart from making the dashboard say
+// "Not connected". ADMIN_BUSINESS_CONNECTION_ID can also be supplied as a production fallback.
 let businessConnections = new Map();
+
+function loadBusinessConnections() {
+  try {
+    if (fs.existsSync(BUSINESS_STORE)) {
+      const saved = JSON.parse(fs.readFileSync(BUSINESS_STORE, "utf8"));
+      if (Array.isArray(saved)) {
+        for (const connection of saved) {
+          if (connection?.id && connection.is_enabled !== false) {
+            businessConnections.set(String(connection.id), connection);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Could not load Telegram Business connections:", error.message);
+  }
+}
+function saveBusinessConnections() {
+  try {
+    const enabled = [...businessConnections.values()].filter(c => c?.is_enabled !== false);
+    fs.writeFileSync(BUSINESS_STORE, JSON.stringify(enabled, null, 2));
+  } catch (error) {
+    console.error("Could not persist Telegram Business connections:", error.message);
+  }
+}
+loadBusinessConnections();
 
 function esc(value = "") {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -41,8 +73,16 @@ function keyboard(id) {
   ] };
 }
 function activeBusinessConnection() {
-  // This app is configured for one Ambar Furniture admin/business account.
-  return [...businessConnections.values()].find(c => c.is_enabled && c.rights?.can_reply);
+  // Prefer the explicitly configured connection when present.
+  if (BUSINESS_CONNECTION_ID) {
+    const configured = businessConnections.get(String(BUSINESS_CONNECTION_ID));
+    if (configured?.is_enabled && configured?.rights?.can_reply !== false) return configured;
+    // We may not have received a business_connection update after a server restart.
+    return { id: String(BUSINESS_CONNECTION_ID), is_enabled: true, rights: { can_reply: true } };
+  }
+  return [...businessConnections.values()].find(c =>
+    c?.is_enabled && c?.rights?.can_reply === true
+  );
 }
 async function telegram(method, body) {
   if (!BOT_TOKEN) throw new Error("BOT_TOKEN is not configured on the server.");
@@ -68,11 +108,69 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
   return data.result;
 }
 
-app.get("/api/business/status", (req, res) => {
-  const connection = activeBusinessConnection();
-  res.json({ connected: !!connection, sender: connection?.user ? [connection.user.first_name, connection.user.last_name].filter(Boolean).join(" ") : null,
-    canReply: !!connection?.rights?.can_reply });
+app.get("/api/business/status", async (req, res) => {
+  let connection = activeBusinessConnection();
+  // Revalidate a saved connection so a revoked Business authorization is not shown as connected.
+  if (connection?.id && BOT_TOKEN) {
+    try {
+      const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
+      if (fresh.is_enabled && fresh.rights?.can_reply) {
+        businessConnections.set(String(fresh.id), fresh);
+        saveBusinessConnections();
+        connection = fresh;
+      } else {
+        businessConnections.delete(String(connection.id));
+        saveBusinessConnections();
+        connection = null;
+      }
+    } catch (error) {
+      // Keep the last known connection when Telegram is temporarily unavailable.
+      console.warn("Business connection status refresh failed:", error.message);
+    }
+  }
+  res.json({
+    connected: !!connection,
+    sender: connection?.user ? [connection.user.first_name, connection.user.last_name].filter(Boolean).join(" ") : null,
+    canReply: !!connection?.rights?.can_reply,
+    connectionId: connection?.id || null,
+    webhookConfigured: !!PUBLIC_BASE_URL
+  });
 });
+
+app.post("/api/business/refresh", async (req, res) => {
+  try {
+    const connection = activeBusinessConnection();
+    if (!connection?.id) return res.status(409).json({ ok: false, error: "No Telegram Business connection ID is known yet. Connect the bot in Telegram Business and send/receive a message once." });
+    const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
+    if (!fresh.is_enabled) {
+      businessConnections.delete(String(fresh.id));
+      saveBusinessConnections();
+      return res.json({ ok: true, connected: false });
+    }
+    businessConnections.set(String(fresh.id), fresh);
+    saveBusinessConnections();
+    res.json({ ok: true, connected: true, sender: [fresh.user?.first_name, fresh.user?.last_name].filter(Boolean).join(" "), canReply: !!fresh.rights?.can_reply });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+async function configureTelegramWebhook() {
+  if (!BOT_TOKEN || !PUBLIC_BASE_URL) {
+    console.log("Telegram webhook auto-configuration skipped: set BOT_TOKEN and PUBLIC_BASE_URL (or use RENDER_EXTERNAL_URL).");
+    return;
+  }
+  try {
+    const result = await telegram("setWebhook", {
+      url: `${PUBLIC_BASE_URL}/api/telegram/webhook`,
+      secret_token: WEBHOOK_SECRET || undefined,
+      allowed_updates: ["message", "callback_query", "business_connection", "business_message"]
+    });
+    console.log("Telegram webhook configured:", result);
+  } catch (error) {
+    console.error("Telegram webhook configuration failed:", error.message);
+  }
+}
 
 app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
   try {
@@ -123,8 +221,15 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
     if (update.business_connection) {
       const connection = update.business_connection;
-      if (connection.is_enabled) businessConnections.set(connection.id, connection);
-      else businessConnections.delete(connection.id);
+      if (connection.is_enabled) businessConnections.set(String(connection.id), connection);
+      else businessConnections.delete(String(connection.id));
+      saveBusinessConnections();
+      console.log("Telegram Business connection update:", {
+        id: connection.id,
+        enabled: connection.is_enabled,
+        canReply: !!connection.rights?.can_reply,
+        user: connection.user?.username || connection.user?.first_name || null
+      });
     }
 
     const callback = update.callback_query;
@@ -152,22 +257,32 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
     // Business messages are messages sent by customers to the admin account.
     const businessMessage = update.business_message;
-    if (businessMessage?.text) {
+    if (businessMessage) {
       const connectionId = businessMessage.business_connection_id;
       const chatId = businessMessage.chat?.id;
-      const list = orders.filter(item => String(item.telegramChatId) === String(chatId));
-      const order = list[list.length - 1];
-      if (order) {
-        order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
-        if (ADMIN_CHAT_ID) await telegram("sendMessage", { chat_id: ADMIN_CHAT_ID,
-          text: `💬 Comment on ${esc(order.orderId)} from customer ${esc(chatId)}:\n${esc(businessMessage.text)}` });
-      }
-      // Keep latest enabled business connection state refreshed when business messages arrive.
-      if (connectionId && !businessConnections.has(connectionId)) {
+
+      // A business message is also a reliable way to learn the connection ID after a
+      // redeploy, even when Telegram did not resend the original business_connection update.
+      if (connectionId) {
         try {
           const fresh = await telegram("getBusinessConnection", { business_connection_id: connectionId });
-          if (fresh.is_enabled) businessConnections.set(fresh.id, fresh);
-        } catch (_) {}
+          if (fresh.is_enabled && fresh.rights?.can_reply) {
+            businessConnections.set(String(fresh.id), fresh);
+            saveBusinessConnections();
+          }
+        } catch (error) {
+          console.warn("Could not refresh Business connection from business_message:", error.message);
+        }
+      }
+
+      if (businessMessage.text) {
+        const list = orders.filter(item => String(item.telegramChatId) === String(chatId));
+        const order = list[list.length - 1];
+        if (order) {
+          order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
+          if (ADMIN_CHAT_ID) await telegram("sendMessage", { chat_id: ADMIN_CHAT_ID,
+            text: `💬 Comment on ${esc(order.orderId)} from customer ${esc(chatId)}:\n${esc(businessMessage.text)}` });
+        }
       }
     }
     res.sendStatus(200);
@@ -179,4 +294,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.listen(PORT, "0.0.0.0", () => console.log(`Ambar Furniture app running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Ambar Furniture app running on port ${PORT}`);
+  configureTelegramWebhook();
+});
