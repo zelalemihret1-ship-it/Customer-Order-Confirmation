@@ -13,6 +13,8 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
+app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
+
 const uploadDir = path.join(__dirname, "public", "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
@@ -177,4 +179,4 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.listen(PORT, () => console.log(`Ambar Furniture app running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`Ambar Furniture app running on port ${PORT}`));
