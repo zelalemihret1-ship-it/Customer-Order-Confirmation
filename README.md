@@ -139,3 +139,14 @@ Never put `SUPABASE_SERVICE_ROLE_KEY` in `public/index.html`, frontend JavaScrip
 - The SQL enables Row Level Security on the tables and deliberately creates no public table policies. Browser clients should not query these tables directly.
 - The Storage bucket is public-read so saved image URLs can be viewed; uploads are performed by the trusted server with the service-role key.
 - The existing app's admin/dashboard authorization should still be protected separately before exposing admin routes publicly. Supabase persistence does not itself authenticate dashboard users.
+
+## Telegram connection fixes (latest)
+
+- Telegram logic moved to `telegram.js` (timeouts, retries on 429/5xx, friendly error messages).
+- Webhook secret is normalised: a `TELEGRAM_WEBHOOK_SECRET` containing characters Telegram rejects no longer silently breaks `setWebhook`.
+- Webhook is installed with `setWebhook` only (no `deleteWebhook` gap), retried on startup, and re-installed automatically if the dashboard status check finds Telegram pointing elsewhere.
+- Webhook answers Telegram immediately (200) and processes afterwards, so slow work never causes retries/disabling.
+- Supports both Business API shapes (`rights.can_reply` and top-level `can_reply`).
+- A temporary Telegram error no longer makes a valid connection show as "Not connected"; connections are saved to disk and Supabase, and restore merges instead of wiping.
+- Admin's own messages are no longer logged as customer comments; BOT_TOKEN with quotes/spaces is cleaned; `PUBLIC_BASE_URL` must be https.
+- Dashboard shows the real Telegram error (bad token, etc.) instead of "Business Mode NOT enabled".
