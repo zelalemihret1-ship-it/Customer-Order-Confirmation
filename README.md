@@ -168,13 +168,24 @@ Set `TG_API_ID`, `TG_API_HASH` and `ADMIN_SETUP_KEY` (any long secret) in Render
 check status → Send code → enter the code (and 2-step password) → Verify → send a test message. The login is stored in Supabase.
 
 
-### Main admin sending account
-The main admin may connect or manage the main sending account from the owner-only Setup section. Assigned admins do not log in through this shared setup flow; they connect their own accounts inside the Mini App using the green **Connect my Telegram account** control.
+### Several admins
+Open `/setup.html` and repeat step 2 for each admin (give each a name, enter that admin's phone, then the code they receive). In the order form, choose **Send from admin account**; the card is sent from that admin, and customer replies (CONFIRM / REJECT / comments) are handled on that same admin account.
 
 
 ### Assigning admins who can use the app
-In Render, set `OWNER_TELEGRAM_IDS` to the main admin's numeric Telegram user ID (not the username), for example `123456789`. Keep `ADMIN_SETUP_KEY` as a long random secret for the separate setup page. Redeploy, then open `/setup.html` and use the setup key to assign each person's numeric Telegram ID and name. The app fails closed: if a Telegram account is not the main admin or an assigned admin, the app page and protected APIs are denied.
+Use **Manage Assigned Admins** on the main index page (visible only to the main admin). Add each person's numeric Telegram ID and name. Each assigned admin then opens the Mini App from their own Telegram account and connects that same account from the green **Connect my Telegram account** button. Unassigned users are denied access.
 
 
 ### Access rules
-Only the main admin (the Telegram ID in `OWNER_TELEGRAM_IDS`) and assigned admins can use the Mini App. The **⚙️ Setup** button is shown in the index only to the main admin. Each assigned admin taps **🔗 Connect my Telegram account** and logs in with the same Telegram account that was assigned. The server verifies that the connected Telegram user ID matches the Mini App user's ID; a different account is rejected. Orders submitted by an assigned admin are sent strictly from that admin's own connected Telegram account. The main admin's account is never selectable or used as a fallback for an assigned admin. Assigned admins only see their own orders and cannot open owner-only Business or Setup APIs.
+Only the main admin (owner) and assigned admins can use the Mini App. Each assigned admin taps **🔗 Connect my Telegram account** and logs in with their OWN phone; their orders are sent from their own account (never the main admin's). The Admin Control button and the Business status box are visible only to the main admin. Assigned admins only see their own orders, not the main admin's customer list.
+
+
+## Main admin and assigned-admin access
+
+- Set `OWNER_TELEGRAM_IDS` to the main admin's numeric Telegram user ID (comma-separated if you intentionally have multiple owners). This is the only account that sees **Manage Assigned Admins** in the main index page.
+- Access is fail-closed: users who are not listed in `OWNER_TELEGRAM_IDS` or the main admin's assigned-admin list cannot use the app APIs. Open the app from Telegram so its signed Mini App identity can be verified.
+- The main admin assigns staff from **Manage Assigned Admins** on the index page using each staff member's numeric Telegram ID.
+- Every assigned admin then opens the Mini App from their own Telegram account and uses **Connect my Telegram account**. The phone login must resolve to the same Telegram ID that was assigned. A different account is rejected.
+- Assigned admins' order messages are sent strictly from their own connected Telegram session. They cannot select or fall back to the main admin's Telegram session. The main admin retains full access to all orders and settings.
+- Configure `TG_API_ID` and `TG_API_HASH` (from https://my.telegram.org) for personal Telegram account connections. Keep `BOT_TOKEN`, Supabase service credentials, and session storage private.
+- Do not leave `OWNER_TELEGRAM_IDS` empty in production. If it is empty, no Telegram user is authorized as the main admin.
