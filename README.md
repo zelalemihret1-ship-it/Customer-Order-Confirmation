@@ -38,3 +38,46 @@ This archive is arranged with `package.json` and `server.js` at the project root
 - The in-memory order list and Business connection cache reset when the server restarts or redeploys. For production, use a database and persist the Business connection state.
 - Local uploaded files may be ephemeral on free hosting plans. Use persistent storage for production order images.
 - The customer must be reachable in the administrator's connected Telegram Business account, and the connected bot must have `can_reply` permission. The card is sent as a generated PNG using the Business connection, not as a text-only order.
+
+
+## Ambar Business + PC photo fixes
+
+This version fixes the Telegram Business connection workflow and desktop photo picker.
+
+### Required Render environment variables
+
+- `BOT_TOKEN` — Telegram bot token
+- `ADMIN_CHAT_ID` — administrator chat ID for comment notifications (optional)
+- `TELEGRAM_WEBHOOK_SECRET` — secret used to protect the webhook
+- `PUBLIC_BASE_URL` — the public HTTPS URL of this Render service. Render also provides `RENDER_EXTERNAL_URL`; if `PUBLIC_BASE_URL` is blank, the app uses that value automatically.
+- `ADMIN_BUSINESS_CONNECTION_ID` — optional. Normally leave blank; the app learns and stores the connection ID from `business_connection` and `business_message` webhook updates.
+
+On startup the server configures the Telegram webhook with:
+`message`, `callback_query`, `business_connection`, and `business_message`.
+
+### Telegram Business connection
+
+In the administrator Telegram account:
+Settings → Telegram Business → Chatbots → select this bot → allow it to reply.
+
+Then reload the Mini App. The backend stores the Business connection and validates `can_reply`. Generated PNG cards are sent with Telegram's `business_connection_id`, so the sender is the connected administrator/business account rather than the bot.
+
+Important Telegram limitation: Telegram does not provide a public API method to list all Business connections. If a previously-connected account is deployed with a completely new server and no saved connection ID, the first `business_connection` or `business_message` update is needed for the server to learn the connection ID. The optional `ADMIN_BUSINESS_CONNECTION_ID` environment variable can be used when that ID is already known.
+
+### Delivery type
+
+The order form now has two delivery choices:
+- Self Pick Up
+- By Ambar Delivery
+
+The delivery fee field is shown only for By Ambar Delivery, and the selected delivery type is included in the preview and generated PNG order card.
+
+### PC photo picker
+
+The product photo field now supports JPG/JPEG/PNG/WebP, a visible Choose Photo from PC button, drag-and-drop, validation, preview, and PNG card generation from the selected original file.
+
+### Deployment
+
+Build: `npm install`
+Start: `npm start`
+Health check: `/healthz`
