@@ -189,4 +189,20 @@ app.post("/api/telegram/webhook", async (req, res) => {
         if (ADMIN_CHAT_ID) {
           await telegram("sendMessage", {
             chat_id: ADMIN_CHAT_ID,
-            text: `💬 Comment on ${
+            text: `💬 Comment on ${o.orderId}\n${m.text}`
+          });
+        }
+      }
+    }
+    res.sendStatus(200);
+  } catch (e) {
+    console.error("Telegram webhook error:", e);
+    res.sendStatus(200);
+  }
+});
+
+app.use((err, _req, res, _next) => {
+  res.status(400).json({ ok: false, error: err.message || "Upload failed." });
+});
+app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.listen(PORT, () => console.log(`Ambar Furniture app running on port ${PORT}`));
