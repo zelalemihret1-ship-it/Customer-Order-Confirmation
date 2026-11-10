@@ -7,7 +7,7 @@ try { ({ createClient } = require("@supabase/supabase-js")); } catch (e) { conso
 const crypto = require("crypto");
 
 
-const ALLOWED_UPDATES = ["message", "callback_query", "inline_query"];
+const ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "chosen_inline_result"];
 
 // Tokens pasted into hosting dashboards often carry quotes, spaces or a stray "bot" prefix.
 function cleanToken(raw = "") {
@@ -417,10 +417,28 @@ async function closeOrderButtons(order) {
   order.closed = true;
   try { await saveOrderRecord(order); } catch {}
   const r = order.btnRef || {};
-  const empty = lockedKeyboard(order); // keep buttons visible, locked
-  if (r.inline_message_id) await safely("close inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: r.inline_message_id, reply_markup: empty }));
-  else if (r.chat_id && r.message_id) await safely("close buttons", () => telegram("editMessageReplyMarkup", { ...(r.business_connection_id ? { business_connection_id: r.business_connection_id } : {}), chat_id: r.chat_id, message_id: r.message_id, reply_markup: empty }));
-  if (order.botButtonsMessageId && order.telegramChatId && !r.message_id) await safely("close bot buttons", () => telegram("editMessageReplyMarkup", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, reply_markup: empty }));
+  const locked = lockedKeyboard(order);
+  const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "";
+  const caption = cardCaptionHtml(order, mark, ""); // closed order: no answer link any more
+  if (r.inline_message_id) {
+    await safely("close inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: r.inline_message_id, reply_markup: locked }));
+    await safely("close inline caption", () => telegram("editMessageCaption", { inline_message_id: r.inline_message_id, caption, parse_mode: "HTML", reply_markup: locked }));
+  } else if (r.chat_id && r.message_id) {
+    const biz = r.business_connection_id ? { business_connection_id: r.business_connection_id } : {};
+    await safely("close buttons", () => telegram("editMessageReplyMarkup", { ...biz, chat_id: r.chat_id, message_id: r.message_id, reply_markup: locked }));
+    (await safely("close caption", () => telegram("editMessageCaption", { ...biz, chat_id: r.chat_id, message_id: r.message_id, caption, parse_mode: "HTML", reply_markup: locked })))
+      || await safely("close text", () => telegram("editMessageText", { ...biz, chat_id: r.chat_id, message_id: r.message_id, text: caption, parse_mode: "HTML", reply_markup: locked }));
+  }
+  if (order.botButtonsMessageId && order.telegramChatId && !r.message_id) {
+    await safely("close bot buttons", () => telegram("editMessageReplyMarkup", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, reply_markup: locked }));
+    (await safely("close bot caption", () => telegram("editMessageCaption", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, caption, parse_mode: "HTML", reply_markup: locked })))
+      || await safely("close bot text", () => telegram("editMessageText", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, text: caption, parse_mode: "HTML", reply_markup: locked }));
+  }
+  // The photo the admin account sent carries the plain-text link: remove it so nothing clickable is left.
+  const own = admins.get(String(order.adminId || ""));
+  if (own?.ready && order.telegramMessageId && order.telegramChatId && order.sender === "admin_user_account") {
+    try { await own.client.editMessage(BigInt(String(order.telegramChatId)), { message: Number(order.telegramMessageId), text: `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}${mark ? "\nStatus: " + mark : ""}` }); } catch (e) { console.warn("Caption link removal failed:", e.message); }
+  }
 }
 // ── Customer answer page: link inside the Telegram message, big Confirm / Reject / Comment buttons, no bot Start needed ──
 function answerPageHtml(order, note = "") {
@@ -499,9 +517,9 @@ function lockedKeyboard(order) {
     [{ text: (order.comments || []).length ? "💬 Comment sent" : "🔒 Comment", callback_data: `done:${id}` }]
   ] };
 }
-function keyboard(id, order) {
+function keyboard(id, order, opts = {}) {
   if (order && (order.closed || order.status === "Confirmed" || order.status === "Rejected")) return lockedKeyboard(order);
-  const link = answerLink(order);
+  const link = opts.noLink ? "" : answerLink(order);
   return { inline_keyboard: [
     [{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }],
     [{ text: "💬 Comment", callback_data: `comment:${id}` }],
@@ -1297,6 +1315,19 @@ app.post("/api/telegram/webhook", async (req, res) => {
       }
     }
 
+    const chosen = update.chosen_inline_result;
+    if (chosen?.inline_message_id) {
+      const cm = /^[po](\d+)$/.exec(String(chosen.result_id || ""));
+      await supabaseReady; if (supabase) await loadOrders();
+      const co = cm && orders.find(item => String(item.id) === cm[1]);
+      if (co) {
+        co.btnRef = { inline_message_id: chosen.inline_message_id };
+        try { await saveOrderRecord(co); } catch {}
+        // The edit (adds the answer-page button) makes Telegram push the message again, so the buttons show at once.
+        await safely("refresh inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: chosen.inline_message_id, reply_markup: keyboard(co.id, co) }));
+      }
+    }
+
     const inlineQuery = update.inline_query;
     if (inlineQuery) {
       const m = /^order:(\d+)$/.exec(String(inlineQuery.query || "").trim());
@@ -1304,9 +1335,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const found = m && orders.find(item => String(item.id) === m[1]);
       const cardUrl = found && PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/cards/${found.id}.jpg` : "";
       const results = found && cardUrl ? [{ type: "photo", id: `p${found.id}`, photo_url: cardUrl, thumbnail_url: cardUrl, photo_width: 1080, photo_height: 1920,
-        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id, found) }]
+        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id, found, { noLink: true }) }]
         : found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
-        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id, found) }] : [];
+        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id, found, { noLink: true }) }] : [];
       await safely("answerInlineQuery", () => telegram("answerInlineQuery", { inline_query_id: inlineQuery.id, results, cache_time: 0, is_personal: true }));
     }
 
