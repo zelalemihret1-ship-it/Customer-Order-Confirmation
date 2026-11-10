@@ -408,6 +408,53 @@ app.get("/api/me", (req, res) => {
   res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", error });
 });
 const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
+// ── Customer answer page: link inside the Telegram message, big Confirm / Reject / Comment buttons, no bot Start needed ──
+function answerPageHtml(order, note = "") {
+  const done = order.status === "Confirmed" ? "✅ You confirmed this order. Thank you!" : order.status === "Rejected" ? "❌ You rejected this order." : "";
+  const img = order.cardImage ? `/cards/${order.id}.jpg` : "";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order ${esc(order.orderId)} — Ambar Furniture</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e9e5da;color:#153a2e}.wrap{max-width:560px;margin:auto;padding:14px}.card{background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px #0f2a2133}
+.head{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:18px 20px;border-bottom:4px solid #ffa939}.head b{color:#ffa939;font-size:22px;letter-spacing:1px}.head div{color:#f4efe3;font-size:12px;margin-top:4px;letter-spacing:1px}
+img{width:100%;display:block}.pad{padding:18px 18px 22px}button{width:100%;border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer}
+.ok{background:#1f8a4c;color:#fff}.no{background:#fff;color:#b3261e;border:2px solid #e3b4b0}.cm{background:#fff;color:#153a2e;border:2px solid #cfd8d3}textarea{width:100%;border:1px solid #cfd8d3;border-radius:12px;padding:12px;font-size:16px;margin-top:10px;min-height:90px}
+.msg{background:#f4f1ea;border-radius:12px;padding:14px;text-align:center;font-weight:700;margin-top:10px}</style></head><body><div class="wrap"><div class="card">
+<div class="head"><b>AMBAR FURNITURE</b><div>ORDER ${esc(order.orderId)}</div></div>${img ? `<img src="${img}" alt="Order card">` : ""}
+<div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : `<button class="ok" data-a="confirm">✅ Confirm Order</button><button class="no" data-a="reject">❌ Reject Order</button><button class="cm" data-a="comment">💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><button class="ok" data-a="send">Send comment</button></div>`}
+<div class="msg" id="out" style="display:${note ? "block" : "none"}">${esc(note)}</div></div></div></div>
+<script>const T=${JSON.stringify(order.token)};const out=document.getElementById("out");
+async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok&&action!=="send"&&action!=="comment")document.querySelectorAll("button").forEach(b=>b.style.display="none");if(d.ok&&action==="send"){document.getElementById("cbox").style.display="none";document.getElementById("ct").value="";}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
+document.getElementById("box").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a;if(a==="comment"){document.getElementById("cbox").style.display="block";return;}if(a==="send"){const t=document.getElementById("ct").value.trim();if(!t)return;go("comment",t);return;}go(a);});</script></body></html>`;
+}
+app.get("/o/:token", async (req, res) => {
+  await supabaseReady; if (supabase) await loadOrders();
+  const order = orders.find(o => o.token && o.token === req.params.token);
+  if (!order) return res.status(404).send("Order link not found.");
+  res.set("Cache-Control", "no-store").send(answerPageHtml(order));
+});
+app.post("/respond/:token", express.json(), async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const order = orders.find(o => o.token && o.token === req.params.token);
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
+    const action = String(req.body?.action || "");
+    if (action === "confirm" || action === "reject") {
+      if (order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: `Order already ${order.status}.` });
+      order.status = action === "confirm" ? "Confirmed" : "Rejected";
+      await saveOrderRecord(order); await updateAuditCopies(order);
+      await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer.`);
+      return res.json({ ok: true, message: order.status === "Confirmed" ? "✅ Order confirmed. Thank you for choosing Ambar Furniture!" : "❌ Order rejected." });
+    }
+    if (action === "comment") {
+      const text = String(req.body?.comment || "").trim().slice(0, 1000);
+      if (!text) return res.status(400).json({ ok: false, error: "Please type a comment." });
+      order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web" });
+      await saveOrderRecord(order); await updateAuditCopies(order);
+      await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer:\n${esc(text)}`);
+      return res.json({ ok: true, message: "✅ Your comment was sent. Thank you!" });
+    }
+    res.status(400).json({ ok: false, error: "Unknown action." });
+  } catch (e) { res.status(500).json({ ok: false, error: "Server error, please try again." }); }
+});
 // Public JPEG URL of an order card (Telegram inline photo results need an https .jpg URL).
 app.get("/cards/:id.jpg", async (req, res) => {
   try {
@@ -733,6 +780,7 @@ function buttonsNote(r) {
     : /BOT_RESPONSE_TIMEOUT/.test(e) ? "The bot did not answer in time (server asleep or webhook not set). Open the app once, wait 30 seconds, and send again."
     : /Forbidden|chat not found|bot can't initiate|blocked/i.test(e) ? "the customer has not pressed Start on the bot" : e;
   if (r.buttons === "inline" || r.buttons === "botcard") return "";
+  if (r.buttons === "link") return " (Customer got a link to a page with the Confirm / Reject / Comment buttons.)";
   if (r.buttons === "botchat") return ` (Buttons were sent through the bot chat. To reach customers who never pressed Start: ${why(r.inlineError || "")})`;
   return ` ⚠️ The 3 buttons could NOT be sent. Reason: ${why(r.inlineError || "unknown")} / Bot chat: ${why(r.directError || "unknown")}. The customer was asked to reply CONFIRM / REJECT / a comment by text.`;
 }
@@ -751,7 +799,7 @@ async function sendCardViaUserAccount(order, filePath) {
   // 1) best: ONE message = the card image + the 3 buttons (inline bot photo result)
   let botButtons = await sendInlineButtons(admin, entity, order);
   let sent = { id: botButtons.messageId || 0 };
-  let inlineError = "", directError = "", viaBotChat = false;
+  let inlineError = "", directError = "", viaBotChat = false, linkSent = false;
   if (!botButtons.ok) console.warn("Inline buttons not sent:", botButtons.error);
   if (!botButtons.ok || !botButtons.withCard) {
     // Upload files have no extension; Telegram would send them as a generic FILE. Give it a .jpg name so it goes as a PHOTO.
@@ -761,12 +809,18 @@ async function sendCardViaUserAccount(order, filePath) {
     finally { fs.promises.unlink(photoPath).catch(() => {}); }
     if (!botButtons.ok) { inlineError = botButtons.error; botButtons = await sendBotButtons(order, String(entity.id)); if (!botButtons.ok) directError = botButtons.error; else viaBotChat = true; }
   }
-  const poll = botButtons.ok ? { ok: true, messageId: 0, viaBot: true } : await sendDecisionPoll(admin, entity, order);
+  // Always add the link to the answer page: big Confirm / Reject / Comment buttons that work for every customer.
+  order.token = order.token || require("crypto").randomBytes(12).toString("hex");
+  if (PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL)) {
+    try { await admin.client.sendMessage(entity, { message: `Order ${order.orderId} — tap the link to ✅ Confirm, ❌ Reject or 💬 Comment:\n${PUBLIC_BASE_URL}/o/${order.token}`, linkPreview: false }); linkSent = true; }
+    catch (e) { console.warn("Answer link not sent:", e.message); }
+  }
+  const poll = (botButtons.ok || linkSent) ? { ok: true, messageId: 0, viaBot: true } : await sendDecisionPoll(admin, entity, order);
   if (!poll.ok) { try { await admin.client.sendMessage(entity, { message: "Please reply CONFIRM, REJECT, or write your comment." }); } catch {} }
   if (botButtons.ok) order.botButtonsMessageId = botButtons.messageId;
   order.adminId = admin.id; order.adminLabel = admin.label;
   order.pollMessageId = poll.messageId || 0;
-  return { message_id: sent.id, chatId: String(entity.id), admin, pollSent: poll.ok, pollError: poll.error || "", buttons: botButtons.ok ? (viaBotChat ? "botchat" : "inline") : "none", inlineError, directError };
+  return { message_id: sent.id, chatId: String(entity.id), admin, pollSent: poll.ok, pollError: poll.error || "", buttons: botButtons.ok ? (viaBotChat ? "botchat" : "inline") : (linkSent ? "link" : "none"), inlineError, directError };
 }
 function accountFor(actor) {
   if (actor?.telegramId) { const own = admins.get("u" + actor.telegramId); if (own) return own; }
@@ -1132,7 +1186,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!order.sent && account?.ready) {
       try {
         const r = await sendCardViaUserAccount(order, cardImage.path);
-        pollNote = buttonsNote(r); order.buttonsLine = (r.buttons === "inline" || r.buttons === "botcard") ? "✅ Confirm / Reject / Comment buttons delivered with the card" : r.buttons === "botchat" ? "✅ buttons delivered in the bot chat" : "❌ buttons NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
+        pollNote = buttonsNote(r); order.buttonsLine = (r.buttons === "inline" || r.buttons === "botcard") ? "✅ Confirm / Reject / Comment buttons delivered with the card" : r.buttons === "link" ? "✅ answer link with Confirm / Reject / Comment buttons sent" : r.buttons === "botchat" ? "✅ buttons delivered in the bot chat" : "❌ buttons NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
         try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
       } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
     }
