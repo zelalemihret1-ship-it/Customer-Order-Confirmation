@@ -433,66 +433,6 @@ function activeBusinessConnection() {
   return [...businessConnections.values()].find(isUsable);
 }
 const telegram = (method, body, opts) => tgApi.call(method, body, opts);
-async function sendCardAsAdmin(chatId, filePath, order, connection) {
-  const bytes = await fs.promises.readFile(filePath);
-  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending\nPlease review the attached order card.`;
-  const peerProblem = /BUSINESS_PEER_INVALID|chat not found|PEER_ID_INVALID|BUSINESS_PEER_USAGE_MISSING/i;
-  const attempts = order.strictAdmin ? (connection ? [connection] : []) : candidateConnections(chatId, connection);
-  let lastError;
-  for (const conn of attempts) {
-    try {
-      const sent = await tgApi.sendForm("sendPhoto", () => {
-        const body = new FormData();
-        body.append("business_connection_id", String(conn.id));
-        body.append("chat_id", String(chatId).trim());
-        body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
-        body.append("caption", caption);
-        body.append("parse_mode", "HTML");
-        body.append("reply_markup", JSON.stringify(keyboard(order.id)));
-        return body;
-      });
-      // Remember which connection really worked for this customer.
-      const known = customers.get(String(chatId));
-      if (known && known.businessConnectionId !== String(conn.id)) { known.businessConnectionId = String(conn.id); persistCustomers(); }
-      order.businessConnectionId = String(conn.id);
-      return sent;
-    } catch (error) {
-      lastError = error;
-      console.warn(`sendPhoto via connection ${conn.id} failed:`, error.message);
-      if (!peerProblem.test(error.message) && !/BUSINESS_CONNECTION_INVALID/i.test(error.message)) break; // other errors: another connection will not help
-    }
-  }
-  const base = friendlyError(lastError?.message);
-  const checklist = " Checklist: (1) use the customer's own numeric user ID (not the admin's, not the bot's); (2) the customer must have sent a message to the admin account recently (Telegram allows replies for ~24h after their last message); (3) in Telegram → Settings → Business → Chatbots, the bot must be allowed to access this chat (not excluded) with 'Reply to messages' on. Best fix: pick the customer from the dropdown after they message the admin account.";
-  const err = new Error(base + checklist);
-  err.raw = lastError?.message || "unknown";
-  err.tried = attempts.length;
-  throw err;
-}
-
-function adminContactLink(order) {
-  const conn = activeBusinessConnection();
-  const user = (process.env.ADMIN_USERNAME || conn?.user?.username || "").replace(/^@/, "");
-  const text = encodeURIComponent(`Order ${order.orderId}`);
-  return user ? `https://t.me/${user}?text=${text}` : "";
-}
-async function cardFileFor(order) {
-  if (order.cardImage && order.cardImage.startsWith("/uploads/")) return path.join(__dirname, "public", order.cardImage);
-  const resp = await fetch(order.cardImage);
-  const filePath = path.join(uploadDir, `card-${order.id}.png`);
-  await fs.promises.writeFile(filePath, Buffer.from(await resp.arrayBuffer()));
-  return filePath;
-}
-// Deliver a waiting order through the admin's Business account once the customer's real chat is known.
-async function deliverPendingOrder(order, chatId, connectionId) {
-  const conn = businessConnections.get(String(connectionId)) || { id: String(connectionId), is_enabled: true, rights: { can_reply: true } };
-  order.telegramChatId = String(chatId);
-  const file = await cardFileFor(order);
-  const sent = await sendCardAsAdmin(chatId, file, order, conn);
-  order.sent = true; order.sender = "admin_business_account"; order.telegramMessageId = sent.message_id;
-  await saveOrderRecord(order);
-  if (ADMIN_CHAT_ID) await safely("Admin notification", () => telegram("sendMessage", { chat_id: ADMIN_CHAT_ID, text: `✅ ${order.orderId} delivered from your admin account to chat ${chatId}.` }));
-}
 async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKeyboard = true) {
   const bytes = await fs.promises.readFile(filePath);
   const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending${extraCaption}`;
@@ -740,24 +680,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     // Save first. Delivery failures must never discard an order.
     await saveOrderRecord(order);
 
-    let customerDelivered = false;
-    let customerError = "";
-    if (order.telegramChatId) {
-      try {
-        const sent = await sendCardViaBot(order.telegramChatId, cardImage.path, order,
-          "\n\nThank you for choosing AMBAR Furniture. This is your order confirmation card.", false);
-        customerDelivered = true;
-        order.customerMessageId = sent.message_id;
-      } catch (error) {
-        customerError = friendlyError(error.message);
-        console.warn(`Customer delivery failed for ${order.orderId}:`, error.message);
-      }
-    }
-
-    // Every submitting owner/admin receives a copy from the AMBAR bot. The shared
-    // service chat also receives a copy when ADMIN_CHAT_ID is configured.
-    const adminTargets = [...new Set([String(order.createdByTelegramId || ""), String(ADMIN_CHAT_ID || "")]
-      .filter(id => /^-?\d+$/.test(id) && id !== String(order.telegramChatId || "")))];
+    // Order cards are ADMIN-ONLY. Never send the generated order card to the customer.
+    // Private bot messages work only after each admin has opened the bot and pressed Start.
+    // The submitting admin receives a copy, and all configured main-owner IDs receive a copy.
+    const adminTargets = [...new Set([
+      ...OWNER_IDS,
+      String(order.createdByTelegramId || ""),
+      String(ADMIN_CHAT_ID || "")
+    ].map(value => String(value || "").trim()).filter(id => /^-?\d+$/.test(id)))];
     const adminCopies = [];
     const adminErrors = [];
     for (const target of adminTargets) {
@@ -766,25 +696,24 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
           `\n\nSubmitted by: ${esc(order.createdByName || "AMBAR admin")} (${esc(order.createdByRole)}).`, true);
         adminCopies.push(target);
       } catch (error) {
-        adminErrors.push(friendlyError(error.message));
+        adminErrors.push({ chatId: target, error: friendlyError(error.message) });
         console.warn(`Admin notification failed for ${order.orderId} to ${target}:`, error.message);
       }
     }
 
-    order.sent = customerDelivered;
-    order.sender = "bot";
+    // 'sent' now means delivered to at least one admin destination, not to a customer.
+    order.sent = adminCopies.length > 0;
+    order.sender = "bot_admin_only";
+    order.customerMessageId = null;
+    order.customerDelivered = false;
     order.adminNotified = adminCopies.length > 0;
+    order.adminNotifiedChatIds = adminCopies;
     await saveOrderRecord(order);
 
-    const startLink = process.env.BOT_USERNAME
-      ? `https://t.me/${String(process.env.BOT_USERNAME).replace(/^@/, "")}?start=order_${encodeURIComponent(order.orderId)}`
-      : "Open the AMBAR Furniture bot and press Start";
-    const warning = customerDelivered
-      ? `Customer card delivered by the AMBAR bot.${adminCopies.length ? " Admin notification sent." : " Configure ADMIN_CHAT_ID or make sure the submitting admin has started the bot to receive a private copy."}`
-      : `Order ${order.orderId} was saved. Customer delivery was not completed. The customer must open the AMBAR bot and press Start before the bot can message them; then retry using their numeric chat ID or known username. ${startLink}.` +
-        (customerError ? ` Telegram response: ${customerError}.` : "") +
-        (adminCopies.length ? " A copy was sent to the submitting admin/service chat." : " No admin copy could be delivered; check that the owner/admin has started the bot and ADMIN_CHAT_ID is correct.");
-    res.json({ ok: true, delivered: customerDelivered, adminCopy: adminCopies.length > 0, order, cardUrl: order.cardImage, warning,
+    const warning = adminCopies.length
+      ? `Order ${order.orderId} was saved. Admin card delivered to: ${adminCopies.join(", ")}.${adminErrors.length ? ` Delivery failed for: ${adminErrors.map(item => item.chatId).join(", ")}; those admins must open the AMBAR bot and press Start.` : " All configured admin destinations received the card."} No order card was sent to the customer.`
+      : `Order ${order.orderId} was saved, but no admin could be reached. The main admin and submitting admin must each open the AMBAR bot and press Start. Check MAIN_ADMIN_TELEGRAM_ID / OWNER_TELEGRAM_IDS and ADMIN_CHAT_ID in Render.`;
+    res.json({ ok: true, delivered: adminCopies.length > 0, customerDelivered: false, adminCopy: adminCopies.length > 0, adminCopies, order, cardUrl: order.cardImage, warning,
       adminErrors: adminErrors.length ? adminErrors : undefined });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -901,20 +830,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
       // Only customer messages count as comments (ignore the admin's own messages in that chat).
       const fromCustomer = businessMessage.from?.id === undefined || String(businessMessage.from.id) === String(chatId);
 
-      // A customer just wrote to the admin account: send any waiting order card from the admin account.
-      if (fromCustomer && connectionId) {
-        await supabaseReady;
-        if (supabase) await loadOrders();
-        const uname = String(businessMessage.chat?.username || "").toLowerCase();
-        const typed = String(businessMessage.text || "");
-        const waiting = orders.filter(o => !o.sent && !o.strictAdmin && o.sender !== "bot" && (
-          (typed && typed.toLowerCase().includes(String(o.orderId).toLowerCase())) ||
-          (uname && String(o.telegramUsername || "").replace(/^@/, "").toLowerCase() === uname) ||
-          String(o.telegramChatId) === String(chatId)));
-        for (const o of waiting) {
-          try { await deliverPendingOrder(o, chatId, connectionId); } catch (error) { console.warn(`Auto-delivery of ${o.orderId} failed:`, error.message); }
-        }
-      }
+      // Order cards are admin-only. Do not auto-send legacy pending order cards to customers.
       if (businessMessage.text && fromCustomer) {
         await supabaseReady;
         if (supabase) await loadOrders();
