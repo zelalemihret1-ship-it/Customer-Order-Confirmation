@@ -39,44 +39,10 @@ Only `MAIN_ADMIN_TELEGRAM_ID` / `OWNER_TELEGRAM_IDS` and admins assigned by the 
 
 - Order cards are sent only to the configured main owner ID(s), the submitting admin, and optional `ADMIN_CHAT_ID`.
 - The customer never receives an order card from the bot.
-- Admin copies include Confirm and Reject controls.
+- Admin order cards contain exactly one universal link button: Open AMBAR Orders. Owners and assigned admins use the same link; order status is managed inside the app.
 - The order remains saved even if one or more admin destinations cannot be reached. The response reports which admin IDs failed so they can open the bot and press Start.
-- Confirming/rejecting an order updates the order status. Customer order-card delivery is disabled.
+- Customer order-card delivery is disabled. The order-card link opens the AMBAR app for authorized admins.
 
 ## Runtime
 
 Node.js 20+. The service uses built-in `fetch`, `FormData`, and `Blob`. Uploaded files on ephemeral hosting may not survive restarts unless Supabase storage or persistent disk is configured.
-
-
-## Sending cards from the admins' own accounts (no bot)
-Set `TG_API_ID` and `TG_API_HASH` in Render (from https://my.telegram.org). Then:
-- **Main admin:** open the Mini App from Telegram, tap **🔗 Connect my Telegram account**, enter your phone, the code (and 2-step password). Orders you create are sent to the customer from YOUR account.
-- **Assigned admins:** do the same with their own phone. Their orders are sent from THEIR OWN account, never the main admin's.
-The bot sends no order cards. Fill the customer's @username or phone in the form. Customers answer CONFIRM / REJECT / a comment; the reply is handled on the sending account.
-
-## v35 changes
-- Confirm / Reject / Comment buttons are always visible. After an answer they stay on screen but locked (🔒; the chosen one shows ✅ Confirmed or ❌ Rejected). On the answer web page they are disabled.
-- The Order code is typed by the admin (required); it is no longer auto-generated.
-- Every order message now carries a tappable answer link (and a "Open answer page" button on bot messages) so Confirm / Reject / Comment is reachable even when Telegram does not draw the inline buttons. Requires PUBLIC_BASE_URL (https).
-
-## v16 behaviour
-- Main admin can create orders WITHOUT connecting a personal account (sent via Telegram Business with Confirm / Reject / Comment buttons to customers who messaged the main admin account). Connecting an account additionally reaches any customer by @username/phone.
-- Assigned admins must connect their own account (button disappears once connected); unlimited admins can be assigned, many at once (one "id name" per line).
-- Cards from personal accounts are sent as a PHOTO plus a tappable Confirm/Reject poll; customers can also reply CONFIRM / REJECT / a comment.
-
-## Cross-check copies (v19)
-Every card an admin sends is also posted by the AMBAR bot (photo + who created it, which account sent it, delivered or not) to: ADMIN_CHAT_ID, the main admin ID(s) in MAIN_ADMIN_TELEGRAM_ID / OWNER_TELEGRAM_IDS, and the admin who created the order. When the customer confirms, rejects or comments, that copy's caption updates and a short message is sent to the same chats. Each of those people must open the AMBAR bot once and press Start. Customers never receive anything from the bot.
-
-
-## Tappable Confirm / Reject / Comment buttons for every customer
-
-Buttons reach customers without them pressing Start: the sending admin's account posts an inline message "via @YourBot". One-time setup: in @BotFather send `/setinline`, pick the bot, and enter any placeholder text. Without it the app falls back to the bot chat (customer must press Start), then to a poll.
-
-## Answer link (works for every customer, no Start, no inline mode)
-
-Every order message also carries a link `PUBLIC_BASE_URL/o/<token>`. It opens a page with the card and big Confirm / Reject / Comment buttons. Answers update the order and notify the admins. `PUBLIC_BASE_URL` must be your https site address.
-
-## v37 — buttons visible immediately
-- After the card is sent through the inline route, the bot immediately edits that message (Telegram `chosen_inline_result`) so every Telegram client draws the Confirm / Reject / Comment buttons at once, without anyone sending a text.
-- **One-time BotFather setup (required for this):** send `/setinlinefeedback` → pick the bot → choose **100%**. (`/setinline` must also be on.) Redeploy; the webhook updates itself.
-- Once the customer answers, the buttons stay but are locked (🔒 / ✅ Confirmed / ❌ Rejected), the answer-page link is removed from the message, and the web page buttons are disabled.
