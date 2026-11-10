@@ -411,7 +411,7 @@ const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status
 app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/my-account"], requireAccess);
 app.use("/api/business", ownerOnly);
 
-app.get("/api/customers", (req, res) => req.actor?.role === "admin" ? res.json([]) : res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
+app.get("/api/customers", (req, res) => req.actor?.role === "admin" ? res.json([...customers.values()].filter(c => String(businessConnections.get(String(c.businessConnectionId || ""))?.user?.id || "") === req.actor.telegramId).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)) : res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
 
 function esc(value = "") {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -553,6 +553,7 @@ async function startAdmin(record) {
           await supabaseReady; if (supabase) await loadOrders();
           const mine = orders.filter(o => o.sender === "admin_user_account" && String(o.adminId || "") === admin.id && String(o.telegramChatId) === senderId);
           const order = mine[mine.length - 1]; if (!order) return;
+          if (choice === "3") { await admin.client.sendMessage(BigInt(senderId), { message: `Please type your comment for ${order.orderId} and send it here.` }); return; }
           order.status = choice === "1" ? "Confirmed" : "Rejected"; await saveOrderRecord(order);
           await admin.client.sendMessage(BigInt(senderId), { message: choice === "1" ? `${order.orderId} is now Confirmed ✅. Thank you for choosing Ambar Furniture!` : `${order.orderId} is now Rejected ❌.` });
           for (const to of new Set([ADMIN_CHAT_ID, order.createdByTelegramId].filter(Boolean).map(String))) await safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text: `📩 ${order.orderId} is ${order.status} (customer tapped the poll).` }));
@@ -588,36 +589,38 @@ async function resolveUserEntity(client, order) {
   throw new Error(last?.message || "Enter the customer's @username or phone number so the admin account can find them.");
 }
 async function sendDecisionPoll(admin, entity, order) {
+  let lastError = "";
   try {
     const { Api } = require("telegram"); const bigInt = require("big-integer");
     const peer = await admin.client.getInputEntity(entity);
     const mk = t => new Api.TextWithEntities({ text: t, entities: [] });
-    const build = wrap => new Api.InputMediaPoll({ poll: new Api.Poll({ id: bigInt(Date.now()), question: wrap(`Order ${order.orderId}: please choose`),
-      answers: [new Api.PollAnswer({ text: wrap("✅ Confirm"), option: Buffer.from("1") }), new Api.PollAnswer({ text: wrap("❌ Reject"), option: Buffer.from("2") })], publicVoters: true }) });
-    let lastError;
+    const opts = [["1", "✅ Confirm"], ["2", "❌ Reject"], ["3", "💬 I have a comment"]];
+    const build = wrap => new Api.InputMediaPoll({ poll: new Api.Poll({ id: bigInt(Date.now()), question: wrap(`Order ${order.orderId} — please choose`),
+      answers: opts.map(([k, t]) => new Api.PollAnswer({ text: wrap(t), option: Buffer.from(k) })), publicVoters: true }) });
     for (const wrap of [mk, t => t]) {
-      try { await admin.client.invoke(new Api.messages.SendMedia({ peer, media: build(wrap), message: "", randomId: bigInt(Math.floor(Math.random() * 1e15)) })); return true; }
-      catch (e) { lastError = e; }
+      try { await admin.client.invoke(new Api.messages.SendMedia({ peer, media: build(wrap), message: "", randomId: bigInt(Math.floor(Math.random() * 1e15)) })); return { ok: true }; }
+      catch (e) { lastError = e.errorMessage || e.message; }
     }
-    console.warn("Decision poll not sent:", lastError?.message);
-  } catch (e) { console.warn("Decision poll failed:", e.message); }
-  return false;
+  } catch (e) { lastError = e.errorMessage || e.message; }
+  console.warn("Decision poll not sent:", lastError);
+  return { ok: false, error: lastError };
 }
 async function sendCardViaUserAccount(order, filePath) {
   const own = admins.get(String(order.adminId || ""));
   const admin = order.strictAdmin ? (own?.ready ? own : null) : (own?.ready ? own : pickAdmin(order.adminId));
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
-  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}\nStatus: Pending\n\nPlease tap ✅ Confirm or ❌ Reject below, or reply CONFIRM / REJECT / write your comment.`;
+  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}\nStatus: Pending\n\nPlease choose below.`;
   // Upload files have no extension; Telegram would send them as a generic FILE. Give it a .png name so it goes as a PHOTO.
   const photoPath = filePath + ".png";
   await fs.promises.copyFile(filePath, photoPath);
   let sent;
   try { sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false }); }
   finally { fs.promises.unlink(photoPath).catch(() => {}); }
-  await sendDecisionPoll(admin, entity, order);
+  const poll = await sendDecisionPoll(admin, entity, order);
+  if (!poll.ok) { try { await admin.client.sendMessage(entity, { message: "Please reply CONFIRM, REJECT, or write your comment." }); } catch {} }
   order.adminId = admin.id; order.adminLabel = admin.label;
-  return { message_id: sent.id, chatId: String(entity.id), admin };
+  return { message_id: sent.id, chatId: String(entity.id), admin, pollSent: poll.ok, pollError: poll.error || "" };
 }
 function accountFor(actor) {
   if (actor?.telegramId) { const own = admins.get("u" + actor.telegramId); if (own) return own; }
@@ -953,12 +956,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     //  • assigned admin: ONLY their own connected account.
     const isOwner = req.actor?.role === "owner";
     const account = accountFor(req.actor);
-    if (!isOwner && !account?.ready) return res.status(400).json({ ok: false, error: "Connect your own Telegram account first: tap '🔗 Connect my Telegram account', then send the order again." });
     if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who messaged your account), or connect your Telegram account to send by @username / phone." });
-    const ownerConnection = isOwner && order.telegramChatId
-      ? [...businessConnections.values()].find(c => isUsable(c) && OWNER_IDS.includes(String(c.user?.id || ""))) || (await businessConnectionForCustomer(order.telegramChatId).catch(() => null))
+    const allConns = [...businessConnections.values()];
+    const myConn = order.telegramChatId
+      ? (allConns.find(c => isUsable(c) && String(c.user?.id || "") === String(req.actor?.telegramId || ""))
+        || (isOwner ? (allConns.find(c => isUsable(c) && OWNER_IDS.includes(String(c.user?.id || ""))) || await businessConnectionForCustomer(order.telegramChatId).catch(() => null)) : null))
       : null;
 
+    if (!isOwner && !account?.ready && !myConn) return res.status(400).json({ ok: false, error: "Connect your own Telegram account first (or connect the bot in Telegram Business): tap '🔗 Connect my Telegram account', then send the order again." });
     if (supabase) await loadOrders();
     order.id = nextId++;
     order.orderId = order.orderId || `Z-${String(order.id).padStart(3, "0")}`;
@@ -967,27 +972,27 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
     order.cardImage = await uploadToSupabase(cardImage, "cards", "image/png");
     order.adminId = account?.id || ""; order.adminLabel = account?.label || "Main admin";
-    order.strictAdmin = !isOwner; order.onlyConnection = isOwner;
+    order.strictAdmin = !isOwner; order.onlyConnection = true;
     order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
     await saveOrderRecord(order); // delivery failures must never discard an order
 
-    let sentFrom = "", failure = "";
-    if (ownerConnection) {
+    let sentFrom = "", failure = "", pollNote = "";
+    if (myConn) {
       try {
-        const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, ownerConnection);
-        order.sender = "admin_business_account"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "the main admin account (Telegram Business)";
+        const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
+        order.sender = "admin_business_account"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
       } catch (error) { failure = error.raw || error.message; }
     }
     if (!order.sent && account?.ready) {
       try {
         const r = await sendCardViaUserAccount(order, cardImage.path);
-        order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
+        pollNote = r.pollSent ? "" : ` (The tappable poll could not be sent: ${r.pollError || "unknown"}. The customer was asked to reply by text.)`; order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
         try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
       } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
     }
     order.customerDelivered = !!order.sent;
     await saveOrderRecord(order);
-    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage });
+    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, warning: pollNote || undefined });
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
       warning: `Order ${order.orderId} was saved but the card could not be sent: ${failure || "no sending route available"}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}` });
   } catch (error) {
