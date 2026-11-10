@@ -47,11 +47,11 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <body>
 <div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
 <script>
-(async()=>{const gate=document.getElementById("ambarAccessGate"),msg=document.getElementById("ambarAccessMessage");gate.style.display="flex";try{const r=await fetch("/api/me");const m=await r.json();if(r.ok&&(m.role==="owner"||m.role==="admin")){document.body.classList.add("ambar-authorized");gate.style.display="none";window.AMBAR_ROLE=m.role;window.AMBAR_TELEGRAM_ID=m.telegramId||"";if(m.role!=="owner"){const bs=document.getElementById("businessStatus");if(bs)bs.style.display="none";}}else{msg.textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}}catch(e){msg.textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}})();
+(async()=>{const gate=document.getElementById("ambarAccessGate"),msg=document.getElementById("ambarAccessMessage");gate.style.display="flex";try{const r=await fetch("/api/me");const m=await r.json();if(r.ok&&(m.role==="owner"||m.role==="admin")){document.body.classList.add("ambar-authorized");gate.style.display="none";window.AMBAR_ROLE=m.role;window.AMBAR_TELEGRAM_ID=m.telegramId||"";}else{msg.textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}}catch(e){msg.textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}})();
 </script>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
-<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh Business connection</button><b>Telegram Business sender:</b> Checking connection…<div class="small">Order cards are sent as the connected administrator account, never from the bot. Telegram Business must be connected and authorized.</div></div>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Telegram sender:</b> AMBAR Furniture bot <span style="color:#176b3a;font-weight:700">✓ Bot-only mode</span><div class="small">The owner and assigned admins can create orders using BOT_TOKEN. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal-account login is required. Customers must press Start in the AMBAR bot before it can message them.</div></div>
 <form id="orderForm">
 <div class="card"><h2>Product Information</h2><div class="grid">
 <label>Order ID<input name="orderId" placeholder="Z-001"></label>
@@ -74,11 +74,11 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Name<input name="customerName" required></label>
 <label>Phone<input name="phone"></label>
 <label>Location<input name="location"></label>
-<label class="full">Send from admin account<select name="adminId" id="adminSelect"><option value="">Loading admins…</option></select></label>
+
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
-<label class="full">Select customer (people who messaged the admin account)<select id="customerPick"><option value="">— Choose a customer —</option></select><div class="small">The card is sent from the connected admin Telegram account to this customer.</div></label>
-<label class="full">Customer Telegram Chat ID (optional)<input name="telegramChatId" placeholder="Auto-filled when you pick a customer, or type the numeric chat ID / known @username"><div class="small">Optional. Easiest: fill the customer\u2019s Telegram @username or phone above — the card is sent from the admin account.</div></label>
+
+<label class="full">Customer Telegram Chat ID (optional)<input name="telegramChatId" placeholder="Enter numeric chat ID if available"><div class="small">For direct delivery, the customer must have pressed Start in the AMBAR bot. A numeric chat ID is best; a known username can be matched after the customer starts the bot. A phone number alone cannot identify a Telegram chat.</div></label>
 </div></div>
 
 <div class="card"><h2>Service Information</h2><div class="grid">
@@ -102,28 +102,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 // Authenticate every API request with Telegram's signed Mini App initData. Keep FormData headers untouched.
 (()=>{const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const h=new Headers(init.headers||{});const data=window.Telegram?.WebApp?.initData||"";if(data)h.set("x-telegram-init-data",data);try{const k=localStorage.getItem("ownerKey");if(k)h.set("x-setup-key",k);}catch{}return nativeFetch(input,{...init,headers:h});};})();
-const businessStatus=document.getElementById("businessStatus");
-async function loadBusinessStatus(){
- try{
-  const r=await fetch("/api/business/status"); const s=await r.json();
-  if(s.error){
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Telegram connection problem</span><div class="small">${esc(s.error)}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
-  } else if(!s.botBusinessEnabled){
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Business Mode NOT enabled</span><div class="small"><b>Required:</b> Open @BotFather → select this bot → enable <b>Business/Secretary Mode</b>. Telegram only allows a bot to be connected to an administrator Business account when this capability is enabled.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
-  } else if(!s.connected){
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26;font-weight:700">Not connected</span><div class="small">Bot <b>@${esc(s.botUsername||"")}</b> is Business-enabled, but this server has not received the administrator's Business connection. In Telegram: Settings → Telegram Business → Chatbots → connect this bot → grant <b>Reply to messages</b>. Then send one message from a customer chat and press Check again.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
-  } else if(!s.canReply){
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected, but <span style="color:#9a3c26;font-weight:700">Reply permission is OFF</span><div class="small">Edit the connected bot permissions in Telegram Business and enable <b>Reply to messages</b>.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Check again</button>`;
-  } else {
-    businessStatus.innerHTML=`<b>Telegram Business sender:</b> Connected${s.sender?` as ${esc(s.sender)}`:""} <span style="color:#176b3a;font-weight:700">✓ Ready</span>${s.warning?`<div class="small" style="color:#9a3c26">${esc(s.warning)}</div>`:""}<div class="small">Business Mode enabled • Reply permission enabled • Webhook ${s.webhookReady?"ready":"needs attention"+(s.webhookLastError?" ("+esc(s.webhookLastError)+")":"")} • Cards are sent as the administrator account.</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Refresh</button>`;
-  }
-  document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus, {once:true});
- }catch(e){businessStatus.innerHTML=`<b>Telegram Business sender:</b> <span style="color:#9a3c26">Status unavailable</span><div class="small">${esc(e.message||"Server error")}</div><button type="button" id="refreshBusiness" style="margin-top:10px">🔄 Retry</button>`;document.getElementById("refreshBusiness")?.addEventListener("click", loadBusinessStatus,{once:true});}
-}
-loadBusinessStatus();
-(async()=>{try{const list=await (await fetch("/api/customers")).json();const sel=document.getElementById("customerPick");
- for(const c of list){const o=document.createElement("option");o.value=c.id;o.textContent=(c.name||"Customer")+(c.username?" (@"+c.username+")":"")+" — "+c.id;o.dataset.name=c.name||"";o.dataset.user=c.username?"@"+c.username:"";sel.appendChild(o);}
- sel.addEventListener("change",()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;const f=document.getElementById("orderForm").elements;f.telegramChatId.value=o.value;if(o.dataset.user)f.telegramUsername.value=o.dataset.user;if(o.dataset.name&&f.customerName&&!f.customerName.value)f.customerName.value=o.dataset.name;});}catch{}})();
+// Bot-only delivery: no Telegram Business status check or personal-account connection is needed.
 const form=document.getElementById("orderForm"),preview=document.getElementById("preview"),result=document.getElementById("result");
 const photoInput=document.getElementById("productPhoto"),photoStatus=document.getElementById("photoStatus"),photoPreview=document.getElementById("selectedPhotoPreview");
 let photoUrl=null;
@@ -194,7 +173,7 @@ form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
  e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
- try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered===false?("⚠️ "+esc(d.warning||"Saved, but not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("✅ Order card sent"+(d.sentAs==="bot"?" from the bot":" from the administrator account")+" to the customer."+(d.warning?" "+esc(d.warning):""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered===false?("⚠️ "+esc(d.warning||"Saved, but not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("✅ Order card sent"+" by the AMBAR bot"+" to the customer."+(d.warning?" "+esc(d.warning):""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
 previewCard();
 </script>
@@ -212,17 +191,15 @@ async function render(keepMsg){
   const me=await api("/api/me");
   if(me.role!=="owner"){
     box.innerHTML='<h2>⚙️ Admin Control</h2><p>Only the owner can manage admins. Enter the owner key (ADMIN_SETUP_KEY):</p><input id="acKey" type="password" placeholder="Owner key"><button data-a="key">Enter</button><button class="grey" data-a="close">Close</button><div id="acMsg" class="msg"></div>';return;}
-  const [a,s]=await Promise.all([api("/api/setup/app-admins"),api("/api/setup/status")]);
+  const a=await api("/api/setup/app-admins");
   if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
-  const accs=s.admins||[];
-  const people=(a.appAdmins||[]).map(p=>{const ac=accs.find(x=>x.id===p.accountId);return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>ID '+esc(p.telegramId)+' · sends from: '+esc(ac?ac.label:"their choice")+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>';}).join("")||'<p><small>No admins assigned yet.</small></p>';
-  const accounts=accs.map(x=>'<div class="row"><div><b>'+esc(x.label)+'</b> '+(x.ready?'✅':'❌')+(x.error?'<br><small>'+esc(x.error)+'</small>':'')+'</div><button class="del" data-a="delacc" data-id="'+esc(x.id)+'">Delete</button></div>').join("")||'<p><small>No sending accounts logged in yet.</small></p>';
+
+  const people=(a.appAdmins||[]).map(p=>'<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>').join("")||'<p><small>No admins assigned yet.</small></p>';
   box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
   +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
   +'<h3>👥 Admins who can use the app</h3>'+people
-  +'<h3>➕ Assign a new admin</h3><input id="nId" inputmode="numeric" placeholder="Their numeric Telegram ID"><input id="nName" placeholder="Their name"><p><small>Each assigned admin must open the mini app with their own Telegram account and connect that same account. They will never use your Telegram sender session.</small></p><button data-a="addperson">Assign admin</button>'
-  +'<h3>📤 Sending accounts (Telegram accounts cards are sent from)</h3>'+accounts
-  +'<h3>➕ Add a sending account</h3><input id="sLabel" placeholder="Name (e.g. Zilasun)"><input id="sPhone" placeholder="Phone with country code, +2519..."><button data-a="sendcode">Send login code</button><input id="sCode" placeholder="Code from Telegram"><input id="sPw" type="password" placeholder="2-step password (only if they have one)"><button data-a="verify">Verify &amp; add</button>'
+  +'<h3>➕ Assign a new admin</h3><input id="nId" inputmode="numeric" placeholder="Their numeric Telegram ID"><input id="nName" placeholder="Their name"><p><small>Assigned admins sign in by opening the Mini App from their own Telegram account. All order messages are sent by the AMBAR bot using BOT_TOKEN.</small></p><button data-a="addperson">Assign admin</button>'
+  +'<h3>📨 Message delivery</h3><p><small>Uses BOT_TOKEN only. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal Telegram login is needed.</small></p>'
   +'<div id="acMsg" class="msg"></div>';
 }
 ov.addEventListener("click",async e=>{
@@ -233,47 +210,10 @@ ov.addEventListener("click",async e=>{
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
   if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),name:val("nName")});await render();say(d);return;}
   if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
-  if(act==="delacc"){if(!confirm("Delete this sending account? Cards can no longer be sent from it."))return;const d=await api("/api/setup/remove",{id:b.dataset.id});await render();say(d);return;}
-  if(act==="sendcode"){say(await api("/api/setup/send-code",{phone:val("sPhone"),label:val("sLabel")}));return;}
-  if(act==="verify"){const d=await api("/api/setup/verify",{code:val("sCode"),password:val("sPw")});if(d.ok){await render();}say(d);return;}
   }catch(err){say({ok:false,error:err.message});}
 });
 (async()=>{try{const m=await api("/api/me");if(m.role==="owner")document.getElementById("acOpen").style.display="block";}catch{}})();
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
-})();
-</script>
-<button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
-<div id="myOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="myBox" style="background:#fff;max-width:520px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<script>
-(function(){
-const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
-const ov=document.getElementById("myOverlay"),box=document.getElementById("myBox"),openBtn=document.getElementById("myOpen");
-const st='font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc';
-const btn='font-size:15px;padding:10px;margin:3px 0;width:100%;border:0;border-radius:8px;color:#fff;background:#1a73e8';
-const val=id=>(document.getElementById(id)||{}).value||"";
-const say=d=>{const m=document.getElementById("myMsg");if(m){m.style.color=d.ok?"#0a7d2c":"#c62828";m.textContent=d.message||d.error||"";}};
-async function render(){
-  const s=await api("/api/my-account");
-  if(!s.ok){box.innerHTML='<p>'+esc(s.error)+'</p><button style="'+btn+';background:#666" data-a="close">Close</button>';return;}
-  box.innerHTML='<h2 style="margin-top:0">🔗 My Telegram account</h2>'
-  +(s.connected?'<p>✅ Connected as <b>'+esc(s.label)+'</b>. Order cards you create are sent from <b>your own</b> Telegram account, not the main admin\'s.</p><button style="'+btn+';background:#c62828" data-a="disc">Disconnect my account</button>'
-  :'<p>Connect <b>your own</b> Telegram account so orders you create are sent from it. Only you can use it.</p>'+(s.error?'<p style="color:#c62828">'+esc(s.error)+'</p>':'')
-  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><button style="'+btn+'" data-a="send">Send code</button><input id="myCode" style="'+st+'" placeholder="Code Telegram sent you"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>')
-  +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
-}
-ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  try{const a=b.dataset.a;
-  if(a==="close"){ov.style.display="none";return;}
-  if(a==="send"){say(await api("/api/my-account/send-code",{phone:val("myPhone")}));return;}
-  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});if(d.ok){await render();}say(d);return;}
-  if(a==="disc"){if(!confirm("Disconnect your Telegram account?"))return;const d=await api("/api/my-account/disconnect",{});await render();say(d);return;}
-  }catch(err){say({ok:false,error:err.message});}});
-openBtn.onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
-(async()=>{try{const m=await api("/api/me");
-  if(m.role==="admin"){openBtn.style.display="block";const bs=document.getElementById("businessStatus");if(bs)bs.style.display="none";
-    const s=await api("/api/my-account");if(s.ok&&!s.connected){const n=document.createElement("div");n.style.cssText="padding:10px 14px;background:#fff3cd;font:14px system-ui";n.textContent="Connect your own Telegram account (green button) before sending orders. Your orders are sent only from your account.";document.body.prepend(n);}}
-}catch{}})();
 })();
 </script>
 </body>
