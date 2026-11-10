@@ -456,7 +456,7 @@ app.post("/respond/:token", express.json(), async (req, res) => {
       if (order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: `Order already ${order.status}.` });
       order.status = action === "confirm" ? "Confirmed" : "Rejected";
       await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
-      await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer.`);
+      await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
       return res.json({ ok: true, message: order.status === "Confirmed" ? "✅ Order confirmed. Thank you for choosing Ambar Furniture!" : "❌ Order rejected." });
     }
     if (action === "comment") {
@@ -464,7 +464,7 @@ app.post("/respond/:token", express.json(), async (req, res) => {
       if (!text) return res.status(400).json({ ok: false, error: "Please type a comment." });
       order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web" });
       await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
-      await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer:\n${esc(text)}`);
+      await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
       return res.json({ ok: true, message: "✅ Your comment was sent. Thank you!" });
     }
     res.status(400).json({ ok: false, error: "Unknown action." });
@@ -646,7 +646,7 @@ async function startAdmin(record) {
         order.awaitingCommentFrom = ""; order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId });
         await saveOrderRecord(order);
         await updateAuditCopies(order); await closeOrderButtons(order);
-        await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from customer ${esc(senderId)}:\n${esc(text)}`);
+        await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
       } catch (error) { console.warn("Admin message handler failed:", error.message); }
     }, new NewMessage({ incoming: true }));
     // Customer tapped Confirm / Reject on the poll.
@@ -1173,8 +1173,15 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
     await saveOrderRecord(order); // delivery failures must never discard an order
 
-    let sentFrom = "", failure = "", pollNote = "";
-    if (myConn) {
+    let sentFrom = "", failure = "", pollNote = "", directFailure = "";
+    // Best route first: the bot sends the card photo WITH the 3 buttons as ONE message (visible immediately).
+    // Works whenever the customer has opened the AMBAR bot (pressed Start) — no need for them to write a text first.
+    if (/^\d{5,}$/.test(String(order.telegramChatId || ""))) {
+      const direct = await sendBotCard(order, String(order.telegramChatId), cardImage.path);
+      if (direct.ok) { order.sender = "bot"; order.telegramMessageId = direct.messageId; order.botButtonsMessageId = direct.messageId; order.sent = true; order.buttonsLine = "✅ card + Confirm / Reject / Comment buttons sent in one message"; sentFrom = "the AMBAR bot (card with buttons)"; }
+      else directFailure = direct.error;
+    }
+    if (!order.sent && myConn) {
       try {
         const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
         order.sender = "admin_business_account"; order.buttonsLine = "✅ Confirm / Reject / Comment buttons delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
@@ -1266,7 +1273,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
         pending.awaitingCommentFrom = "";
         await saveOrderRecord(pending);
         await updateAuditCopies(pending); await closeOrderButtons(pending);
-        await notifyAdminsText(pending, `💬 <b>Comment on ${esc(pending.orderId)}</b> from customer ${esc(chatKey)}:\n${esc(botMessage.text)}`);
+        await notifyAdminsText(pending, `💬 <b>Comment on ${esc(pending.orderId)}</b> from the customer (${esc(pending.customerName || "customer")}):\n${esc(botMessage.text)}`);
       }
     }
 
@@ -1315,7 +1322,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
               (await safely("editMessageCaption(inline)", () => telegram("editMessageCaption", { inline_message_id: inlineId, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } })))
                 || await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }));
               await tellCustomer(`Order ${order.orderId} — ${mark}. Thank you for choosing Ambar Furniture!`);
-              await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (chat ${esc(chatId)}).`);
+              await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
               return;
             }
             const isPhoto = !!callback.message?.photo;
@@ -1327,7 +1334,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
             await safely("sendMessage", () => telegram("sendMessage", { ...biz, chat_id: chatId,
               text: `<b>Order ${esc(order.orderId)}</b> — ${mark}. Thank you for choosing Ambar Furniture!`, parse_mode: "HTML" }));
             // 3) tell the admins
-            await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (chat ${esc(chatId)}).`);
+            await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
           }
         } else if (action === "comment") {
           order.awaitingCommentFrom = String(chatId);
@@ -1379,7 +1386,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           if (wasAsked) order.awaitingCommentFrom = "";
           await saveOrderRecord(order);
           await updateAuditCopies(order); await closeOrderButtons(order);
-          await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from customer ${esc(chatId)}:\n${esc(businessMessage.text)}`);
+          await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(businessMessage.text)}`);
         }
       }
     }
