@@ -440,6 +440,41 @@ function notifyAdminsText(order, text) {
   const targets = new Set([ADMIN_CHAT_ID, order.createdByTelegramId, ...OWNER_IDS].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)));
   return Promise.all([...targets].map(to => safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text, parse_mode: "HTML" }))));
 }
+// ── Cross-check copies: every card an admin sends is ALSO posted by the bot to the admin chat(s) ──
+function auditTargets(order) {
+  return [...new Set([ADMIN_CHAT_ID, ...OWNER_IDS, order.createdByTelegramId].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)))];
+}
+function auditCaptionHtml(order) {
+  const st = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "⏳ Pending";
+  const comments = order.comments || [], last = comments[comments.length - 1];
+  const who = order.telegramUsername || order.telegramChatId || "";
+  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "")}\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Created by:</b> ${esc(order.createdByName || "Admin")} (${esc(order.createdByRole || "")})\n<b>Sent from:</b> ${esc(order.adminLabel || "")} — ${order.sent ? "✅ delivered to the customer" : "❌ NOT delivered"}${order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : ""}\n<b>Status:</b> ${st}${last ? `\n<b>Last comment:</b> ${esc(String(last.comment).slice(0, 250))} (${comments.length} total)` : ""}`;
+}
+async function sendAuditCopies(order, filePath) {
+  const bytes = await fs.promises.readFile(filePath);
+  const copies = [], failed = [];
+  for (const target of auditTargets(order)) {
+    try {
+      const sent = await tgApi.sendForm("sendPhoto", () => {
+        const body = new FormData();
+        body.append("chat_id", target);
+        body.append("photo", new Blob([bytes], { type: "image/png" }), "order-card.png");
+        body.append("caption", auditCaptionHtml(order));
+        body.append("parse_mode", "HTML");
+        return body;
+      });
+      copies.push({ chat_id: target, message_id: sent.message_id });
+    } catch (error) { failed.push(target); console.warn(`Cross-check copy to ${target} failed:`, error.message); }
+  }
+  order.auditCopies = copies;
+  return { delivered: copies.length, failed };
+}
+// Keep the cross-check copies current when the customer confirms / rejects / comments.
+async function updateAuditCopies(order) {
+  for (const c of order.auditCopies || []) {
+    await safely("Audit copy update", () => telegram("editMessageCaption", { chat_id: c.chat_id, message_id: c.message_id, caption: auditCaptionHtml(order), parse_mode: "HTML" }));
+  }
+}
 async function sendCardAsAdmin(chatId, filePath, order, connection) {
   const bytes = await fs.promises.readFile(filePath);
   const caption = cardCaptionHtml(order);
@@ -545,7 +580,8 @@ async function startAdmin(record) {
           await saveOrderRecord(order);
           await reply(`Thank you, your comment on ${order.orderId} was received.`);
         }
-        for (const to of new Set([ADMIN_CHAT_ID, order.createdByTelegramId].filter(Boolean).map(String))) await safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text: `📩 ${order.orderId} (${order.status}) via ${admin.label} from ${senderId}:\n${text}` }));
+        await updateAuditCopies(order);
+        await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> (${esc(order.status)}) via ${esc(admin.label)} from customer ${esc(senderId)}:\n${esc(text)}`);
       } catch (error) { console.warn("Admin message handler failed:", error.message); }
     }, new NewMessage({ incoming: true }));
     // Customer tapped Confirm / Reject on the poll.
@@ -562,11 +598,11 @@ async function startAdmin(record) {
           const order = mine[mine.length - 1]; if (!order) return;
           if (choice === "3") { await admin.client.sendMessage(BigInt(senderId), { message: `Please type your comment for ${order.orderId} and send it here.` }); return; }
           if (order.status === "Confirmed" || order.status === "Rejected") return;
-          order.status = choice === "1" ? "Confirmed" : "Rejected"; await saveOrderRecord(order);
+          order.status = choice === "1" ? "Confirmed" : "Rejected"; await saveOrderRecord(order); await updateAuditCopies(order);
           // the poll disappears and a clear text with the order ID replaces it
           if (order.pollMessageId) { try { await admin.client.deleteMessages(await admin.client.getInputEntity(BigInt(senderId)), [order.pollMessageId], { revoke: true }); } catch (e) { console.warn("Poll delete failed:", e.message); } }
           await admin.client.sendMessage(BigInt(senderId), { message: choice === "1" ? `Order ${order.orderId} — ✅ CONFIRMED. Thank you for choosing Ambar Furniture!` : `Order ${order.orderId} — ❌ REJECTED.` });
-          for (const to of new Set([ADMIN_CHAT_ID, order.createdByTelegramId].filter(Boolean).map(String))) await safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text: `📩 ${order.orderId} is ${order.status} (customer tapped the poll).` }));
+          await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> is <b>${esc(order.status)}</b> (customer tapped the poll). Sent from ${esc(order.adminLabel || "")}.`);
         } catch (e) { console.warn("Poll vote handler failed:", e.message); }
       }, new Raw({ types: [Api.UpdateMessagePollVote] }));
     } catch (e) { console.warn("Poll vote listener unavailable:", e.message); }
@@ -1007,10 +1043,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
       } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
     }
     order.customerDelivered = !!order.sent;
+    order.deliveryNote = order.sent ? "" : failure;
+    const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
+    const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
     await saveOrderRecord(order);
-    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, warning: pollNote || undefined });
+    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}` });
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
-      warning: `Order ${order.orderId} was saved but the card could not be sent: ${failure || "no sending route available"}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}` });
+      auditCopies: audit.delivered,
+      warning: `Order ${order.orderId} was saved but the card could not be sent: ${failure || "no sending route available"}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}` });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -1091,6 +1131,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           else {
             order.status = action === "confirm" ? "Confirmed" : "Rejected";
             await saveOrderRecord(order);
+            await updateAuditCopies(order);
             await answer(`Order ${order.status}.`);
             const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : "❌ REJECTED";
             // 1) buttons disappear and the card shows the final status
@@ -1146,6 +1187,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
           if (wasAsked) order.awaitingCommentFrom = "";
           await saveOrderRecord(order);
+          await updateAuditCopies(order);
           await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from customer ${esc(chatId)}:\n${esc(businessMessage.text)}`);
           if (wasAsked && connectionId) await safely("comment thanks", () => telegram("sendMessage", { business_connection_id: String(connectionId), chat_id: chatId,
             text: `✅ Your comment on <b>Order ${esc(order.orderId)}</b> was sent. Thank you!`, parse_mode: "HTML" }));
