@@ -539,7 +539,12 @@ function answerLink(order) {
 }
 function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.") {
   const link = answerLink(order);
-  if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
+  // IMPORTANT: keep the answer URL in the actual caption on the FIRST send.
+  // Do not rely on a later edit, callback, inline-result refresh, or customer message.
+  if (link && !order.closed) {
+    const action = `🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>\n${esc(link)}`;
+    note = (note ? note + "\n\n" : "") + action;
+  }
   return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 function notifyAdminsText(order, text) {
@@ -827,27 +832,19 @@ async function sendCardViaUserAccount(order, filePath) {
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
 
-  // IMPORTANT: A personal Telegram account cannot reliably create bot-style inline
-  // keyboard buttons for a customer who has never interacted with the bot. The old
-  // implementation depended on an inline-bot result, which could leave the answer
-  // control invisible until a later customer message/update.
-  //
-  // Always send the card directly from the connected admin account and put the answer
-  // URL in the same message immediately. Telegram renders the HTTPS URL as a clickable
-  // link without requiring any later customer message.
+  // RELIABLE MODE: send the photo directly from the admin's Telegram account with the
+  // answer URL in the SAME message caption. This is deliberately not dependent on
+  // inline mode, chosen_inline_result, callback queries, or a later customer message.
+  // Telegram will render the HTTPS URL in the caption as an immediately tappable link.
   const link = answerLink(order);
-  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`;
+  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}`
+    + (link ? `\n\n🔗 መልስ ለመስጠት ክፈት\n${link}` : "");
 
   const photoPath = filePath + ".jpg";
   await fs.promises.copyFile(filePath, photoPath);
   let sent;
   try {
-    sent = await admin.client.sendFile(entity, {
-      file: photoPath,
-      caption,
-      parseMode: "html",
-      forceDocument: false
-    });
+    sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false });
   } finally {
     fs.promises.unlink(photoPath).catch(() => {});
   }
@@ -855,16 +852,16 @@ async function sendCardViaUserAccount(order, filePath) {
   order.adminId = admin.id;
   order.adminLabel = admin.label;
   order.pollMessageId = 0;
+  order.botButtonsMessageId = 0;
   return {
     message_id: sent.id,
     chatId: String(entity.id),
     admin,
-    pollSent: false,
+    pollSent: true,
     pollError: "",
-    buttons: "link",
+    buttons: link ? "caption-link" : "none",
     inlineError: "",
-    directError: "",
-    immediateLink: true
+    directError: ""
   };
 }
 
