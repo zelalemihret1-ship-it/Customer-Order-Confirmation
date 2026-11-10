@@ -501,9 +501,11 @@ function lockedKeyboard(order) {
 }
 function keyboard(id, order) {
   if (order && (order.closed || order.status === "Confirmed" || order.status === "Rejected")) return lockedKeyboard(order);
+  const link = answerLink(order);
   return { inline_keyboard: [
     [{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }],
-    [{ text: "💬 Comment", callback_data: `comment:${id}` }]
+    [{ text: "💬 Comment", callback_data: `comment:${id}` }],
+    ...(link ? [[{ text: "🔗 Open answer page", url: link }]] : [])
   ] };
 }
 function activeBusinessConnection() {
@@ -517,7 +519,12 @@ function activeBusinessConnection() {
   return [...businessConnections.values()].find(isUsable);
 }
 const telegram = (method, body, opts) => tgApi.call(method, body, opts);
+function answerLink(order) {
+  return order && order.token && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/o/${order.token}` : "";
+}
 function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.") {
+  const link = answerLink(order);
+  if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `👉 <a href="${link}">Tap here: ✅ Confirm / ❌ Reject / 💬 Comment</a>`;
   return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 function notifyAdminsText(order, text) {
@@ -575,7 +582,7 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
         body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
         body.append("caption", caption);
         body.append("parse_mode", "HTML");
-        body.append("reply_markup", JSON.stringify(keyboard(order.id)));
+        body.append("reply_markup", JSON.stringify(keyboard(order.id, order)));
         return body;
       });
       // Remember which connection really worked for this customer.
@@ -775,7 +782,7 @@ async function sendBotCard(order, chatId, filePath) {
       body.append("photo", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
       body.append("caption", cardCaptionHtml(order, "", ""));
       body.append("parse_mode", "HTML");
-      body.append("reply_markup", JSON.stringify(keyboard(order.id)));
+      body.append("reply_markup", JSON.stringify(keyboard(order.id, order)));
       return body;
     });
     return { ok: true, messageId: sent.message_id };
@@ -784,7 +791,7 @@ async function sendBotCard(order, chatId, filePath) {
 async function sendBotButtons(order, chatId) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
-    const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", reply_markup: keyboard(order.id),
+    const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", reply_markup: keyboard(order.id, order),
       text: cardCaptionHtml(order, "", "Please choose an option below 👇") });
     return { ok: true, messageId: sent.message_id };
   } catch (error) { return { ok: false, error: error.message }; }
@@ -804,7 +811,7 @@ async function sendCardViaUserAccount(order, filePath) {
   const admin = order.strictAdmin ? (own?.ready ? own : null) : (own?.ready ? own : pickAdmin(order.adminId));
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
-  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}`;
+  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}` + (answerLink(order) ? `\n\n👉 Tap to Confirm / Reject / Comment:\n${answerLink(order)}` : "");
   // 0) bot sends card + buttons directly (customer has pressed Start on the bot)
   const botCard = await sendBotCard(order, String(entity.id), filePath);
   if (botCard.ok) {
@@ -1174,6 +1181,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!isOwner && !account?.ready && !myConn) return res.status(400).json({ ok: false, error: "Connect your own Telegram account first (or connect the bot in Telegram Business): tap '🔗 Connect my Telegram account', then send the order again." });
     if (supabase) await loadOrders();
     order.id = nextId++;
+    order.token = order.token || require("crypto").randomBytes(12).toString("hex"); // answer-page link token
     order.orderId = String(order.orderId || "").trim().slice(0, 40); // typed by the admin
     if (!order.orderId) { nextId--; return res.status(400).json({ ok: false, error: "Please type the Order code (e.g. Z-001)." }); }
     order.status = "Pending";
