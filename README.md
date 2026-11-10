@@ -58,3 +58,6 @@ The bot sends no order cards. Fill the customer's @username or phone in the form
 - Main admin can create orders WITHOUT connecting a personal account (sent via Telegram Business with Confirm / Reject / Comment buttons to customers who messaged the main admin account). Connecting an account additionally reaches any customer by @username/phone.
 - Assigned admins must connect their own account (button disappears once connected); unlimited admins can be assigned, many at once (one "id name" per line).
 - Cards from personal accounts are sent as a PHOTO plus a tappable Confirm/Reject poll; customers can also reply CONFIRM / REJECT / a comment.
+
+## Cross-check copies (v19)
+Every card an admin sends is also posted by the AMBAR bot (photo + who created it, which account sent it, delivered or not) to: ADMIN_CHAT_ID, the main admin ID(s) in MAIN_ADMIN_TELEGRAM_ID / OWNER_TELEGRAM_IDS, and the admin who created the order. When the customer confirms, rejects or comments, that copy's caption updates and a short message is sent to the same chats. Each of those people must open the AMBAR bot once and press Start. Customers never receive anything from the bot.
