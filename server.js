@@ -826,32 +826,48 @@ async function sendCardViaUserAccount(order, filePath) {
   const admin = order.strictAdmin ? (own?.ready ? own : null) : (own?.ready ? own : pickAdmin(order.adminId));
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
-  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}` + (answerLink(order) ? `\n\n👉 Tap to Confirm / Reject / Comment:\n${answerLink(order)}` : "");
-  // 0) bot sends card + buttons directly (customer has pressed Start on the bot)
-  const botCard = await sendBotCard(order, String(entity.id), filePath);
-  if (botCard.ok) {
-    order.adminId = admin.id; order.adminLabel = admin.label; order.botButtonsMessageId = botCard.messageId; order.pollMessageId = 0;
-    return { message_id: botCard.messageId, chatId: String(entity.id), admin, pollSent: true, pollError: "", buttons: "botcard", inlineError: "", directError: "" };
+
+  // IMPORTANT: A personal Telegram account cannot reliably create bot-style inline
+  // keyboard buttons for a customer who has never interacted with the bot. The old
+  // implementation depended on an inline-bot result, which could leave the answer
+  // control invisible until a later customer message/update.
+  //
+  // Always send the card directly from the connected admin account and put the answer
+  // URL in the same message immediately. Telegram renders the HTTPS URL as a clickable
+  // link without requiring any later customer message.
+  const link = answerLink(order);
+  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`;
+
+  const photoPath = filePath + ".jpg";
+  await fs.promises.copyFile(filePath, photoPath);
+  let sent;
+  try {
+    sent = await admin.client.sendFile(entity, {
+      file: photoPath,
+      caption,
+      parseMode: "html",
+      forceDocument: false
+    });
+  } finally {
+    fs.promises.unlink(photoPath).catch(() => {});
   }
-  // 1) best: ONE message = the card image + the 3 buttons (inline bot photo result)
-  let botButtons = await sendInlineButtons(admin, entity, order);
-  let sent = { id: botButtons.messageId || 0 };
-  let inlineError = "", directError = "", viaBotChat = false, linkSent = false;
-  if (!botButtons.ok) console.warn("Inline buttons not sent:", botButtons.error);
-  if (!botButtons.ok || !botButtons.withCard) {
-    // Upload files have no extension; Telegram would send them as a generic FILE. Give it a .jpg name so it goes as a PHOTO.
-    const photoPath = filePath + ".jpg";
-    await fs.promises.copyFile(filePath, photoPath);
-    try { sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false }); }
-    finally { fs.promises.unlink(photoPath).catch(() => {}); }
-    if (!botButtons.ok) { inlineError = botButtons.error; botButtons = await sendBotButtons(order, String(entity.id)); if (!botButtons.ok) directError = botButtons.error; else viaBotChat = true; }
-  }
-  const poll = { ok: true, messageId: 0 };
-  if (botButtons.ok) order.botButtonsMessageId = botButtons.messageId;
-  order.adminId = admin.id; order.adminLabel = admin.label;
-  order.pollMessageId = poll.messageId || 0;
-  return { message_id: sent.id, chatId: String(entity.id), admin, pollSent: poll.ok, pollError: poll.error || "", buttons: botButtons.ok ? (viaBotChat ? "botchat" : "inline") : "none", inlineError, directError };
+
+  order.adminId = admin.id;
+  order.adminLabel = admin.label;
+  order.pollMessageId = 0;
+  return {
+    message_id: sent.id,
+    chatId: String(entity.id),
+    admin,
+    pollSent: false,
+    pollError: "",
+    buttons: "link",
+    inlineError: "",
+    directError: "",
+    immediateLink: true
+  };
 }
+
 function accountFor(actor) {
   if (actor?.telegramId) { const own = admins.get("u" + actor.telegramId); if (own) return own; }
   if (actor?.role === "owner") return [...admins.values()].find(x => !x.ownerTelegramId) || null; // main admin account logged in via Admin Control
