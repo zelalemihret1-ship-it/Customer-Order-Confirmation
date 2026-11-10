@@ -521,7 +521,7 @@ function keyboard(id, order, opts = {}) {
   // The Telegram message itself must contain ONLY one action: open the answer page.
   // Confirm / Reject / Comment live on the answer page, not in the message keyboard.
   const link = opts.noLink ? "" : answerLink(order);
-  return { inline_keyboard: link ? [[{ text: "🔗 Open answer", url: link }]] : [] };
+  return { inline_keyboard: link ? [[{ text: "🔗 መልስ ለመስጠት ክፈት", url: link }]] : [] };
 }
 function activeBusinessConnection() {
   // Prefer the explicitly configured connection when present.
@@ -1332,9 +1332,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const found = m && orders.find(item => String(item.id) === m[1]);
       const cardUrl = found && PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/cards/${found.id}.jpg` : "";
       const results = found && cardUrl ? [{ type: "photo", id: `p${found.id}`, photo_url: cardUrl, thumbnail_url: cardUrl, photo_width: 1080, photo_height: 1920,
-        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id, found, { noLink: true }) }]
+        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id, found) }]
         : found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
-        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id, found, { noLink: true }) }] : [];
+        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id, found) }] : [];
       await safely("answerInlineQuery", () => telegram("answerInlineQuery", { inline_query_id: inlineQuery.id, results, cache_time: 0, is_personal: true }));
     }
 
