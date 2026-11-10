@@ -66,3 +66,7 @@ Every card an admin sends is also posted by the AMBAR bot (photo + who created i
 ## Tappable Confirm / Reject / Comment buttons for every customer
 
 Buttons reach customers without them pressing Start: the sending admin's account posts an inline message "via @YourBot". One-time setup: in @BotFather send `/setinline`, pick the bot, and enter any placeholder text. Without it the app falls back to the bot chat (customer must press Start), then to a poll.
+
+## Answer link (works for every customer, no Start, no inline mode)
+
+Every order message also carries a link `PUBLIC_BASE_URL/o/<token>`. It opens a page with the card and big Confirm / Reject / Comment buttons. Answers update the order and notify the admins. `PUBLIC_BASE_URL` must be your https site address.
