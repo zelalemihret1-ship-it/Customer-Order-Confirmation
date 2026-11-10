@@ -417,7 +417,7 @@ async function closeOrderButtons(order) {
   order.closed = true;
   try { await saveOrderRecord(order); } catch {}
   const r = order.btnRef || {};
-  const empty = { inline_keyboard: [] };
+  const empty = lockedKeyboard(order); // keep buttons visible, locked
   if (r.inline_message_id) await safely("close inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: r.inline_message_id, reply_markup: empty }));
   else if (r.chat_id && r.message_id) await safely("close buttons", () => telegram("editMessageReplyMarkup", { ...(r.business_connection_id ? { business_connection_id: r.business_connection_id } : {}), chat_id: r.chat_id, message_id: r.message_id, reply_markup: empty }));
   if (order.botButtonsMessageId && order.telegramChatId && !r.message_id) await safely("close bot buttons", () => telegram("editMessageReplyMarkup", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, reply_markup: empty }));
@@ -426,17 +426,18 @@ async function closeOrderButtons(order) {
 function answerPageHtml(order, note = "") {
   const done = order.status === "Confirmed" ? "✅ You confirmed this order. Thank you!" : order.status === "Rejected" ? "❌ You rejected this order." : order.closed ? "✅ Your answer was received. Thank you!" : "";
   const img = order.cardImage ? `/cards/${order.id}.jpg` : "";
+  const locked = done ? " disabled" : "";
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order ${esc(order.orderId)} — Ambar Furniture</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e9e5da;color:#153a2e}.wrap{max-width:560px;margin:auto;padding:14px}.card{background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px #0f2a2133}
 .head{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:18px 20px;border-bottom:4px solid #ffa939}.head b{color:#ffa939;font-size:22px;letter-spacing:1px}.head div{color:#f4efe3;font-size:12px;margin-top:4px;letter-spacing:1px}
 img{width:100%;display:block}.pad{padding:18px 18px 22px}button{width:100%;border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer}
 .ok{background:#1f8a4c;color:#fff}.no{background:#fff;color:#b3261e;border:2px solid #e3b4b0}.cm{background:#fff;color:#153a2e;border:2px solid #cfd8d3}textarea{width:100%;border:1px solid #cfd8d3;border-radius:12px;padding:12px;font-size:16px;margin-top:10px;min-height:90px}
-.msg{background:#f4f1ea;border-radius:12px;padding:14px;text-align:center;font-weight:700;margin-top:10px}</style></head><body><div class="wrap"><div class="card">
+button:disabled{opacity:.45;cursor:not-allowed}.msg{background:#f4f1ea;border-radius:12px;padding:14px;text-align:center;font-weight:700;margin-top:10px}</style></head><body><div class="wrap"><div class="card">
 <div class="head"><b>AMBAR FURNITURE</b><div>ORDER ${esc(order.orderId)}</div></div>${img ? `<img src="${img}" alt="Order card">` : ""}
-<div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : `<button class="ok" data-a="confirm">✅ Confirm Order</button><button class="no" data-a="reject">❌ Reject Order</button><button class="cm" data-a="comment">💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><button class="ok" data-a="send">Send comment</button></div>`}
+<div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : ""}<button class="ok" data-a="confirm"${locked}>${order.status === "Confirmed" ? "✅ Confirmed" : "✅ Confirm Order"}</button><button class="no" data-a="reject"${locked}>${order.status === "Rejected" ? "❌ Rejected" : "❌ Reject Order"}</button><button class="cm" data-a="comment"${locked}>💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><button class="ok" data-a="send">Send comment</button></div>
 <div class="msg" id="out" style="display:${note ? "block" : "none"}">${esc(note)}</div></div></div></div>
 <script>const T=${JSON.stringify(order.token)};const out=document.getElementById("out");
-async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok&&action!=="send"&&action!=="comment")document.querySelectorAll("button").forEach(b=>b.style.display="none");if(d.ok&&(action==="comment")){document.querySelectorAll("button,textarea").forEach(b=>b.style.display="none");}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
+async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok){document.querySelectorAll("button,textarea").forEach(b=>b.disabled=true);}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
 document.getElementById("box").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a;if(a==="comment"){document.getElementById("cbox").style.display="block";return;}if(a==="send"){const t=document.getElementById("ct").value.trim();if(!t)return;go("comment",t);return;}go(a);});</script></body></html>`;
 }
 app.get("/o/:token", async (req, res) => {
@@ -489,7 +490,17 @@ app.get("/api/customers", (req, res) => req.actor?.role === "admin" ? res.json([
 function esc(value = "") {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-function keyboard(id) {
+// After the customer answers, the buttons STAY VISIBLE but are locked (Telegram has no real "disabled" button):
+// the chosen one is ticked, the others show a lock, and tapping any of them only answers "already answered".
+function lockedKeyboard(order) {
+  const id = order.id, confirmed = order.status === "Confirmed", rejected = order.status === "Rejected";
+  return { inline_keyboard: [
+    [{ text: confirmed ? "✅ Confirmed" : "🔒 Confirm Order", callback_data: `done:${id}` }, { text: rejected ? "❌ Rejected" : "🔒 Reject Order", callback_data: `done:${id}` }],
+    [{ text: (order.comments || []).length ? "💬 Comment sent" : "🔒 Comment", callback_data: `done:${id}` }]
+  ] };
+}
+function keyboard(id, order) {
+  if (order && (order.closed || order.status === "Confirmed" || order.status === "Rejected")) return lockedKeyboard(order);
   return { inline_keyboard: [
     [{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }],
     [{ text: "💬 Comment", callback_data: `comment:${id}` }]
@@ -1163,7 +1174,8 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!isOwner && !account?.ready && !myConn) return res.status(400).json({ ok: false, error: "Connect your own Telegram account first (or connect the bot in Telegram Business): tap '🔗 Connect my Telegram account', then send the order again." });
     if (supabase) await loadOrders();
     order.id = nextId++;
-    order.orderId = order.orderId || `Z-${String(order.id).padStart(3, "0")}`;
+    order.orderId = String(order.orderId || "").trim().slice(0, 40); // typed by the admin
+    if (!order.orderId) { nextId--; return res.status(400).json({ ok: false, error: "Please type the Order code (e.g. Z-001)." }); }
     order.status = "Pending";
     order.comments = [];
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
@@ -1284,9 +1296,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const found = m && orders.find(item => String(item.id) === m[1]);
       const cardUrl = found && PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/cards/${found.id}.jpg` : "";
       const results = found && cardUrl ? [{ type: "photo", id: `p${found.id}`, photo_url: cardUrl, thumbnail_url: cardUrl, photo_width: 1080, photo_height: 1920,
-        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id) }]
+        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id, found) }]
         : found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
-        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id) }] : [];
+        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id, found) }] : [];
       await safely("answerInlineQuery", () => telegram("answerInlineQuery", { inline_query_id: inlineQuery.id, results, cache_time: 0, is_personal: true }));
     }
 
@@ -1304,7 +1316,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
         const chatId = callback.message?.chat?.id || order.telegramChatId;
         const inlineId = callback.inline_message_id || "";
         order.btnRef = inlineId_ref(callback, connectionId, chatId);
-        if (order.closed) { await answer("This order was already answered. Thank you!"); await closeOrderButtons(order); return; }
+        if (action === "done" || order.closed) { await answer("This order was already answered. Thank you!"); if (order.closed) await closeOrderButtons(order); return; }
         const ownAdmin = admins.get(String(order.adminId || ""));
         const tellCustomer = async text => { if (ownAdmin?.ready) { try { await ownAdmin.client.sendMessage(BigInt(String(chatId)), { message: text }); } catch (e) { console.warn("Customer note failed:", e.message); } } };
         const biz = connectionId ? { business_connection_id: String(connectionId) } : {};
@@ -1317,19 +1329,19 @@ app.post("/api/telegram/webhook", async (req, res) => {
             await updateAuditCopies(order);
             await answer(`Order ${order.status}.`);
             const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : "❌ REJECTED";
-            // 1) buttons disappear and the card shows the final status
+            // 1) buttons stay visible but locked, and the card shows the final status
             if (inlineId) {
-              (await safely("editMessageCaption(inline)", () => telegram("editMessageCaption", { inline_message_id: inlineId, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } })))
-                || await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }));
+              (await safely("editMessageCaption(inline)", () => telegram("editMessageCaption", { inline_message_id: inlineId, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) })))
+                || await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) }));
               await tellCustomer(`Order ${order.orderId} — ${mark}. Thank you for choosing Ambar Furniture!`);
               await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
               return;
             }
             const isPhoto = !!callback.message?.photo;
             const edited = await safely(isPhoto ? "editMessageCaption" : "editMessageText", () => isPhoto
-              ? telegram("editMessageCaption", { ...biz, chat_id: chatId, message_id: callback.message.message_id, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } })
-              : telegram("editMessageText", { ...biz, chat_id: chatId, message_id: callback.message.message_id, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }));
-            if (!edited) await safely("editMessageReplyMarkup", () => telegram("editMessageReplyMarkup", { ...biz, chat_id: chatId, message_id: callback.message.message_id, reply_markup: { inline_keyboard: [] } }));
+              ? telegram("editMessageCaption", { ...biz, chat_id: chatId, message_id: callback.message.message_id, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) })
+              : telegram("editMessageText", { ...biz, chat_id: chatId, message_id: callback.message.message_id, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) }));
+            if (!edited) await safely("editMessageReplyMarkup", () => telegram("editMessageReplyMarkup", { ...biz, chat_id: chatId, message_id: callback.message.message_id, reply_markup: lockedKeyboard(order) }));
             // 2) a clear text with the order ID
             await safely("sendMessage", () => telegram("sendMessage", { ...biz, chat_id: chatId,
               text: `<b>Order ${esc(order.orderId)}</b> — ${mark}. Thank you for choosing Ambar Furniture!`, parse_mode: "HTML" }));
