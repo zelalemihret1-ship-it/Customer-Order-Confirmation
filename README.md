@@ -61,3 +61,8 @@ The bot sends no order cards. Fill the customer's @username or phone in the form
 
 ## Cross-check copies (v19)
 Every card an admin sends is also posted by the AMBAR bot (photo + who created it, which account sent it, delivered or not) to: ADMIN_CHAT_ID, the main admin ID(s) in MAIN_ADMIN_TELEGRAM_ID / OWNER_TELEGRAM_IDS, and the admin who created the order. When the customer confirms, rejects or comments, that copy's caption updates and a short message is sent to the same chats. Each of those people must open the AMBAR bot once and press Start. Customers never receive anything from the bot.
+
+
+## Tappable Confirm / Reject / Comment buttons for every customer
+
+Buttons reach customers without them pressing Start: the sending admin's account posts an inline message "via @YourBot". One-time setup: in @BotFather send `/setinline`, pick the bot, and enter any placeholder text. Without it the app falls back to the bot chat (customer must press Start), then to a poll.
