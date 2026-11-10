@@ -459,7 +459,8 @@ function auditCaptionHtml(order) {
   const st = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "⏳ Pending";
   const comments = order.comments || [], last = comments[comments.length - 1];
   const who = order.telegramUsername || order.telegramChatId || "";
-  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "")}\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Created by:</b> ${esc(order.createdByName || "Admin")} (${esc(order.createdByRole || "")})\n<b>Sent from:</b> ${esc(order.adminLabel || "")} — ${order.sent ? "✅ delivered to the customer" : "❌ NOT delivered"}${order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : ""}${order.buttonsLine ? "\n<b>Buttons:</b> " + esc(order.buttonsLine) : ""}\n<b>Status:</b> ${st}${last ? `\n<b>Last comment:</b> ${esc(String(last.comment).slice(0, 250))} (${comments.length} total)` : ""}`;
+  const decided = order.status === "Confirmed" || order.status === "Rejected";
+  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Created by:</b> ${esc(order.createdByName || "Admin")}\n<b>Sent from:</b> ${esc(order.adminLabel || "")}${order.sent ? "" : " — ❌ NOT delivered" + (order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : "")}${decided ? "\n<b>Customer answered:</b> " + st : ""}${last ? `\n<b>Comment:</b> ${esc(String(last.comment).slice(0, 250))}` : ""}`;
 }
 async function sendAuditCopies(order, filePath) {
   const bytes = await fs.promises.readFile(filePath);
