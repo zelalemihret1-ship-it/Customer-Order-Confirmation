@@ -57,6 +57,7 @@ The bot sends no order cards. Fill the customer's @username or phone in the form
 ## v35 changes
 - Confirm / Reject / Comment buttons are always visible. After an answer they stay on screen but locked (🔒; the chosen one shows ✅ Confirmed or ❌ Rejected). On the answer web page they are disabled.
 - The Order code is typed by the admin (required); it is no longer auto-generated.
+- Every order message now carries a tappable answer link (and a "Open answer page" button on bot messages) so Confirm / Reject / Comment is reachable even when Telegram does not draw the inline buttons. Requires PUBLIC_BASE_URL (https).
 
 ## v16 behaviour
 - Main admin can create orders WITHOUT connecting a personal account (sent via Telegram Business with Confirm / Reject / Comment buttons to customers who messaged the main admin account). Connecting an account additionally reaches any customer by @username/phone.
