@@ -182,7 +182,7 @@ Only the main admin (owner) and assigned admins can use the Mini App. Each assig
 
 ## Main admin and assigned-admin access
 
-- Set `OWNER_TELEGRAM_IDS` to the main admin's numeric Telegram user ID (comma-separated if you intentionally have multiple owners). This is the only account that sees **Manage Assigned Admins** in the main index page.
+- Set `MAIN_ADMIN_TELEGRAM_ID` to the main admin's own numeric Telegram user ID. Alternatively use `OWNER_TELEGRAM_IDS`. The code also accepts the historical `ADMIN_TELEGRAM_ID` variable and, for compatibility, a legacy `ADMIN_TELEGRAM_IDS` value only when it contains exactly one ID. This is the only account that sees **Manage Assigned Admins** in the main index page. If the app displays an unauthorized ID, copy that exact number into `MAIN_ADMIN_TELEGRAM_ID` in Render and redeploy.
 - Access is fail-closed: users who are not listed in `OWNER_TELEGRAM_IDS` or the main admin's assigned-admin list cannot use the app APIs. Open the app from Telegram so its signed Mini App identity can be verified.
 - The main admin assigns staff from **Manage Assigned Admins** on the index page using each staff member's numeric Telegram ID.
 - Every assigned admin then opens the Mini App from their own Telegram account and uses **Connect my Telegram account**. The phone login must resolve to the same Telegram ID that was assigned. A different account is rejected.
