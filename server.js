@@ -434,7 +434,7 @@ function activeBusinessConnection() {
 }
 const telegram = (method, body, opts) => tgApi.call(method, body, opts);
 function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.") {
-  return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> ${esc(status)}${note ? "\n" + note : ""}`;
+  return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 function notifyAdminsText(order, text) {
   const targets = new Set([ADMIN_CHAT_ID, order.createdByTelegramId, ...OWNER_IDS].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)));
@@ -662,7 +662,7 @@ async function sendBotButtons(order, chatId) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
     const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", reply_markup: keyboard(order.id),
-      text: cardCaptionHtml(order, "⏳ Pending", "Please choose an option below:") });
+      text: cardCaptionHtml(order, "", "Please choose an option below 👇") });
     return { ok: true, messageId: sent.message_id };
   } catch (error) { return { ok: false, error: error.message }; }
 }
@@ -671,7 +671,7 @@ async function sendCardViaUserAccount(order, filePath) {
   const admin = order.strictAdmin ? (own?.ready ? own : null) : (own?.ready ? own : pickAdmin(order.adminId));
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
-  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}\nStatus: Pending`;
+  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}`;
   // Upload files have no extension; Telegram would send them as a generic FILE. Give it a .png name so it goes as a PHOTO.
   const photoPath = filePath + ".png";
   await fs.promises.copyFile(filePath, photoPath);
