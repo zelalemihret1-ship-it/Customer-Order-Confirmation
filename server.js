@@ -408,6 +408,17 @@ app.get("/api/me", (req, res) => {
   res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", error });
 });
 const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
+// Public JPEG URL of an order card (Telegram inline photo results need an https .jpg URL).
+app.get("/cards/:id.jpg", async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const order = orders.find(o => String(o.id) === String(req.params.id));
+    if (!order?.cardImage) return res.sendStatus(404);
+    res.set("Content-Type", "image/jpeg").set("Cache-Control", "public, max-age=3600");
+    if (/^https?:/i.test(order.cardImage)) { const r = await fetch(order.cardImage); return res.send(Buffer.from(await r.arrayBuffer())); }
+    res.send(await fs.promises.readFile(path.join(__dirname, "public", order.cardImage.replace(/^\/+/, ""))));
+  } catch (e) { res.sendStatus(500); }
+});
 app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/my-account"], requireAccess);
 app.use("/api/business", ownerOnly);
 
@@ -680,8 +691,9 @@ async function sendInlineButtons(admin, entity, order) {
     const res = await admin.client.invoke(new Api.messages.GetInlineBotResults({ bot, peer, query: `order:${order.id}`, offset: "" }));
     const first = res.results?.[0];
     if (!first) return { ok: false, error: "bot returned no inline result (enable Inline Mode in @BotFather: /setinline)" };
-    await admin.client.invoke(new Api.messages.SendInlineBotResult({ peer, queryId: res.queryId, id: first.id, randomId: bigInt(Math.floor(Math.random() * 1e15)) }));
-    return { ok: true };
+    const sent = await admin.client.invoke(new Api.messages.SendInlineBotResult({ peer, queryId: res.queryId, id: first.id, randomId: bigInt(Math.floor(Math.random() * 1e15)) }));
+    let messageId = 0; for (const u of (sent.updates || [])) { if (u instanceof Api.UpdateMessageID) messageId = u.id; }
+    return { ok: true, withCard: first.type === "photo", messageId };
   } catch (error) { return { ok: false, error: error.errorMessage || error.message }; }
 }
 async function sendBotButtons(order, chatId) {
@@ -698,14 +710,18 @@ async function sendCardViaUserAccount(order, filePath) {
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
   const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}`;
-  // Upload files have no extension; Telegram would send them as a generic FILE. Give it a .png name so it goes as a PHOTO.
-  const photoPath = filePath + ".png";
-  await fs.promises.copyFile(filePath, photoPath);
-  let sent;
-  try { sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false }); }
-  finally { fs.promises.unlink(photoPath).catch(() => {}); }
+  // 1) best: ONE message = the card image + the 3 buttons (inline bot photo result)
   let botButtons = await sendInlineButtons(admin, entity, order);
-  if (!botButtons.ok) { console.warn("Inline buttons not sent:", botButtons.error); botButtons = await sendBotButtons(order, String(entity.id)); }
+  let sent = { id: botButtons.messageId || 0 };
+  if (!botButtons.ok) console.warn("Inline buttons not sent:", botButtons.error);
+  if (!botButtons.ok || !botButtons.withCard) {
+    // Upload files have no extension; Telegram would send them as a generic FILE. Give it a .jpg name so it goes as a PHOTO.
+    const photoPath = filePath + ".jpg";
+    await fs.promises.copyFile(filePath, photoPath);
+    try { sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false }); }
+    finally { fs.promises.unlink(photoPath).catch(() => {}); }
+    if (!botButtons.ok) botButtons = await sendBotButtons(order, String(entity.id));
+  }
   const poll = botButtons.ok ? { ok: true, messageId: 0, viaBot: true } : await sendDecisionPoll(admin, entity, order);
   if (!poll.ok) { try { await admin.client.sendMessage(entity, { message: "Please reply CONFIRM, REJECT, or write your comment." }); } catch {} }
   if (botButtons.ok) order.botButtonsMessageId = botButtons.messageId;
@@ -1061,7 +1077,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.status = "Pending";
     order.comments = [];
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
-    order.cardImage = await uploadToSupabase(cardImage, "cards", "image/png");
+    order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
     order.adminId = account?.id || ""; order.adminLabel = account?.label || "Main admin";
     order.strictAdmin = !isOwner; order.onlyConnection = true;
     order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
@@ -1174,7 +1190,10 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const m = /^order:(\d+)$/.exec(String(inlineQuery.query || "").trim());
       await supabaseReady; if (supabase) await loadOrders();
       const found = m && orders.find(item => String(item.id) === m[1]);
-      const results = found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
+      const cardUrl = found && PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/cards/${found.id}.jpg` : "";
+      const results = found && cardUrl ? [{ type: "photo", id: `p${found.id}`, photo_url: cardUrl, thumbnail_url: cardUrl, photo_width: 1080, photo_height: 1920,
+        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id) }]
+        : found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
         input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id) }] : [];
       await safely("answerInlineQuery", () => telegram("answerInlineQuery", { inline_query_id: inlineQuery.id, results, cache_time: 0, is_personal: true }));
     }
@@ -1205,7 +1224,8 @@ app.post("/api/telegram/webhook", async (req, res) => {
             const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : "❌ REJECTED";
             // 1) buttons disappear and the card shows the final status
             if (inlineId) {
-              await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }));
+              (await safely("editMessageCaption(inline)", () => telegram("editMessageCaption", { inline_message_id: inlineId, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } })))
+                || await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }));
               await tellCustomer(`Order ${order.orderId} — ${mark}. Thank you for choosing Ambar Furniture!`);
               await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (chat ${esc(chatId)}).`);
               return;
