@@ -539,12 +539,7 @@ function answerLink(order) {
 }
 function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.") {
   const link = answerLink(order);
-  // IMPORTANT: keep the answer URL in the actual caption on the FIRST send.
-  // Do not rely on a later edit, callback, inline-result refresh, or customer message.
-  if (link && !order.closed) {
-    const action = `🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>\n${esc(link)}`;
-    note = (note ? note + "\n\n" : "") + action;
-  }
+  if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
   return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 function notifyAdminsText(order, text) {
@@ -602,9 +597,27 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
         body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
         body.append("caption", caption);
         body.append("parse_mode", "HTML");
+        // Put the answer button on the ORIGINAL send. Never wait for a customer message/update.
         body.append("reply_markup", JSON.stringify(keyboard(order.id, order)));
         return body;
       });
+
+      // Telegram Business clients can occasionally delay rendering an inline keyboard
+      // attached to a media message. Send the same single answer button as a normal
+      // message immediately after the card as a guaranteed visible fallback. This is
+      // NOT triggered by a customer message and does not depend on chosen_inline_result.
+      try {
+        const buttonMessage = await telegram("sendMessage", {
+          business_connection_id: String(conn.id),
+          chat_id: String(chatId).trim(),
+          text: "🔗 መልስ ለመስጠት ክፈት",
+          reply_markup: keyboard(order.id, order)
+        });
+        order.answerButtonMessageId = buttonMessage?.message_id || 0;
+      } catch (buttonError) {
+        // The card itself was delivered with the button; fallback failure must not fail the order.
+        console.warn(`Immediate answer-button fallback failed for ${chatId}:`, buttonError.message);
+      }
       // Remember which connection really worked for this customer.
       const known = customers.get(String(chatId));
       if (known && known.businessConnectionId !== String(conn.id)) { known.businessConnectionId = String(conn.id); persistCustomers(); }
@@ -832,19 +845,27 @@ async function sendCardViaUserAccount(order, filePath) {
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
 
-  // RELIABLE MODE: send the photo directly from the admin's Telegram account with the
-  // answer URL in the SAME message caption. This is deliberately not dependent on
-  // inline mode, chosen_inline_result, callback queries, or a later customer message.
-  // Telegram will render the HTTPS URL in the caption as an immediately tappable link.
+  // IMPORTANT: A personal Telegram account cannot reliably create bot-style inline
+  // keyboard buttons for a customer who has never interacted with the bot. The old
+  // implementation depended on an inline-bot result, which could leave the answer
+  // control invisible until a later customer message/update.
+  //
+  // Always send the card directly from the connected admin account and put the answer
+  // URL in the same message immediately. Telegram renders the HTTPS URL as a clickable
+  // link without requiring any later customer message.
   const link = answerLink(order);
-  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}`
-    + (link ? `\n\n🔗 መልስ ለመስጠት ክፈት\n${link}` : "");
+  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`;
 
   const photoPath = filePath + ".jpg";
   await fs.promises.copyFile(filePath, photoPath);
   let sent;
   try {
-    sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false });
+    sent = await admin.client.sendFile(entity, {
+      file: photoPath,
+      caption,
+      parseMode: "html",
+      forceDocument: false
+    });
   } finally {
     fs.promises.unlink(photoPath).catch(() => {});
   }
@@ -852,16 +873,16 @@ async function sendCardViaUserAccount(order, filePath) {
   order.adminId = admin.id;
   order.adminLabel = admin.label;
   order.pollMessageId = 0;
-  order.botButtonsMessageId = 0;
   return {
     message_id: sent.id,
     chatId: String(entity.id),
     admin,
-    pollSent: true,
+    pollSent: false,
     pollError: "",
-    buttons: link ? "caption-link" : "none",
+    buttons: "link",
     inlineError: "",
-    directError: ""
+    directError: "",
+    immediateLink: true
   };
 }
 
