@@ -571,12 +571,6 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
       const known = customers.get(String(chatId));
       if (known && known.businessConnectionId !== String(conn.id)) { known.businessConnectionId = String(conn.id); persistCustomers(); }
       order.businessConnectionId = String(conn.id);
-      // Telegram may not show the inline buttons in every chat view, so ALSO send a link to the answer page (always visible).
-      order.token = order.token || require("crypto").randomBytes(12).toString("hex");
-      if (PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL)) {
-        await safely("answer link (business)", () => telegram("sendMessage", { business_connection_id: String(conn.id), chat_id: String(chatId).trim(), link_preview_options: { is_disabled: true },
-          text: `Order ${order.orderId} — tap the link to ✅ Confirm, ❌ Reject or 💬 Comment:\n${PUBLIC_BASE_URL}/o/${order.token}` }));
-      }
       return sent;
     } catch (error) {
       lastError = error;
@@ -647,23 +641,12 @@ async function startAdmin(record) {
         const mine = orders.filter(o => o.sender === "admin_user_account" && String(o.adminId || "") === admin.id && String(o.telegramChatId) === senderId);
         const order = mine[mine.length - 1];
         if (!order) return;
-        const reply = t => admin.client.sendMessage(msg.senderId, { message: t });
-        const wantsComment = String(order.awaitingCommentFrom || "") === senderId;
-        if (wantsComment) { order.awaitingCommentFrom = ""; order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId }); await saveOrderRecord(order); await reply(`Thank you, your comment on ${order.orderId} was received.`); }
-        else if (/^\s*(confirm|confirmed|yes|ok|okay|1|✅|አዎ|አረጋግጣለሁ)\b/i.test(text) || /^\s*(✅|1)\s*$/.test(text)) {
-          order.status = "Confirmed"; await saveOrderRecord(order);
-          await reply(`${order.orderId} is now Confirmed ✅. Thank you for choosing Ambar Furniture!`);
-        } else if (/^\s*(reject|rejected|cancel|no|2|❌|አይ|እሰርዛለሁ)\b/i.test(text) || /^\s*(❌|2)\s*$/.test(text)) {
-          order.status = "Rejected"; await saveOrderRecord(order);
-          await reply(`${order.orderId} is now Rejected ❌.`);
-        } else {
-          order.comments = order.comments || [];
-          order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId });
-          await saveOrderRecord(order);
-          await reply(`Thank you, your comment on ${order.orderId} was received.`);
-        }
+        // No automatic replies to customer texts. A text is saved only as the answer to a 💬 Comment tap.
+        if (order.closed || String(order.awaitingCommentFrom || "") !== senderId) return;
+        order.awaitingCommentFrom = ""; order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId });
+        await saveOrderRecord(order);
         await updateAuditCopies(order); await closeOrderButtons(order);
-        await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> (${esc(order.status)}) via ${esc(admin.label)} from customer ${esc(senderId)}:\n${esc(text)}`);
+        await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from customer ${esc(senderId)}:\n${esc(text)}`);
       } catch (error) { console.warn("Admin message handler failed:", error.message); }
     }, new NewMessage({ incoming: true }));
     // Customer tapped Confirm / Reject on the poll.
@@ -830,18 +813,11 @@ async function sendCardViaUserAccount(order, filePath) {
     finally { fs.promises.unlink(photoPath).catch(() => {}); }
     if (!botButtons.ok) { inlineError = botButtons.error; botButtons = await sendBotButtons(order, String(entity.id)); if (!botButtons.ok) directError = botButtons.error; else viaBotChat = true; }
   }
-  // Always add the link to the answer page: big Confirm / Reject / Comment buttons that work for every customer.
-  order.token = order.token || require("crypto").randomBytes(12).toString("hex");
-  if (PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL)) {
-    try { await admin.client.sendMessage(entity, { message: `Order ${order.orderId} — tap the link to ✅ Confirm, ❌ Reject or 💬 Comment:\n${PUBLIC_BASE_URL}/o/${order.token}`, linkPreview: false }); linkSent = true; }
-    catch (e) { console.warn("Answer link not sent:", e.message); }
-  }
-  const poll = (botButtons.ok || linkSent) ? { ok: true, messageId: 0, viaBot: true } : await sendDecisionPoll(admin, entity, order);
-  if (!poll.ok) { try { await admin.client.sendMessage(entity, { message: "Please reply CONFIRM, REJECT, or write your comment." }); } catch {} }
+  const poll = { ok: true, messageId: 0 };
   if (botButtons.ok) order.botButtonsMessageId = botButtons.messageId;
   order.adminId = admin.id; order.adminLabel = admin.label;
   order.pollMessageId = poll.messageId || 0;
-  return { message_id: sent.id, chatId: String(entity.id), admin, pollSent: poll.ok, pollError: poll.error || "", buttons: botButtons.ok ? (viaBotChat ? "botchat" : "inline") : (linkSent ? "link" : "none"), inlineError, directError };
+  return { message_id: sent.id, chatId: String(entity.id), admin, pollSent: poll.ok, pollError: poll.error || "", buttons: botButtons.ok ? (viaBotChat ? "botchat" : "inline") : "none", inlineError, directError };
 }
 function accountFor(actor) {
   if (actor?.telegramId) { const own = admins.get("u" + actor.telegramId); if (own) return own; }
@@ -1276,10 +1252,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
     if (botMessage?.chat?.id && botMessage.chat.type === "private") {
       rememberCustomer(botMessage.chat, botMessage.from || botMessage.chat, "");
       const text = String(botMessage.text || "").trim();
-      if (/^\/start(?:\s|$)/i.test(text)) {
-        await safely("Bot welcome", () => telegram("sendMessage", { chat_id: botMessage.chat.id,
-          text: "Welcome to AMBAR Furniture! You can now receive order cards and updates here. Please share your Telegram username or numeric chat ID with the AMBAR admin when placing an order." }));
-      }
     }
 
     // Customer typed a comment in the bot chat after tapping 💬 Comment.
@@ -1287,7 +1259,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
       await supabaseReady;
       if (supabase) await loadOrders();
       const chatKey = String(botMessage.chat.id);
-      const pending = orders.filter(item => String(item.awaitingCommentFrom || "") === chatKey).pop();
+      const pending = orders.filter(item => !item.closed && String(item.awaitingCommentFrom || "") === chatKey).pop();
       if (pending) {
         pending.comments = pending.comments || [];
         pending.comments.push({ comment: botMessage.text, at: new Date().toISOString(), from: chatKey });
@@ -1295,7 +1267,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
         await saveOrderRecord(pending);
         await updateAuditCopies(pending); await closeOrderButtons(pending);
         await notifyAdminsText(pending, `💬 <b>Comment on ${esc(pending.orderId)}</b> from customer ${esc(chatKey)}:\n${esc(botMessage.text)}`);
-        await safely("comment thanks", () => telegram("sendMessage", { chat_id: chatKey, parse_mode: "HTML", text: `✅ Your comment on <b>Order ${esc(pending.orderId)}</b> was sent. Thank you!` }));
       }
     }
 
@@ -1401,16 +1372,14 @@ app.post("/api/telegram/webhook", async (req, res) => {
         if (supabase) await loadOrders();
         const list = orders.filter(item => String(item.telegramChatId).trim() === String(chatId));
         const order = list[list.length - 1];
-        if (order) {
-          const wasAsked = String(order.awaitingCommentFrom || "") === String(chatId);
+        if (order && !order.closed && String(order.awaitingCommentFrom || "") === String(chatId)) {
+          const wasAsked = true;
           order.comments = order.comments || [];
           order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
           if (wasAsked) order.awaitingCommentFrom = "";
           await saveOrderRecord(order);
           await updateAuditCopies(order); await closeOrderButtons(order);
           await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from customer ${esc(chatId)}:\n${esc(businessMessage.text)}`);
-          if (wasAsked && connectionId) await safely("comment thanks", () => telegram("sendMessage", { business_connection_id: String(connectionId), chat_id: chatId,
-            text: `✅ Your comment on <b>Order ${esc(order.orderId)}</b> was sent. Thank you!`, parse_mode: "HTML" }));
         }
       }
     }
