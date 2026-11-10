@@ -2,13 +2,13 @@
 
 ## Telegram message delivery — BOT_TOKEN only
 
-This build sends all order cards and admin notifications using the official Telegram Bot API and `BOT_TOKEN`. It does **not** require `TG_API_ID`, `TG_API_HASH`, `TG_SESSION`, personal Telegram login, or a Telegram Business connection. Both the main owner and assigned admins can submit orders; messages are sent by the AMBAR bot.
+This build sends order cards ONLY to admin destinations using the official Telegram Bot API and `BOT_TOKEN`. It never sends order cards to customers. Each order card is sent to the submitting admin, all configured main-owner IDs, and optional `ADMIN_CHAT_ID`. It does **not** require `TG_API_ID`, `TG_API_HASH`, `TG_SESSION`, personal Telegram login, or a Telegram Business connection.
 
 ### Important Telegram rule
 
-A bot cannot start a private conversation with a person just from their username or phone number. The customer must open the AMBAR bot and press **Start** first. The bot webhook then remembers that customer's numeric chat ID. The owner and each assigned admin must also press **Start** in the bot if they want a private copy of the order card. You can configure `ADMIN_CHAT_ID` to send a shared copy to an admin group/channel; add the bot to that group and allow it to post.
+A bot cannot start a private conversation with a person just from their username or phone number. The main owner and each assigned admin who should receive private order-card copies must open the AMBAR bot and press **Start** first. The bot webhook then knows each admin chat ID. You can configure `ADMIN_CHAT_ID` to send a shared copy to an admin group/channel; add the bot to that group and allow it to post.
 
-If the customer has not started the bot, the order is still saved and a copy is sent to the submitting admin and/or `ADMIN_CHAT_ID` when reachable. The app clearly reports that customer delivery is pending.
+Customer bot delivery is disabled by design. If an admin has not started the bot, the order is still saved and the app reports which admin notification could not be delivered.
 
 ## Render deployment
 
@@ -19,12 +19,12 @@ If the customer has not started the bot, the order is still saved and a copy is 
    - `BOT_USERNAME` — optional bot username without `@`, used to build a customer Start link.
    - `MAIN_ADMIN_TELEGRAM_ID` — the owner's numeric Telegram user ID.
    - `ADMIN_SETUP_KEY` — long secret for owner setup access where applicable.
-   - `ADMIN_CHAT_ID` — optional shared admin group/chat ID for order copies.
+   - `ADMIN_CHAT_ID` — optional shared admin group/chat ID for order copies. Main owner private copies are sent to `MAIN_ADMIN_TELEGRAM_ID` / `OWNER_TELEGRAM_IDS`.
    - `PUBLIC_BASE_URL` — optional; Render's `RENDER_EXTERNAL_URL` is used automatically if this is blank.
    - `TELEGRAM_WEBHOOK_SECRET` — optional webhook verification secret.
    - Supabase variables below, if using persistent order/image storage.
 4. Deploy. The server configures the Telegram webhook automatically and handles normal `message` and `callback_query` updates.
-5. Open the AMBAR bot and press **Start** from the owner account and each assigned admin account. Customers must also press **Start** before direct customer delivery is possible.
+5. Open the AMBAR bot and press **Start** from the owner account and each assigned admin account. Customers do not need to press Start because order cards are not sent to customers.
 6. Open the Mini App from Telegram. The owner assigns admins using their numeric Telegram IDs in **Manage Assigned Admins**.
 
 ## Supabase
@@ -37,11 +37,11 @@ Only `MAIN_ADMIN_TELEGRAM_ID` / `OWNER_TELEGRAM_IDS` and admins assigned by the 
 
 ## Delivery behavior
 
-- The customer receives an order card from the AMBAR bot if their bot chat is known and they have started the bot.
-- The submitting owner/admin receives a copy from the bot if they have started it.
-- `ADMIN_CHAT_ID` receives a shared admin copy if configured and the bot has permission to post there.
-- Admin copies include Confirm and Reject controls. Customer copies do not include admin controls.
-- Confirming/rejecting an order updates the status and sends a status notification to the customer when the customer chat is reachable.
+- Order cards are sent only to the configured main owner ID(s), the submitting admin, and optional `ADMIN_CHAT_ID`.
+- The customer never receives an order card from the bot.
+- Admin copies include Confirm and Reject controls.
+- The order remains saved even if one or more admin destinations cannot be reached. The response reports which admin IDs failed so they can open the bot and press Start.
+- Confirming/rejecting an order updates the order status. Customer order-card delivery is disabled.
 
 ## Runtime
 
