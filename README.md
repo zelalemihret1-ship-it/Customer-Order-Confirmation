@@ -53,3 +53,8 @@ Set `TG_API_ID` and `TG_API_HASH` in Render (from https://my.telegram.org). Then
 - **Main admin:** open the Mini App from Telegram, tap **🔗 Connect my Telegram account**, enter your phone, the code (and 2-step password). Orders you create are sent to the customer from YOUR account.
 - **Assigned admins:** do the same with their own phone. Their orders are sent from THEIR OWN account, never the main admin's.
 The bot sends no order cards. Fill the customer's @username or phone in the form. Customers answer CONFIRM / REJECT / a comment; the reply is handled on the sending account.
+
+## v16 behaviour
+- Main admin can create orders WITHOUT connecting a personal account (sent via Telegram Business with Confirm / Reject / Comment buttons to customers who messaged the main admin account). Connecting an account additionally reaches any customer by @username/phone.
+- Assigned admins must connect their own account (button disappears once connected); unlimited admins can be assigned, many at once (one "id name" per line).
+- Cards from personal accounts are sent as a PHOTO plus a tappable Confirm/Reject poll; customers can also reply CONFIRM / REJECT / a comment.
