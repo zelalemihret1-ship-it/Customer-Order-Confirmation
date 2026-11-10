@@ -3,28 +3,27 @@
 <h1>Setup &amp; checks</h1>
 <input id="key" type="password" placeholder="Setup key (ADMIN_SETUP_KEY from Render)">
 <button onclick="status()">1. Check status</button><pre id="status">—</pre>
-<h2>2. Add an admin account</h2>
-<input id="label" placeholder="Admin name (e.g. Zilasun)"><input id="phone" placeholder="Admin phone, e.g. +2519XXXXXXXX"><button onclick="sendCode()">Send code</button>
-<input id="code" placeholder="Code from Telegram"><input id="pw" type="password" placeholder="2-step password (only if you have one)"><button onclick="verify()">Verify</button>
-<h2>3. Test</h2>
-<input id="target" placeholder="@username or +phone of someone to test"><button onclick="test()">Send test message</button>
+<h2>2. Telegram bot delivery</h2><p>AMBAR sends all order cards using BOT_TOKEN only. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal Telegram login is required. Customers and admins must press Start in the AMBAR bot before it can send them private messages.</p>
 <h2>5. Assign people who can USE the app</h2>
 <div style="font-size:14px">Each person opens the app from Telegram; if they are not assigned they see their Telegram ID to send you.</div>
-<input id="aid" placeholder="Person's numeric Telegram ID"><input id="aname" placeholder="Their name"><input id="aacc" placeholder="Send-from admin account name (optional — leave empty to let them choose)">
+<input id="aid" placeholder="Person's numeric Telegram ID"><input id="aname" placeholder="Their name">
 <button onclick="addApp()">Assign as admin</button><button onclick="listApp()" style="background:#555">Show assigned admins</button><input id="arm" placeholder="Telegram ID to remove"><button onclick="rmApp()" style="background:#c62828">Remove assigned admin</button>
-<h2>4. Remove an admin account</h2><input id="rm" placeholder="Admin name to remove"><button onclick="rem()">Remove admin</button>
+
 <pre id="out"></pre>
 <script>
 const $=i=>document.getElementById(i);
 async function call(path,body){const r=await fetch(path,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify({key:$("key").value,...body}):undefined});return r.json()}
 const show=d=>{$("out").className=d.ok?"ok":"bad";$("out").textContent=(d.message||d.error||JSON.stringify(d))};
-async function status(){const d=await call("/api/setup/status?key="+encodeURIComponent($("key").value));if(!d.ok){$("status").textContent=d.error;return}
-const l=(n,v)=>(v?"✅ ":"❌ ")+n;$("status").textContent=[l("BOT_TOKEN",d.botToken),l("ADMIN_CHAT_ID",d.adminChatId),l("Supabase",d.supabase),l("TG_API_ID",d.tgApiId),l("TG_API_HASH",d.tgApiHash),"Admins: "+((d.admins||[]).map(a=>(a.ready?"✅ ":"❌ ")+a.label+(a.error?" ("+a.error+")":"")).join(", ")||"❌ none logged in"),l("Webhook set",!!d.webhookUrl)+(d.webhookError?" — last error: "+d.webhookError:""),l("Business connections usable: "+d.usableBusinessConnections+"/"+d.businessConnections,d.usableBusinessConnections>0),"Known customers: "+d.knownCustomers].join("\n")}
-async function sendCode(){show(await call("/api/setup/send-code",{phone:$("phone").value,label:$("label").value}))}
-async function verify(){show(await call("/api/setup/verify",{code:$("code").value,password:$("pw").value}));status()}
-async function rem(){const s=await call("/api/setup/status?key="+encodeURIComponent($("key").value));const a=(s.admins||[]).find(x=>x.label.toLowerCase()===$("rm").value.trim().toLowerCase());if(!a){show({ok:false,error:"No admin with that name."});return}show(await call("/api/setup/remove",{id:a.id}));status()}
-async function addApp(){const s=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));let acc="";const n=$("aacc").value.trim().toLowerCase();if(n){const st=await call("/api/setup/status?key="+encodeURIComponent($("key").value));const a=(st.admins||[]).find(x=>x.label.toLowerCase()===n);if(!a){show({ok:false,error:"No sending account with that name."});return}acc=a.id}show(await call("/api/setup/app-admins/add",{telegramId:$("aid").value,name:$("aname").value,accountId:acc}))}
-async function listApp(){const d=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));$("out").className=d.ok?"ok":"bad";$("out").textContent=d.ok?("Access control: "+(d.enforced?"ON":"OFF (open to everyone until you assign someone)")+"\n"+(d.appAdmins.map(a=>a.telegramId+" — "+(a.name||"")+(a.accountId?" → sends from "+((d.accounts.find(x=>x.id===a.accountId)||{}).label||a.accountId):"")).join("\n")||"No assigned admins yet")):d.error}
+async function status(){
+ const d=await call("/api/setup/status?key="+encodeURIComponent($("key").value));
+ if(!d.ok){$("status").textContent=d.error;return;}
+ const l=(n,v)=>(v?"✅ ":"❌ ")+n;
+ const lines=[l("BOT_TOKEN",d.botToken),l("ADMIN_CHAT_ID",d.adminChatId),l("Supabase",d.supabase),l("Webhook set",!!d.webhookUrl),"Known bot users: "+d.knownCustomers,"Known customers: "+d.knownCustomers];
+ if(d.webhookError) lines.push("Webhook error: "+d.webhookError);
+ $("status").textContent=lines.join("\n");
+}
+async function addApp(){show(await call("/api/setup/app-admins/add",{telegramId:$("aid").value,name:$("aname").value}))}
+async function listApp(){const d=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));$("out").className=d.ok?"ok":"bad";$("out").textContent=d.ok?("Access control: "+(d.enforced?"ON":"OFF (open to everyone until you assign someone)")+"\n"+(d.appAdmins.map(a=>a.telegramId+" — "+(a.name||"")).join("\n")||"No assigned admins yet")):d.error}
 async function rmApp(){show(await call("/api/setup/app-admins/remove",{telegramId:$("arm").value}))}
 async function test(){show(await call("/api/setup/test",{target:$("target").value}))}
 </script></body></html>
