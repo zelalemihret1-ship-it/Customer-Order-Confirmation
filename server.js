@@ -460,7 +460,7 @@ function auditCaptionHtml(order) {
   const comments = order.comments || [], last = comments[comments.length - 1];
   const who = order.telegramUsername || order.telegramChatId || "";
   const decided = order.status === "Confirmed" || order.status === "Rejected";
-  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Created by:</b> ${esc(order.createdByName || "Admin")}\n<b>Sent from:</b> ${esc(order.adminLabel || "")}${order.sent ? "" : " — ❌ NOT delivered" + (order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : "")}${decided ? "\n<b>Customer answered:</b> " + st : ""}${last ? `\n<b>Comment:</b> ${esc(String(last.comment).slice(0, 250))}` : ""}`;
+  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Sent from:</b> ${esc(order.adminLabel || "")}${order.sent ? "" : " — ❌ NOT delivered" + (order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : "")}${decided ? "\n<b>Customer answered:</b> " + st : ""}${last ? `\n<b>Comment:</b> ${esc(String(last.comment).slice(0, 250))}` : ""}`;
 }
 async function sendAuditCopies(order, filePath) {
   const bytes = await fs.promises.readFile(filePath);
@@ -701,6 +701,24 @@ async function sendInlineButtons(admin, entity, order) {
     return { ok: true, withCard: first.type === "photo", messageId };
   } catch (error) { return { ok: false, error: error.errorMessage || error.message }; }
 }
+// Most reliable route: the AMBAR bot itself sends the card photo WITH the 3 buttons in one message.
+// Works when the customer has opened the bot (pressed Start); otherwise Telegram refuses and we use the admin-account routes.
+async function sendBotCard(order, chatId, filePath) {
+  if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
+  try {
+    const bytes = await fs.promises.readFile(filePath);
+    const sent = await tgApi.sendForm("sendPhoto", () => {
+      const body = new FormData();
+      body.append("chat_id", String(chatId));
+      body.append("photo", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
+      body.append("caption", cardCaptionHtml(order, "", ""));
+      body.append("parse_mode", "HTML");
+      body.append("reply_markup", JSON.stringify(keyboard(order.id)));
+      return body;
+    });
+    return { ok: true, messageId: sent.message_id };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
 async function sendBotButtons(order, chatId) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
@@ -714,7 +732,7 @@ function buttonsNote(r) {
     : /BOT_INLINE_DISABLED/.test(e) ? "Inline Mode is OFF — in @BotFather send /setinline, pick the bot, type any placeholder text, then send again."
     : /BOT_RESPONSE_TIMEOUT/.test(e) ? "The bot did not answer in time (server asleep or webhook not set). Open the app once, wait 30 seconds, and send again."
     : /Forbidden|chat not found|bot can't initiate|blocked/i.test(e) ? "the customer has not pressed Start on the bot" : e;
-  if (r.buttons === "inline") return "";
+  if (r.buttons === "inline" || r.buttons === "botcard") return "";
   if (r.buttons === "botchat") return ` (Buttons were sent through the bot chat. To reach customers who never pressed Start: ${why(r.inlineError || "")})`;
   return ` ⚠️ The 3 buttons could NOT be sent. Reason: ${why(r.inlineError || "unknown")} / Bot chat: ${why(r.directError || "unknown")}. The customer was asked to reply CONFIRM / REJECT / a comment by text.`;
 }
@@ -724,6 +742,12 @@ async function sendCardViaUserAccount(order, filePath) {
   if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
   const entity = await resolveUserEntity(admin.client, order);
   const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}`;
+  // 0) bot sends card + buttons directly (customer has pressed Start on the bot)
+  const botCard = await sendBotCard(order, String(entity.id), filePath);
+  if (botCard.ok) {
+    order.adminId = admin.id; order.adminLabel = admin.label; order.botButtonsMessageId = botCard.messageId; order.pollMessageId = 0;
+    return { message_id: botCard.messageId, chatId: String(entity.id), admin, pollSent: true, pollError: "", buttons: "botcard", inlineError: "", directError: "" };
+  }
   // 1) best: ONE message = the card image + the 3 buttons (inline bot photo result)
   let botButtons = await sendInlineButtons(admin, entity, order);
   let sent = { id: botButtons.messageId || 0 };
@@ -1108,7 +1132,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!order.sent && account?.ready) {
       try {
         const r = await sendCardViaUserAccount(order, cardImage.path);
-        pollNote = buttonsNote(r); order.buttonsLine = r.buttons === "inline" ? "✅ Confirm / Reject / Comment buttons delivered with the card" : r.buttons === "botchat" ? "✅ buttons delivered in the bot chat" : "❌ buttons NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
+        pollNote = buttonsNote(r); order.buttonsLine = (r.buttons === "inline" || r.buttons === "botcard") ? "✅ Confirm / Reject / Comment buttons delivered with the card" : r.buttons === "botchat" ? "✅ buttons delivered in the bot chat" : "❌ buttons NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
         try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
       } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
     }
