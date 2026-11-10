@@ -54,6 +54,10 @@ Set `TG_API_ID` and `TG_API_HASH` in Render (from https://my.telegram.org). Then
 - **Assigned admins:** do the same with their own phone. Their orders are sent from THEIR OWN account, never the main admin's.
 The bot sends no order cards. Fill the customer's @username or phone in the form. Customers answer CONFIRM / REJECT / a comment; the reply is handled on the sending account.
 
+## v35 changes
+- Confirm / Reject / Comment buttons are always visible. After an answer they stay on screen but locked (🔒; the chosen one shows ✅ Confirmed or ❌ Rejected). On the answer web page they are disabled.
+- The Order code is typed by the admin (required); it is no longer auto-generated.
+
 ## v16 behaviour
 - Main admin can create orders WITHOUT connecting a personal account (sent via Telegram Business with Confirm / Reject / Comment buttons to customers who messaged the main admin account). Connecting an account additionally reaches any customer by @username/phone.
 - Assigned admins must connect their own account (button disappears once connected); unlimited admins can be assigned, many at once (one "id name" per line).
