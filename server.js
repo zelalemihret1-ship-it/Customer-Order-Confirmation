@@ -459,7 +459,7 @@ function auditCaptionHtml(order) {
   const st = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "⏳ Pending";
   const comments = order.comments || [], last = comments[comments.length - 1];
   const who = order.telegramUsername || order.telegramChatId || "";
-  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "")}\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Created by:</b> ${esc(order.createdByName || "Admin")} (${esc(order.createdByRole || "")})\n<b>Sent from:</b> ${esc(order.adminLabel || "")} — ${order.sent ? "✅ delivered to the customer" : "❌ NOT delivered"}${order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : ""}\n<b>Status:</b> ${st}${last ? `\n<b>Last comment:</b> ${esc(String(last.comment).slice(0, 250))} (${comments.length} total)` : ""}`;
+  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "")}\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Created by:</b> ${esc(order.createdByName || "Admin")} (${esc(order.createdByRole || "")})\n<b>Sent from:</b> ${esc(order.adminLabel || "")} — ${order.sent ? "✅ delivered to the customer" : "❌ NOT delivered"}${order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : ""}${order.buttonsLine ? "\n<b>Buttons:</b> " + esc(order.buttonsLine) : ""}\n<b>Status:</b> ${st}${last ? `\n<b>Last comment:</b> ${esc(String(last.comment).slice(0, 250))} (${comments.length} total)` : ""}`;
 }
 async function sendAuditCopies(order, filePath) {
   const bytes = await fs.promises.readFile(filePath);
@@ -1101,13 +1101,13 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (myConn) {
       try {
         const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
-        order.sender = "admin_business_account"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
+        order.sender = "admin_business_account"; order.buttonsLine = "✅ Confirm / Reject / Comment buttons delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
       } catch (error) { failure = error.raw || error.message; }
     }
     if (!order.sent && account?.ready) {
       try {
         const r = await sendCardViaUserAccount(order, cardImage.path);
-        pollNote = buttonsNote(r); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
+        pollNote = buttonsNote(r); order.buttonsLine = r.buttons === "inline" ? "✅ Confirm / Reject / Comment buttons delivered with the card" : r.buttons === "botchat" ? "✅ buttons delivered in the bot chat" : "❌ buttons NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
         try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
       } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
     }
