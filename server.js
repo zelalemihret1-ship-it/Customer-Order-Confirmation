@@ -433,30 +433,121 @@ function activeBusinessConnection() {
   return [...businessConnections.values()].find(isUsable);
 }
 const telegram = (method, body, opts) => tgApi.call(method, body, opts);
-async function sendCardViaBot(chatId, filePath, order, extraCaption = "", withKeyboard = true) {
-  const bytes = await fs.promises.readFile(filePath);
-  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}\n<b>Status:</b> Pending${extraCaption}`;
-  return tgApi.sendForm("sendPhoto", () => {
-    const body = new FormData();
-    body.append("chat_id", String(chatId).trim());
-    body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
-    body.append("caption", caption);
-    body.append("parse_mode", "HTML");
-    if (withKeyboard) body.append("reply_markup", JSON.stringify(keyboard(order.id)));
-    return body;
+// ───────────────────────────────────────────────────────────────────────────────
+// Admin accounts (MTProto user logins). SEVERAL admins can be logged in; each order is sent from
+// the admin chosen in the form. Requires TG_API_ID and TG_API_HASH. Log admins in at /setup.html.
+// User accounts cannot send inline buttons, so customers reply CONFIRM / REJECT / a comment.
+// ───────────────────────────────────────────────────────────────────────────────
+const admins = new Map(); // id -> { id, label, session, client, ready, error, tgUserId }
+const ADMIN_SESSIONS_FILE = path.join(__dirname, "data", "admin-sessions.json");
+const anyAdminReady = () => [...admins.values()].some(a => a.ready);
+function adminError() {
+  if (!process.env.TG_API_ID || !process.env.TG_API_HASH) return "TG_API_ID / TG_API_HASH are not set in Render.";
+  if (!admins.size) return "No admin account is logged in yet. Open /setup.html and add one.";
+  return [...admins.values()].map(a => `${a.label}: ${a.error || "not ready"}`).join("; ");
+}
+async function loadAdminRecords() {
+  let list = [];
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "admin_user_sessions").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
+  if (!list.length) { try { list = JSON.parse(fs.readFileSync(ADMIN_SESSIONS_FILE, "utf8")); } catch {} }
+  // Older single-admin installs: env TG_SESSION, or the previously stored single session.
+  const legacy = [];
+  if (process.env.TG_SESSION) legacy.push(process.env.TG_SESSION.trim());
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "admin_user_session").maybeSingle(); if (data?.value?.session) legacy.push(String(data.value.session)); } catch {} }
+  try { const t = fs.readFileSync(path.join(__dirname, "data", "admin-session.txt"), "utf8").trim(); if (t) legacy.push(t); } catch {}
+  for (const sess of legacy) if (sess && !list.some(r => r.session === sess)) list.push({ id: list.some(r => r.id === "main") ? "main" + list.length : "main", label: "Main admin", session: sess });
+  return list;
+}
+async function saveAdminRecords() {
+  const list = [...admins.values()].map(({ id, label, session, ownerTelegramId }) => ({ id, label, session, ownerTelegramId: ownerTelegramId || "" }));
+  try { fs.mkdirSync(path.dirname(ADMIN_SESSIONS_FILE), { recursive: true }); fs.writeFileSync(ADMIN_SESSIONS_FILE, JSON.stringify(list)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "admin_user_sessions", value: list, updated_at: new Date().toISOString() }); } catch {} }
+}
+async function startAdmin(record) {
+  const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+  const admin = { id: record.id, label: record.label || record.id, session: record.session, ownerTelegramId: record.ownerTelegramId || "", client: null, ready: false, error: "", tgUserId: "" };
+  admins.set(admin.id, admin);
+  if (!apiId || !apiHash) { admin.error = "TG_API_ID / TG_API_HASH missing"; return admin; }
+  try {
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions"); const { NewMessage } = require("telegram/events");
+    admin.client = new TelegramClient(new StringSession(record.session), apiId, apiHash, { connectionRetries: 5 });
+    await admin.client.connect();
+    if (!(await admin.client.checkAuthorization())) throw new Error("login expired, log this admin in again at /setup.html");
+    try { admin.tgUserId = String((await admin.client.getMe()).id); } catch {}
+    admin.ready = true;
+    console.log(`Admin account ready: ${admin.label}`);
+    admin.client.addEventHandler(async event => {
+      try {
+        const msg = event.message;
+        if (!msg || msg.out || !msg.isPrivate) return;
+        const senderId = String(msg.senderId);
+        const text = String(msg.message || "").trim();
+        if (!text) return;
+        await supabaseReady;
+        if (supabase) await loadOrders();
+        const mine = orders.filter(o => o.sender === "admin_user_account" && String(o.adminId || "") === admin.id && String(o.telegramChatId) === senderId);
+        const order = mine[mine.length - 1];
+        if (!order) return;
+        const reply = t => admin.client.sendMessage(msg.senderId, { message: t });
+        if (/^\s*(confirm|confirmed|yes|ok|okay|1|✅|አዎ|አረጋግጣለሁ)\b/i.test(text) || /^\s*(✅|1)\s*$/.test(text)) {
+          order.status = "Confirmed"; await saveOrderRecord(order);
+          await reply(`${order.orderId} is now Confirmed ✅. Thank you for choosing Ambar Furniture!`);
+        } else if (/^\s*(reject|rejected|cancel|no|2|❌|አይ|እሰርዛለሁ)\b/i.test(text) || /^\s*(❌|2)\s*$/.test(text)) {
+          order.status = "Rejected"; await saveOrderRecord(order);
+          await reply(`${order.orderId} is now Rejected ❌.`);
+        } else {
+          order.comments = order.comments || [];
+          order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId });
+          await saveOrderRecord(order);
+          await reply(`Thank you, your comment on ${order.orderId} was received.`);
+        }
+        for (const to of new Set([ADMIN_CHAT_ID, order.createdByTelegramId].filter(Boolean).map(String))) await safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text: `📩 ${order.orderId} (${order.status}) via ${admin.label} from ${senderId}:\n${text}` }));
+      } catch (error) { console.warn("Admin message handler failed:", error.message); }
+    }, new NewMessage({ incoming: true }));
+  } catch (error) { admin.error = error.message; console.error(`Admin ${admin.label} unavailable:`, error.message); }
+  return admin;
+}
+async function initAdmins() {
+  for (const rec of await loadAdminRecords()) if (!admins.get(rec.id)?.ready) await startAdmin(rec);
+}
+function pickAdmin(adminId) {
+  const chosen = admins.get(String(adminId || ""));
+  if (chosen?.ready) return chosen;
+  return [...admins.values()].find(a => a.ready) || null;
+}
+async function resolveUserEntity(client, order) {
+  const username = String(order.telegramUsername || "").trim().replace(/^@/, "").replace(/^https?:\/\/t\.me\//i, "");
+  const phone = String(order.telegramPhone || order.phone || "").replace(/[^\d+]/g, "");
+  const id = /^\d+$/.test(String(order.telegramChatId || "")) ? String(order.telegramChatId) : "";
+  const tries = [];
+  if (username) tries.push(() => client.getEntity(username));
+  if (phone.replace(/\D/g, "").length >= 8) tries.push(async () => {
+    const { Api } = require("telegram"); const bigInt = require("big-integer");
+    const res = await client.invoke(new Api.contacts.ImportContacts({ contacts: [new Api.InputPhoneContact({ clientId: bigInt(Date.now()), phone: phone.startsWith("+") ? phone : "+" + phone, firstName: order.customerName || "Customer", lastName: "" })] }));
+    if (!res.users?.length) throw new Error("That phone number is not on Telegram (or hides itself from contact lookup).");
+    return res.users[0];
   });
+  if (id) tries.push(() => client.getEntity(BigInt(id)));
+  let last;
+  for (const t of tries) { try { return await t(); } catch (e) { last = e; } }
+  throw new Error(last?.message || "Enter the customer's @username or phone number so the admin account can find them.");
+}
+async function sendCardViaUserAccount(order, filePath) {
+  const own = admins.get(String(order.adminId || ""));
+  const admin = order.strictAdmin ? (own?.ready ? own : null) : pickAdmin(order.adminId);
+  if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Tap 'Connect my Telegram account'." : adminError());
+  const entity = await resolveUserEntity(admin.client, order);
+  const caption = `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}\nStatus: Pending\n\nPlease reply:\n✅ CONFIRM — to confirm the order\n❌ REJECT — to reject it\n💬 or write your comment`;
+  const sent = await admin.client.sendFile(entity, { file: filePath, caption, forceDocument: false });
+  order.adminId = admin.id; order.adminLabel = admin.label;
+  return { message_id: sent.id, chatId: String(entity.id), admin };
 }
 
-// Admin access is controlled by Telegram Mini App identity. Outbound messages use
-// the official Telegram Bot API / Telegram Business connection only; no personal
-// Telegram login, MTProto session, TG_API_ID, or TG_API_HASH is required.
-const admins = new Map();
-const anyAdminReady = () => false;
-function adminError() { return "Personal Telegram account login is disabled. Use the AMBAR bot with BOT_TOKEN."; }
-async function loadAdminRecords() { return []; }
-async function saveAdminRecords() {}
-async function initAdmins() {}
-function pickAdmin() { return null; }
+function accountFor(actor) {
+  if (actor?.telegramId) { const own = admins.get("u" + actor.telegramId); if (own) return own; }
+  if (actor?.role === "owner") return [...admins.values()].find(x => !x.ownerTelegramId) || null; // main admin account logged in via Admin Control
+  return null;
+}
 
 // ── Setup page API (protected by ADMIN_SETUP_KEY) ─────────────────────────────
 function setupAuth(req, res) {
@@ -469,10 +560,8 @@ function setupAuth(req, res) {
 }
 // Public: the order form uses this to list admins (labels only, no secrets).
 app.get("/api/admins", (req, res) => {
-  // Backward-compatible response for older frontends that expected each sender
-  // account to be connected before allowing an order. In bot-only mode the shared
-  // AMBAR bot is the sender, so no individual owner/admin connection is required.
-  res.json({ ok: true, botBased: true, admins: [{ id: "ambar-bot", label: "AMBAR Furniture bot", ready: true, botBased: true }] });
+  const mine = req.actor?.role === "admin" && req.actor.accountId ? [...admins.values()].filter(a => a.id === req.actor.accountId) : [...admins.values()];
+  res.json({ ok: true, admins: mine.map(a => ({ id: a.id, label: a.label, ready: a.ready })) });
 });
 let pendingLogin = null;
 app.get("/api/setup/status", async (req, res) => {
@@ -481,20 +570,75 @@ app.get("/api/setup/status", async (req, res) => {
   const conns = [...businessConnections.values()];
   res.json({ ok: true,
     botToken: !!BOT_TOKEN, adminChatId: !!ADMIN_CHAT_ID, supabase: !!supabase,
-    admins: [],
+    tgApiId: !!process.env.TG_API_ID, tgApiHash: !!process.env.TG_API_HASH,
+    admins: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: a.ready, error: a.error })),
     webhookUrl: webhook?.url || "", webhookError: webhook?.last_error_message || webhook?.error || "",
     businessConnections: conns.length, usableBusinessConnections: conns.filter(isUsable).length, knownCustomers: customers.size });
 });
-app.post("/api/setup/send-code", (req, res) => res.status(410).json({ ok: false, error: "Personal Telegram login has been removed. AMBAR uses BOT_TOKEN and Telegram Business instead." }));
-app.post("/api/setup/verify", (req, res) => res.status(410).json({ ok: false, error: "Personal Telegram login has been removed. AMBAR uses BOT_TOKEN and Telegram Business instead." }));
-app.post("/api/setup/remove", (req, res) => res.status(410).json({ ok: false, error: "Personal Telegram sender accounts are disabled." }));
+app.post("/api/setup/send-code", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  try {
+    const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "Add TG_API_ID and TG_API_HASH in Render first (from my.telegram.org → API development tools)." });
+    const raw = String(req.body?.phone || "").replace(/[^\d+]/g, "");
+    if (!raw) return res.status(400).json({ ok: false, error: "Enter the admin phone number with country code, e.g. +2519..." });
+    const phone = raw.startsWith("+") ? raw : "+" + raw;
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
+    if (pendingLogin?.client) { try { await pendingLogin.client.disconnect(); } catch {} }
+    const client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5 });
+    await client.connect();
+    const r = await client.sendCode({ apiId, apiHash }, phone);
+    pendingLogin = { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false, label: String(req.body?.label || "").trim().slice(0, 40) || phone };
+    res.json({ ok: true, message: `Code sent to ${phone}. Check that Telegram account (or SMS) and enter it below.` });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+app.post("/api/setup/verify", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  try {
+    if (!pendingLogin) return res.status(400).json({ ok: false, error: "Press 'Send code' first." });
+    const { Api } = require("telegram"); const apiId = Number(process.env.TG_API_ID), apiHash = process.env.TG_API_HASH;
+    const code = String(req.body?.code || "").replace(/\D/g, ""), password = String(req.body?.password || "");
+    const p = pendingLogin;
+    if (!p.needPassword) {
+      try { await p.client.invoke(new Api.auth.SignIn({ phoneNumber: p.phone, phoneCodeHash: p.phoneCodeHash, phoneCode: code })); }
+      catch (e) { if (e.errorMessage === "SESSION_PASSWORD_NEEDED") p.needPassword = true; else throw e; }
+    }
+    if (p.needPassword) {
+      if (!password) return res.json({ ok: false, needPassword: true, error: "This account has 2-step verification. Enter the 2-step password and press Verify again." });
+      await p.client.signInWithPassword({ apiId, apiHash }, { password: async () => password, onError: async e => { throw e; } });
+    }
+    const session = p.client.session.save();
+    try { await p.client.disconnect(); } catch {}
+    pendingLogin = null;
+    // Re-logging the same label replaces that admin instead of duplicating it.
+    const existing = [...admins.values()].find(a => a.label.toLowerCase() === p.label.toLowerCase());
+    if (existing) { try { await existing.client?.disconnect(); } catch {} admins.delete(existing.id); }
+    const admin = await startAdmin({ id: existing?.id || "a" + Date.now().toString(36), label: p.label, session });
+    await saveAdminRecords();
+    res.json({ ok: admin.ready, message: admin.ready ? `Admin "${admin.label}" connected ✅` : `Logged in, but could not start: ${admin.error}` });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+app.post("/api/setup/remove", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const admin = admins.get(String(req.body?.id || ""));
+  if (!admin) return res.status(404).json({ ok: false, error: "Admin not found." });
+  try { await admin.client?.disconnect(); } catch {}
+  admins.delete(admin.id);
+  await saveAdminRecords();
+  res.json({ ok: true, message: `Removed ${admin.label}.` });
+});
 app.post("/api/setup/test", async (req, res) => {
   if (!setupAuth(req, res)) return;
-  if (!BOT_TOKEN) return res.status(400).json({ ok: false, error: "BOT_TOKEN is not configured in Render." });
-  const target = String(req.body?.target || "").trim();
-  if (!/^\-?\d+$/.test(target)) return res.status(400).json({ ok: false, error: "For a bot test, enter a numeric Telegram chat ID. The customer must have started the bot first." });
-  try { await telegram("sendMessage", { chat_id: target, text: "✅ Test message from AMBAR Furniture bot." }); res.json({ ok: true, message: "Test message sent by the AMBAR bot." }); }
-  catch (error) { res.status(400).json({ ok: false, error: friendlyError(error.message) }); }
+  try {
+    const admin = pickAdmin(req.body?.adminId);
+    if (!admin) return res.status(400).json({ ok: false, error: adminError() });
+    const target = String(req.body?.target || "").trim();
+    if (!target) return res.status(400).json({ ok: false, error: "Enter an @username or phone to test." });
+    const isPhone = target.startsWith("+") || /^\d{8,}$/.test(target);
+    const entity = await resolveUserEntity(admin.client, { telegramUsername: isPhone ? "" : target, telegramPhone: isPhone ? target : "", customerName: "Test" });
+    await admin.client.sendMessage(entity, { message: `✅ Test message from Ambar Furniture (sent from admin: ${admin.label}).` });
+    res.json({ ok: true, message: `Test message sent from ${admin.label}.` });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
 });
 
 app.get("/api/setup/app-admins", (req, res) => { if (!setupAuth(req, res)) return; res.json({ ok: true, enforced: accessEnforced(), owners: OWNER_IDS, appAdmins, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label })) }); });
@@ -517,17 +661,68 @@ app.post("/api/setup/app-admins/remove", async (req, res) => {
   if (own && own.ownerTelegramId === telegramId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
   res.json({ ok: true, message: "Admin removed." });
 });
-// Assigned admins use their own verified Mini App identity. Outbound order delivery uses BOT_TOKEN only.
+// ── Assigned admins connect THEIR OWN Telegram account ───────────────────────────
+const pendingMy = new Map();
+function myActor(req, res) {
+  if (!["owner", "admin"].includes(req.actor?.role)) { res.status(403).json({ ok: false, error: "Only the main admin or an assigned admin can connect an account." }); return null; }
+  if (!req.actor.telegramId) { res.status(400).json({ ok: false, error: "Open this app from Telegram (not a browser) to connect your own account." }); return null; }
+  return req.actor;
+}
 app.get("/api/my-account", (req, res) => {
-  // Compatibility for clients that still call this legacy endpoint. There is no
-  // personal account to connect: both owner and assigned admins send via BOT_TOKEN.
-  if (!req.actor || !["owner", "admin"].includes(req.actor.role))
-    return res.status(403).json({ ok: false, error: "Only the owner or an assigned admin can submit orders." });
-  res.json({ ok: true, connected: true, ready: true, label: "AMBAR Furniture bot", botBased: true, personalLoginRequired: false });
+  const a = myActor(req, res); if (!a) return;
+  const acc = accountFor(a);
+  res.json({ ok: true, connected: !!acc?.ready, label: acc?.label || "", error: acc && !acc.ready ? acc.error : "" });
 });
-app.post("/api/my-account/send-code", (req, res) => res.status(410).json({ ok: false, error: "Personal Telegram login is not used. Orders are sent through the AMBAR bot." }));
-app.post("/api/my-account/verify", (req, res) => res.status(410).json({ ok: false, error: "Personal Telegram login is not used. Orders are sent through the AMBAR bot." }));
-app.post("/api/my-account/disconnect", (req, res) => res.json({ ok: true, message: "There is no personal Telegram session to disconnect." }));
+app.post("/api/my-account/send-code", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  try {
+    const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "The owner must add TG_API_ID and TG_API_HASH in Render first." });
+    const raw = String(req.body?.phone || "").replace(/[^\d+]/g, "");
+    if (!raw) return res.status(400).json({ ok: false, error: "Enter YOUR phone number with country code, e.g. +2519..." });
+    const phone = raw.startsWith("+") ? raw : "+" + raw;
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
+    const old = pendingMy.get(a.telegramId); if (old?.client) { try { await old.client.disconnect(); } catch {} }
+    const client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5 });
+    await client.connect();
+    const r = await client.sendCode({ apiId, apiHash }, phone);
+    pendingMy.set(a.telegramId, { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false });
+    res.json({ ok: true, message: `Code sent to ${phone}. Check your Telegram app (or SMS) and enter it below.` });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+app.post("/api/my-account/verify", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  try {
+    const p = pendingMy.get(a.telegramId);
+    if (!p) return res.status(400).json({ ok: false, error: "Press 'Send code' first." });
+    const { Api } = require("telegram"); const apiId = Number(process.env.TG_API_ID), apiHash = process.env.TG_API_HASH;
+    const code = String(req.body?.code || "").replace(/\D/g, ""), password = String(req.body?.password || "");
+    if (!p.needPassword) {
+      try { await p.client.invoke(new Api.auth.SignIn({ phoneNumber: p.phone, phoneCodeHash: p.phoneCodeHash, phoneCode: code })); }
+      catch (e) { if (e.errorMessage === "SESSION_PASSWORD_NEEDED") p.needPassword = true; else throw e; }
+    }
+    if (p.needPassword) {
+      if (!password) return res.json({ ok: false, needPassword: true, error: "Your account has 2-step verification. Enter your 2-step password and press Verify again." });
+      await p.client.signInWithPassword({ apiId, apiHash }, { password: async () => password, onError: async e => { throw e; } });
+    }
+    const session = p.client.session.save();
+    try { await p.client.disconnect(); } catch {}
+    pendingMy.delete(a.telegramId);
+    const id = "u" + a.telegramId;
+    const prev = admins.get(id); if (prev) { try { await prev.client?.disconnect(); } catch {} admins.delete(id); }
+    const acc = await startAdmin({ id, label: a.name || "Admin " + a.telegramId, session, ownerTelegramId: a.telegramId });
+    const rec = appAdmins.find(x => String(x.telegramId) === a.telegramId); if (rec) rec.accountId = id;
+    await saveAdminRecords(); await saveAppAdmins();
+    res.json({ ok: acc.ready, message: acc.ready ? "Your Telegram account is connected ✅. Orders you create are now sent from YOUR account." : "Logged in, but could not start: " + acc.error });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+app.post("/api/my-account/disconnect", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  const acc = admins.get("u" + a.telegramId);
+  if (acc) { try { await acc.client?.disconnect(); } catch {} admins.delete(acc.id); await saveAdminRecords(); }
+  res.json({ ok: true, message: "Your Telegram account was disconnected." });
+});
+
 
 app.get("/api/business/status", async (req, res) => {
   await supabaseReady;
@@ -667,6 +862,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (!order.telegramChatId && !hasContact) return res.status(400).json({ ok: false, error: "Enter the customer's Telegram @username or phone number." });
     if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
 
+    // Cards are sent from the Telegram account of whoever creates the order:
+    // the main admin -> the main admin's account; an assigned admin -> THEIR OWN account.
+    // The bot never sends the order card.
+    const account = accountFor(req.actor);
+    if (!account?.ready) return res.status(400).json({ ok: false, error: req.actor?.role === "owner"
+      ? "Your Telegram account is not connected. Tap '🔗 Connect my Telegram account' (or add it in Admin Control), then send the order again."
+      : "Connect your own Telegram account first: tap '🔗 Connect my Telegram account', then send the order again." });
+
     if (supabase) await loadOrders();
     order.id = nextId++;
     order.orderId = order.orderId || `Z-${String(order.id).padStart(3, "0")}`;
@@ -674,47 +877,23 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.comments = [];
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
     order.cardImage = await uploadToSupabase(cardImage, "cards", "image/png");
-    order.sender = "bot";
-    order.businessConnectionId = null;
-    order.sent = false;
-    // Save first. Delivery failures must never discard an order.
-    await saveOrderRecord(order);
+    order.adminId = account.id; order.adminLabel = account.label; order.strictAdmin = true;
+    order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
+    await saveOrderRecord(order); // delivery failures must never discard an order
 
-    // Order cards are ADMIN-ONLY. Never send the generated order card to the customer.
-    // Private bot messages work only after each admin has opened the bot and pressed Start.
-    // The submitting admin receives a copy, and all configured main-owner IDs receive a copy.
-    const adminTargets = [...new Set([
-      ...OWNER_IDS,
-      String(order.createdByTelegramId || ""),
-      String(ADMIN_CHAT_ID || "")
-    ].map(value => String(value || "").trim()).filter(id => /^-?\d+$/.test(id)))];
-    const adminCopies = [];
-    const adminErrors = [];
-    for (const target of adminTargets) {
-      try {
-        await sendCardViaBot(target, cardImage.path, order,
-          `\n\nSubmitted by: ${esc(order.createdByName || "AMBAR admin")} (${esc(order.createdByRole)}).`, true);
-        adminCopies.push(target);
-      } catch (error) {
-        adminErrors.push({ chatId: target, error: friendlyError(error.message) });
-        console.warn(`Admin notification failed for ${order.orderId} to ${target}:`, error.message);
-      }
+    try {
+      const r = await sendCardViaUserAccount(order, cardImage.path);
+      order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true;
+      order.customerDelivered = true;
+      try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
+      await saveOrderRecord(order);
+      return res.json({ ok: true, delivered: true, customerDelivered: true, sentAs: "admin_user_account", sentFrom: account.label, order, cardUrl: order.cardImage });
+    } catch (error) {
+      order.sent = false; order.customerDelivered = false;
+      await saveOrderRecord(order);
+      return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
+        warning: `Order ${order.orderId} was saved but the card could not be sent from ${account.label}: ${error.message}. Check the customer's @username or phone number and try again.` });
     }
-
-    // 'sent' now means delivered to at least one admin destination, not to a customer.
-    order.sent = adminCopies.length > 0;
-    order.sender = "bot_admin_only";
-    order.customerMessageId = null;
-    order.customerDelivered = false;
-    order.adminNotified = adminCopies.length > 0;
-    order.adminNotifiedChatIds = adminCopies;
-    await saveOrderRecord(order);
-
-    const warning = adminCopies.length
-      ? `Order ${order.orderId} was saved. Admin card delivered to: ${adminCopies.join(", ")}.${adminErrors.length ? ` Delivery failed for: ${adminErrors.map(item => item.chatId).join(", ")}; those admins must open the AMBAR bot and press Start.` : " All configured admin destinations received the card."} No order card was sent to the customer.`
-      : `Order ${order.orderId} was saved, but no admin could be reached. The main admin and submitting admin must each open the AMBAR bot and press Start. Check MAIN_ADMIN_TELEGRAM_ID / OWNER_TELEGRAM_IDS and ADMIN_CHAT_ID in Render.`;
-    res.json({ ok: true, delivered: adminCopies.length > 0, customerDelivered: false, adminCopy: adminCopies.length > 0, adminCopies, order, cardUrl: order.cardImage, warning,
-      adminErrors: adminErrors.length ? adminErrors : undefined });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -864,7 +1043,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
       : Promise.resolve();
     await supabaseReady;
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
-    // No personal Telegram API sessions are used.
+    await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
