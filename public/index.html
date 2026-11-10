@@ -19,15 +19,18 @@ textarea{min-height:80px}.full{grid-column:1/-1}
 button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
 .primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
 .desktop-photo-button{display:none}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
-.order-card{background:#fff;border:1px solid #ddd5c8;border-radius:18px;overflow:hidden;box-shadow:0 8px 26px #00000012;max-width:650px;margin:auto}
-.order-head{background:#153a2e;color:#f4efe3;padding:20px 22px;display:flex;justify-content:space-between;align-items:center;gap:15px}
-.brand{font-size:20px;font-weight:800;letter-spacing:.8px}.tag{font-size:11px;letter-spacing:1.2px;opacity:.78;text-transform:uppercase;margin-top:4px}
-.order-id{background:#b89552;color:white;border-radius:20px;padding:8px 12px;font-size:12px;font-weight:800;white-space:nowrap}
-.photo-wrap{background:#f1ede5;padding:16px;text-align:center}.order-photo{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:12px;display:block;background:#fff;box-shadow:0 3px 12px #00000010}
-.order-body{padding:20px 22px}.section-title{font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#b89552;font-weight:800;margin:18px 0 9px}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 20px}.info{font-size:13px;line-height:1.5}.info b{color:#153a2e}.divider{height:1px;background:#ebe5da;margin:18px 0}
-.thanks{background:#f7f2e8;padding:13px;border-radius:10px;text-align:center;font-size:13px;color:#153a2e;font-weight:700}
-.action-row{display:flex;gap:8px;padding:14px 18px;background:#faf8f3;border-top:1px solid #e7e0d5}
+.order-card{background:#fff;border:1px solid #e6e1d6;border-radius:22px;overflow:hidden;box-shadow:0 18px 48px #0f2a2133,0 2px 6px #0000000d;max-width:650px;margin:auto}
+.order-head{background:linear-gradient(135deg,#0f2f25 0%,#1b4d3d 100%);color:#f4efe3;padding:24px 26px;display:flex;justify-content:space-between;align-items:center;gap:15px;border-bottom:4px solid #ffa939}
+.brand{font-size:24px;font-weight:800;letter-spacing:1.2px;color:#ffa939;line-height:1.15}.tag{font-size:11px;letter-spacing:1.6px;opacity:.8;text-transform:uppercase;margin-top:6px}
+.order-id{background:#ffffff1f;color:#fff;border:1px solid #ffffff40;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:800;white-space:nowrap;letter-spacing:.5px}
+.status-pill{display:inline-block;margin-top:8px;background:#ffa93922;color:#ffd08a;border:1px solid #ffa93966;border-radius:999px;padding:3px 10px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+.status-pill.ok{background:#2ecc7122;color:#8ff0b6;border-color:#2ecc7166}.status-pill.no{background:#e74c3c22;color:#ffb3aa;border-color:#e74c3c66}
+.photo-wrap{background:#f4f1ea;padding:18px;text-align:center;color:#8a8478;font-size:13px}.order-photo{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:14px;display:block;background:#fff;box-shadow:0 6px 18px #0000001a}
+.order-body{padding:22px 26px 8px}.section-title{display:flex;align-items:center;gap:10px;font-size:12px;text-transform:uppercase;letter-spacing:1.6px;color:#153a2e;font-weight:800;margin:20px 0 12px}
+.section-title:before{content:"";width:5px;height:18px;border-radius:3px;background:#ffa939}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.info{font-size:14px;line-height:1.4;background:#f8f6f1;border:1px solid #eee9de;border-radius:12px;padding:10px 12px;color:#1c2b25;font-weight:600}.info br{display:none}.info b{display:block;color:#8a7f69;font-size:10px;text-transform:uppercase;letter-spacing:1.1px;font-weight:800;margin-bottom:3px}.divider{height:1px;background:#ebe5da;margin:20px 0 0}
+.thanks{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:14px;border-radius:12px;text-align:center;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#f4efe3;font-weight:800;margin:20px 0 6px}
+.action-row{display:flex;gap:10px;padding:16px 22px 22px;background:#fff}
 .delivery-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
 .delivery-option{position:relative;display:block}
 .delivery-option input{position:absolute;opacity:0;pointer-events:none}
@@ -39,7 +42,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 .photo-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .photo-button{display:inline-block;background:#153a2e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800;cursor:pointer}
 .photo-name{font-size:12px;color:#6d675d}
-.photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{display:block;text-align:center;padding:11px 14px;border-radius:9px;font-size:12px;font-weight:800;background:rgba(230,120,35,.16);border:1px solid rgba(230,120,35,.45);color:#f3a35e;text-decoration:none}
+.photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:13px 10px;border-radius:12px;font-size:12px;font-weight:800;letter-spacing:.6px;border:1.5px solid transparent;cursor:pointer;transition:transform .12s,box-shadow .12s,filter .12s}.action:hover{transform:translateY(-1px);box-shadow:0 6px 14px #00000026}.action:active{transform:translateY(0)}.action:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}.confirm{background:#1f8a4c;color:#fff}.reject{background:#fff;color:#b3261e;border-color:#e3b4b0}.comment{background:#fff;color:#153a2e;border-color:#cfd8d3}.demo-note{padding:0 22px 18px;font-size:11px;color:#8a8478;text-align:center}.demo-msg{margin:0 22px 14px;padding:10px 12px;border-radius:10px;background:#f4f1ea;font-size:13px;color:#153a2e;text-align:center}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
 @media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
 <style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
@@ -51,10 +54,10 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </script>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
-<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Telegram sender:</b> AMBAR Furniture bot <span style="color:#176b3a;font-weight:700">✓ Bot-only mode</span><div class="small">The owner and assigned admins can create orders using BOT_TOKEN. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal-account login is required. Order cards are delivered only to the main admin and submitting admin. Customers never receive order cards. Each admin must press Start in the AMBAR bot to receive a private copy. No personal-account connection is required.</div></div>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Sending account:</b> <span id="senderState">checking…</span><div class="small">Cards are sent in the name of the admin who creates the order. For tappable Confirm / Reject / Comment buttons, connect the AMBAR bot in your own Telegram → Settings → Business → Chatbots (needs Telegram Premium) and pick the customer from the list; otherwise the customer gets a tappable poll (Confirm / Reject / Comment). Main admin: sent from the main admin account; assigned admins: from their own Telegram account. The bot never sends order cards. Fill the customer's @username or phone.</div></div>
 <form id="orderForm">
 <div class="card"><h2>Product Information</h2><div class="grid">
-<label>Order ID<input name="orderId" placeholder="Z-001"></label>
+<label>Order Code (type it yourself)<input name="orderId" placeholder="Type order code, e.g. Z-001" required maxlength="40" autocomplete="off"></label>
 <label>Product<input name="product"></label>
 <label>Length (cm)<input name="length" value="120"></label>
 <label>Width (cm)<input name="width" value="35"></label>
@@ -75,6 +78,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Phone<input name="phone"></label>
 <label>Location<input name="location"></label>
 
+<label class="full" id="pickWrap" style="display:none">Select customer (people who messaged the main admin account)<select id="customerPick"><option value="">— Choose a customer —</option></select></label>
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
 
@@ -94,7 +98,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </div></div>
 
 <div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
-<div class="row"><button class="primary" type="submit">📨 Save & Notify Admins</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
+<div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
 <p id="result"></p>
 </form>
 </main>
@@ -136,30 +140,38 @@ function previewCard(){
  const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k])))].filter(Boolean).join("");
  const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
  const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Delivery Type",v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
- preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Z-001")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div><div class="action-row"><a class="action" href="/">📋 OPEN AMBAR ORDERS</a></div></div>`;
+ preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Order code")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div></div>`;
 }
 function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
 function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=()=>{URL.revokeObjectURL(u);no(Error("Unable to read selected photo."))};i.src=u;});}
 function drawWrap(ctx,text,x,y,max){const words=String(text).split(/\s+/);let line="";for(const word of words){const t=line?line+" "+word:word;if(ctx.measureText(t).width>max&&line){ctx.fillText(line,x,y);line=word;y+=32;}else line=t;}if(line){ctx.fillText(line,x,y);y+=40;}return y;}
 async function makeCard(v,file){
  const img=await loadImg(file),c=document.createElement("canvas");c.width=1080;c.height=1920;const x=c.getContext("2d");if(!x)throw Error("Canvas image generation is not supported in this browser.");
- const W=1080,pad=64; x.fillStyle="#f4efe3";x.fillRect(0,0,W,1920);
- x.fillStyle="#153a2e";x.fillRect(0,0,W,180);x.fillStyle="#b89552";x.fillRect(0,176,W,4);
- x.fillStyle="#fff";x.font="800 44px Arial";x.fillText("AMBAR FURNITURE",pad,72);x.font="24px Arial";x.fillText("CUSTOMER ORDER CARD",pad,112);
- x.fillStyle="#b89552";rounded(x,790,48,226,72,18);x.fillStyle="#fff";x.font="800 28px Arial";x.textAlign="center";x.fillText(v.orderId||"Z-001",903,94);x.textAlign="left";
+ const W=1080,pad=64; x.fillStyle="#e9e5da";x.fillRect(0,0,W,1920);
+ // card body with soft shadow
+ x.save();x.shadowColor="rgba(15,42,33,.28)";x.shadowBlur=36;x.shadowOffsetY=10;x.fillStyle="#fff";rounded(x,24,24,W-48,1872,34);x.restore();
+ // header (clipped to the rounded card)
+ x.save();x.beginPath();x.roundRect(24,24,W-48,1872,34);x.clip();
+ const g=x.createLinearGradient(24,24,W-24,204);g.addColorStop(0,"#0f2f25");g.addColorStop(1,"#1b4d3d");x.fillStyle=g;x.fillRect(24,24,W-48,180);
+ x.fillStyle="#ffa939";x.fillRect(24,200,W-48,5);
+ x.fillStyle="#f6f3ec";x.fillRect(24,205,W-48,1691);x.restore();
+ x.fillStyle="#ffa939";x.font="800 50px Arial";x.fillText("AMBAR FURNITURE",pad,98);
+ x.fillStyle="rgba(244,239,227,.82)";x.font="600 22px Arial";x.fillText("CUSTOMER ORDER CARD",pad,142);
+ x.fillStyle="rgba(255,255,255,.14)";rounded(x,786,66,230,72,36);x.strokeStyle="rgba(255,255,255,.35)";x.lineWidth=2;x.beginPath();x.roundRect(786,66,230,72,36);x.stroke();
+ x.fillStyle="#fff";x.font="800 28px Arial";x.textAlign="center";x.fillText(v.orderId||"",901,113);x.textAlign="left";
  // Product image panel
- x.fillStyle="#fff";rounded(x,pad,216,W-pad*2,590,24);
+ x.save();x.shadowColor="rgba(0,0,0,.14)";x.shadowBlur=20;x.shadowOffsetY=6;x.fillStyle="#fff";rounded(x,pad,226,W-pad*2,580,24);x.restore();
  const maxW=W-pad*2-36,maxH=540,scale=Math.min(maxW/img.width,maxH/img.height),iw=img.width*scale,ih=img.height*scale;
- x.save();x.beginPath();x.roundRect(pad+18,234,maxW,maxH,16);x.clip();x.drawImage(img,pad+18+(maxW-iw)/2,234+(maxH-ih)/2,iw,ih);x.restore();
- let y=846;
- const section=t=>{x.fillStyle="#b89552";x.font="800 22px Arial";x.fillText(t.toUpperCase(),pad,y);y+=38;};
- const line=(k,val)=>{if(!String(val??"").trim())return;const text=String(val);x.fillStyle="#153a2e";x.font="800 21px Arial";x.fillText(k,pad,y);x.fillStyle="#303b35";x.font="21px Arial";let yy=y;const max=850;const words=text.split(/\s+/);let line="";for(const w of words){const t=line?line+" "+w:w;if(x.measureText(t).width>max&&line){x.fillText(line,pad+190,yy);yy+=29;line=w}else line=t}if(line)x.fillText(line,pad+190,yy);y=Math.max(y+32,yy+38)};
- const divider=()=>{x.strokeStyle="#d8d0c2";x.lineWidth=1;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
+ x.save();x.beginPath();x.roundRect(pad+18,246,maxW,maxH,16);x.clip();x.drawImage(img,pad+18+(maxW-iw)/2,246+(maxH-ih)/2,iw,ih);x.restore();
+ let y=852;
+ const section=t=>{x.fillStyle="#ffa939";rounded(x,pad,y-22,7,28,3);x.fillStyle="#153a2e";x.font="800 22px Arial";x.fillText(t.toUpperCase(),pad+22,y);y+=42;};
+ const line=(k,val)=>{if(!String(val??"").trim())return;const text=String(val);x.fillStyle="#8a7f69";x.font="800 19px Arial";x.fillText(k.toUpperCase(),pad,y);x.fillStyle="#14211b";x.font="600 22px Arial";let yy=y;const max=850;const words=text.split(/\s+/);let line="";for(const w of words){const t=line?line+" "+w:w;if(x.measureText(t).width>max&&line){x.fillText(line,pad+190,yy);yy+=29;line=w}else line=t}if(line)x.fillText(line,pad+190,yy);y=Math.max(y+32,yy+38)};
+ const divider=()=>{x.strokeStyle="#e0dacd";x.lineWidth=2;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
  section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));
  divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
  divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Delivery type",v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
- x.fillStyle="#153a2e";rounded(x,pad,1790,W-pad*2,74,16);x.fillStyle="#fff";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
- return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate PNG card.")),"image/png"));
+ const tg=x.createLinearGradient(pad,1790,W-pad,1864);tg.addColorStop(0,"#0f2f25");tg.addColorStop(1,"#1b4d3d");x.fillStyle=tg;rounded(x,pad,1790,W-pad*2,74,18);x.fillStyle="#ffa939";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
+ return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate card image.")),"image/jpeg",0.95));
 }
 const deliveryFeeField=document.getElementById("deliveryFeeField");
 document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventListener("change",()=>{
@@ -171,9 +183,9 @@ document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventLis
 deliveryFeeField.style.display="none";
 form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
- e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
+ e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Please type the Order code.";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
- try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending order card to admins…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||"Order card sent to the main admin and submitting admin by the AMBAR bot. No card was sent to the customer.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but no admin notification was delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Save & Notify Admins";}
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.jpg`);btn.textContent="Sending order card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||("Order card sent to the customer from "+(d.sentFrom||"your Telegram account")+"."))+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but the card was not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
 previewCard();
 </script>
@@ -197,8 +209,8 @@ async function render(keepMsg){
   const people=(a.appAdmins||[]).map(p=>'<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>').join("")||'<p><small>No admins assigned yet.</small></p>';
   box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
   +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
-  +'<h3>👥 Admins who can use the app</h3>'+people
-  +'<h3>➕ Assign a new admin</h3><input id="nId" inputmode="numeric" placeholder="Their numeric Telegram ID"><input id="nName" placeholder="Their name"><p><small>Assigned admins sign in by opening the Mini App from their own Telegram account. All order messages are sent by the AMBAR bot using BOT_TOKEN.</small></p><button data-a="addperson">Assign admin</button>'
+  +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
+  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><button data-a="addperson">Assign admin</button>'
   +'<h3>📨 Message delivery</h3><p><small>Uses BOT_TOKEN only. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal Telegram login is needed.</small></p>'
   +'<div id="acMsg" class="msg"></div>';
 }
@@ -208,7 +220,7 @@ ov.addEventListener("click",async e=>{
   try{
   if(act==="close"){ov.style.display="none";return;}
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
-  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),name:val("nName")});await render();say(d);return;}
+  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId")});await render();say(d);return;}
   if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
   }catch(err){say({ok:false,error:err.message});}
 });
@@ -216,5 +228,44 @@ ov.addEventListener("click",async e=>{
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 })();
 </script>
-</body>
+<button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
+<div id="myOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="myBox" style="background:#fff;max-width:520px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<script>
+(function(){
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
+const ov=document.getElementById("myOverlay"),box=document.getElementById("myBox"),openBtn=document.getElementById("myOpen");
+const st='font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc';
+const btn='font-size:15px;padding:10px;margin:3px 0;width:100%;border:0;border-radius:8px;color:#fff;background:#1a73e8';
+const val=id=>(document.getElementById(id)||{}).value||"";
+const say=d=>{const m=document.getElementById("myMsg");if(m){m.style.color=d.ok?"#0a7d2c":"#c62828";m.textContent=d.message||d.error||"";}};
+let role="";
+// Once connected the Connect button disappears; the status box shows the account and a small Disconnect link.
+async function refresh(){
+  const ss=document.getElementById("senderState");
+  const s=await api("/api/my-account").catch(()=>({ok:false}));
+  const connected=!!(s.ok&&s.connected);
+  openBtn.style.display=(role&&!connected)?"block":"none";
+  if(!ss)return;
+  if(connected)ss.innerHTML='<span style="color:#176b3a;font-weight:700">✓ Connected: '+esc(s.label||"your account")+'</span> <a href="#" id="myDisc" style="font-size:12px">Disconnect</a>';
+  else ss.innerHTML=role==="owner"?'<span style="color:#176b3a;font-weight:700">Main admin account (Telegram Business)</span> <span class="small">— tap 🔗 Connect my Telegram account to also reach customers who never messaged you.</span>':'<span style="color:#9a3c26;font-weight:700">Not connected — tap 🔗 Connect my Telegram account</span>';
+  const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
+}
+async function render(){
+  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>Order cards you create are sent from <b>your own</b> Telegram account. Only you can use it.</p>'
+  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><button style="'+btn+'" data-a="send">Send code</button><input id="myCode" style="'+st+'" placeholder="Code Telegram sent you"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
+  +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
+}
+ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  try{const a=b.dataset.a;
+  if(a==="close"){ov.style.display="none";return;}
+  if(a==="send"){say(await api("/api/my-account/send-code",{phone:val("myPhone")}));return;}
+  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
+  }catch(err){say({ok:false,error:err.message});}});
+openBtn.onclick=()=>{ov.style.display="block";render();};
+(async()=>{try{const m=await api("/api/me");if(m.role==="admin"||m.role==="owner"){role=m.role;await refresh();
+  {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;};}}catch{}}}
+}catch{}})();
+})();
+</script></body>
 </html>
