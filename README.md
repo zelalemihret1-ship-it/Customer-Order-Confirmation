@@ -76,7 +76,7 @@ Buttons reach customers without them pressing Start: the sending admin's account
 
 Every order message also carries a link `PUBLIC_BASE_URL/o/<token>`. It opens a page with the card and big Confirm / Reject / Comment buttons. Answers update the order and notify the admins. `PUBLIC_BASE_URL` must be your https site address.
 
-## v37 — buttons visible immediately
-- After the card is sent through the inline route, the bot immediately edits that message (Telegram `chosen_inline_result`) so every Telegram client draws the Confirm / Reject / Comment buttons at once, without anyone sending a text.
+## v38 — three buttons visible immediately
+- The inline card contains exactly three action buttons — Confirm, Reject, Comment — in the initial `answerInlineQuery` result, and the bot immediately reapplies the same three buttons on `chosen_inline_result` so they appear without waiting for a customer message.
 - **One-time BotFather setup (required for this):** send `/setinlinefeedback` → pick the bot → choose **100%**. (`/setinline` must also be on.) Redeploy; the webhook updates itself.
 - Once the customer answers, the buttons stay but are locked (🔒 / ✅ Confirmed / ❌ Rejected), the answer-page link is removed from the message, and the web page buttons are disabled.
