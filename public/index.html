@@ -51,7 +51,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </script>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
-<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Telegram sender:</b> AMBAR Furniture bot <span style="color:#176b3a;font-weight:700">✓ Bot-only mode</span><div class="small">The owner and assigned admins can create orders using BOT_TOKEN. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal-account login is required. Customers must press Start in the AMBAR bot before it can receive private bot messages. Owner/admin personal-account connection is not required.</div></div>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Telegram sender:</b> AMBAR Furniture bot <span style="color:#176b3a;font-weight:700">✓ Bot-only mode</span><div class="small">The owner and assigned admins can create orders using BOT_TOKEN. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal-account login is required. Order cards are delivered only to the main admin and submitting admin. Customers never receive order cards. Each admin must press Start in the AMBAR bot to receive a private copy. No personal-account connection is required.</div></div>
 <form id="orderForm">
 <div class="card"><h2>Product Information</h2><div class="grid">
 <label>Order ID<input name="orderId" placeholder="Z-001"></label>
@@ -94,7 +94,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </div></div>
 
 <div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
-<div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
+<div class="row"><button class="primary" type="submit">📨 Save & Notify Admins</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
 <p id="result"></p>
 </form>
 </main>
@@ -173,7 +173,7 @@ form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
  e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
- try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending image card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered===false?("⚠️ "+esc(d.warning||"Saved, but not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("✅ Order card sent"+" by the AMBAR bot"+" to the customer."+(d.warning?" "+esc(d.warning):""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.png`);btn.textContent="Sending order card to admins…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||"Order card sent to the main admin and submitting admin by the AMBAR bot. No card was sent to the customer.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but no admin notification was delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Save & Notify Admins";}
 });
 previewCard();
 </script>
