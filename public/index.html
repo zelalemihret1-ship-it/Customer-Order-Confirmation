@@ -51,7 +51,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </script>
 <header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
-<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Sending account:</b> <span id="senderState">checking…</span><div class="small">Order cards are sent from your own Telegram account (the main admin's account for the main admin, each assigned admin's own account for them). The bot never sends order cards. Fill the customer's @username or phone number.</div></div>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Sending account:</b> <span id="senderState">checking…</span><div class="small">Cards are sent in the name of the admin who creates the order, with Confirm / Reject / Comment for the customer. Main admin: sent from the main admin account; assigned admins: from their own Telegram account. The bot never sends order cards. Fill the customer's @username or phone.</div></div>
 <form id="orderForm">
 <div class="card"><h2>Product Information</h2><div class="grid">
 <label>Order ID<input name="orderId" placeholder="Z-001"></label>
@@ -75,6 +75,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Phone<input name="phone"></label>
 <label>Location<input name="location"></label>
 
+<label class="full" id="pickWrap" style="display:none">Select customer (people who messaged the main admin account)<select id="customerPick"><option value="">— Choose a customer —</option></select></label>
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
 
@@ -197,8 +198,8 @@ async function render(keepMsg){
   const people=(a.appAdmins||[]).map(p=>'<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>').join("")||'<p><small>No admins assigned yet.</small></p>';
   box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
   +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
-  +'<h3>👥 Admins who can use the app</h3>'+people
-  +'<h3>➕ Assign a new admin</h3><input id="nId" inputmode="numeric" placeholder="Their numeric Telegram ID"><input id="nName" placeholder="Their name"><p><small>Assigned admins sign in by opening the Mini App from their own Telegram account. All order messages are sent by the AMBAR bot using BOT_TOKEN.</small></p><button data-a="addperson">Assign admin</button>'
+  +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
+  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><button data-a="addperson">Assign admin</button>'
   +'<h3>📨 Message delivery</h3><p><small>Uses BOT_TOKEN only. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal Telegram login is needed.</small></p>'
   +'<div id="acMsg" class="msg"></div>';
 }
@@ -208,7 +209,7 @@ ov.addEventListener("click",async e=>{
   try{
   if(act==="close"){ov.style.display="none";return;}
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
-  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),name:val("nName")});await render();say(d);return;}
+  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId")});await render();say(d);return;}
   if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
   }catch(err){say({ok:false,error:err.message});}
 });
@@ -227,25 +228,32 @@ const st='font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-b
 const btn='font-size:15px;padding:10px;margin:3px 0;width:100%;border:0;border-radius:8px;color:#fff;background:#1a73e8';
 const val=id=>(document.getElementById(id)||{}).value||"";
 const say=d=>{const m=document.getElementById("myMsg");if(m){m.style.color=d.ok?"#0a7d2c":"#c62828";m.textContent=d.message||d.error||"";}};
+let role="";
+// Once connected the Connect button disappears; the status box shows the account and a small Disconnect link.
+async function refresh(){
+  const ss=document.getElementById("senderState");
+  const s=await api("/api/my-account").catch(()=>({ok:false}));
+  const connected=!!(s.ok&&s.connected);
+  openBtn.style.display=(role&&!connected)?"block":"none";
+  if(!ss)return;
+  if(connected)ss.innerHTML='<span style="color:#176b3a;font-weight:700">✓ Connected: '+esc(s.label||"your account")+'</span> <a href="#" id="myDisc" style="font-size:12px">Disconnect</a>';
+  else ss.innerHTML=role==="owner"?'<span style="color:#176b3a;font-weight:700">Main admin account (Telegram Business)</span> <span class="small">— tap 🔗 Connect my Telegram account to also reach customers who never messaged you.</span>':'<span style="color:#9a3c26;font-weight:700">Not connected — tap 🔗 Connect my Telegram account</span>';
+  const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
+}
 async function render(){
-  const s=await api("/api/my-account");
-  if(!s.ok){box.innerHTML='<p>'+esc(s.error)+'</p><button style="'+btn+';background:#666" data-a="close">Close</button>';return;}
-  box.innerHTML='<h2 style="margin-top:0">🔗 My Telegram account</h2>'
-  +(s.connected?'<p>✅ Connected as <b>'+esc(s.label)+'</b>. Order cards you create are sent from <b>your own</b> Telegram account.</p><button style="'+btn+';background:#c62828" data-a="disc">Disconnect my account</button>'
-  :'<p>Connect <b>your own</b> Telegram account so orders you create are sent from it. Only you can use it.</p>'+(s.error?'<p style="color:#c62828">'+esc(s.error)+'</p>':'')
-  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><button style="'+btn+'" data-a="send">Send code</button><input id="myCode" style="'+st+'" placeholder="Code Telegram sent you"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>')
+  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>Order cards you create are sent from <b>your own</b> Telegram account. Only you can use it.</p>'
+  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><button style="'+btn+'" data-a="send">Send code</button><input id="myCode" style="'+st+'" placeholder="Code Telegram sent you"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
   +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
 }
 ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   try{const a=b.dataset.a;
   if(a==="close"){ov.style.display="none";return;}
   if(a==="send"){say(await api("/api/my-account/send-code",{phone:val("myPhone")}));return;}
-  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});if(d.ok){await render();}say(d);return;}
-  if(a==="disc"){if(!confirm("Disconnect your Telegram account?"))return;const d=await api("/api/my-account/disconnect",{});await render();say(d);return;}
+  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
   }catch(err){say({ok:false,error:err.message});}});
-openBtn.onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
-(async()=>{try{const m=await api("/api/me");
-  if(m.role==="admin"||m.role==="owner"){openBtn.style.display="block";const ss=document.getElementById("senderState");const s=await api("/api/my-account");if(ss){ss.innerHTML=s.ok&&s.connected?'<span style="color:#176b3a;font-weight:700">✓ '+esc(s.label||"connected")+'</span>':'<span style="color:#9a3c26;font-weight:700">Not connected — tap 🔗 Connect my Telegram account</span>';}}
+openBtn.onclick=()=>{ov.style.display="block";render();};
+(async()=>{try{const m=await api("/api/me");if(m.role==="admin"||m.role==="owner"){role=m.role;await refresh();
+  if(m.role==="owner"){document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;};}}catch{}}}
 }catch{}})();
 })();
 </script></body>
