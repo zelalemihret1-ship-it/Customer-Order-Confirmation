@@ -7,7 +7,7 @@ try { ({ createClient } = require("@supabase/supabase-js")); } catch (e) { conso
 const crypto = require("crypto");
 
 
-const ALLOWED_UPDATES = ["message", "callback_query"];
+const ALLOWED_UPDATES = ["message", "callback_query", "inline_query"];
 
 // Tokens pasted into hosting dashboards often carry quotes, spaces or a stray "bot" prefix.
 function cleanToken(raw = "") {
@@ -568,7 +568,9 @@ async function startAdmin(record) {
         const order = mine[mine.length - 1];
         if (!order) return;
         const reply = t => admin.client.sendMessage(msg.senderId, { message: t });
-        if (/^\s*(confirm|confirmed|yes|ok|okay|1|✅|አዎ|አረጋግጣለሁ)\b/i.test(text) || /^\s*(✅|1)\s*$/.test(text)) {
+        const wantsComment = String(order.awaitingCommentFrom || "") === senderId;
+        if (wantsComment) { order.awaitingCommentFrom = ""; order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId }); await saveOrderRecord(order); await reply(`Thank you, your comment on ${order.orderId} was received.`); }
+        else if (/^\s*(confirm|confirmed|yes|ok|okay|1|✅|አዎ|አረጋግጣለሁ)\b/i.test(text) || /^\s*(✅|1)\s*$/.test(text)) {
           order.status = "Confirmed"; await saveOrderRecord(order);
           await reply(`${order.orderId} is now Confirmed ✅. Thank you for choosing Ambar Furniture!`);
         } else if (/^\s*(reject|rejected|cancel|no|2|❌|አይ|እሰርዛለሁ)\b/i.test(text) || /^\s*(❌|2)\s*$/.test(text)) {
@@ -658,6 +660,30 @@ async function sendDecisionPoll(admin, entity, order) {
 }
 // Real tappable Confirm / Reject / Comment buttons. A personal Telegram account cannot send inline buttons,
 // so the AMBAR bot sends them. Works when the customer has opened the bot and pressed Start; otherwise returns ok:false.
+// Tappable buttons for ANY customer (no /start needed): the admin's account posts an inline-bot message
+// "via @AmbarBot". The bot answers the inline query with the card text + Confirm/Reject/Comment keyboard.
+// Requires Inline Mode enabled for the bot in @BotFather (/setinline).
+let cachedBotUsername = "";
+async function botUsername() {
+  if (cachedBotUsername) return cachedBotUsername;
+  const fromEnv = String(process.env.BOT_USERNAME || "").replace(/^@/, "").trim();
+  if (fromEnv) return (cachedBotUsername = fromEnv);
+  const me = await telegram("getMe", {}); return (cachedBotUsername = me.username || "");
+}
+async function sendInlineButtons(admin, entity, order) {
+  try {
+    const { Api } = require("telegram"); const bigInt = require("big-integer");
+    const username = await botUsername();
+    if (!username) return { ok: false, error: "bot username unknown" };
+    const peer = await admin.client.getInputEntity(entity);
+    const bot = await admin.client.getInputEntity(username);
+    const res = await admin.client.invoke(new Api.messages.GetInlineBotResults({ bot, peer, query: `order:${order.id}`, offset: "" }));
+    const first = res.results?.[0];
+    if (!first) return { ok: false, error: "bot returned no inline result (enable Inline Mode in @BotFather: /setinline)" };
+    await admin.client.invoke(new Api.messages.SendInlineBotResult({ peer, queryId: res.queryId, id: first.id, randomId: bigInt(Math.floor(Math.random() * 1e15)) }));
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error.errorMessage || error.message }; }
+}
 async function sendBotButtons(order, chatId) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
@@ -678,7 +704,8 @@ async function sendCardViaUserAccount(order, filePath) {
   let sent;
   try { sent = await admin.client.sendFile(entity, { file: photoPath, caption, forceDocument: false }); }
   finally { fs.promises.unlink(photoPath).catch(() => {}); }
-  const botButtons = await sendBotButtons(order, String(entity.id));
+  let botButtons = await sendInlineButtons(admin, entity, order);
+  if (!botButtons.ok) { console.warn("Inline buttons not sent:", botButtons.error); botButtons = await sendBotButtons(order, String(entity.id)); }
   const poll = botButtons.ok ? { ok: true, messageId: 0, viaBot: true } : await sendDecisionPoll(admin, entity, order);
   if (!poll.ok) { try { await admin.client.sendMessage(entity, { message: "Please reply CONFIRM, REJECT, or write your comment." }); } catch {} }
   if (botButtons.ok) order.botButtonsMessageId = botButtons.messageId;
@@ -1142,6 +1169,16 @@ app.post("/api/telegram/webhook", async (req, res) => {
       }
     }
 
+    const inlineQuery = update.inline_query;
+    if (inlineQuery) {
+      const m = /^order:(\d+)$/.exec(String(inlineQuery.query || "").trim());
+      await supabaseReady; if (supabase) await loadOrders();
+      const found = m && orders.find(item => String(item.id) === m[1]);
+      const results = found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
+        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id) }] : [];
+      await safely("answerInlineQuery", () => telegram("answerInlineQuery", { inline_query_id: inlineQuery.id, results, cache_time: 0, is_personal: true }));
+    }
+
     const callback = update.callback_query;
     if (callback) {
       const [action, id] = String(callback.data || "").split(":");
@@ -1154,6 +1191,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
         // The card lives in the admin's Business chat, so every edit/reply must carry the business connection.
         const connectionId = callback.message?.business_connection_id || order.businessConnectionId || null;
         const chatId = callback.message?.chat?.id || order.telegramChatId;
+        const inlineId = callback.inline_message_id || "";
+        const ownAdmin = admins.get(String(order.adminId || ""));
+        const tellCustomer = async text => { if (ownAdmin?.ready) { try { await ownAdmin.client.sendMessage(BigInt(String(chatId)), { message: text }); } catch (e) { console.warn("Customer note failed:", e.message); } } };
         const biz = connectionId ? { business_connection_id: String(connectionId) } : {};
         if (action === "confirm" || action === "reject") {
           if (order.status === "Confirmed" || order.status === "Rejected") { await answer(`Order already ${order.status}.`); }
@@ -1164,6 +1204,12 @@ app.post("/api/telegram/webhook", async (req, res) => {
             await answer(`Order ${order.status}.`);
             const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : "❌ REJECTED";
             // 1) buttons disappear and the card shows the final status
+            if (inlineId) {
+              await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } }));
+              await tellCustomer(`Order ${order.orderId} — ${mark}. Thank you for choosing Ambar Furniture!`);
+              await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (chat ${esc(chatId)}).`);
+              return;
+            }
             const isPhoto = !!callback.message?.photo;
             const edited = await safely(isPhoto ? "editMessageCaption" : "editMessageText", () => isPhoto
               ? telegram("editMessageCaption", { ...biz, chat_id: chatId, message_id: callback.message.message_id, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: { inline_keyboard: [] } })
@@ -1176,9 +1222,15 @@ app.post("/api/telegram/webhook", async (req, res) => {
             await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (chat ${esc(chatId)}).`);
           }
         } else if (action === "comment") {
-          await answer("Type your comment and send it.");
           order.awaitingCommentFrom = String(chatId);
           await saveOrderRecord(order);
+          if (inlineId) {
+            // No chat access for the bot here: ask the customer to type in this same chat; the admin account saves it as the comment.
+            await safely("comment alert", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, show_alert: true, text: `Please type your comment for ${order.orderId} in this chat and send it.` }));
+            await tellCustomer(`💬 Type your comment for Order ${order.orderId} below and send it.`);
+            return;
+          }
+          await answer("Type your comment and send it.");
           const prompt = { ...biz, chat_id: chatId, text: `💬 Type your comment for <b>Order ${esc(order.orderId)}</b> below and send it.`, parse_mode: "HTML" };
           // force_reply opens the typing box for the customer; fall back to plain text if Telegram refuses it here.
           const ok = await safely("comment prompt", () => telegram("sendMessage", { ...prompt, reply_markup: { force_reply: true, input_field_placeholder: "Type your comment…" } }));
