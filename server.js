@@ -353,7 +353,19 @@ function candidateConnections(chatId, primary) {
 // admins by Telegram ID at /setup.html. Until at least one admin/owner ID exists the app stays open.
 const APP_ADMINS_FILE = path.join(__dirname, "data", "app-admins.json");
 let appAdmins = []; // [{ telegramId, name, accountId }]
-const OWNER_IDS = String(process.env.OWNER_TELEGRAM_IDS || "").split(",").map(x => x.trim()).filter(Boolean);
+// Accept the explicit main-admin variables and the historical singular variable.
+// For compatibility, a legacy ADMIN_TELEGRAM_IDS value containing exactly ONE ID
+// is treated as the owner; a multi-ID legacy allowlist is never promoted wholesale.
+function numericTelegramIds(...values) {
+  return [...new Set(values.flatMap(v => String(v || "").split(/[;,\s]+/)).map(v => v.replace(/\D/g, "")).filter(Boolean))];
+}
+const LEGACY_ADMIN_IDS = numericTelegramIds(process.env.ADMIN_TELEGRAM_IDS);
+const OWNER_IDS = numericTelegramIds(
+  process.env.OWNER_TELEGRAM_IDS,
+  process.env.MAIN_ADMIN_TELEGRAM_ID,
+  process.env.ADMIN_TELEGRAM_ID,
+  LEGACY_ADMIN_IDS.length === 1 ? LEGACY_ADMIN_IDS[0] : ""
+);
 async function loadAppAdmins() {
   let list = [];
   if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "app_admins").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
@@ -397,7 +409,10 @@ function requireAccess(req, res, next) {
 }
 app.get("/api/me", (req, res) => {
   const a = identify(req);
-  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "" });
+  const error = a.role ? "" : (!a.telegramId
+    ? "Telegram identity was not received. Open AMBAR Furniture from its Telegram bot menu button, not a normal browser tab."
+    : `Telegram account ${a.telegramId} is not authorized. Add this exact numeric ID to MAIN_ADMIN_TELEGRAM_ID (or OWNER_TELEGRAM_IDS) in Render, then redeploy.`);
+  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", error });
 });
 const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
 app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/my-account"], requireAccess);
