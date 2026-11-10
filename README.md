@@ -46,3 +46,10 @@ Only `MAIN_ADMIN_TELEGRAM_ID` / `OWNER_TELEGRAM_IDS` and admins assigned by the 
 ## Runtime
 
 Node.js 20+. The service uses built-in `fetch`, `FormData`, and `Blob`. Uploaded files on ephemeral hosting may not survive restarts unless Supabase storage or persistent disk is configured.
+
+
+## Sending cards from the admins' own accounts (no bot)
+Set `TG_API_ID` and `TG_API_HASH` in Render (from https://my.telegram.org). Then:
+- **Main admin:** open the Mini App from Telegram, tap **🔗 Connect my Telegram account**, enter your phone, the code (and 2-step password). Orders you create are sent to the customer from YOUR account.
+- **Assigned admins:** do the same with their own phone. Their orders are sent from THEIR OWN account, never the main admin's.
+The bot sends no order cards. Fill the customer's @username or phone in the form. Customers answer CONFIRM / REJECT / a comment; the reply is handled on the sending account.
