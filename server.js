@@ -518,13 +518,10 @@ function lockedKeyboard(order) {
   ] };
 }
 function keyboard(id, order, opts = {}) {
-  if (order && (order.closed || order.status === "Confirmed" || order.status === "Rejected")) return lockedKeyboard(order);
+  // The Telegram message itself must contain ONLY one action: open the answer page.
+  // Confirm / Reject / Comment live on the answer page, not in the message keyboard.
   const link = opts.noLink ? "" : answerLink(order);
-  return { inline_keyboard: [
-    [{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }],
-    [{ text: "💬 Comment", callback_data: `comment:${id}` }],
-    ...(link ? [[{ text: "🔗 Open answer page", url: link }]] : [])
-  ] };
+  return { inline_keyboard: link ? [[{ text: "🔗 Open answer", url: link }]] : [] };
 }
 function activeBusinessConnection() {
   // Prefer the explicitly configured connection when present.
@@ -542,7 +539,7 @@ function answerLink(order) {
 }
 function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.") {
   const link = answerLink(order);
-  if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `👉 <a href="${link}">Tap here: ✅ Confirm / ❌ Reject / 💬 Comment</a>`;
+  if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
   return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 function notifyAdminsText(order, text) {
@@ -625,7 +622,7 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
 // ───────────────────────────────────────────────────────────────────────────────
 // Admin accounts (MTProto user logins). SEVERAL admins can be logged in; each order is sent from
 // the admin chosen in the form. Requires TG_API_ID and TG_API_HASH. Log admins in at /setup.html.
-// User accounts cannot send inline buttons, so customers reply CONFIRM / REJECT / a comment.
+// User accounts send the card with one clickable answer link; all answer actions live on the web page.
 // ───────────────────────────────────────────────────────────────────────────────
 const admins = new Map(); // id -> { id, label, session, client, ready, error, tgUserId }
 const ADMIN_SESSIONS_FILE = path.join(__dirname, "data", "admin-sessions.json");
@@ -1216,19 +1213,19 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     // Works whenever the customer has opened the AMBAR bot (pressed Start) — no need for them to write a text first.
     if (/^\d{5,}$/.test(String(order.telegramChatId || ""))) {
       const direct = await sendBotCard(order, String(order.telegramChatId), cardImage.path);
-      if (direct.ok) { order.sender = "bot"; order.telegramMessageId = direct.messageId; order.botButtonsMessageId = direct.messageId; order.sent = true; order.buttonsLine = "✅ card + Confirm / Reject / Comment buttons sent in one message"; sentFrom = "the AMBAR bot (card with buttons)"; }
+      if (direct.ok) { order.sender = "bot"; order.telegramMessageId = direct.messageId; order.botButtonsMessageId = direct.messageId; order.sent = true; order.buttonsLine = "✅ card + Open answer link sent in one message"; sentFrom = "the AMBAR bot (card with buttons)"; }
       else directFailure = direct.error;
     }
     if (!order.sent && myConn) {
       try {
         const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
-        order.sender = "admin_business_account"; order.buttonsLine = "✅ Confirm / Reject / Comment buttons delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
+        order.sender = "admin_business_account"; order.buttonsLine = "✅ Open answer link delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
       } catch (error) { failure = error.raw || error.message; }
     }
     if (!order.sent && account?.ready) {
       try {
         const r = await sendCardViaUserAccount(order, cardImage.path);
-        pollNote = buttonsNote(r); order.buttonsLine = (r.buttons === "inline" || r.buttons === "botcard") ? "✅ Confirm / Reject / Comment buttons delivered with the card" : r.buttons === "link" ? "✅ answer link with Confirm / Reject / Comment buttons sent" : r.buttons === "botchat" ? "✅ buttons delivered in the bot chat" : "❌ buttons NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
+        pollNote = buttonsNote(r); order.buttonsLine = (r.buttons === "inline" || r.buttons === "botcard") ? "✅ Open answer link delivered with the card" : r.buttons === "link" ? "✅ Open answer link delivered with the card" : r.buttons === "botchat" ? "✅ Open answer link delivered in the bot chat" : "❌ Answer link NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
         try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
       } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
     }
