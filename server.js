@@ -408,9 +408,23 @@ app.get("/api/me", (req, res) => {
   res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", error });
 });
 const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
+function inlineId_ref(callback, connectionId, chatId) {
+  if (callback.inline_message_id) return { inline_message_id: callback.inline_message_id };
+  return { chat_id: String(chatId), message_id: callback.message?.message_id, ...(connectionId ? { business_connection_id: String(connectionId) } : {}) };
+}
+// After the customer has answered ONCE (Confirm, Reject, or one comment) the buttons are closed everywhere.
+async function closeOrderButtons(order) {
+  order.closed = true;
+  try { await saveOrderRecord(order); } catch {}
+  const r = order.btnRef || {};
+  const empty = { inline_keyboard: [] };
+  if (r.inline_message_id) await safely("close inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: r.inline_message_id, reply_markup: empty }));
+  else if (r.chat_id && r.message_id) await safely("close buttons", () => telegram("editMessageReplyMarkup", { ...(r.business_connection_id ? { business_connection_id: r.business_connection_id } : {}), chat_id: r.chat_id, message_id: r.message_id, reply_markup: empty }));
+  if (order.botButtonsMessageId && order.telegramChatId && !r.message_id) await safely("close bot buttons", () => telegram("editMessageReplyMarkup", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, reply_markup: empty }));
+}
 // ── Customer answer page: link inside the Telegram message, big Confirm / Reject / Comment buttons, no bot Start needed ──
 function answerPageHtml(order, note = "") {
-  const done = order.status === "Confirmed" ? "✅ You confirmed this order. Thank you!" : order.status === "Rejected" ? "❌ You rejected this order." : "";
+  const done = order.status === "Confirmed" ? "✅ You confirmed this order. Thank you!" : order.status === "Rejected" ? "❌ You rejected this order." : order.closed ? "✅ Your answer was received. Thank you!" : "";
   const img = order.cardImage ? `/cards/${order.id}.jpg` : "";
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order ${esc(order.orderId)} — Ambar Furniture</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e9e5da;color:#153a2e}.wrap{max-width:560px;margin:auto;padding:14px}.card{background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px #0f2a2133}
@@ -422,7 +436,7 @@ img{width:100%;display:block}.pad{padding:18px 18px 22px}button{width:100%;borde
 <div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : `<button class="ok" data-a="confirm">✅ Confirm Order</button><button class="no" data-a="reject">❌ Reject Order</button><button class="cm" data-a="comment">💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><button class="ok" data-a="send">Send comment</button></div>`}
 <div class="msg" id="out" style="display:${note ? "block" : "none"}">${esc(note)}</div></div></div></div>
 <script>const T=${JSON.stringify(order.token)};const out=document.getElementById("out");
-async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok&&action!=="send"&&action!=="comment")document.querySelectorAll("button").forEach(b=>b.style.display="none");if(d.ok&&action==="send"){document.getElementById("cbox").style.display="none";document.getElementById("ct").value="";}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
+async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok&&action!=="send"&&action!=="comment")document.querySelectorAll("button").forEach(b=>b.style.display="none");if(d.ok&&(action==="comment")){document.querySelectorAll("button,textarea").forEach(b=>b.style.display="none");}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
 document.getElementById("box").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a;if(a==="comment"){document.getElementById("cbox").style.display="block";return;}if(a==="send"){const t=document.getElementById("ct").value.trim();if(!t)return;go("comment",t);return;}go(a);});</script></body></html>`;
 }
 app.get("/o/:token", async (req, res) => {
@@ -437,10 +451,11 @@ app.post("/respond/:token", express.json(), async (req, res) => {
     const order = orders.find(o => o.token && o.token === req.params.token);
     if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
     const action = String(req.body?.action || "");
+    if (order.closed || order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: "Your answer was already received. Thank you!" });
     if (action === "confirm" || action === "reject") {
       if (order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: `Order already ${order.status}.` });
       order.status = action === "confirm" ? "Confirmed" : "Rejected";
-      await saveOrderRecord(order); await updateAuditCopies(order);
+      await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
       await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer.`);
       return res.json({ ok: true, message: order.status === "Confirmed" ? "✅ Order confirmed. Thank you for choosing Ambar Furniture!" : "❌ Order rejected." });
     }
@@ -448,7 +463,7 @@ app.post("/respond/:token", express.json(), async (req, res) => {
       const text = String(req.body?.comment || "").trim().slice(0, 1000);
       if (!text) return res.status(400).json({ ok: false, error: "Please type a comment." });
       order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web" });
-      await saveOrderRecord(order); await updateAuditCopies(order);
+      await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
       await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer:\n${esc(text)}`);
       return res.json({ ok: true, message: "✅ Your comment was sent. Thank you!" });
     }
@@ -556,6 +571,12 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
       const known = customers.get(String(chatId));
       if (known && known.businessConnectionId !== String(conn.id)) { known.businessConnectionId = String(conn.id); persistCustomers(); }
       order.businessConnectionId = String(conn.id);
+      // Telegram may not show the inline buttons in every chat view, so ALSO send a link to the answer page (always visible).
+      order.token = order.token || require("crypto").randomBytes(12).toString("hex");
+      if (PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL)) {
+        await safely("answer link (business)", () => telegram("sendMessage", { business_connection_id: String(conn.id), chat_id: String(chatId).trim(), link_preview_options: { is_disabled: true },
+          text: `Order ${order.orderId} — tap the link to ✅ Confirm, ❌ Reject or 💬 Comment:\n${PUBLIC_BASE_URL}/o/${order.token}` }));
+      }
       return sent;
     } catch (error) {
       lastError = error;
@@ -641,7 +662,7 @@ async function startAdmin(record) {
           await saveOrderRecord(order);
           await reply(`Thank you, your comment on ${order.orderId} was received.`);
         }
-        await updateAuditCopies(order);
+        await updateAuditCopies(order); await closeOrderButtons(order);
         await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> (${esc(order.status)}) via ${esc(admin.label)} from customer ${esc(senderId)}:\n${esc(text)}`);
       } catch (error) { console.warn("Admin message handler failed:", error.message); }
     }, new NewMessage({ incoming: true }));
@@ -1272,7 +1293,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
         pending.comments.push({ comment: botMessage.text, at: new Date().toISOString(), from: chatKey });
         pending.awaitingCommentFrom = "";
         await saveOrderRecord(pending);
-        await updateAuditCopies(pending);
+        await updateAuditCopies(pending); await closeOrderButtons(pending);
         await notifyAdminsText(pending, `💬 <b>Comment on ${esc(pending.orderId)}</b> from customer ${esc(chatKey)}:\n${esc(botMessage.text)}`);
         await safely("comment thanks", () => telegram("sendMessage", { chat_id: chatKey, parse_mode: "HTML", text: `✅ Your comment on <b>Order ${esc(pending.orderId)}</b> was sent. Thank you!` }));
       }
@@ -1304,6 +1325,8 @@ app.post("/api/telegram/webhook", async (req, res) => {
         const connectionId = callback.message?.business_connection_id || order.businessConnectionId || null;
         const chatId = callback.message?.chat?.id || order.telegramChatId;
         const inlineId = callback.inline_message_id || "";
+        order.btnRef = inlineId_ref(callback, connectionId, chatId);
+        if (order.closed) { await answer("This order was already answered. Thank you!"); await closeOrderButtons(order); return; }
         const ownAdmin = admins.get(String(order.adminId || ""));
         const tellCustomer = async text => { if (ownAdmin?.ready) { try { await ownAdmin.client.sendMessage(BigInt(String(chatId)), { message: text }); } catch (e) { console.warn("Customer note failed:", e.message); } } };
         const biz = connectionId ? { business_connection_id: String(connectionId) } : {};
@@ -1311,6 +1334,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           if (order.status === "Confirmed" || order.status === "Rejected") { await answer(`Order already ${order.status}.`); }
           else {
             order.status = action === "confirm" ? "Confirmed" : "Rejected";
+            order.closed = true;
             await saveOrderRecord(order);
             await updateAuditCopies(order);
             await answer(`Order ${order.status}.`);
@@ -1383,7 +1407,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
           if (wasAsked) order.awaitingCommentFrom = "";
           await saveOrderRecord(order);
-          await updateAuditCopies(order);
+          await updateAuditCopies(order); await closeOrderButtons(order);
           await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from customer ${esc(chatId)}:\n${esc(businessMessage.text)}`);
           if (wasAsked && connectionId) await safely("comment thanks", () => telegram("sendMessage", { business_connection_id: String(connectionId), chat_id: chatId,
             text: `✅ Your comment on <b>Order ${esc(order.orderId)}</b> was sent. Thank you!`, parse_mode: "HTML" }));
