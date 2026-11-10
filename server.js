@@ -452,11 +452,11 @@ img{width:100%;display:block}.pad{padding:18px 18px 22px}button{width:100%;borde
 .ok{background:#1f8a4c;color:#fff}.no{background:#fff;color:#b3261e;border:2px solid #e3b4b0}.cm{background:#fff;color:#153a2e;border:2px solid #cfd8d3}textarea{width:100%;border:1px solid #cfd8d3;border-radius:12px;padding:12px;font-size:16px;margin-top:10px;min-height:90px}
 button:disabled{opacity:.45;cursor:not-allowed}.msg{background:#f4f1ea;border-radius:12px;padding:14px;text-align:center;font-weight:700;margin-top:10px}</style></head><body><div class="wrap"><div class="card">
 <div class="head"><b>AMBAR FURNITURE</b><div>ORDER ${esc(order.orderId)}</div></div>${img ? `<img src="${img}" alt="Order card">` : ""}
-<div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : ""}<button class="ok" data-a="confirm"${locked}>${order.status === "Confirmed" ? "✅ Confirmed" : "✅ Confirm Order"}</button><button class="no" data-a="reject"${locked}>${order.status === "Rejected" ? "❌ Rejected" : "❌ Reject Order"}</button><button class="cm" data-a="comment"${locked}>💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><button class="ok" data-a="send">Send comment</button></div>
+<div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : ""}<button class="ok" data-a="confirm"${locked}>${order.status === "Confirmed" ? "✅ Confirmed" : "✅ Confirm Order"}</button><button class="no" data-a="reject"${locked}>${order.status === "Rejected" ? "❌ Rejected" : "❌ Reject Order"}</button><button class="cm" data-a="comment"${locked}>💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><div id="commentChoices"><button class="ok" data-a="confirm_comment">✅ Confirm &amp; Send Comment</button><button class="no" data-a="reject_comment">❌ Reject &amp; Send Comment</button></div></div>
 <div class="msg" id="out" style="display:${note ? "block" : "none"}">${esc(note)}</div></div></div></div>
 <script>const T=${JSON.stringify(order.token)};const out=document.getElementById("out");
 async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok){document.querySelectorAll("button,textarea").forEach(b=>b.disabled=true);}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
-document.getElementById("box").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a;if(a==="comment"){document.getElementById("cbox").style.display="block";return;}if(a==="send"){const t=document.getElementById("ct").value.trim();if(!t)return;go("comment",t);return;}go(a);});</script></body></html>`;
+document.getElementById("box").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a;if(a==="comment"){document.getElementById("cbox").style.display="block";b.style.display="none";return;}if(a==="confirm_comment"||a==="reject_comment"){const t=document.getElementById("ct").value.trim();if(!t){out.style.display="block";out.textContent="Please type your comment first.";return;}go(a,t);return;}go(a);});</script></body></html>`;
 }
 app.get("/o/:token", async (req, res) => {
   await supabaseReady; if (supabase) await loadOrders();
@@ -478,12 +478,18 @@ app.post("/respond/:token", express.json(), async (req, res) => {
       await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
       return res.json({ ok: true, message: order.status === "Confirmed" ? "✅ Order confirmed. Thank you for choosing Ambar Furniture!" : "❌ Order rejected." });
     }
-    if (action === "comment") {
+    if (action === "comment" || action === "confirm_comment" || action === "reject_comment") {
       const text = String(req.body?.comment || "").trim().slice(0, 1000);
-      if (!text) return res.status(400).json({ ok: false, error: "Please type a comment." });
-      order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web" });
+      if (!text) return res.status(400).json({ ok: false, error: "Please type your comment." });
+      if (action === "confirm_comment") order.status = "Confirmed";
+      if (action === "reject_comment") order.status = "Rejected";
+      if (action === "confirm_comment" || action === "reject_comment") order.closed = true;
+      order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web", decision: action === "confirm_comment" ? "Confirmed" : action === "reject_comment" ? "Rejected" : "Comment" });
       await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
-      await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
+      const decision = action === "confirm_comment" ? "✅ CONFIRMED" : action === "reject_comment" ? "❌ REJECTED" : "💬 COMMENT";
+      await notifyAdminsText(order, `${decision} + comment on <b>${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
+      if (action === "confirm_comment") return res.json({ ok: true, message: "✅ Order confirmed and your comment was sent. Thank you!" });
+      if (action === "reject_comment") return res.json({ ok: true, message: "❌ Order rejected and your comment was sent." });
       return res.json({ ok: true, message: "✅ Your comment was sent. Thank you!" });
     }
     res.status(400).json({ ok: false, error: "Unknown action." });
