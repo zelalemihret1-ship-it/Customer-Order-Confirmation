@@ -766,7 +766,18 @@ function readCreds() {
   return email && key ? { email, key } : null;
 }
 const creds = readCreds();
-const configured = () => !!(SHEET_ID && creds);
+const SCRIPT_URL = (process.env.GOOGLE_SCRIPT_URL || "").trim(), SCRIPT_KEY = (process.env.GOOGLE_SCRIPT_KEY || "").trim();
+let scriptSheetUrl = (process.env.GOOGLE_SHEET_URL || "").trim();
+const configured = () => !!(SCRIPT_URL || (SHEET_ID && creds));
+
+// ── direct connection through a Google Apps Script web app (no Google Cloud / API) ──
+async function callScript(payload) {
+  const r = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "follow" });
+  const t = await r.text();
+  let d; try { d = JSON.parse(t); } catch { throw new Error("Google Script did not answer correctly. Redeploy it as a Web app with access set to Anyone."); }
+  if (!d.ok) throw new Error(d.error || "Google Script error");
+  return d;
+}
 
 // ── Google auth (service account JWT → access token) ───────────────────────────
 let token = { value: "", exp: 0 };
@@ -825,6 +836,10 @@ function orderRow(o, created, updated) {
 // ── one-time setup: create tabs, headers, formatting, dashboard ────────────────
 let readyP = null, lastError = "", lastOkAt = "", lastSyncAt = "";
 function ready() {
+  if (SCRIPT_URL) {
+    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; lastError = ""; lastOkAt = stamp(); }).catch(e => { readyP = null; lastError = e.message; throw e; });
+    return readyP;
+  }
   if (!readyP) readyP = setup().catch(e => { readyP = null; lastError = e.message; throw e; });
   return readyP;
 }
@@ -897,6 +912,7 @@ const rowFromRange = range => { const m = String(range || "").match(/!.*?(\d+)(?
 
 async function appendLog(entries) {
   if (!entries.length) return;
+  if (SCRIPT_URL) { await callScript({ action: "log", logs: entries }); return; }
   await g(`/values/${q(`'${T_LOG}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: entries } });
 }
 const logRow = (event, o, details, by) => [stamp(), event, clean(o?.orderId), clean(o?.product), clean(o?.customerName), clean(details), clean(by)];
@@ -922,6 +938,14 @@ function diffEvents(o, prev) {
 
 async function upsertOrder(order) {
   await ready();
+  if (SCRIPT_URL) {
+    const st = await callScript({ action: "state", id: String(order.id) });
+    const prev = st.values ? parseRow(st.values, st.row) : null, now = stamp();
+    const values = orderRow(order, prev?.created || (order.createdAt ? stamp(order.createdAt) : now), now);
+    await callScript({ action: "upsert", id: String(order.id), row: values, logs: diffEvents(order, prev) });
+    lastOkAt = stamp(); lastError = "";
+    return;
+  }
   if (!rows) await loadRows();
   const id = String(order.id);
   let prev = rows.get(id);
@@ -959,6 +983,14 @@ function log(event, details = "", by = "") {
 /** Rebuild/refresh every order row in one go (owner button). */
 function syncAll(allOrders, by = "Owner") {
   if (!configured()) return Promise.reject(new Error("Google Sheet is not configured."));
+  if (SCRIPT_URL) return enqueue(async () => {
+    await ready();
+    const now = stamp();
+    const rowsOut = allOrders.map(o => orderRow(o, o.createdAt ? stamp(o.createdAt) : now, now));
+    const d = await callScript({ action: "syncAll", rows: rowsOut, logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed`, by)] });
+    lastSyncAt = stamp(); lastOkAt = lastSyncAt; lastError = "";
+    return { total: allOrders.length, added: d.added, updated: d.updated };
+  });
   return enqueue(async () => {
     await ready(); await loadRows();
     const now = stamp(), updates = [], fresh = [], events = [];
@@ -977,12 +1009,13 @@ function syncAll(allOrders, by = "Owner") {
 /** Connection test / first setup. */
 function test() {
   if (!configured()) return Promise.reject(new Error("Not configured."));
+  if (SCRIPT_URL) return enqueue(async () => { readyP = null; await ready(); return { ok: true }; });
   return enqueue(async () => { await ready(); await loadRows(); return { ok: true, orders: rows.size }; });
 }
 function status() {
   return {
-    configured: configured(), hasSheetId: !!SHEET_ID, hasCredentials: !!creds, serviceAccount: creds?.email || "",
-    url: SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError
+    configured: configured(), hasSheetId: !!(SCRIPT_URL || SHEET_ID), hasCredentials: !!(SCRIPT_URL || creds), serviceAccount: SCRIPT_URL ? "Google Apps Script (direct)" : creds?.email || "",
+    url: SCRIPT_URL ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError
   };
 }
 module.exports = { track, log, syncAll, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
