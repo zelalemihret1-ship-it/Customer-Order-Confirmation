@@ -89,12 +89,17 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <div class="card"><h2>Service Information</h2><div class="grid">
 <label>Payment (Birr)<input name="payment" type="number"></label>
 <label>Advance (Birr)<input name="advance" type="number"></label>
-<div class="full"><label>Delivery Type</label><div class="delivery-options">
-<label class="delivery-option"><input type="radio" name="deliveryType" value="Self Pick Up" checked><span class="delivery-option-card"><span class="delivery-title">🏠 Self Pick Up</span><span class="delivery-desc">Customer collects the furniture from Ambar Furniture.</span></span></label>
-<label class="delivery-option"><input type="radio" name="deliveryType" value="By Ambar Delivery"><span class="delivery-option-card"><span class="delivery-title">🚚 By Ambar Delivery</span><span class="delivery-desc">Ambar Furniture delivers the order to the customer.</span></span></label>
-</div></div>
-<label id="deliveryFeeField">Delivery fee (Birr)<input name="deliveryFee" type="number" min="0" step="0.01"></label>
 <label>Order Date<input name="orderDate" type="date"></label>
+<label>Completion Date<input name="completionDate" type="date"></label>
+<label>Delivery Type<select name="deliveryType" id="deliveryType">
+<option value="Self Pick Up" selected>🏠 Self Pick Up</option>
+<option value="By Ambar Delivery">🚚 By Ambar Delivery</option>
+</select></label>
+<label id="deliveryServiceField">Ambar Delivery Service<select name="deliveryService" id="deliveryService">
+<option value="Economy" selected>Economy</option>
+<option value="Express">Express</option>
+</select></label>
+<label id="deliveryFeeField">Delivery fee (Birr)<input name="deliveryFee" type="number" min="0" step="0.01" placeholder="Type delivery fee"></label>
 <label>Delivery Date<input name="deliveryDate" type="date"></label>
 </div></div>
 
@@ -113,7 +118,7 @@ const photoInput=document.getElementById("productPhoto"),photoStatus=document.ge
 let photoUrl=null;
 function vals(){
  const v=Object.fromEntries(new FormData(form).entries());
- if(v.deliveryType==="Self Pick Up") v.deliveryFee="";
+ if(v.deliveryType!=="By Ambar Delivery"){v.deliveryFee="";v.deliveryService="";}
  return v;
 }
 const productSelect=document.getElementById("productSelect"),productOther=document.getElementById("productOther"),productOtherWrap=document.getElementById("productOtherWrap"),productValue=document.getElementById("productValue");
@@ -169,7 +174,7 @@ function previewCard(){
  const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
  const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k])))].filter(Boolean).join("");
  const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
- const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Delivery Type",v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
+ const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Order Date",v.orderDate),field("Completion Date",v.completionDate),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
  preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Order code")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div></div>`;
 }
 function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
@@ -199,18 +204,20 @@ async function makeCard(v,file){
  const divider=()=>{x.strokeStyle="#e0dacd";x.lineWidth=2;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
  section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));
  divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
- divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Delivery type",v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
+ divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Order date",v.orderDate);line("Completion date",v.completionDate);line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
  const tg=x.createLinearGradient(pad,1790,W-pad,1864);tg.addColorStop(0,"#0f2f25");tg.addColorStop(1,"#1b4d3d");x.fillStyle=tg;rounded(x,pad,1790,W-pad*2,74,18);x.fillStyle="#ffa939";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
  return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate card image.")),"image/jpeg",0.95));
 }
-const deliveryFeeField=document.getElementById("deliveryFeeField");
-document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventListener("change",()=>{
- const isDelivery=document.querySelector('input[name="deliveryType"]:checked')?.value==="By Ambar Delivery";
+const deliveryFeeField=document.getElementById("deliveryFeeField"),deliveryServiceField=document.getElementById("deliveryServiceField");
+function syncDelivery(){
+ const isDelivery=form.elements.deliveryType.value==="By Ambar Delivery";
  deliveryFeeField.style.display=isDelivery?"":"none";
+ deliveryServiceField.style.display=isDelivery?"":"none";
  if(!isDelivery) form.elements.deliveryFee.value="";
- previewCard();
-}));
-deliveryFeeField.style.display="none";
+}
+form.elements.deliveryType.addEventListener("change",()=>{syncDelivery();previewCard();});
+form.addEventListener("reset",()=>setTimeout(syncDelivery));
+syncDelivery();
 form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
  e.preventDefault();if(productSelect.value==="__other"){const n=productOther.value.trim();if(n){addProductOption(n);saveCustomProduct(n);}}syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product (or type it if you chose Other).";(productSelect.value==="__other"?productOther:productSelect).focus();return;}const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Please type the Order code.";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
