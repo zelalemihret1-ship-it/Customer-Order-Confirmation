@@ -7,6 +7,14 @@ After choosing Comment, they type the comment and choose exactly one of:
 ❌ Reject & Send Comment
 The selected decision and comment are saved and sent to the admin together.
 
+FILES IN THIS PROJECT
+  package.json         – dependencies + start command (npm start)
+  server.js            – the whole server, including the Google Sheet code
+  public/index.html    – the order form page (product dropdown, Shoe Shelf sizes, main-admin 📊 Google Sheet button)
+  public/setup.html    – the admin setup page
+Deploy: keep this folder structure, run `npm install` then `npm start`.
+(server.js also holds a built-in backup copy of both pages, used only if the public files are missing.)
+
 Google Sheet control (main admin only)
 --------------------------------------
 Every order and every movement is written to a Google Sheet automatically:
