@@ -43,3 +43,9 @@ EASY Google Sheet connection (no Google Cloud, no API)
  4. Copy the Web app URL and set it on the server:  GOOGLE_SCRIPT_URL = <that URL>
     (optional password: set SECRET in the script and the same value in GOOGLE_SCRIPT_KEY)
  5. Restart the server, then use the Google Sheet button -> Test.
+
+If you see "Google Script did not answer correctly":
+ - Deploy -> Manage deployments -> pencil (Edit) -> Who has access = Anyone -> Version = New version -> Deploy.
+ - Use the Web app URL ending in /exec (not /dev, not the sheet link).
+ - Re-paste the latest google-sheet-script.gs, Save, then deploy a New version.
+ - Open the /exec URL in a browser: it should show {"ok":true,"message":"AMBAR sheet connector is running."}
