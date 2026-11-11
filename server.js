@@ -788,7 +788,7 @@ async function callScript(payload) {
   try { d = JSON.parse(t); } catch {
     const low = t.toLowerCase();
     let why;
-    if (low.includes("accounts.google.com") || low.includes("sign in") || r.status === 401 || r.status === 403) why = "Access is not set to \"Anyone\". Deploy → Manage deployments → Edit (pencil) → Who has access: Anyone → Version: New version → Deploy.";
+    if (low.includes("accounts.google.com") || low.includes("sign in") || r.status === 401 || r.status === 403) why = "Google is asking visitors to sign in, so the Web app is not public. Fix: in Apps Script click Deploy → New deployment → gear → Web app → Execute as: Me → Who has access: Anyone → Deploy, then put the NEW /exec URL in GOOGLE_SCRIPT_URL (editing an old deployment often keeps the old access). Test: open the /exec URL in an Incognito window; it must show {\"ok\":true…} without asking to sign in. If \"Anyone\" is not offered, your Google account (school/work) blocks it: create the sheet and script with a personal @gmail.com account.";
     else if (r.status === 404 || low.includes("unable to open the file") || low.includes("page not found")) why = "The Web app URL was not found. Re-copy the URL from Deploy → Manage deployments (it must end with /exec).";
     else if (low.includes("authorization") || low.includes("permission")) why = "The script needs permission. In Apps Script press Run on doGet once and allow access, then redeploy as a New version.";
     else why = "Make sure google-sheet-script.gs is pasted fully, saved, and deployed as a Web app (New version).";
