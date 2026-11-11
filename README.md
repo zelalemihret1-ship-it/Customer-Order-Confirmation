@@ -49,3 +49,9 @@ If you see "Google Script did not answer correctly":
  - Use the Web app URL ending in /exec (not /dev, not the sheet link).
  - Re-paste the latest google-sheet-script.gs, Save, then deploy a New version.
  - Open the /exec URL in a browser: it should show {"ok":true,"message":"AMBAR sheet connector is running."}
+
+HTTP 401 / "asking to sign in" fix:
+ - Apps Script -> Deploy -> New deployment -> gear -> Web app -> Execute as: Me, Who has access: Anyone -> Deploy.
+ - Use the NEW /exec URL in GOOGLE_SCRIPT_URL (do not reuse the old deployment's URL) and restart the server.
+ - Open the /exec URL in an Incognito window. It must show {"ok":true,...} with NO sign-in page.
+ - If "Anyone" is not in the list, the Google account is a school/work account that blocks it. Use a personal @gmail.com account for the sheet and script.
