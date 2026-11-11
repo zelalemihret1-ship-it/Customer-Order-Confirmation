@@ -772,9 +772,24 @@ const configured = () => !!(SCRIPT_URL || (SHEET_ID && creds));
 
 // ── direct connection through a Google Apps Script web app (no Google Cloud / API) ──
 async function callScript(payload) {
-  const r = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "follow" });
+  const url = SCRIPT_URL.replace(/\s+/g, "");
+  if (!/^https:\/\/script\.google\.com(\/.*)?\/macros\/(.*\/)?s\//.test(url)) throw new Error("GOOGLE_SCRIPT_URL is wrong. It must be the Web app URL: https://script.google.com/macros/s/.../exec (copy it from Deploy → Manage deployments).");
+  if (/\/dev(\?|$)/.test(url)) throw new Error("GOOGLE_SCRIPT_URL ends with /dev (test URL). Use the Web app URL that ends with /exec.");
+  // Apps Script answers a POST with a redirect; follow it by hand (the answer is read with GET).
+  let r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "manual" });
+  let at = url;
+  for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual" }); }
   const t = await r.text();
-  let d; try { d = JSON.parse(t); } catch { throw new Error("Google Script did not answer correctly. Redeploy it as a Web app with access set to Anyone."); }
+  let d;
+  try { d = JSON.parse(t); } catch {
+    const low = t.toLowerCase();
+    let why;
+    if (low.includes("accounts.google.com") || low.includes("sign in") || r.status === 401 || r.status === 403) why = "Access is not set to \"Anyone\". Deploy → Manage deployments → Edit (pencil) → Who has access: Anyone → Version: New version → Deploy.";
+    else if (r.status === 404 || low.includes("unable to open the file") || low.includes("page not found")) why = "The Web app URL was not found. Re-copy the URL from Deploy → Manage deployments (it must end with /exec).";
+    else if (low.includes("authorization") || low.includes("permission")) why = "The script needs permission. In Apps Script press Run on doGet once and allow access, then redeploy as a New version.";
+    else why = "Make sure google-sheet-script.gs is pasted fully, saved, and deployed as a Web app (New version).";
+    throw new Error(`Google Script did not answer correctly (HTTP ${r.status}). ${why} Reply started with: ${t.replace(/\s+/g, " ").slice(0, 120)}`);
+  }
   if (!d.ok) throw new Error(d.error || "Google Script error");
   return d;
 }
