@@ -34,3 +34,12 @@ One-time setup:
       PUBLIC_BASE_URL               = your app URL (so card / answer links in the sheet are full links)
  5. Redeploy, open the app as main admin, tap ⚙ → "Test connection", then "Sync ALL orders" to back-fill old orders.
 The sheet is a one-way record (app → sheet). Editing cells in the sheet does not change orders in the app.
+
+
+EASY Google Sheet connection (no Google Cloud, no API)
+ 1. Create a Google Sheet. Open Extensions -> Apps Script.
+ 2. Delete the existing code, paste everything from google-sheet-script.gs, click Save.
+ 3. Deploy -> New deployment -> gear icon -> "Web app". Execute as: Me. Who has access: Anyone. Click Deploy and allow permissions.
+ 4. Copy the Web app URL and set it on the server:  GOOGLE_SCRIPT_URL = <that URL>
+    (optional password: set SECRET in the script and the same value in GOOGLE_SCRIPT_KEY)
+ 5. Restart the server, then use the Google Sheet button -> Test.
