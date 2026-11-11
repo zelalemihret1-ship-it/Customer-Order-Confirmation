@@ -772,8 +772,12 @@ const configured = () => !!(SCRIPT_URL || (SHEET_ID && creds));
 
 // ── direct connection through a Google Apps Script web app (no Google Cloud / API) ──
 async function callScript(payload) {
-  const url = SCRIPT_URL.replace(/\s+/g, "");
-  if (!/^https:\/\/script\.google\.com(\/.*)?\/macros\/(.*\/)?s\//.test(url)) throw new Error("GOOGLE_SCRIPT_URL is wrong. It must be the Web app URL: https://script.google.com/macros/s/.../exec (copy it from Deploy → Manage deployments).");
+  // Accept the URL however it was pasted: with quotes/spaces, "GOOGLE_SCRIPT_URL=…", or just the deployment ID.
+  let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, "");
+  const found = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i);
+  if (found) url = found[0];
+  else if (/^[A-Za-z0-9_-]{20,}$/.test(url)) url = `https://script.google.com/macros/s/${url}/exec`;
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//i.test(url)) throw new Error(`GOOGLE_SCRIPT_URL is wrong (the server received: "${SCRIPT_URL.slice(0, 70)}"). Paste the Web app URL from Deploy → Manage deployments, starting with https://script.google.com/ and ending with /exec.`);
   if (/\/dev(\?|$)/.test(url)) throw new Error("GOOGLE_SCRIPT_URL ends with /dev (test URL). Use the Web app URL that ends with /exec.");
   // Apps Script answers a POST with a redirect; follow it by hand (the answer is read with GET).
   let r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "manual" });
@@ -1418,13 +1422,17 @@ function cardCaptionHtml(order, status = "Pending", note = "Please review the at
   if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
   return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
+// Every admin (main admin(s) + every assigned admin + ADMIN_CHAT_ID) receives every order in the AMBAR bot.
+function allAdminChatIds(order) {
+  return [...new Set([ADMIN_CHAT_ID, ...OWNER_IDS, ...appAdmins.map(a => a.telegramId), order?.createdByTelegramId].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)))];
+}
 function notifyAdminsText(order, text) {
-  const targets = new Set([ADMIN_CHAT_ID, order.createdByTelegramId, ...OWNER_IDS].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)));
+  const targets = new Set(allAdminChatIds(order));
   return Promise.all([...targets].map(to => safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text, parse_mode: "HTML" }))));
 }
 // ── Cross-check copies: every card an admin sends is ALSO posted by the bot to the admin chat(s) ──
 function auditTargets(order) {
-  return [...new Set([ADMIN_CHAT_ID, ...OWNER_IDS, order.createdByTelegramId].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)))];
+  return allAdminChatIds(order);
 }
 function auditCaptionHtml(order) {
   const st = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "⏳ Pending";
@@ -2143,9 +2151,18 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
 });
 
 // ── Google Sheet (MAIN ADMIN / OWNER ONLY) ─────────────────────────────────────
-const sheetsOwnerOnly = (req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Only the main admin can use the Google Sheet." });
-app.use("/api/sheets", requireAccess, sheetsOwnerOnly);
-app.get("/api/sheets/status", (req, res) => res.json({ ok: true, ...sheets.status() }));
+// Every admin may OPEN the sheet (status/link only). Test / sync stay main-admin only.
+const sheetsAccess = (req, res, next) => {
+  if (req.actor?.role === "owner") return next();
+  if (req.actor?.role === "admin" && req.method === "GET" && req.path === "/status") return next();
+  res.status(403).json({ ok: false, error: "Only the main admin can change the Google Sheet connection." });
+};
+app.use("/api/sheets", requireAccess, sheetsAccess);
+app.get("/api/sheets/status", (req, res) => {
+  const st = sheets.status();
+  if (req.actor?.role === "owner") return res.json({ ok: true, ...st });
+  res.json({ ok: true, configured: st.configured, url: st.url });
+});
 app.post("/api/sheets/test", async (req, res) => {
   try { const r = await sheets.test(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
   catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
