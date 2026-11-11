@@ -59,6 +59,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <div class="card"><h2>Product Information</h2><div class="grid">
 <label>Order Code (type it yourself)<input name="orderId" placeholder="Type order code, e.g. Z-001" required maxlength="40" autocomplete="off"></label>
 <label>Product<select id="productSelect" required><option value="">— Choose a product —</option><option value="Shoe Shelf">Shoe Shelf</option><option value="Console Table">Console Table</option><option value="Chest Drawer">Chest Drawer</option><option value="Center Table">Center Table</option><option value="TV Stand">TV Stand</option><option value="Dining Table">Dining Table</option><option value="Mirror">Mirror</option><option value="__other">Other</option></select><input type="hidden" name="product" id="productValue"></label><label id="productOtherWrap" style="display:none">Type the product name<input id="productOther" placeholder="e.g. Bookshelf" maxlength="60" autocomplete="off"></label>
+<label class="full" id="sizeWrap" style="display:none">Shoe Shelf size (choose one, or Other to type it yourself)<select id="sizeSelect"><option value="">— Choose size —</option><option value="120|35|125">L 120 cm × W 35 cm × H 125 cm</option><option value="160|35|125">L 160 cm × W 35 cm × H 125 cm</option><option value="90|35|125">L 90 cm × W 35 cm × H 125 cm</option><option value="80|35|125">L 80 cm × W 35 cm × H 125 cm</option><option value="__other">Other (type the size)</option></select></label>
 <label>Length (cm)<input name="length" value="120"></label>
 <label>Width (cm)<input name="width" value="35"></label>
 <label>Height (cm)<input name="height" value="124"></label>
@@ -121,7 +122,23 @@ function loadCustomProducts(){try{return JSON.parse(localStorage.getItem(CUSTOM_
 function saveCustomProduct(name){try{const l=loadCustomProducts();if(!l.some(x=>x.toLowerCase()===name.toLowerCase())){l.push(name);localStorage.setItem(CUSTOM_KEY,JSON.stringify(l));}}catch{}}
 function addProductOption(name){if(!name)return;if([...productSelect.options].some(o=>o.value.toLowerCase()===name.toLowerCase()))return;const o=document.createElement("option");o.value=name;o.textContent=name;productSelect.insertBefore(o,productSelect.querySelector('option[value="__other"]'));}
 loadCustomProducts().forEach(addProductOption);
-function syncProduct(){const other=productSelect.value==="__other";productOtherWrap.style.display=other?"":"none";productOther.required=other;productValue.value=other?productOther.value.trim():productSelect.value;}
+const sizeSelect=document.getElementById("sizeSelect"),sizeWrap=document.getElementById("sizeWrap");
+const dimInputs=["length","width","height"].map(n=>form.querySelector('[name="'+n+'"]'));
+let fillingSize=false;
+function isShoeShelf(){return String(productValue.value||"").trim().toLowerCase()==="shoe shelf";}
+function syncSize(){const show=isShoeShelf();sizeWrap.style.display=show?"":"none";if(!show)sizeSelect.value="";}
+function applySize(){
+  const v=sizeSelect.value;
+  if(!v)return;
+  if(v==="__other"){dimInputs.forEach(i=>{i.value="";});dimInputs[0].focus();previewCard();return;} // type the size yourself
+  const [l,w,h]=v.split("|");fillingSize=true;
+  [l,w,h].forEach((x,i)=>{dimInputs[i].value=x;});
+  fillingSize=false;previewCard();
+}
+sizeSelect.addEventListener("change",applySize);
+// if the size is typed/edited by hand after choosing a preset, show it as "Other"
+dimInputs.forEach(i=>i.addEventListener("input",()=>{if(fillingSize||!isShoeShelf())return;const cur=dimInputs.map(x=>x.value.trim()).join("|");const match=[...sizeSelect.options].find(o=>o.value&&o.value!=="__other"&&o.value===cur);sizeSelect.value=match?match.value:"__other";}));
+function syncProduct(){const other=productSelect.value==="__other";productOtherWrap.style.display=other?"":"none";productOther.required=other;productValue.value=other?productOther.value.trim():productSelect.value;syncSize();}
 productSelect.addEventListener("change",()=>{syncProduct();if(productSelect.value==="__other")productOther.focus();});
 productOther.addEventListener("input",syncProduct);
 // when the typed name is finished, add it to the selection list and select it
