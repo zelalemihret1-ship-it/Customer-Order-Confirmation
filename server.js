@@ -744,7 +744,8 @@ const ORDER_HEAD = [
   "Customer Name", "Phone", "Telegram Username", "Telegram Chat ID", "Order Date", "Delivery Date",
   "Delivery Type", "Delivery Fee", "Location", "Payment", "Advance",
   "Delivered To Customer", "Answer Closed", "Comments", "Latest Comment",
-  "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note"
+  "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note",
+  "Completion Date", "Delivery Service"
 ];
 const LOG_HEAD = ["Time", "Event", "Order Code", "Product", "Customer", "Details", "By"];
 const COL = Object.fromEntries(ORDER_HEAD.map((h, i) => [h, i]));
@@ -817,6 +818,7 @@ function orderRow(o, created, updated) {
   const base = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "");
   set("Answer Link", base && o.token ? `${base}/o/${o.token}` : "");
   set("Delivery Note", o.sent ? "" : o.deliveryNote);
+  set("Completion Date", o.completionDate); set("Delivery Service", o.deliveryService);
   return row;
 }
 
