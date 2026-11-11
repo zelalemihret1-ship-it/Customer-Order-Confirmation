@@ -172,6 +172,7 @@ const upload = multer({
 let orders = [];
 let nextId = 1;
 let supabaseReady = Promise.resolve();
+const sheets = require("./sheets"); // Google Sheet control + activity log (does nothing until GOOGLE_SHEET_ID is set)
 
 async function persistBusinessConnections() {
   // Always keep a local copy, and mirror to Supabase when configured.
@@ -202,6 +203,11 @@ async function uploadToSupabase(file, folder, contentType) {
   return data.publicUrl;
 }
 async function saveOrderRecord(order) {
+  const saved = await saveOrderRecordCore(order);
+  try { sheets.track(order); } catch (e) { console.warn("Sheet track error:", e.message); }
+  return saved;
+}
+async function saveOrderRecordCore(order) {
   if (!supabase) {
     const index = orders.findIndex(x => String(x.id) === String(order.id));
     if (index >= 0) orders[index] = order; else orders.push(order);
@@ -993,6 +999,7 @@ app.post("/api/setup/app-admins/add", async (req, res) => {
   }
   if (!added.length) return res.status(400).json({ ok: false, error: "Enter numeric Telegram IDs, one per line, e.g. 123456789 Abebe" });
   await saveAppAdmins();
+  sheets.log("Admin assigned", added.join(", "), identify(req).name || "Owner");
   res.json({ ok: true, message: `${added.length} admin${added.length > 1 ? "s" : ""} assigned: ${added.join(", ")}.` });
 });
 app.post("/api/setup/app-admins/remove", async (req, res) => {
@@ -1001,6 +1008,7 @@ app.post("/api/setup/app-admins/remove", async (req, res) => {
   const gone = appAdmins.find(a => String(a.telegramId) === telegramId);
   appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId);
   await saveAppAdmins();
+  sheets.log("Admin removed", (gone && (gone.name || gone.telegramId)) || telegramId, identify(req).name || "Owner");
   const own = gone && admins.get(String(gone.accountId || ""));
   if (own && own.ownerTelegramId === telegramId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
   res.json({ ok: true, message: "Admin removed." });
@@ -1226,6 +1234,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.orderId = String(order.orderId || "").trim().slice(0, 40); // typed by the admin
     if (!order.orderId) { nextId--; return res.status(400).json({ ok: false, error: "Please type the Order code (e.g. Z-001)." }); }
     order.status = "Pending";
+    order.createdAt = order.createdAt || new Date().toISOString();
     order.comments = [];
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
     order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
@@ -1267,6 +1276,22 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
+});
+
+// ── Google Sheet (MAIN ADMIN / OWNER ONLY) ─────────────────────────────────────
+const sheetsOwnerOnly = (req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Only the main admin can use the Google Sheet." });
+app.use("/api/sheets", requireAccess, sheetsOwnerOnly);
+app.get("/api/sheets/status", (req, res) => res.json({ ok: true, ...sheets.status() }));
+app.post("/api/sheets/test", async (req, res) => {
+  try { const r = await sheets.test(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
+  catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
+});
+app.post("/api/sheets/sync", async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const r = await sheets.syncAll(orders, req.actor?.name || "Owner");
+    res.json({ ok: true, message: `✅ Synced ${r.total} orders (${r.added} new in the sheet, ${r.updated} refreshed).`, ...sheets.status() });
+  } catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
 });
 
 app.get("/api/orders", async (req, res) => {
@@ -1485,6 +1510,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
+    if (sheets.configured()) sheets.test().then(() => console.log("Google Sheet connected."), e => console.warn("Google Sheet not ready:", e.message));
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
 module.exports = app;
