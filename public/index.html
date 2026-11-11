@@ -58,7 +58,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <form id="orderForm">
 <div class="card"><h2>Product Information</h2><div class="grid">
 <label>Order Code (type it yourself)<input name="orderId" placeholder="Type order code, e.g. Z-001" required maxlength="40" autocomplete="off"></label>
-<label>Product<input name="product"></label>
+<label>Product<select id="productSelect" required><option value="">— Choose a product —</option><option value="Shoe Shelf">Shoe Shelf</option><option value="Console Table">Console Table</option><option value="Chest Drawer">Chest Drawer</option><option value="Center Table">Center Table</option><option value="TV Stand">TV Stand</option><option value="Dining Table">Dining Table</option><option value="Mirror">Mirror</option><option value="__other">Other</option></select><input type="hidden" name="product" id="productValue"></label><label id="productOtherWrap" style="display:none">Type the product name<input id="productOther" placeholder="e.g. Bookshelf" maxlength="60" autocomplete="off"></label>
 <label>Length (cm)<input name="length" value="120"></label>
 <label>Width (cm)<input name="width" value="35"></label>
 <label>Height (cm)<input name="height" value="124"></label>
@@ -115,6 +115,19 @@ function vals(){
  if(v.deliveryType==="Self Pick Up") v.deliveryFee="";
  return v;
 }
+const productSelect=document.getElementById("productSelect"),productOther=document.getElementById("productOther"),productOtherWrap=document.getElementById("productOtherWrap"),productValue=document.getElementById("productValue");
+const CUSTOM_KEY="customProducts";
+function loadCustomProducts(){try{return JSON.parse(localStorage.getItem(CUSTOM_KEY)||"[]");}catch{return [];}}
+function saveCustomProduct(name){try{const l=loadCustomProducts();if(!l.some(x=>x.toLowerCase()===name.toLowerCase())){l.push(name);localStorage.setItem(CUSTOM_KEY,JSON.stringify(l));}}catch{}}
+function addProductOption(name){if(!name)return;if([...productSelect.options].some(o=>o.value.toLowerCase()===name.toLowerCase()))return;const o=document.createElement("option");o.value=name;o.textContent=name;productSelect.insertBefore(o,productSelect.querySelector('option[value="__other"]'));}
+loadCustomProducts().forEach(addProductOption);
+function syncProduct(){const other=productSelect.value==="__other";productOtherWrap.style.display=other?"":"none";productOther.required=other;productValue.value=other?productOther.value.trim():productSelect.value;}
+productSelect.addEventListener("change",()=>{syncProduct();if(productSelect.value==="__other")productOther.focus();});
+productOther.addEventListener("input",syncProduct);
+// when the typed name is finished, add it to the selection list and select it
+productOther.addEventListener("change",()=>{const n=productOther.value.trim();if(!n)return;addProductOption(n);saveCustomProduct(n);const match=[...productSelect.options].find(o=>o.value.toLowerCase()===n.toLowerCase());if(match)productSelect.value=match.value;syncProduct();previewCard();});
+form.addEventListener("reset",()=>setTimeout(()=>{productOther.value="";syncProduct();},0));
+syncProduct();
 function esc(v){return String(v??"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function field(k,v){return v?`<div class="info"><b>${esc(k)}</b><br>${esc(v)}</div>`:"";}
 function setPhoto(file){
@@ -183,7 +196,7 @@ document.querySelectorAll('input[name="deliveryType"]').forEach(r=>r.addEventLis
 deliveryFeeField.style.display="none";
 form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
- e.preventDefault();const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Please type the Order code.";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
+ e.preventDefault();if(productSelect.value==="__other"){const n=productOther.value.trim();if(n){addProductOption(n);saveCustomProduct(n);}}syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product (or type it if you chose Other).";(productSelect.value==="__other"?productOther:productSelect).focus();return;}const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Please type the Order code.";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
  const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
  try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.jpg`);btn.textContent="Sending order card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||("Order card sent to the customer from "+(d.sentFrom||"your Telegram account")+"."))+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but the card was not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
@@ -226,6 +239,49 @@ ov.addEventListener("click",async e=>{
 });
 (async()=>{try{const m=await api("/api/me");if(m.role==="owner")document.getElementById("acOpen").style.display="block";}catch{}})();
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
+})();
+</script>
+<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button></div>
+<div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<script>
+// Google Sheet control — MAIN ADMIN (owner) only. The server also refuses everyone else (403).
+(function(){
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(p,post)=>{const r=await fetch(p,post?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:{});return r.json();};
+const bar=document.getElementById("shBar"),ov=document.getElementById("shOverlay"),box=document.getElementById("shBox");
+const bs='font-size:15px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box;border:0;border-radius:8px;color:#fff;background:#1a73e8;cursor:pointer';
+let st=null;
+function openExternal(u){try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(u);return;}}catch{}window.open(u,"_blank","noopener");}
+async function status(){try{st=await api("/api/sheets/status");}catch{st={ok:false,error:"Could not reach the server."};}return st;}
+function render(msg,good){
+  const s=st||{};
+  const ok=s.configured&&!s.lastError;
+  box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
+  +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
+  +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
+    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Orders</b>, <b>Activity Log</b>, <b>Dashboard</b>.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
+    :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Google Cloud → create a <b>Service Account</b> → Keys → add JSON key.</li><li>Enable the <b>Google Sheets API</b> for that project.</li><li>Create a Google Sheet and <b>Share</b> it with the service-account e-mail (Editor).</li><li>In Render add <code>GOOGLE_SHEET_ID</code> and <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>, then redeploy.</li></ol>'
+      +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
+  +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
+  +(s.lastError?'<p style="color:#c62828;font-size:13px;white-space:pre-wrap">⚠ '+esc(s.lastError)+'</p>':'')
+  +'<div id="shMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap;color:'+(good===false?'#c62828':'#188038')+'">'+esc(msg||"")+'</div>';
+}
+async function openPanel(){ov.style.display="block";box.textContent="Loading…";await status();render();}
+ov.addEventListener("click",async e=>{
+  const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  const a=b.dataset.a;
+  if(a==="close"){ov.style.display="none";return;}
+  if(a==="open"){if(st?.url)openExternal(st.url);return;}
+  if(a==="test"||a==="sync"){
+    const label=b.textContent;b.disabled=true;b.textContent="Working…";
+    try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render(d.message||d.error,!!d.ok);}
+    catch(err){render("❌ "+err.message,false);}
+  }
+});
+// Main button: opens the sheet directly when connected; otherwise shows the setup panel.
+document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else{openPanel();}};
+document.getElementById("shCfg").onclick=openPanel;
+(async()=>{try{const m=await api("/api/me");if(m.role==="owner")bar.style.display="flex";}catch{}})();
 })();
 </script>
 <button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
