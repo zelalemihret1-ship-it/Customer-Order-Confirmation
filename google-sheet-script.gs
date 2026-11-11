@@ -33,7 +33,7 @@ function setup(d) {
     p[0].getRange(1, 1, 1, p[1].length).setValues([p[1]]).setFontWeight("bold").setBackground("#153a2e").setFontColor("#ffffff");
     p[0].setFrozenRows(1);
   });
-  var col = function (n) { return String.fromCharCode(65 + d.orderHead.indexOf(n)); }; // columns stay under Z
+  var col = function (n) { var i = d.orderHead.indexOf(n) + 1, s = ""; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
   var st = col("Status"), dl = col("Delivered To Customer"), cm = col("Comments"), pr = col("Product");
   b.getRange("A1:B8").setValues([
     ["AMBAR FURNITURE — Control Dashboard", ""],
