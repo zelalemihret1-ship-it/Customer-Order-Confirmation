@@ -45,7 +45,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 .photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:13px 10px;border-radius:12px;font-size:12px;font-weight:800;letter-spacing:.6px;border:1.5px solid transparent;cursor:pointer;transition:transform .12s,box-shadow .12s,filter .12s}.action:hover{transform:translateY(-1px);box-shadow:0 6px 14px #00000026}.action:active{transform:translateY(0)}.action:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}.confirm{background:#1f8a4c;color:#fff}.reject{background:#fff;color:#b3261e;border-color:#e3b4b0}.comment{background:#fff;color:#153a2e;border-color:#cfd8d3}.demo-note{padding:0 22px 18px;font-size:11px;color:#8a8478;text-align:center}.demo-msg{margin:0 22px 14px;padding:10px 12px;border-radius:10px;background:#f4f1ea;font-size:13px;color:#153a2e;text-align:center}
 @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
 @media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
-<style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
+<style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#stOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
 </head>
 <body>
 <div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
@@ -265,7 +265,7 @@ ov.addEventListener("click",async e=>{
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 })();
 </script>
-<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button><button id="shNew" title="Start a new Ethiopian-month sheet" style="display:none;padding:10px 14px;border:0;border-radius:24px;background:#b89552;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">▶ Start New Month</button></div>
+<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button><button id="shNew" title="Start a new Ethiopian-month sheet" style="display:none;padding:10px 14px;border:0;border-radius:24px;background:#b89552;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">♻ Archive old list &amp; Start New</button></div>
 <div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
 // Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
@@ -306,13 +306,14 @@ ov.addEventListener("click",async e=>{
 let shOwner=false;
 document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
 document.getElementById("shCfg").onclick=openPanel;
-// "Start New Month" — main admin only (the server refuses everyone else). Creates the tab of the current Ethiopian month.
+// "Archive old list & Start New" — main admin only (the server refuses everyone else).
 function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
 document.getElementById("shNew").onclick=()=>{
-  const b=document.getElementById("shNew"),msg="Start a NEW month sheet now? A tab for the current Ethiopian month is created in the Google Sheet and new orders of that month go into it.";
-  const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/new-month",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
+  const b=document.getElementById("shNew"),msg="Archive the OLD list and start the Google Sheet as NEW?\n\nAll current month tabs and the Activity Log are kept as 'Archive …' tabs (nothing is deleted). A clean new month tab is created and only NEW orders go into it.";
+  const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/start-new",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
   const w=window.Telegram?.WebApp;if(w&&w.showConfirm){w.showConfirm(msg,ok=>{if(ok)go();});}else if(confirm(msg))go();
 };
+window.AMBAR_openSheetTab=async(which)=>{await status();const u=which==="graphs"?st.graphsUrl:which==="summary"?st.summaryUrl:st.url;if(u)openExternal(u);else alert("The Google Sheet is not connected yet.");};
 (async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";else document.getElementById("shNew").style.display="inline-block";}}catch{}})();
 })();
 </script>
@@ -355,5 +356,54 @@ openBtn.onclick=()=>{ov.style.display="block";render();};
   {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;};}}catch{}}}
 }catch{}})();
 })();
-</script></body>
+</script>
+<style>
+#acOpen,#shBar,#myOpen{display:none!important}
+#stOpen{position:fixed;right:12px;bottom:12px;z-index:9998;width:52px;height:52px;border-radius:50%;border:1px solid #c18b3a;background:rgba(22,18,14,.92);color:#f3c77c;font-size:26px;line-height:1;box-shadow:0 4px 18px rgba(0,0,0,.4);cursor:pointer;display:none}
+#stBox button{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;font:600 15px system-ui,sans-serif;padding:13px 12px;margin:6px 0;border:0;border-radius:10px;background:#f3efe6;color:#222;cursor:pointer}
+#stBox button.main{background:#153a2e;color:#fff}
+#stBox button.warn{background:#b89552;color:#fff}
+#stBox h4{margin:14px 0 2px;font:700 12px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#777}
+</style>
+<button id="stOpen" title="Settings" aria-label="Settings">⚙️</button>
+<div id="stOverlay" style="display:none;position:fixed;inset:0;z-index:99997;background:rgba(0,0,0,.5);overflow:auto"><div id="stBox" style="background:#fff;max-width:460px;margin:20px auto;border-radius:14px;padding:16px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<script>
+// ONE settings icon holds every control button. The old floating buttons stay hidden and are triggered from here.
+(function(){
+const gear=document.getElementById("stOpen"),ov=document.getElementById("stOverlay"),box=document.getElementById("stBox");
+let role="";
+const items=()=>{
+  const L=[];
+  L.push('<h4>Google Sheet</h4>');
+  L.push('<button class="main" data-c="sheet">📊 Open Google Sheet</button>');
+  L.push('<button data-c="summary">🔢 Summary (numbers)</button>');
+  L.push('<button data-c="graphs">📈 Graphs page</button>');
+  if(role==="owner"){
+    L.push('<button data-c="cfg">🔌 Sheet connection: test / sync all</button>');
+    L.push('<button class="warn" data-c="fresh">♻ Archive old list &amp; Start New</button>');
+    L.push('<h4>Admins</h4>');
+    L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
+  }
+  L.push('<h4>My account</h4>');
+  L.push('<button data-c="connect">🔗 Connect my Telegram account</button>');
+  return L.join("");
+};
+function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">⚙️ Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="block";}
+const go=id=>{ov.style.display="none";const e=document.getElementById(id);if(e)e.click();};
+gear.onclick=show;
+ov.addEventListener("click",e=>{
+  const b=e.target.closest("button[data-c]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  const c=b.dataset.c;
+  if(c==="close"){ov.style.display="none";return;}
+  if(c==="sheet"){go("shOpen");return;}
+  if(c==="summary"||c==="graphs"){ov.style.display="none";window.AMBAR_openSheetTab&&window.AMBAR_openSheetTab(c);return;}
+  if(c==="cfg"){go("shCfg");return;}
+  if(c==="fresh"){go("shNew");return;}
+  if(c==="admins"){go("acOpen");return;}
+  if(c==="connect"){go("myOpen");return;}
+});
+(async()=>{try{const r=await fetch("/api/me");const m=await r.json();if(m.role==="owner"||m.role==="admin"){role=m.role;gear.style.display="block";}}catch{}})();
+})();
+</script>
+</body>
 </html>
