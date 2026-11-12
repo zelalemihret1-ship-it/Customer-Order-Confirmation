@@ -5,7 +5,7 @@
 <script>try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
 (function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();</script>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"><style>html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}</style><script>(function(){var p=function(e){e.preventDefault()};["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,p,{passive:false})});document.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1&&e.cancelable)e.preventDefault()},{passive:false});var l=0;document.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.cancelable)e.preventDefault();l=n},{passive:false});document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault()},{passive:false});document.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&["+","-","=","0"].indexOf(e.key)>-1)e.preventDefault()});})();</script>
 <title>Ambar Furniture — Telegram Mini App</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -381,7 +381,7 @@ const items=()=>{
   L.push('<button data-c="graphs">📈 Graphs page</button>');
   if(role==="owner"){
     L.push('<button data-c="cfg">🔌 Sheet connection: test / sync all</button>');
-    L.push('<button class="warn" data-c="fresh">♻ Archive old list &amp; Start New</button>');
+    L.push('<button class="warn" data-c="zero">🗑 Start from ZERO (backup + clear all)</button>');
     L.push('<h4>Admins</h4>');
     L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
   }
@@ -399,7 +399,18 @@ ov.addEventListener("click",e=>{
   if(c==="sheet"){go("shOpen");return;}
   if(c==="summary"||c==="graphs"){ov.style.display="none";window.AMBAR_openSheetTab&&window.AMBAR_openSheetTab(c);return;}
   if(c==="cfg"){go("shCfg");return;}
-  if(c==="fresh"){go("shNew");return;}
+  if(c==="zero"){
+    const w=window.Telegram?.WebApp,say=m=>{if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);};
+    const ask=(m,cb)=>{if(w&&w.showConfirm){w.showConfirm(m,ok=>{if(ok)cb();});}else if(confirm(m))cb();};
+    ask("START FROM ZERO?\n\n1) Every order is saved in the Google Sheet as a BACKUP.\n2) ALL orders are then DELETED from the app and the Google Sheet starts new.\n\nThis cannot be undone in the app.",()=>{
+      ask("Are you really sure? All orders will be removed and numbering starts again from the beginning.",async()=>{
+        b.disabled=true;b.textContent="Working…";
+        try{const d=await api("/api/sheets/reset-all",{confirm:"ZERO"});say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
+        b.disabled=false;b.textContent="🗑 Start from ZERO (backup + clear all)";
+      });
+    });
+    return;
+  }
   if(c==="admins"){go("acOpen");return;}
   if(c==="connect"){go("myOpen");return;}
 });
