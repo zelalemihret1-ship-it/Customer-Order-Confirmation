@@ -100,3 +100,10 @@ v45 – SETTINGS MENU, ARCHIVE & START NEW, SUMMARY + GRAPHS
  - Google Sheet tabs now start with "Dashboard" (summary in numbers) and "Graphs" (charts), then the month tabs.
  - "Status" column now sits right after "Order Code" (existing tabs are re-mapped by column name automatically; no data is lost).
  - After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+v47 – PROFESSIONAL SHEET DESIGN
+ - Order tabs: Roboto font, taller header with colour groups (gold = customer info, teal = Order Code + Status), frozen header + customer name,
+   no gridlines, soft row banding, centered status/date columns, money columns formatted (#,##0), colour "pill" Status / Delivered / Paid In Full.
+ - Dashboard: banner, 12 KPI tiles, breakdown tables (product / delivery type / service) and the latest 15 movements.
+ - Graphs: banner + 6 charts (status, per-month stacked, product, delivery, delivery type, service) with the data tables underneath.
+ - After pasting google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server (formatting is re-applied on start).
