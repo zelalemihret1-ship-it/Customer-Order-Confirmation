@@ -122,3 +122,11 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 
 ### If you see "Service Spreadsheets failed while accessing document"
 That is Google being busy/overloaded. The script now retries automatically (up to 4 times), flushes after each step, and only does the heavy restyle when something changed (not on every server start). To force a rebuild once: send {"action":"setup","force":true} or bump LAYOUT_V in the script.
+
+### v48 – FIX: "Exception: Lock timeout: another process was holding the lock for too long."
+Cause: the sheet script handles one update at a time. A second update (the automatic sync at start-up, an overlapping Render deploy, another order, Test / Sync ALL) waited only 30 s and then failed; the app printed that error in the order message and in the Render log.
+Fixed in two places:
+ - server.js: every call to the sheet now waits and retries automatically (3 s, 6 s, 10 s, 15 s) when the sheet is busy; only one call runs at a time; calls that hang more than 2 minutes are cancelled and retried; the start-up sync now waits 30 s and pauses between batches; if the sheet is still busy the order message says "Google Sheet is busy — still saving, it retries automatically" instead of an error.
+ - google-sheet-script.gs: waits up to 50 s for the lock WITHOUT throwing an exception (answers "busy" so the server retries); Google-Form mode keeps trying for ~4.5 minutes instead of silently dropping an order.
+To apply: deploy server.js. Then paste the new google-sheet-script.gs into Apps Script -> Save -> Deploy -> Manage deployments -> pencil -> Version: New version -> Deploy (the same /exec URL keeps working). The server fix already helps even before you update the script.
+If it still appears often: open Apps Script -> Executions and make sure no old run is stuck; and avoid pressing Sync ALL while orders are being created.
