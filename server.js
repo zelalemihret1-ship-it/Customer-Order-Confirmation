@@ -1901,7 +1901,14 @@ async function sendBotCard(order, chatId, filePath, opts = {}) {
       return body;
     });
     return { ok: true, messageId: sent.message_id };
-  } catch (error) { return { ok: false, error: error.message }; }
+  } catch (error) {
+    // Photo failed (size / format / Telegram hiccup): still reach the customer with a text message + the answer button.
+    if (/blocked|chat not found|can't initiate|deactivated|Forbidden/i.test(error.message)) return { ok: false, error: error.message };
+    try {
+      const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", reply_markup: keyboard(order.id, order), text: cardCaptionHtml(order, "", "Please review your order below 👇", { noLink: true, edited: !!opts.edited }) });
+      return { ok: true, messageId: sent.message_id, fallback: true };
+    } catch (e2) { return { ok: false, error: error.message + " | " + e2.message }; }
+  }
 }
 
 // ── Cards that could not be delivered yet (customer has not pressed Start) are sent AUTOMATICALLY the moment the customer opens the bot ──
@@ -1912,11 +1919,13 @@ async function cardFileForOrder(order) {
   if (/^https?:/i.test(ref)) { const r = await fetch(ref); if (!r.ok) throw new Error("card download failed " + r.status); await fs.promises.writeFile(tmp, Buffer.from(await r.arrayBuffer())); return tmp; }
   await fs.promises.copyFile(path.join(uploadDir, path.basename(ref.split("?")[0])), tmp); return tmp;
 }
-async function deliverPendingCards(chat = {}, from = {}) {
+async function deliverPendingCards(chat = {}, from = {}, text = "") {
   const chatId = String(chat.id || ""); if (!/^\d+$/.test(chatId)) return;
+  const payload = (String(text).match(/^\/start(?:@\w+)?\s+o_([a-f0-9]{8,})/i) || [])[1] || "";
   const handle = String(from.username || chat.username || "").replace(/^@/, "").toLowerCase();
   await supabaseReady; if (supabase) await loadOrders();
-  const pending = orders.filter(o => !o.sent && !o.closed && o.status !== "Rejected" && (String(o.telegramChatId || "") === chatId || (handle && String(o.telegramUsername || "").replace(/^@/, "").toLowerCase() === handle)));
+  const pending = orders.filter(o => !o.sent && !o.closed && o.status !== "Rejected" && ((payload && o.token === payload) || String(o.telegramChatId || "") === chatId || (handle && String(o.telegramUsername || "").replace(/^@/, "").toLowerCase() === handle)));
+  if (!pending.length && /^\/start/i.test(String(text).trim())) await telegram("sendMessage", { chat_id: chatId, text: "✅ Welcome to AMBAR Furniture. Your order cards will arrive here." }).catch(() => {});
   for (const o of pending) {
     let file = "";
     try {
@@ -2387,7 +2396,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}${await sheetWarning()}` });
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
       auditCopies: audit.delivered,
-      warning: `Order ${order.orderId} was saved but the card could not be sent yet: ${directFailure || failure || "the customer has not opened the AMBAR bot"}. ⏳ It will be sent AUTOMATICALLY as soon as the customer presses Start in the bot${await botUsername().then(u => u ? " (https://t.me/" + u + ")" : "").catch(() => "")}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
+      warning: `Order ${order.orderId} was saved but the card could not be sent yet: ${directFailure || failure || "the customer has not opened the AMBAR bot"}. ⏳ SEND THIS LINK TO THE CUSTOMER — when they open it and press Start, the card arrives at once: ${await botUsername().then(u => u ? "https://t.me/" + u + "?start=o_" + order.token : "(bot link unavailable)").catch(() => "")} ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -2582,7 +2591,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
     const botMessage = update.message;
     if (botMessage?.chat?.id && botMessage.chat.type === "private") {
       rememberCustomer(botMessage.chat, botMessage.from || botMessage.chat, "");
-      await deliverPendingCards(botMessage.chat, botMessage.from || botMessage.chat).catch(e => console.warn("deliverPendingCards:", e.message));
+      await deliverPendingCards(botMessage.chat, botMessage.from || botMessage.chat, botMessage.text || "").catch(e => console.warn("deliverPendingCards:", e.message));
     }
 
     // Customer typed a comment in the bot chat after tapping 💬 Comment.
