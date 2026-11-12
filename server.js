@@ -1552,10 +1552,10 @@ const telegram = (method, body, opts) => tgApi.call(method, body, opts);
 function answerLink(order) {
   return order && order.token && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/o/${order.token}` : "";
 }
-function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.") {
-  const link = answerLink(order);
+function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.", opts = {}) {
+  const link = opts.noLink ? "" : answerLink(order);
   if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
-  return `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${order.paidFull ? "\n<b>Payment:</b> ✅ PAID IN FULL" : ""}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
+  return `<b>AMBAR FURNITURE — ${opts.edited ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${order.paidFull ? "\n<b>Payment:</b> ✅ PAID IN FULL" : ""}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 // Every admin (main admin(s) + every assigned admin + ADMIN_CHAT_ID) receives every order in the AMBAR bot.
 function allAdminChatIds(order) {
@@ -1601,7 +1601,7 @@ async function sendAuditCopies(order, filePath) {
 // The admin taps it once the customer has sent the full payment -> the order is marked "Paid In Full" (data confirmed).
 function auditKeyboard(order) {
   const row = [];
-  if (order.status === "Confirmed") row.push(order.paidFull
+  row.push(order.paidFull
     ? { text: "✅ Paid in full — recorded", callback_data: `paiddone:${order.id}` }
     : { text: "💰 Customer paid in full", callback_data: `paid:${order.id}` });
   // ✏️ Edit order: opens the order form pre-filled (mini app). Needs an https PUBLIC_BASE_URL.
@@ -1825,7 +1825,7 @@ async function sendInlineButtons(admin, entity, order) {
 }
 // Most reliable route: the AMBAR bot itself sends the card photo WITH the 3 buttons in one message.
 // Works when the customer has opened the bot (pressed Start); otherwise Telegram refuses and we use the admin-account routes.
-async function sendBotCard(order, chatId, filePath) {
+async function sendBotCard(order, chatId, filePath, opts = {}) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
     const bytes = await fs.promises.readFile(filePath);
@@ -1833,7 +1833,7 @@ async function sendBotCard(order, chatId, filePath) {
       const body = new FormData();
       body.append("chat_id", String(chatId));
       body.append("photo", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
-      body.append("caption", cardCaptionHtml(order, "", ""));
+      body.append("caption", cardCaptionHtml(order, "", "", { noLink: true, edited: !!opts.edited }));
       body.append("parse_mode", "HTML");
       body.append("reply_markup", JSON.stringify(keyboard(order.id, order)));
       return body;
@@ -2327,13 +2327,6 @@ async function refreshCardMessages(order, filePath) {
     try { await edit(c.chat_id, c.message_id, auditCaptionHtml(order), auditKeyboard(order)); admins++; }
     catch (e) { if (!/not modified/i.test(e.message)) console.warn("Edit audit copy failed:", e.message); }
   }
-  if (order.sender === "bot" && order.botButtonsMessageId && order.telegramChatId) {
-    try {
-      const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "";
-      await edit(order.telegramChatId, order.botButtonsMessageId, cardCaptionHtml(order, mark, ""), order.closed ? lockedKeyboard(order) : keyboard(order.id, order));
-      customer = true;
-    } catch (e) { if (!/not modified/i.test(e.message)) console.warn("Edit customer card failed:", e.message); }
-  }
   return { admins, customer };
 }
 app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
@@ -2356,7 +2349,19 @@ app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 },
     order.editedAt = new Date().toISOString(); order.editedBy = req.actor?.name || "Admin";
     await saveOrderRecord(order); // the sheet upsert is keyed by the order ID → the same row is updated
     let tgNote = "";
-    if (cardImage) { const r = await refreshCardMessages(order, cardImage.path).catch(() => ({ admins: 0, customer: false })); tgNote = ` Card updated in the admin bot (${r.admins})${r.customer ? " and in the customer's chat" : ""}.`; }
+    if (cardImage) {
+      const r = await refreshCardMessages(order, cardImage.path).catch(() => ({ admins: 0 }));
+      tgNote = ` Card updated in the admin bot (${r.admins}).`;
+      // The customer gets the edited order again, as a new card with the answer button; they can answer it again.
+      if (/^-?\d{5,}$/.test(String(order.telegramChatId || ""))) {
+        order.status = "Pending"; order.closed = false;
+        const sent = await sendBotCard(order, String(order.telegramChatId), cardImage.path, { edited: true });
+        if (sent.ok) { order.botButtonsMessageId = sent.messageId; order.telegramMessageId = sent.messageId; order.sent = true; order.customerDelivered = true; order.sender = "bot"; order.deliveryNote = ""; tgNote += " ✅ Edited order sent to the customer again."; }
+        else tgNote += ` ❌ Edited order NOT sent to the customer (${sent.error}).`;
+        await saveOrderRecord(order).catch(() => {}); // sheet row: new status / delivery
+        await updateAuditCopies(order).catch(() => {});
+      } else tgNote += " ❌ Edited order NOT sent to the customer (no numeric Telegram chat ID).";
+    }
     notifyAdminsText(order, `✏️ <b>${esc(order.orderId)}</b> was edited by ${esc(order.editedBy)} (${esc(order.customerName || "customer")}).`).catch(() => {});
     res.json({ ok: true, order, changed, warning: `Order ${order.orderId} updated.${tgNote}${await sheetWarning()}` });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
@@ -2527,7 +2532,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
         const fromId = String(callback.from?.id || "");
         if (!allAdminChatIds(order).includes(fromId)) { await answer("Only admins can do this."); }
         else if (action === "paiddone" || order.paidFull) { await answer("Already recorded as paid in full."); }
-        else if (order.status !== "Confirmed") { await answer("The customer has not confirmed this order yet."); }
         else {
           order.paidFull = true;
           order.paidFullAt = new Date().toISOString();
