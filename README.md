@@ -1,4 +1,4 @@
-Ambar Furniture v50
+Ambar Furniture v54
 Customer answer page update:
 The Telegram card still has exactly ONE button: መልስ ለመስጠት ክፈት.
 On the answer page, customer can Confirm, Reject, or choose Comment.
@@ -182,3 +182,13 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Cards sent from your own Telegram account: when the customer has pressed Start in the AMBAR bot, the answer link now comes as a SEPARATE message with a real button
   (a personal account cannot attach bot buttons). If the customer never pressed Start, the text link stays inside the card.
 - After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server.
+
+## v54 – GRAPHS FILLED · EDIT CLOSED AFTER PAID IN FULL
+- Graphs tab: the first column of every graph table (Nov 12, 2019 …) is now stored as plain TEXT. Before, Google Sheets turned it into dates / numbers, so the chart
+  treated it as data and the real bars looked empty. Old rows are cleared on every refresh, the charts are told to use the first column as labels, and a pie with
+  no orders shows a grey "(no orders)" slice instead of a blank circle.
+- Every graph is drawn on its own; if one fails, the others still show and the reason is written in cell E3 (red). If the charts are ever deleted, they are drawn again
+  automatically on the next order / drop-down change.
+- Paid in full = order closed: after "💰 Customer paid in full" the ✏️ Edit order button disappears from the admin bot, the edit page shows "closed", and the server
+  refuses any edit of that order. Everything else is unchanged.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server (the Graphs tab is rebuilt on start).
