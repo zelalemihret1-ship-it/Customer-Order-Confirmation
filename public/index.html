@@ -89,6 +89,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <div class="card"><h2>Service Information</h2><div class="grid">
 <label>Payment (Birr)<input name="payment" type="number"></label>
 <label>Advance (Birr)<input name="advance" type="number"></label>
+<label class="full" style="flex-direction:row;display:flex;align-items:center;gap:10px;background:#eaf6ee;border:1px solid #2e9e4f;border-radius:10px;padding:10px 12px;font-weight:700;color:#176b3a"><input type="checkbox" name="paidFull" value="Yes" style="width:22px;height:22px;margin:0">✅ Customer paid in full (Paid)</label>
 <label>Order Date<input name="orderDate" type="date"></label>
 <label>Completion Date<input name="completionDate" type="date"></label>
 <label>Delivery Type<select name="deliveryType" id="deliveryType">
@@ -174,7 +175,7 @@ function previewCard(){
  const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
  const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k])))].filter(Boolean).join("");
  const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
- const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Order Date",v.orderDate),field("Completion Date",v.completionDate),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
+ const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Payment Status",v.paidFull?"PAID IN FULL":""),field("Order Date",v.orderDate),field("Completion Date",v.completionDate),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
  preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Order code")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div></div>`;
 }
 function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
@@ -204,7 +205,7 @@ async function makeCard(v,file){
  const divider=()=>{x.strokeStyle="#e0dacd";x.lineWidth=2;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
  section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));
  divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
- divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Order date",v.orderDate);line("Completion date",v.completionDate);line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
+ divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Payment status",v.paidFull?"PAID IN FULL":"");line("Order date",v.orderDate);line("Completion date",v.completionDate);line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
  const tg=x.createLinearGradient(pad,1790,W-pad,1864);tg.addColorStop(0,"#0f2f25");tg.addColorStop(1,"#1b4d3d");x.fillStyle=tg;rounded(x,pad,1790,W-pad*2,74,18);x.fillStyle="#ffa939";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
  return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate card image.")),"image/jpeg",0.95));
 }
@@ -359,14 +360,14 @@ openBtn.onclick=()=>{ov.style.display="block";render();};
 </script>
 <style>
 #acOpen,#shBar,#myOpen{display:none!important}
-#stOpen{position:fixed;right:12px;bottom:12px;z-index:9998;width:52px;height:52px;border-radius:50%;border:1px solid #c18b3a;background:rgba(22,18,14,.92);color:#f3c77c;font-size:26px;line-height:1;box-shadow:0 4px 18px rgba(0,0,0,.4);cursor:pointer;display:none}
-#stBox button{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;font:600 15px system-ui,sans-serif;padding:13px 12px;margin:6px 0;border:0;border-radius:10px;background:#f3efe6;color:#222;cursor:pointer}
-#stBox button.main{background:#153a2e;color:#fff}
-#stBox button.warn{background:#b89552;color:#fff}
+#stOpen{position:fixed;right:14px;bottom:14px;z-index:9998;width:40px;height:40px;padding:0;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(24,22,19,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:#f3d9a4;display:none;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.28);cursor:pointer;transition:transform .2s,background .2s}#stOpen:hover,#stOpen:active{transform:rotate(60deg);background:rgba(24,22,19,.9)}#stOpen svg{width:20px;height:20px}
+#stBox button{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;font:500 14px system-ui,sans-serif;padding:11px 12px;margin:5px 0;border:1px solid #ece6d8;border-radius:12px;background:#faf8f3;color:#222;cursor:pointer;transition:background .15s}#stBox button:hover{background:#f1ebdd}
+#stBox button.main{background:#153a2e;color:#fff;border-color:#153a2e}
+#stBox button.warn{background:#fff6e5;color:#8a5a00;border-color:#e6c47a}
 #stBox h4{margin:14px 0 2px;font:700 12px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#777}
 </style>
-<button id="stOpen" title="Settings" aria-label="Settings">⚙️</button>
-<div id="stOverlay" style="display:none;position:fixed;inset:0;z-index:99997;background:rgba(0,0,0,.5);overflow:auto"><div id="stBox" style="background:#fff;max-width:460px;margin:20px auto;border-radius:14px;padding:16px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<button id="stOpen" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+<div id="stOverlay" style="display:none;position:fixed;inset:0;z-index:99997;background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow:auto;flex-direction:column;justify-content:flex-end"><div id="stBox" style="background:#fff;max-width:400px;margin:auto 12px 12px auto;border-radius:20px;padding:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
 // ONE settings icon holds every control button. The old floating buttons stay hidden and are triggered from here.
 (function(){
@@ -388,7 +389,7 @@ const items=()=>{
   L.push('<button data-c="connect">🔗 Connect my Telegram account</button>');
   return L.join("");
 };
-function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">⚙️ Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="block";}
+function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="flex";}
 const go=id=>{ov.style.display="none";const e=document.getElementById(id);if(e)e.click();};
 gear.onclick=show;
 ov.addEventListener("click",e=>{
@@ -402,7 +403,7 @@ ov.addEventListener("click",e=>{
   if(c==="admins"){go("acOpen");return;}
   if(c==="connect"){go("myOpen");return;}
 });
-(async()=>{try{const r=await fetch("/api/me");const m=await r.json();if(m.role==="owner"||m.role==="admin"){role=m.role;gear.style.display="block";}}catch{}})();
+(async()=>{try{const r=await fetch("/api/me");const m=await r.json();if(m.role==="owner"||m.role==="admin"){role=m.role;gear.style.display="flex";}}catch{}})();
 })();
 </script>
 </body>
