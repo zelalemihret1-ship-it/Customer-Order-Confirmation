@@ -813,7 +813,7 @@ async function callScript(payload) {
     else why = "Make sure google-sheet-script.gs is pasted fully, saved, and deployed as a Web app (New version).";
     throw new Error(`Google Script did not answer correctly (HTTP ${r.status}). ${why} Reply started with: ${t.replace(/\s+/g, " ").slice(0, 120)}`);
   }
-  if (!d.ok) throw new Error(d.error || "Google Script error");
+  if (!d.ok) throw new Error(/getSheetByName|getActive|not linked|openById/i.test(String(d.error)) ? "The Google script is not linked to your sheet. Open the SHEET → Extensions → Apps Script, paste google-sheet-script.gs there (or put the sheet ID in SHEET_ID at the top of the script), Save, run 'authorize' once, then Deploy → New deployment and use the new /exec URL." : (d.error || "Google Script error"));
   return d;
 }
 
@@ -976,13 +976,15 @@ function diffEvents(o, prev) {
 
 async function upsertOrder(order) {
   await ready();
-  if (DIRECT) {
-    const st = await callScript({ action: "state", id: String(order.id) });
-    const prev = st.values ? parseRow(st.values, st.row) : null, now = stamp();
-    const values = orderRow(order, prev?.created || (order.createdAt ? stamp(order.createdAt) : now), now);
-    await callScript({ action: "upsert", id: String(order.id), row: values, logs: SCRIPT_URL ? diffEvents(order, prev) : [] }); // Form mode: the sheet script writes the log itself
-    lastOkAt = stamp(); lastError = "";
-    return;
+  if (DIRECT) { // one call per order: the sheet script adds / updates the row and writes the activity log itself
+    const now = stamp();
+    const values = orderRow(order, order.createdAt ? stamp(order.createdAt) : now, now);
+    let lastErr;
+    for (let i = 0; i < 3; i++) {
+      try { await callScript({ action: "upsert", id: String(order.id), row: values }); lastOkAt = stamp(); lastError = ""; return; }
+      catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
+    }
+    throw lastErr;
   }
   if (!rows) await loadRows();
   const id = String(order.id);
@@ -1010,8 +1012,10 @@ async function upsertOrder(order) {
 function track(order) {
   if (!configured() || !order) return;
   const snapshot = JSON.parse(JSON.stringify(order)); // freeze the state at this moment
-  enqueue(() => upsertOrder(snapshot)).catch(e => { lastError = e.message; console.warn("Google Sheet sync failed:", e.message); });
+  return enqueue(() => upsertOrder(snapshot)).catch(e => { lastError = e.message; console.warn("Google Sheet sync failed:", e.message); });
 }
+/** Wait (max 25 s) until every queued sheet write has finished. */
+const idle = () => Promise.race([chain, new Promise(r => setTimeout(r, 25000))]);
 /** Log any other movement (admin assigned/removed, manual sync …). */
 function log(event, details = "", by = "") {
   if (!configured()) return;
@@ -1026,7 +1030,12 @@ function syncAll(allOrders, by = "Owner") {
     const now = stamp();
     const rowsOut = allOrders.map(o => orderRow(o, o.createdAt ? stamp(o.createdAt) : now, now));
     let d = {};
-    if (SCRIPT_URL) d = await callScript({ action: "syncAll", rows: rowsOut, logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed`, by)] });
+    if (SCRIPT_URL) {
+      let added = 0, updated = 0;
+      for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; }
+      await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed (${added} new)`, by)] });
+      d = { added, updated };
+    }
     else { // Form mode: small batches, one form submission each
       for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", rows: rowsOut.slice(i, i + 10), logs: [] });
       await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders sent (the sheet script adds / refreshes them within a minute)`, by)] });
@@ -1062,7 +1071,7 @@ function status() {
     url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError
   };
 }
-module.exports = { track, log, syncAll, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { track, idle, log, syncAll, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
@@ -1094,6 +1103,10 @@ async function uploadToSupabase(file, folder, contentType) {
   if (error) throw new Error(`Supabase Storage upload failed: ${error.message}`);
   const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(objectPath);
   return data.publicUrl;
+}
+// After an order is saved, tell the admin straight away if the Google Sheet could not be updated.
+async function sheetWarning() {
+  try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : ""; } catch { return ""; }
 }
 async function saveOrderRecord(order) {
   const saved = await saveOrderRecordCore(order);
@@ -2166,10 +2179,10 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
     const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
     await saveOrderRecord(order);
-    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}` });
+    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}${await sheetWarning()}` });
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
       auditCopies: audit.delivered,
-      warning: `Order ${order.orderId} was saved but the card could not be sent: ${failure || "no sending route available"}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}` });
+      warning: `Order ${order.orderId} was saved but the card could not be sent: ${failure || "no sending route available"}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -2198,19 +2211,6 @@ app.post("/api/sheets/sync", async (req, res) => {
     const r = await sheets.syncAll(orders, req.actor?.name || "Owner");
     res.json({ ok: true, message: `✅ Synced ${r.total} orders (${r.added} new in the sheet, ${r.updated} refreshed).`, ...sheets.status() });
   } catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
-});
-
-// ── Built-in Orders Sheet (no Google needed): every admin sees ALL orders in one table ──
-app.get("/api/sheet/orders", requireAccess, async (req, res) => {
-  try {
-    await supabaseReady;
-    if (supabase) await loadOrders();
-    const { orderRow, ORDER_HEAD } = sheets._internals;
-    const fmt = d => d ? new Date(d).toLocaleString("sv-SE", { timeZone: process.env.SHEET_TIMEZONE || "Africa/Addis_Ababa" }) : "";
-    const rows = [...orders].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-      .map(o => orderRow(o, fmt(o.createdAt), fmt(o.updatedAt || o.createdAt)));
-    res.json({ ok: true, head: ORDER_HEAD, rows, google: sheets.status().url || "" });
-  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 app.get("/api/orders", async (req, res) => {
@@ -2429,7 +2429,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
-    if (sheets.configured()) sheets.test().then(() => console.log("Google Sheet connected."), e => console.warn("Google Sheet not ready:", e.message));
+    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message));
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
 module.exports = app;
