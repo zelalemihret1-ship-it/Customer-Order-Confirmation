@@ -2572,7 +2572,14 @@ app.post("/api/telegram/webhook", async (req, res) => {
           order.paidFullAt = new Date().toISOString();
           await saveOrderRecord(order);
           await updateAuditCopies(order);
-          await answer("💰 Recorded: paid in full.");
+          // Send a warm, personal thank-you directly to the customer after the admin confirms full payment.
+          const customerChat = String(order.telegramChatId || order.customerTelegramId || "");
+          if (/^-?\\d+$/.test(customerChat)) {
+            const thankYou = `Dear ${order.customerName || "valued customer"},\\n\\nThank you sincerely for completing the full payment for your AMBAR Furniture order ${order.orderId}. We truly appreciate your trust and support. Your order is now marked as fully paid, and our team will continue taking care of it with great attention.\\n\\nWith gratitude,\\nAMBAR Furniture 🤎`;
+            try { await tgApi.call("sendMessage", { chat_id: customerChat, text: thankYou }); }
+            catch (e) { console.warn("Paid-in-full customer thank-you could not be sent:", e.message); }
+          }
+          await answer("💰 Recorded as paid in full. Customer thank-you sent (if Telegram delivery is available).");
           await notifyAdminsText(order, `💰 <b>${esc(order.orderId)}</b> marked <b>PAID IN FULL</b> (${esc(order.customerName || "customer")}).`);
         }
       }
