@@ -66,3 +66,13 @@ GOOGLE FORM MODE (use this if the Web app link keeps giving HTTP 401)
     Do NOT set GOOGLE_SCRIPT_URL (remove it).
  6. In Apps Script pick function "setupFormMode" -> Run -> allow permissions (one time).
  7. Restart the server, press Test. Orders appear in the Orders tab within about a minute.
+
+"Cannot read properties of null (reading 'getSheetByName')":
+ The script is not attached to your sheet. Either open the SHEET -> Extensions -> Apps Script and paste google-sheet-script.gs there,
+ or put your sheet ID in SHEET_ID at the top of the script. Then Save, run function "authorize" once (allow), and
+ Deploy -> New deployment -> Web app (Execute as Me, Anyone) and use the NEW /exec URL.
+
+UPDATE: orders are saved to the Google Sheet in ONE step per order (new row, or the same row updated), with the Activity Log written by the script.
+ - If saving fails, the order screen now shows "Google Sheet NOT updated: <reason>".
+ - On every server start, all existing orders are synced into the sheet automatically; the main admin can also press Sync ALL.
+ - After you change google-sheet-script.gs: Save -> Deploy -> New deployment, and use the new /exec URL.
