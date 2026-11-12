@@ -265,7 +265,7 @@ ov.addEventListener("click",async e=>{
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 })();
 </script>
-<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button></div>
+<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Orders Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button></div>
 <div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
 // Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
@@ -284,7 +284,7 @@ function render(msg,good){
   +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
   +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
     +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Orders</b>, <b>Activity Log</b>, <b>Dashboard</b>.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
-    :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
+    :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
       +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
   +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
   +(s.lastError?'<p style="color:#c62828;font-size:13px;white-space:pre-wrap">⚠ '+esc(s.lastError)+'</p>':'')
@@ -304,7 +304,8 @@ ov.addEventListener("click",async e=>{
 });
 // Main button: opens the sheet directly when connected; otherwise shows the setup panel.
 let shOwner=false;
-document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
+// One button for every admin: opens the built-in Orders Sheet (all orders, live, downloadable as Excel).
+document.getElementById("shOpen").onclick=()=>{location.href="/sheet.html";};
 document.getElementById("shCfg").onclick=openPanel;
 (async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";}}catch{}})();
 })();
