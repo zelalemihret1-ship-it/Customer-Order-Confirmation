@@ -847,7 +847,15 @@ function readCreds() {
 }
 const creds = readCreds();
 const SCRIPT_URL = (process.env.GOOGLE_SCRIPT_URL || "").trim(), SCRIPT_KEY = (process.env.GOOGLE_SCRIPT_KEY || "").trim();
-let scriptSheetUrl = (process.env.GOOGLE_SHEET_URL || "").trim();
+// Accept the sheet address however it was pasted: with quotes, "GOOGLE_SHEET_URL=…", a share link, or just the sheet id.
+function normSheetUrl(u) {
+  u = String(u || "").trim().replace(/^GOOGLE_SHEET_URL\s*=\s*/i, "").replace(/^["'`\s]+|["'`\s]+$/g, "");
+  const m = u.match(/\/d\/([A-Za-z0-9_-]{20,})/), gid = u.match(/[#?&]gid=(\d+)/);
+  if (m) return `https://docs.google.com/spreadsheets/d/${m[1]}/edit${gid ? "#gid=" + gid[1] : ""}`;
+  if (/^[A-Za-z0-9_-]{30,}$/.test(u)) return `https://docs.google.com/spreadsheets/d/${u}/edit`;
+  return /^https?:\/\//i.test(u) ? u : "";
+}
+let scriptSheetUrl = normSheetUrl(process.env.GOOGLE_SHEET_URL);
 const FORM_RAW = (process.env.GOOGLE_FORM_URL || "").trim();
 const FORM = (() => { // pre-filled Google Form link → submit address + the one answer box
   const id = FORM_RAW.match(/forms\/d\/e\/([\w-]+)/), en = FORM_RAW.match(/entry\.(\d+)/);
@@ -971,7 +979,7 @@ let summaryUrl = "", graphsUrl = "", cutoffMs = 0; // cutoffMs: orders created b
 const isOld = o => cutoffMs > 0 && o && o.createdAt && Date.parse(o.createdAt) < cutoffMs;
 function ready() {
   if (DIRECT) {
-    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); }).catch(e => { readyP = null; lastError = e.message; throw e; });
+    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = normSheetUrl(d.url) || d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); }).catch(e => { readyP = null; lastError = e.message; throw e; });
     return readyP;
   }
   if (!readyP) readyP = setup().catch(e => { readyP = null; lastError = e.message; throw e; });
@@ -1187,7 +1195,7 @@ function test() {
 function status() {
   return {
     configured: configured(), hasSheetId: !!(DIRECT || SHEET_ID), hasCredentials: !!(DIRECT || creds), serviceAccount: DIRECT ? "Direct connection (no API)" : creds?.email || "",
-    url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl
+    url: DIRECT ? (normSheetUrl(scriptSheetUrl) || scriptSheetUrl) : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl
   };
 }
 module.exports = { busy: () => pendingJobs > 0, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
@@ -2324,7 +2332,8 @@ const sheetsAccess = (req, res, next) => {
   res.status(403).json({ ok: false, error: "Only the main admin can change the Google Sheet connection." });
 };
 app.use("/api/sheets", requireAccess, sheetsAccess);
-app.get("/api/sheets/status", (req, res) => {
+app.get("/api/sheets/status", async (req, res) => {
+  try { if (sheets.configured() && !sheets.status().url) await Promise.race([sheets.test().catch(() => { }), new Promise(r => setTimeout(r, 20000))]); } catch { }
   const st = sheets.status();
   if (req.actor?.role === "owner") return res.json({ ok: true, ...st });
   res.json({ ok: true, configured: st.configured, url: st.url, summaryUrl: st.summaryUrl, graphsUrl: st.graphsUrl });
@@ -2584,7 +2593,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
-    if (sheets.configured()) setTimeout(() => { sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message)); }, 30000);
+    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); if (orders.length) setTimeout(() => sheets.syncAll(orders, "Auto sync at start").then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet auto sync failed:", e.message)), 30000); }, e => console.warn("Google Sheet not ready:", e.message));
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
 module.exports = app;
