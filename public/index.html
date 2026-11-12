@@ -46,6 +46,24 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
 @media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
 <style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#stOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
+<style>
+#botCard h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bot-tag{font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#8a6a1f;background:#fbf1d6;border:1px solid #ecd9a3;border-radius:999px;padding:3px 10px}
+.bot-log{background:#f6f3ec;border:1px solid #e8e2d4;border-radius:14px;padding:12px;max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:9px;margin:12px 0}
+.bot-msg{max-width:88%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
+.bot-msg.bot{align-self:flex-start;background:#fff;border:1px solid #e4ded2;color:#18382e;border-bottom-left-radius:4px}
+.bot-msg.me{align-self:flex-end;background:#153a2e;color:#f4efe3;border-bottom-right-radius:4px}
+.bot-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;opacity:.85;margin-bottom:4px;font-weight:700}
+.bot-chip{display:inline-block;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;background:#ffffff26;border:1px solid #ffffff40}
+.bot-msg.bot .bot-chip{background:#f4f1ea;border-color:#e4ded2}
+.bot-chip.done{background:#2ecc7126;border-color:#2ecc7160}
+.bot-done{border:1px solid #ffffff55;background:transparent;color:inherit;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer}
+.bot-types{display:flex;gap:8px;margin-bottom:8px}
+.bot-types button{flex:1;padding:10px;border-radius:10px;border:1.5px solid #d6d1c7;background:#fff;color:#153a2e;font-size:13px}
+.bot-types button.on{border-color:#b89552;background:#fbf7ef;box-shadow:0 0 0 2px #b8955226}
+#botText{min-height:90px}
+#botSend{width:100%;margin-top:8px}
+</style>
 </head>
 <body>
 <div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
@@ -103,6 +121,14 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label id="deliveryFeeField">Delivery fee (Birr)<input name="deliveryFee" type="number" min="0" step="0.01" placeholder="Type delivery fee"></label>
 <label>Delivery Date<input name="deliveryDate" type="date"></label>
 </div></div>
+
+<div class="card" id="botCard" oninput="event.stopPropagation()" onchange="event.stopPropagation()"><h2>🤖 Ambar Assistant <span class="bot-tag">Features &amp; corrections</span></h2>
+<div class="small">Write any additional feature you want, or something that must be corrected. I save it and send it to the main admin in Telegram.</div>
+<div class="bot-log" id="botLog" aria-live="polite"><div class="bot-msg bot">Hi! 👋 I'm the Ambar assistant. Choose <b>New feature</b> or <b>Correction</b>, write it below and press <b>Send</b>.</div></div>
+<div class="bot-types"><button type="button" id="botTypeFeature" class="on">✨ New feature</button><button type="button" id="botTypeCorrection">🛠 Correction</button></div>
+<textarea id="botText" maxlength="2000" placeholder="Write the additional feature or the correction here…"></textarea>
+<button type="button" id="botSend" class="primary">📨 Send to assistant</button>
+</div>
 
 <div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
 <div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
@@ -227,6 +253,48 @@ form.addEventListener("submit",async e=>{
 });
 previewCard();
 </script>
+<script>
+// Ambar Assistant: admins write additional features / corrections; the server saves them and messages the main admin.
+(function(){
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const log=document.getElementById("botLog"),txt=document.getElementById("botText"),send=document.getElementById("botSend");
+const bF=document.getElementById("botTypeFeature"),bC=document.getElementById("botTypeCorrection");
+if(!log||!txt||!send)return;
+let type="feature",owner=false;
+const setType=t=>{type=t;bF.classList.toggle("on",t==="feature");bC.classList.toggle("on",t==="correction");txt.placeholder=t==="feature"?"Write the additional feature you want…":"Write what must be corrected…";};
+bF.onclick=()=>setType("feature");bC.onclick=()=>setType("correction");
+const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
+const when=iso=>{try{return new Date(iso).toLocaleString([], {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});}catch{return "";}};
+const add=(cls,html)=>{const d=document.createElement("div");d.className="bot-msg "+cls;d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight;return d;};
+function noteHtml(n){
+  const kind=n.type==="correction"?"🛠 Correction":"✨ Feature";
+  return '<div class="bot-meta"><span class="bot-chip">'+kind+' #'+esc(n.id)+'</span>'+(owner?'<span>'+esc(n.by)+'</span>':'')+'<span>'+esc(when(n.at))+'</span><span class="bot-chip '+(n.done?'done':'')+'">'+(n.done?'✓ done':'open')+'</span>'+(owner?'<button type="button" class="bot-done" data-id="'+esc(n.id)+'">'+(n.done?'Re-open':'Mark done')+'</button>':'')+'</div>'+esc(n.text);
+}
+async function load(){
+  try{
+    const d=await api("/api/assistant/notes");if(!d.ok)return;owner=!!d.owner;
+    (d.notes||[]).forEach(n=>add("me",noteHtml(n)));
+  }catch{}
+}
+log.addEventListener("click",async e=>{
+  const b=e.target.closest(".bot-done");if(!b)return;
+  b.disabled=true;
+  try{const d=await api("/api/assistant/notes/"+encodeURIComponent(b.dataset.id)+"/done",{});if(d.ok){const m=b.closest(".bot-msg");m.innerHTML=noteHtml(d.note);}else b.disabled=false;}catch{b.disabled=false;}
+});
+send.onclick=async()=>{
+  const text=txt.value.trim();
+  if(text.length<3){add("bot","Please write a little more so I understand what you need.");return;}
+  send.disabled=true;const old=send.textContent;send.textContent="Sending…";
+  try{
+    const d=await api("/api/assistant/notes",{type,text});
+    if(d.ok){add("me",noteHtml(d.note));add("bot",esc(d.reply||"✅ Saved."));txt.value="";}
+    else add("bot","❌ "+esc(d.error||"Could not save it. Please try again."));
+  }catch(err){add("bot","❌ "+esc(err.message||"Could not reach the server."));}
+  finally{send.disabled=false;send.textContent=old;}
+};
+load();
+})();
+</script>
 <button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #c18b3a;color:#f3c77c;font:600 14px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(14px)">👥 Manage Assigned Admins</button>
 <div id="acOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="acBox" style="background:#fff;max-width:560px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
@@ -284,7 +352,7 @@ function render(msg,good){
   box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
   +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
   +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
-    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Orders</b>, <b>Activity Log</b>, <b>Dashboard</b>.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
+    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
     :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
       +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
   +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
@@ -310,7 +378,7 @@ document.getElementById("shCfg").onclick=openPanel;
 // "Archive old list & Start New" — main admin only (the server refuses everyone else).
 function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
 document.getElementById("shNew").onclick=()=>{
-  const b=document.getElementById("shNew"),msg="Archive the OLD list and start the Google Sheet as NEW?\n\nAll current month tabs and the Activity Log are kept as 'Archive …' tabs (nothing is deleted). A clean new month tab is created and only NEW orders go into it.";
+  const b=document.getElementById("shNew"),msg="Archive the OLD list and start the Google Sheet as NEW?\n\nAll current month tabs are kept as 'Backup …' tabs (nothing is deleted). A clean new month tab is created and only NEW orders go into it.";
   const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/start-new",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
   const w=window.Telegram?.WebApp;if(w&&w.showConfirm){w.showConfirm(msg,ok=>{if(ok)go();});}else if(confirm(msg))go();
 };
