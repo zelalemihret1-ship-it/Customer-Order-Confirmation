@@ -1581,7 +1581,7 @@ function auditCaptionHtml(order) {
   const comments = order.comments || [], last = comments[comments.length - 1];
   const who = order.telegramUsername || order.telegramChatId || "";
   const decided = order.status === "Confirmed" || order.status === "Rejected";
-  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Sent from:</b> ${esc(order.adminLabel || "")}${order.sent ? "" : " — ❌ NOT delivered" + (order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : "")}${decided ? "\n<b>Customer answered:</b> " + st : ""}${last ? `\n<b>Comment:</b> ${esc(String(last.comment).slice(0, 250))}` : ""}`;
+  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Sent from:</b> ${esc(order.adminLabel || "")}${order.sent ? "" : " — ❌ NOT delivered" + (order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : "")}${decided ? "\n<b>Customer answered:</b> " + st : ""}${order.paidFull ? "\n<b>Payment:</b> 💰 PAID IN FULL (confirmed by admin)" : ""}${last ? `\n<b>Comment:</b> ${esc(String(last.comment).slice(0, 250))}` : ""}`;
 }
 async function sendAuditCopies(order, filePath) {
   const bytes = await fs.promises.readFile(filePath);
@@ -1603,9 +1603,18 @@ async function sendAuditCopies(order, filePath) {
   return { delivered: copies.length, failed };
 }
 // Keep the cross-check copies current when the customer confirms / rejects / comments.
+// Admin-only button on the bot's cross-check copy: appears after the customer CONFIRMED the order.
+// The admin taps it once the customer has sent the full payment -> the order is marked "Paid In Full" (data confirmed).
+function auditKeyboard(order) {
+  if (order.status !== "Confirmed") return undefined;
+  return { inline_keyboard: [[order.paidFull
+    ? { text: "✅ Paid in full — recorded", callback_data: `paiddone:${order.id}` }
+    : { text: "💰 Customer paid in full", callback_data: `paid:${order.id}` }]] };
+}
 async function updateAuditCopies(order) {
   for (const c of order.auditCopies || []) {
-    await safely("Audit copy update", () => telegram("editMessageCaption", { chat_id: c.chat_id, message_id: c.message_id, caption: auditCaptionHtml(order), parse_mode: "HTML" }));
+    const rm = auditKeyboard(order);
+    await safely("Audit copy update", () => telegram("editMessageCaption", { chat_id: c.chat_id, message_id: c.message_id, caption: auditCaptionHtml(order), parse_mode: "HTML", ...(rm ? { reply_markup: rm } : {}) }));
   }
 }
 async function sendCardAsAdmin(chatId, filePath, order, connection) {
@@ -2432,6 +2441,21 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const order = orders.find(item => String(item.id) === String(id));
       const answer = text => safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text }));
       if (!order) { await answer("This order was not found."); }
+      else if (action === "paid" || action === "paiddone") {
+        // Admin-only: mark the order as paid in full after the customer confirmed and sent the full payment.
+        const fromId = String(callback.from?.id || "");
+        if (!allAdminChatIds(order).includes(fromId)) { await answer("Only admins can do this."); }
+        else if (action === "paiddone" || order.paidFull) { await answer("Already recorded as paid in full."); }
+        else if (order.status !== "Confirmed") { await answer("The customer has not confirmed this order yet."); }
+        else {
+          order.paidFull = true;
+          order.paidFullAt = new Date().toISOString();
+          await saveOrderRecord(order);
+          await updateAuditCopies(order);
+          await answer("💰 Recorded: paid in full.");
+          await notifyAdminsText(order, `💰 <b>${esc(order.orderId)}</b> marked <b>PAID IN FULL</b> (${esc(order.customerName || "customer")}).`);
+        }
+      }
       else {
         // The card lives in the admin's Business chat, so every edit/reply must carry the business connection.
         const connectionId = callback.message?.business_connection_id || order.businessConnectionId || null;
