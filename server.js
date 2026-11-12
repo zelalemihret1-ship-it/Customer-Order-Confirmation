@@ -795,17 +795,17 @@ const upload = multer({
 let orders = [];
 let nextId = 1;
 let supabaseReady = Promise.resolve();
-// ── Google Sheet control + activity log (built in; does nothing until GOOGLE_SHEET_ID is set) ──
+// ── Google Sheet control (built in; does nothing until GOOGLE_SHEET_ID is set) ──
 const sheets = (() => {
 const module = { exports: {} };
 "use strict";
 /**
- * Google Sheets control + activity log for Ambar Furniture.
+ * Google Sheets control for Ambar Furniture.
  *
  * Tabs it keeps in your spreadsheet:
  *   • Orders        – one row per order, always up to date (status, customer, product, delivery, comments…)
- *   • Activity Log  – one new row for every movement (order created, delivered, confirmed, rejected, comment, admin changes…)
- *   • Dashboard     – live totals (formulas) built on the two tabs above
+ *   • Dashboard     – live totals (formulas) built on the Orders tab
+ *   (the old "Activity Log" tab was removed)
  *
  * No extra npm package is needed: it signs the Google login itself with Node's crypto and uses fetch (Node 20+).
  *
@@ -969,7 +969,7 @@ function ready() {
 async function setup() {
   const meta = await g("?fields=sheets.properties");
   const have = new Map((meta.sheets || []).map(s => [s.properties.title, s.properties.sheetId]));
-  const need = [T_ORDERS, T_LOG, T_DASH].filter(t => !have.has(t));
+  const need = [T_ORDERS, T_DASH].filter(t => !have.has(t));
   if (need.length) {
     const r = await g(":batchUpdate", { method: "POST", body: { requests: need.map(title => ({ addSheet: { properties: { title } } })) } });
     (r.replies || []).forEach(x => have.set(x.addSheet.properties.title, x.addSheet.properties.sheetId));
@@ -979,7 +979,7 @@ async function setup() {
     fmt.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: cols }, cell: { userEnteredFormat: { backgroundColor: { red: 0.06, green: 0.18, blue: 0.145 }, textFormat: { bold: true, foregroundColor: { red: 0.96, green: 0.94, blue: 0.89 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat)" } });
     fmt.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } });
   };
-  for (const [title, head] of [[T_ORDERS, ORDER_HEAD], [T_LOG, LOG_HEAD]]) {
+  for (const [title, head] of [[T_ORDERS, ORDER_HEAD]]) {
     const cur = await g(`/values/${q(`'${title}'!A1:A1`)}`);
     if (!cur.values?.[0]?.[0] || need.includes(title)) {
       await g(`/values/${q(`'${title}'!A1`)}?valueInputOption=RAW`, { method: "PUT", body: { values: [head] } });
@@ -995,7 +995,7 @@ async function setup() {
     const L = n => colLetter(COL[n]);
     const rows = [
       ["AMBAR FURNITURE — Control Dashboard", ""],
-      ["(live: built from the Orders and Activity Log tabs — do not type over these cells)", ""],
+      ["(live: built from the Orders tab — do not type over these cells)", ""],
       ["Total orders", `=COUNTA(${T_ORDERS}!${L("ID")}2:${L("ID")})`],
       ["Pending (waiting for customer)", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Pending")`],
       ["Confirmed", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Confirmed")`],
@@ -1007,7 +1007,6 @@ async function setup() {
       [`=IFERROR(QUERY(${T_ORDERS}!A2:${LAST_COL},"select ${L("Product")}, count(${L("ID")}) where ${L("ID")} is not null group by ${L("Product")} label ${L("Product")} 'Product', count(${L("ID")}) 'Orders'",0),"no orders yet")`, ""],
     ];
     await g(`/values/${q(`'${T_DASH}'!A1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: rows } });
-    await g(`/values/${q(`'${T_DASH}'!D1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: [["Latest 15 movements"], [`=IFERROR(QUERY('${T_LOG}'!A2:G,"select * order by A desc limit 15",0),"no activity yet")`]] } });
     const sid = have.get(T_DASH);
     fmt.push({ repeatCell: { range: { sheetId: sid, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 14 } } }, fields: "userEnteredFormat.textFormat" } });
     fmt.push({ updateDimensionProperties: { range: { sheetId: sid, dimension: "COLUMNS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 300 }, fields: "pixelSize" } });
@@ -1033,11 +1032,8 @@ async function loadRows() {
 }
 const rowFromRange = range => { const m = String(range || "").match(/!.*?(\d+)(?::[A-Z]+(\d+))?$/); return m ? Number(m[1]) : 0; };
 
-async function appendLog(entries) {
-  if (!entries.length) return;
-  if (DIRECT) { await callScript({ action: "log", logs: entries }); return; }
-  await g(`/values/${q(`'${T_LOG}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: entries } });
-}
+// The Activity Log was removed from the Google Sheet: movements are no longer written anywhere.
+async function appendLog() { }
 const logRow = (event, o, details, by) => [stamp(), event, clean(o?.orderId), clean(o?.product), clean(o?.customerName), clean(details), clean(by)];
 
 function diffEvents(o, prev) {
@@ -1102,12 +1098,8 @@ function track(order) {
 }
 /** Wait (max 25 s) until every queued sheet write has finished. */
 const idle = () => Promise.race([chain, new Promise(r => setTimeout(r, 25000))]);
-/** Log any other movement (admin assigned/removed, manual sync …). */
-function log(event, details = "", by = "") {
-  if (!configured()) return;
-  enqueue(async () => { await ready(); await appendLog([logRow(event, null, details, by)]); })
-    .catch(e => { lastError = e.message; console.warn("Google Sheet log failed:", e.message); });
-}
+/** (no-op) the Activity Log was removed. */
+function log() { /* Activity Log removed – kept so existing callers still work */ }
 /** Rebuild/refresh every order row in one go (owner button). */
 function syncAll(allOrders, by = "Owner") {
   if (!configured()) return Promise.reject(new Error("Google Sheet is not configured."));
@@ -1119,12 +1111,10 @@ function syncAll(allOrders, by = "Owner") {
     if (SCRIPT_URL) {
       let added = 0, updated = 0;
       for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; }
-      await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed (${added} new)`, by)] });
       d = { added, updated };
     }
     else { // Form mode: small batches, one form submission each
       for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 10), logs: [] });
-      await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders sent (the sheet script adds / refreshes them within a minute)`, by)] });
       d = { added: "—", updated: "—" };
     }
     lastSyncAt = stamp(); lastOkAt = lastSyncAt; lastError = "";
@@ -1155,7 +1145,7 @@ function newMonth(by = "Admin") {
     return SCRIPT_URL ? d : { ok: true, name: "", created: true, url: "", sent: true };
   });
 }
-/** "Archive old list & Start New": the sheet script archives every month tab + the Activity Log and starts clean. */
+/** "Start from ZERO": the sheet script keeps every month tab as a "Backup …" tab and starts clean. */
 function startFresh(by = "Admin") {
   if (!DIRECT) return Promise.reject(new Error("Archive & Start New needs the Apps Script connection (GOOGLE_SCRIPT_URL or GOOGLE_FORM_URL)."));
   return enqueue(async () => {
@@ -2304,6 +2294,53 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
   }
 });
 
+// ── AMBAR assistant: admins write extra features / corrections; saved + sent to the main admin in Telegram ──
+const NOTES_FILE = path.join(__dirname, "data", "assistant-notes.json");
+let assistantNotes = []; // [{ id, type: "feature"|"correction", text, by, byId, at, done }]
+async function loadAssistantNotes() {
+  let list = [];
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "assistant_notes").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
+  if (!list.length) { try { list = JSON.parse(fs.readFileSync(NOTES_FILE, "utf8")); } catch {} }
+  assistantNotes = Array.isArray(list) ? list.filter(n => n && n.id && n.text) : [];
+}
+async function saveAssistantNotes() {
+  assistantNotes = assistantNotes.slice(-500);
+  try { fs.mkdirSync(path.dirname(NOTES_FILE), { recursive: true }); fs.writeFileSync(NOTES_FILE, JSON.stringify(assistantNotes)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "assistant_notes", value: assistantNotes, updated_at: new Date().toISOString() }); } catch {} }
+}
+app.use("/api/assistant", requireAccess);
+app.get("/api/assistant/notes", (req, res) => {
+  const mine = req.actor?.role === "owner" ? assistantNotes : assistantNotes.filter(n => n.byId && n.byId === req.actor?.telegramId);
+  res.json({ ok: true, owner: req.actor?.role === "owner", notes: mine.slice(-60) });
+});
+app.post("/api/assistant/notes", async (req, res) => {
+  try {
+    const type = req.body?.type === "correction" ? "correction" : "feature";
+    const text = String(req.body?.text || "").replace(/\r/g, "").trim().slice(0, 2000);
+    if (text.length < 3) return res.json({ ok: false, error: "Please write a little more so I understand what you need." });
+    await loadAssistantNotes();
+    const note = { id: (assistantNotes.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0) + 1), type, text, by: req.actor?.name || "Admin", byId: req.actor?.telegramId || "", at: new Date().toISOString(), done: false };
+    assistantNotes.push(note);
+    await saveAssistantNotes();
+    const targets = [...new Set([...OWNER_IDS, ADMIN_CHAT_ID].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)))];
+    const head = type === "correction" ? "🛠 <b>Correction</b>" : "✨ <b>New feature</b>";
+    const body = `🤖 <b>AMBAR assistant</b>\n${head} · #${note.id}\n<b>From:</b> ${esc(note.by)}\n\n${esc(text)}`;
+    const sent = await Promise.all(targets.map(to => safely("Assistant note", () => telegram("sendMessage", { chat_id: to, text: body, parse_mode: "HTML" })).then(r => !!r).catch(() => false)));
+    const reached = sent.some(Boolean);
+    res.json({ ok: true, note, notified: reached, reply: reached
+      ? `✅ Got it! I saved your ${type === "correction" ? "correction" : "feature request"} as #${note.id} and sent it to the main admin in Telegram.`
+      : `✅ Saved as #${note.id}. (I could not message the main admin in Telegram right now, but it is stored and the main admin can see it in this box.)` });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post("/api/assistant/notes/:id/done", async (req, res) => { // main admin only
+  if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Only the main admin can mark a note as done." });
+  await loadAssistantNotes();
+  const n = assistantNotes.find(x => String(x.id) === String(req.params.id));
+  if (!n) return res.json({ ok: false, error: "Note not found." });
+  n.done = !n.done; await saveAssistantNotes();
+  res.json({ ok: true, note: n });
+});
+
 // ── Google Sheet (MAIN ADMIN / OWNER ONLY) ─────────────────────────────────────
 // Every admin may OPEN the sheet (status/link only). Test / sync stay main-admin only.
 const sheetsAccess = (req, res, next) => {
@@ -2586,6 +2623,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
       : Promise.resolve();
     await supabaseReady;
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
+    await loadAssistantNotes();
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
     if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message));
