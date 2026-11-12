@@ -1106,7 +1106,7 @@ async function uploadToSupabase(file, folder, contentType) {
 }
 // After an order is saved, tell the admin straight away if the Google Sheet could not be updated.
 async function sheetWarning() {
-  try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : ""; } catch { return ""; }
+  try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : " ✅ Saved to the Google Sheet."; } catch { return ""; }
 }
 async function saveOrderRecord(order) {
   const saved = await saveOrderRecordCore(order);
