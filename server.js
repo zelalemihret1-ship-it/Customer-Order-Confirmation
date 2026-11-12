@@ -767,10 +767,13 @@ bmFtZXx8IiIpKS5qb2luKCJcbiIpfHwiTm8gYXNzaWduZWQgYWRtaW5zIHlldCIpKTpkLmVycm9yfQph
 aXQgY2FsbCgiL2FwaS9zZXR1cC9hcHAtYWRtaW5zL3JlbW92ZSIse3RlbGVncmFtSWQ6JCgiYXJtIikudmFsdWV9KSl9CmFzeW5jIGZ1bmN0aW9uIHRlc3Qo
 KXtzaG93KGF3YWl0IGNhbGwoIi9hcGkvc2V0dXAvdGVzdCIse3RhcmdldDokKCJ0YXJnZXQiKS52YWx1ZX0pKX0KPC9zY3JpcHQ+PC9ib2R5PjwvaHRtbD4K
 `.replace(/\s+/g, ""), "base64").toString("utf8");
+// No pinch / double-tap / ctrl+wheel zoom anywhere in the mini app (also applied to the built-in fallback pages).
+const NOZOOM_HEAD = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"><style>html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}</style><script>(function(){var p=function(e){e.preventDefault()};["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,p,{passive:false})});document.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1&&e.cancelable)e.preventDefault()},{passive:false});var l=0;document.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.cancelable)e.preventDefault();l=n},{passive:false});document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault()},{passive:false});document.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&["+","-","=","0"].indexOf(e.key)>-1)e.preventDefault()});})();</script>`;
+const noZoom = html => html.includes("user-scalable=no") ? html : html.replace(/<meta[^>]*name=["']viewport["'][^>]*>/i, "").replace(/<head[^>]*>/i, m => m + NOZOOM_HEAD);
 // Serves public/<file> when it exists (so you can edit it); otherwise the built-in copy above, so the app always starts.
 const sendPage = (file, fallback) => (req, res) => {
   res.set("Cache-Control", "no-store");
-  fs.readFile(path.join(__dirname, "public", file), "utf8", (err, txt) => res.type("html").send(err || !txt ? fallback : txt));
+  fs.readFile(path.join(__dirname, "public", file), "utf8", (err, txt) => res.type("html").send(noZoom(err || !txt ? fallback : txt)));
 };
 app.get(["/", "/index.html"], sendPage("index.html", PAGE_INDEX));
 app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
@@ -1461,7 +1464,7 @@ function answerPageHtml(order, note = "") {
   const done = order.status === "Confirmed" ? "✅ You confirmed this order. Thank you!" : order.status === "Rejected" ? "❌ You rejected this order." : order.closed ? "✅ Your answer was received. Thank you!" : "";
   const img = order.cardImage ? `/cards/${order.id}.jpg` : "";
   const locked = done ? " disabled" : "";
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order ${esc(order.orderId)} — Ambar Furniture</title>
+  return `<!doctype html><html><head><meta charset="utf-8">${NOZOOM_HEAD}<title>Order ${esc(order.orderId)} — Ambar Furniture</title>
 <style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e9e5da;color:#153a2e}.wrap{max-width:560px;margin:auto;padding:14px}.card{background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px #0f2a2133}
 .head{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:18px 20px;border-bottom:4px solid #ffa939}.head b{color:#ffa939;font-size:22px;letter-spacing:1px}.head div{color:#f4efe3;font-size:12px;margin-top:4px;letter-spacing:1px}
 img{width:100%;display:block}.pad{padding:18px 18px 22px}button{width:100%;border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer}
@@ -2329,6 +2332,22 @@ app.post("/api/sheets/start-new", async (req, res) => { // MAIN ADMIN ONLY (shee
     const r = await sheets.startFresh(req.actor?.name || "Admin");
     res.json({ ok: true, ...r, message: r.sent ? "✅ Request sent. Within a minute the old list is archived in the sheet and a clean new month tab appears." : `✅ Started as NEW. ${r.archived} old tab(s) were kept as "Archive …" tabs; new orders go into ${r.name}.` });
   } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post("/api/sheets/reset-all", async (req, res) => { // MAIN ADMIN ONLY: backup to the sheet, then wipe every order and start from zero
+  try {
+    if (req.body?.confirm !== "ZERO") return res.json({ ok: false, error: "Not confirmed." });
+    await supabaseReady; if (supabase) await loadOrders();
+    const by = req.actor?.name || "Owner", total = orders.length;
+    let backup = "";
+    if (sheets.configured()) { // 1) every order is written to the sheet first, 2) the sheet keeps it all as "Backup …" tabs and starts new. Any failure here STOPS the reset (nothing is deleted).
+      if (total) await sheets.syncAll(orders, by);
+      const r = await sheets.startFresh(by);
+      backup = r.sent ? " The sheet backup is being created (about a minute)." : ` The sheet kept ${r.archived} old tab(s) as "Backup …" tabs and started a clean one.`;
+    } else backup = " (Google Sheet is not connected, so there is no sheet backup.)";
+    if (supabase) { const { error } = await supabase.from("orders").delete().not("id", "is", null); if (error) throw new Error("Could not delete orders: " + error.message); }
+    orders = []; nextId = 1;
+    res.json({ ok: true, removed: total, message: `✅ Started from ZERO. ${total} order(s) removed from the app.${backup}` });
+  } catch (e) { res.json({ ok: false, error: e.message + " — nothing was deleted from the app." }); }
 });
 app.post("/api/sheets/sync", async (req, res) => {
   try {
