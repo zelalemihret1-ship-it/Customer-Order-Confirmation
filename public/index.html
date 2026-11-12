@@ -265,7 +265,7 @@ ov.addEventListener("click",async e=>{
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 })();
 </script>
-<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Orders Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button></div>
+<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button></div>
 <div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
 // Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
@@ -304,8 +304,7 @@ ov.addEventListener("click",async e=>{
 });
 // Main button: opens the sheet directly when connected; otherwise shows the setup panel.
 let shOwner=false;
-// One button for every admin: opens the built-in Orders Sheet (all orders, live, downloadable as Excel).
-document.getElementById("shOpen").onclick=()=>{location.href="/sheet.html";};
+document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
 document.getElementById("shCfg").onclick=openPanel;
 (async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";}}catch{}})();
 })();
