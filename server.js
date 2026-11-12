@@ -1903,6 +1903,34 @@ async function sendBotCard(order, chatId, filePath, opts = {}) {
     return { ok: true, messageId: sent.message_id };
   } catch (error) { return { ok: false, error: error.message }; }
 }
+
+// ── Cards that could not be delivered yet (customer has not pressed Start) are sent AUTOMATICALLY the moment the customer opens the bot ──
+async function cardFileForOrder(order) {
+  const ref = String(order.cardImage || "");
+  if (!ref) throw new Error("order has no card image");
+  const tmp = path.join(require("os").tmpdir(), `ambar-card-${order.id}-${Date.now()}.jpg`);
+  if (/^https?:/i.test(ref)) { const r = await fetch(ref); if (!r.ok) throw new Error("card download failed " + r.status); await fs.promises.writeFile(tmp, Buffer.from(await r.arrayBuffer())); return tmp; }
+  await fs.promises.copyFile(path.join(uploadDir, path.basename(ref.split("?")[0])), tmp); return tmp;
+}
+async function deliverPendingCards(chat = {}, from = {}) {
+  const chatId = String(chat.id || ""); if (!/^\d+$/.test(chatId)) return;
+  const handle = String(from.username || chat.username || "").replace(/^@/, "").toLowerCase();
+  await supabaseReady; if (supabase) await loadOrders();
+  const pending = orders.filter(o => !o.sent && !o.closed && o.status !== "Rejected" && (String(o.telegramChatId || "") === chatId || (handle && String(o.telegramUsername || "").replace(/^@/, "").toLowerCase() === handle)));
+  for (const o of pending) {
+    let file = "";
+    try {
+      file = await cardFileForOrder(o);
+      const r = await sendBotCard(o, chatId, file);
+      if (!r.ok) { console.warn("Pending card not delivered:", r.error); continue; }
+      o.telegramChatId = chatId; o.sender = "bot"; o.telegramMessageId = r.messageId; o.botButtonsMessageId = r.messageId;
+      o.sent = true; o.customerDelivered = true; o.deliveryNote = ""; o.buttonsLine = "✅ card + Open answer link sent in one message";
+      await saveOrderRecord(o); await updateAuditCopies(o).catch(() => {});
+      await notifyAdminsText(o, `✅ Order <b>${esc(o.orderId)}</b> card was delivered to ${esc(o.customerName || "the customer")} (they just opened the bot).`).catch(() => {});
+    } catch (e) { console.warn("Pending card delivery failed:", e.message); }
+    finally { if (file) fs.promises.unlink(file).catch(() => {}); }
+  }
+}
 async function sendBotButtons(order, chatId) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
@@ -2359,7 +2387,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}${await sheetWarning()}` });
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
       auditCopies: audit.delivered,
-      warning: `Order ${order.orderId} was saved but the card could not be sent: ${failure || "no sending route available"}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
+      warning: `Order ${order.orderId} was saved but the card could not be sent yet: ${directFailure || failure || "the customer has not opened the AMBAR bot"}. ⏳ It will be sent AUTOMATICALLY as soon as the customer presses Start in the bot${await botUsername().then(u => u ? " (https://t.me/" + u + ")" : "").catch(() => "")}. ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -2554,7 +2582,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
     const botMessage = update.message;
     if (botMessage?.chat?.id && botMessage.chat.type === "private") {
       rememberCustomer(botMessage.chat, botMessage.from || botMessage.chat, "");
-      const text = String(botMessage.text || "").trim();
+      await deliverPendingCards(botMessage.chat, botMessage.from || botMessage.chat).catch(e => console.warn("deliverPendingCards:", e.message));
     }
 
     // Customer typed a comment in the bot chat after tapping 💬 Comment.
@@ -2623,13 +2651,13 @@ app.post("/api/telegram/webhook", async (req, res) => {
           await saveOrderRecord(order);
           await updateAuditCopies(order);
           // Send a warm, personal thank-you directly to the customer after the admin confirms full payment.
-          const customerChat = String(order.telegramChatId || order.customerTelegramId || "");
-          if (/^-?\\d+$/.test(customerChat)) {
-            const thankYou = `Dear ${order.customerName || "valued customer"},\\n\\nThank you sincerely for completing the full payment for your AMBAR Furniture order ${order.orderId}. We truly appreciate your trust and support. Your order is now marked as fully paid, and our team will continue taking care of it with great attention.\\n\\nWith gratitude,\\nAMBAR Furniture 🤎`;
-            try { await tgApi.call("sendMessage", { chat_id: customerChat, text: thankYou }); }
+          const customerChat = String(order.telegramChatId || order.customerTelegramId || resolveChatId("", order.telegramUsername) || "");
+          if (/^-?\d+$/.test(customerChat)) {
+            const thankYou = `Dear ${order.customerName || "valued customer"},\n\nThank you sincerely for completing the full payment for your AMBAR Furniture order ${order.orderId}. We truly appreciate your trust and support. Your order is now marked as fully paid, and our team will continue taking care of it with great attention.\n\nWith gratitude,\nAMBAR Furniture 🤎`;
+            try { await tgApi.call("sendMessage", { chat_id: customerChat, text: thankYou }); order.thankYouSent = true; await saveOrderRecord(order); }
             catch (e) { console.warn("Paid-in-full customer thank-you could not be sent:", e.message); }
           }
-          await answer("💰 Recorded as paid in full. Customer thank-you sent (if Telegram delivery is available).");
+          await answer(order.thankYouSent ? "💰 Recorded as paid in full. ✅ Thank-you message sent to the customer." : "💰 Recorded as paid in full. ⚠ Thank-you NOT sent: the customer has not pressed Start in the AMBAR bot.");
           await notifyAdminsText(order, `💰 <b>${esc(order.orderId)}</b> marked <b>PAID IN FULL</b> (${esc(order.customerName || "customer")}).`);
         }
       }
