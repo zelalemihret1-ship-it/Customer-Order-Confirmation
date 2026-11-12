@@ -276,14 +276,14 @@ const api=async(p,post)=>{const r=await fetch(p,post?{method:"POST",headers:{"Co
 const bar=document.getElementById("shBar"),ov=document.getElementById("shOverlay"),box=document.getElementById("shBox");
 const bs='font-size:15px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box;border:0;border-radius:8px;color:#fff;background:#1a73e8;cursor:pointer';
 let st=null;
-function openExternal(u){try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(u);return;}}catch{}const w=window.open(u,"_blank","noopener");if(!w)location.href=u;} // pop-up blocked → open in this tab
+function openExternal(u){try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(u);return;}}catch{}window.open(u,"_blank","noopener");}
 async function status(){try{st=await api("/api/sheets/status");}catch{st={ok:false,error:"Could not reach the server."};}return st;}
 function render(msg,good){
   const s=st||{};
   const ok=s.configured&&!s.lastError;
   box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
   +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
-  +(s.configured?'<a data-open="1" href="'+esc(s.url||"#")+'" target="_blank" rel="noopener" style="'+bs+';background:#188038;display:block;text-align:center;text-decoration:none">📊 Open Google Sheet ↗</a>'+(s.url?'':'<div style="background:#fff4e5;border:1px solid #f0b34a;border-radius:8px;padding:10px;font-size:13px;margin:4px 0">The server does not know the sheet address yet. Press <b>Test connection</b> below. If it stays empty, add <code>GOOGLE_SHEET_URL</code> (your sheet address) in Render and restart.</div>')+'<button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
+  +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
     +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Orders</b>, <b>Activity Log</b>, <b>Dashboard</b>.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
     :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
       +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
@@ -293,7 +293,6 @@ function render(msg,good){
 }
 async function openPanel(){ov.style.display="block";box.textContent="Loading…";await status();render();}
 ov.addEventListener("click",async e=>{
-  const lk=e.target.closest("a[data-open]");if(lk){if(!st?.url){e.preventDefault();return;}if(window.Telegram?.WebApp?.openLink){e.preventDefault();openExternal(st.url);}return;}
   const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   const a=b.dataset.a;
   if(a==="close"){ov.style.display="none";return;}
@@ -306,7 +305,7 @@ ov.addEventListener("click",async e=>{
 });
 // Main button: opens the sheet directly when connected; otherwise shows the setup panel.
 let shOwner=false;
-document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.url){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
+document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
 document.getElementById("shCfg").onclick=openPanel;
 // "Archive old list & Start New" — main admin only (the server refuses everyone else).
 function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
