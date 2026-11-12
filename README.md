@@ -150,3 +150,15 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
   It is saved (data/assistant-notes.json, and Supabase `app_settings.assistant_notes` when Supabase is used) and sent by the bot to the main admin in Telegram.
   Assigned admins see their own notes; the main admin sees all of them and can press "Mark done".
 - After updating: paste google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> New version (or New deployment, new /exec URL) -> restart the server (or press Test).
+
+## v51 – ONE FEATURES BOX · ONE GRAPH BUTTON · ✏️ EDIT ORDER
+- **Ambar Assistant removed** (card, server routes and notes storage). In Product Information there is now ONE box, "Additional features" (free text).
+  It is printed on the order card, saved with the order and written to a new Google Sheet column "Additional Features" (after Drawer).
+- **Graphs: ONE button.** The Graphs tab has a single yellow drop-down (cell B3): Daily · Weekly · Monthly · Yearly. It changes every graph together
+  (time graphs = last 12 days/weeks/months/years; total graphs = Today / This week / This month / This year). The per-graph drop-downs are gone.
+  The Dashboard tab is unchanged.
+- **✏️ Edit order** button in the admin bot, on the cross-check copy, next to "💰 Customer paid in full" (it is there from the start; the paid button
+  still appears after the customer confirms). It opens the order form pre-filled; "💾 Save changes" updates the SAME order:
+  the same Google Sheet row is changed (no new row), the card image/caption is refreshed in the admin bot (and in the customer's chat when the bot sent it).
+  Needs PUBLIC_BASE_URL set to your https address. The customer's Telegram chat ID is not editable.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server (the new column and graph button are built on start).
