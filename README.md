@@ -1,4 +1,4 @@
-Ambar Furniture v44
+Ambar Furniture v50
 Customer answer page update:
 The Telegram card still has exactly ONE button: መልስ ለመስጠት ክፈት.
 On the answer page, customer can Confirm, Reject, or choose Comment.
@@ -114,3 +114,39 @@ v47 – PROFESSIONAL SHEET DESIGN
 - Customers, Orders View, Payments (with Balance), Deliveries, Products – one filterable table per topic (live formulas over all month tabs).
 - Month tabs (e.g. "Hidar 2019") hold the raw data, header colours grouped by topic. Do not type in the formula tabs.
 After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments -> New version, then restart the server (or press Test) so the tabs are built.
+
+## v48 – SIMPLER SHEET + NO ZOOM
+- Google Sheet tabs are now exactly: Dashboard · Find Customer · Orders View · Graphs · Activity Log · month (date) tabs (newest month first).
+  Customers, Payments, Deliveries and Products tabs are no longer built and are deleted automatically (they were only formula views; no order data is lost).
+  "Old Orders (backup)" is not touched – delete it by hand once you no longer need it.
+- NEW ORDERS ARE ON TOP: every new order is inserted at row 2 of its month tab (right under the header). Existing month tabs are sorted newest-first
+  on the next server start / Test, and "Sync ALL" files old orders oldest-first so the newest ends up on top. Orders View was already newest-first.
+- Mini app is not zoomable: viewport has user-scalable=no / maximum-scale=1, plus pinch, double-tap and Ctrl+wheel zoom are blocked
+  (index.html, setup.html and the customer answer page; server.js also injects it into the built-in fallback pages).
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server (or press Test).
+
+## v49 – ONE "Start from ZERO" BUTTON (main admin only)
+- ⚙ Settings → "🗑 Start from ZERO (backup + clear all)" replaces the old "Archive old list & Start New" button. Two confirmations are asked.
+- What it does, in order: (1) writes every order to the Google Sheet, (2) the sheet keeps ALL current month tabs + the Activity Log as "Backup <date> · …" tabs
+  and creates clean Dashboard / Orders / Log, (3) deletes all orders from the app database, (4) order numbering restarts at 1.
+- If the sheet backup fails, nothing is deleted from the app. If the Google Sheet is not connected, the app is cleared without a sheet backup (the message says so).
+- Server-enforced: only the main admin (owner) can call /api/sheets/reset-all. Uploaded photos already stored in Supabase Storage are not deleted.
+- Note: the built-in fallback copy of index.html inside server.js is old; keep public/index.html in the deploy so the new button is shown.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+## v50 – NO ACTIVITY LOG · NAME SEARCH · INTERACTIVE GRAPHS · AMBAR ASSISTANT
+- **Activity Log removed.** The sheet no longer has an "Activity Log" tab (an old one is deleted automatically on the next server start / Test). The Dashboard's
+  "Latest 15 movements" was replaced by "Latest 10 orders". Old "Backup … · Activity Log" tabs made by earlier "Start from ZERO" runs are NOT touched – delete them by hand if you wish.
+- **Find Customer – search by NAME too.** In the yellow box type a name (or just part of it), @username, Chat ID, Order Code or phone. Row 5 tells you which customers matched
+  (if a name matches several people the card shows the first one – type more of the name to narrow it down).
+- **Dashboard + Graphs views.** Every graph has a yellow drop-down directly above it (Google Sheets cannot switch a graph by clicking the graph itself):
+  * time graphs (Orders over time, Money over time, Dashboard "Trend"): **Daily · Weekly · Monthly · Yearly** (last 12 days / weeks / months / years;
+    months and years are ETHIOPIAN, matching the month tabs; weeks start on Monday);
+  * total graphs (status, product, delivery type, cards delivered, delivery service): **Today · This week · This month · This year · All time**;
+  * the Dashboard numbers, breakdown tables and trend graph each have their own yellow box. Your last choice is kept when the sheet is rebuilt.
+  * New look: one card header per graph, donut charts, stacked columns, softer grid, consistent colours (amber / green / red for Pending / Confirmed / Rejected).
+- **Hidden tab "_Data"** is the live helper table behind the Dashboard and Graphs. Do not delete it (it is rebuilt automatically on every server start / Test).
+- **🤖 Ambar Assistant** (index page, right after "Service Information"): an admin chooses *New feature* or *Correction*, writes it and presses Send.
+  It is saved (data/assistant-notes.json, and Supabase `app_settings.assistant_notes` when Supabase is used) and sent by the bot to the main admin in Telegram.
+  Assigned admins see their own notes; the main admin sees all of them and can press "Mark done".
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> New version (or New deployment, new /exec URL) -> restart the server (or press Test).
