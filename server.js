@@ -738,14 +738,13 @@ const TZ = process.env.SHEET_TIMEZONE || "Africa/Addis_Ababa";
 const SHEET_ID = (process.env.GOOGLE_SHEET_ID || "").trim().replace(/^.*\/d\/([^/]+).*$/, "$1");
 const T_ORDERS = "Orders", T_LOG = "Activity Log", T_DASH = "Dashboard";
 
-const ORDER_HEAD = [
-  "ID", "Order Code", "Created At", "Last Updated", "Status", "Product", "Length (cm)", "Width (cm)", "Height (cm)",
-  "Material", "Color", "Style", "Design", "Handle", "Door", "Partition", "Drawer",
-  "Customer Name", "Phone", "Telegram Username", "Telegram Chat ID", "Order Date", "Delivery Date",
-  "Delivery Type", "Delivery Fee", "Location", "Payment", "Advance",
-  "Delivered To Customer", "Answer Closed", "Comments", "Latest Comment",
-  "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note",
-  "Completion Date", "Delivery Service"
+const ORDER_HEAD = [ // customer information comes first
+  "Customer Name", "Phone", "Telegram Username", "Telegram Chat ID", "Location",
+  "Order Code", "Order Date", "Completion Date", "Delivery Type", "Delivery Service", "Delivery Fee", "Delivery Date",
+  "Product", "Length (cm)", "Width (cm)", "Height (cm)", "Material", "Color", "Style", "Design", "Handle", "Door", "Partition", "Drawer",
+  "Payment", "Advance", "Status", "Delivered To Customer", "Answer Closed", "Comments", "Latest Comment",
+  "Created At", "Last Updated", "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note",
+  "ID"
 ];
 const LOG_HEAD = ["Time", "Event", "Order Code", "Product", "Customer", "Details", "By"];
 const COL = Object.fromEntries(ORDER_HEAD.map((h, i) => [h, i]));
@@ -911,7 +910,7 @@ async function setup() {
     const rows = [
       ["AMBAR FURNITURE — Control Dashboard", ""],
       ["(live: built from the Orders and Activity Log tabs — do not type over these cells)", ""],
-      ["Total orders", `=COUNTA(${T_ORDERS}!A2:A)`],
+      ["Total orders", `=COUNTA(${T_ORDERS}!${L("ID")}2:${L("ID")})`],
       ["Pending (waiting for customer)", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Pending")`],
       ["Confirmed", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Confirmed")`],
       ["Rejected", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Rejected")`],
@@ -919,7 +918,7 @@ async function setup() {
       ["Customer comments received", `=SUM(${T_ORDERS}!${L("Comments")}2:${L("Comments")})`],
       ["", ""],
       ["Orders by product", ""],
-      [`=IFERROR(QUERY(${T_ORDERS}!A2:${LAST_COL},"select ${L("Product")}, count(A) where A is not null group by ${L("Product")} label ${L("Product")} 'Product', count(A) 'Orders'",0),"no orders yet")`, ""],
+      [`=IFERROR(QUERY(${T_ORDERS}!A2:${LAST_COL},"select ${L("Product")}, count(${L("ID")}) where ${L("ID")} is not null group by ${L("Product")} label ${L("Product")} 'Product', count(${L("ID")}) 'Orders'",0),"no orders yet")`, ""],
     ];
     await g(`/values/${q(`'${T_DASH}'!A1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: rows } });
     await g(`/values/${q(`'${T_DASH}'!D1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: [["Latest 15 movements"], [`=IFERROR(QUERY('${T_LOG}'!A2:G,"select * order by A desc limit 15",0),"no activity yet")`]] } });
@@ -944,7 +943,7 @@ const parseRow = (r, rowNo) => ({
 async function loadRows() {
   const d = await g(`/values/${q(`'${T_ORDERS}'!A2:${LAST_COL}`)}`);
   rows = new Map();
-  (d.values || []).forEach((r, i) => { if (r[0]) rows.set(String(r[0]), parseRow(r, i + 2)); });
+  (d.values || []).forEach((r, i) => { if (r[COL["ID"]]) rows.set(String(r[COL["ID"]]), parseRow(r, i + 2)); });
 }
 const rowFromRange = range => { const m = String(range || "").match(/!.*?(\d+)(?::[A-Z]+(\d+))?$/); return m ? Number(m[1]) : 0; };
 
@@ -981,7 +980,7 @@ async function upsertOrder(order) {
     const values = orderRow(order, order.createdAt ? stamp(order.createdAt) : now, now);
     let lastErr;
     for (let i = 0; i < 3; i++) {
-      try { await callScript({ action: "upsert", id: String(order.id), row: values }); lastOkAt = stamp(); lastError = ""; return; }
+      try { await callScript({ action: "upsert", id: String(order.id), head: ORDER_HEAD, row: values }); lastOkAt = stamp(); lastError = ""; return; }
       catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
     }
     throw lastErr;
@@ -1032,12 +1031,12 @@ function syncAll(allOrders, by = "Owner") {
     let d = {};
     if (SCRIPT_URL) {
       let added = 0, updated = 0;
-      for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; }
+      for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; }
       await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed (${added} new)`, by)] });
       d = { added, updated };
     }
     else { // Form mode: small batches, one form submission each
-      for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", rows: rowsOut.slice(i, i + 10), logs: [] });
+      for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 10), logs: [] });
       await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders sent (the sheet script adds / refreshes them within a minute)`, by)] });
       d = { added: "—", updated: "—" };
     }
@@ -1059,6 +1058,16 @@ function syncAll(allOrders, by = "Owner") {
     return { total: allOrders.length, added: fresh.length, updated: updates.length };
   });
 }
+/** "Start New Month": the sheet script creates (or opens) the tab of the current Ethiopian month. */
+function newMonth(by = "Admin") {
+  if (!DIRECT) return Promise.reject(new Error("Month tabs need the Apps Script connection (GOOGLE_SCRIPT_URL or GOOGLE_FORM_URL)."));
+  return enqueue(async () => {
+    await ready();
+    const d = await callScript({ action: "newMonth", head: ORDER_HEAD, by });
+    lastOkAt = stamp(); lastError = "";
+    return SCRIPT_URL ? d : { ok: true, name: "", created: true, url: "", sent: true };
+  });
+}
 /** Connection test / first setup. */
 function test() {
   if (!configured()) return Promise.reject(new Error("Not configured."));
@@ -1071,7 +1080,7 @@ function status() {
     url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError
   };
 }
-module.exports = { track, idle, log, syncAll, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { track, idle, log, syncAll, newMonth, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
@@ -2204,6 +2213,12 @@ app.get("/api/sheets/status", (req, res) => {
 app.post("/api/sheets/test", async (req, res) => {
   try { const r = await sheets.test(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
   catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
+});
+app.post("/api/sheets/new-month", async (req, res) => { // main admin only (sheetsAccess blocks everyone else)
+  try {
+    const r = await sheets.newMonth(req.actor?.name || "Admin");
+    res.json({ ok: true, ...r, message: r.sent ? "✅ Request sent. The new month tab appears in the sheet within a minute." : r.created ? `✅ New month started: ${r.name}. New orders for this month go to this tab.` : `ℹ️ ${r.name} already exists — it is now the active tab.` });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 app.post("/api/sheets/sync", async (req, res) => {
   try {
