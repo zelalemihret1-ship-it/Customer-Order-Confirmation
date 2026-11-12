@@ -107,3 +107,15 @@ v47 – PROFESSIONAL SHEET DESIGN
  - Dashboard: banner, 12 KPI tiles, breakdown tables (product / delivery type / service) and the latest 15 movements.
  - Graphs: banner + 6 charts (status, per-month stacked, product, delivery, delivery type, service) with the data tables underneath.
  - After pasting google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server (formatting is re-applied on start).
+
+## Google Sheet tabs (modern layout)
+- Dashboard, Graphs – totals and charts.
+- **Find Customer** – type an @username, Telegram Chat ID, Order Code or phone in the yellow box (B4); the customer card plus that customer's Orders, Payments, Delivery and Product tables appear.
+- Customers, Orders View, Payments (with Balance), Deliveries, Products – one filterable table per topic (live formulas over all month tabs).
+- Month tabs (e.g. "Hidar 2019") hold the raw data, header colours grouped by topic. Do not type in the formula tabs.
+After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments -> New version, then restart the server (or press Test) so the tabs are built.
+
+### Reports + Menu (Google Sheet)
+- **Menu** tab: clickable list of every page and every month tab. Most pages also have the same clickable bar on row 3.
+- **Reports** tab: yellow dropdowns – SHOW (orders / payment / advance / delivery fees / balance due / paid-in-full / cards delivered / comments), STATUS, PRODUCT, BREAK DOWN BY, DAILY ENDS ON. Daily (30 days), Monthly (every Ethiopian month tab), Yearly (Ethiopian year) tables + 4 graphs follow the selection.
+- `_Data` is a hidden helper tab for Reports (do not edit).
