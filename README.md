@@ -162,3 +162,13 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
   the same Google Sheet row is changed (no new row), the card image/caption is refreshed in the admin bot (and in the customer's chat when the bot sent it).
   Needs PUBLIC_BASE_URL set to your https address. The customer's Telegram chat ID is not editable.
 - After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server (the new column and graph button are built on start).
+
+## v52 – SEPARATE ANSWER BUTTON · PAY-FULL ALWAYS · EDIT RE-SENDS TO CUSTOMER · NO TREND · GRAPHS FIX
+- Customer card sent by the bot: the answer link is ONLY the button "🔗 መልስ ለመስጠት ክፈት" (the extra text link inside the caption is gone).
+- Admin bot: "💰 Customer paid in full" is always on the cross-check copy (no need to wait for the customer to confirm), next to "✏️ Edit order".
+- Saving an edit re-sends the order to the customer as a new card titled "✏️ EDITED ORDER" with the answer button. The answer is reopened (status back to Pending)
+  so the customer can confirm / reject / comment again. The same Google Sheet row is updated. Needs the customer's numeric Telegram chat ID (customer pressed Start).
+- Google Sheet Dashboard: the TREND section is removed; Breakdown and Latest 10 orders moved up.
+- Graphs tab: the total graphs now cover the same window as the time graphs (last 12 days / weeks / months / years), so they are no longer empty when "today" has no orders.
+  The sheet is now built part by part: if one tab fails, the others are still built and the reason is shown in red in cell A3 of the Graphs tab.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
