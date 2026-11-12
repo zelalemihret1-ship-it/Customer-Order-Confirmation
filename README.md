@@ -55,3 +55,14 @@ HTTP 401 / "asking to sign in" fix:
  - Use the NEW /exec URL in GOOGLE_SCRIPT_URL (do not reuse the old deployment's URL) and restart the server.
  - Open the /exec URL in an Incognito window. It must show {"ok":true,...} with NO sign-in page.
  - If "Anyone" is not in the list, the Google account is a school/work account that blocks it. Use a personal @gmail.com account for the sheet and script.
+
+GOOGLE FORM MODE (use this if the Web app link keeps giving HTTP 401)
+ 1. Create a Google Sheet. Open Extensions -> Apps Script, paste google-sheet-script.gs, Save.
+ 2. forms.google.com -> new form with ONE question, type "Paragraph" (not required). Settings -> Responses: turn OFF "Collect email addresses",
+    "Limit to 1 response" and any "Restrict to users in ..." option.
+ 3. Form -> Responses tab -> "Link to Sheets" -> choose the sheet from step 1.
+ 4. Form -> three-dots menu -> "Get pre-filled link" -> type x in the box -> "Get link" -> copy the link.
+ 5. On the server set:  GOOGLE_FORM_URL = <that link>   and   GOOGLE_SHEET_URL = <your sheet's normal address, so the button can open it>
+    Do NOT set GOOGLE_SCRIPT_URL (remove it).
+ 6. In Apps Script pick function "setupFormMode" -> Run -> allow permissions (one time).
+ 7. Restart the server, press Test. Orders appear in the Orders tab within about a minute.
