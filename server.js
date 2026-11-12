@@ -1555,7 +1555,7 @@ function answerLink(order) {
 function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.", opts = {}) {
   const link = opts.noLink ? "" : answerLink(order);
   if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
-  return `<b>AMBAR FURNITURE — ${opts.edited ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${order.paidFull ? "\n<b>Payment:</b> ✅ PAID IN FULL" : ""}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
+  return `<b>AMBAR FURNITURE — ${(opts.edited || order._edited) ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${order.paidFull ? "\n<b>Payment:</b> ✅ PAID IN FULL" : ""}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
 }
 // Every admin (main admin(s) + every assigned admin + ADMIN_CHAT_ID) receives every order in the AMBAR bot.
 function allAdminChatIds(order) {
@@ -1825,6 +1825,21 @@ async function sendInlineButtons(admin, entity, order) {
 }
 // Most reliable route: the AMBAR bot itself sends the card photo WITH the 3 buttons in one message.
 // Works when the customer has opened the bot (pressed Start); otherwise Telegram refuses and we use the admin-account routes.
+
+// True when the AMBAR bot can message this customer (they pressed Start in the bot).
+async function botCanMessage(chatId) {
+  if (!BOT_TOKEN || !/^-?\d{5,}$/.test(String(chatId || ""))) return false;
+  try { await telegram("sendChatAction", { chat_id: String(chatId), action: "typing" }); return true; } catch { return false; }
+}
+// The answer link as its OWN message with a real button (a personal Telegram account cannot attach bot buttons to its card).
+async function sendAnswerButton(order, chatId) {
+  const kb = keyboard(order.id, order);
+  if (!kb.inline_keyboard.length) return { ok: false, error: "PUBLIC_BASE_URL is not https" };
+  try {
+    const sent = await telegram("sendMessage", { chat_id: String(chatId), text: (order._edited ? "✏️ The order was edited — please answer again 👇" : "👇 Please answer your order below"), reply_markup: kb });
+    return { ok: true, messageId: sent.message_id };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
 async function sendBotCard(order, chatId, filePath, opts = {}) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
   try {
@@ -1874,7 +1889,8 @@ async function sendCardViaUserAccount(order, filePath) {
   // URL in the same message immediately. Telegram renders the HTTPS URL as a clickable
   // link without requiring any later customer message.
   const link = answerLink(order);
-  const caption = `<b>AMBAR FURNITURE — ORDER CARD</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`;
+  const botReach = await botCanMessage(entity.id); // then the answer link is sent as a separate real button below
+  const caption = `<b>AMBAR FURNITURE — ${order._edited ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}${botReach || !link ? "" : `\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`}`;
 
   const photoPath = filePath + ".jpg";
   await fs.promises.copyFile(filePath, photoPath);
@@ -1893,13 +1909,15 @@ async function sendCardViaUserAccount(order, filePath) {
   order.adminId = admin.id;
   order.adminLabel = admin.label;
   order.pollMessageId = 0;
+  let buttonMsg = null;
+  if (botReach) { buttonMsg = await sendAnswerButton(order, String(entity.id)); if (buttonMsg.ok) order.botButtonsMessageId = buttonMsg.messageId; }
   return {
     message_id: sent.id,
     chatId: String(entity.id),
     admin,
     pollSent: false,
     pollError: "",
-    buttons: "link",
+    buttons: buttonMsg?.ok ? "botchat" : "link",
     inlineError: "",
     directError: "",
     immediateLink: true
@@ -2352,15 +2370,29 @@ app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 },
     if (cardImage) {
       const r = await refreshCardMessages(order, cardImage.path).catch(() => ({ admins: 0 }));
       tgNote = ` Card updated in the admin bot (${r.admins}).`;
-      // The customer gets the edited order again, as a new card with the answer button; they can answer it again.
-      if (/^-?\d{5,}$/.test(String(order.telegramChatId || ""))) {
-        order.status = "Pending"; order.closed = false;
-        const sent = await sendBotCard(order, String(order.telegramChatId), cardImage.path, { edited: true });
-        if (sent.ok) { order.botButtonsMessageId = sent.messageId; order.telegramMessageId = sent.messageId; order.sent = true; order.customerDelivered = true; order.sender = "bot"; order.deliveryNote = ""; tgNote += " ✅ Edited order sent to the customer again."; }
-        else tgNote += ` ❌ Edited order NOT sent to the customer (${sent.error}).`;
-        await saveOrderRecord(order).catch(() => {}); // sheet row: new status / delivery
-        await updateAuditCopies(order).catch(() => {});
-      } else tgNote += " ❌ Edited order NOT sent to the customer (no numeric Telegram chat ID).";
+      // The customer gets the edited order again (new card + answer button); they can answer it again.
+      order.status = "Pending"; order.closed = false; order._edited = true;
+      const chat = String(order.telegramChatId || ""), errs = [];
+      let ok = false;
+      if (/^-?\d{5,}$/.test(chat)) {
+        const s1 = await sendBotCard(order, chat, cardImage.path, { edited: true });
+        if (s1.ok) { ok = true; order.sender = "bot"; order.botButtonsMessageId = s1.messageId; order.telegramMessageId = s1.messageId; } else errs.push("bot: " + s1.error);
+        if (!ok) {
+          try {
+            const conn = await businessConnectionForCustomer(chat).catch(() => null);
+            if (conn || businessConnections.size) { const s2 = await sendCardAsAdmin(chat, cardImage.path, order, conn); ok = true; order.sender = "admin_business_account"; order.telegramMessageId = s2.message_id; }
+          } catch (e) { errs.push("business: " + (e.raw || e.message)); }
+        }
+      }
+      if (!ok) {
+        try { const r2 = await sendCardViaUserAccount(order, cardImage.path); ok = true; order.sender = "admin_user_account"; order.telegramChatId = r2.chatId; order.telegramMessageId = r2.message_id; }
+        catch (e) { errs.push("account: " + e.message); }
+      }
+      delete order._edited;
+      if (ok) { order.sent = true; order.customerDelivered = true; order.deliveryNote = ""; tgNote += " ✅ Edited order sent to the customer again."; }
+      else tgNote += ` ❌ Edited order NOT sent to the customer (${errs.join(" | ").slice(0, 300) || "no route"}). The customer must press Start in the AMBAR bot, or your Telegram account must be connected.`;
+      await saveOrderRecord(order).catch(() => {});
+      await updateAuditCopies(order).catch(() => {});
     }
     notifyAdminsText(order, `✏️ <b>${esc(order.orderId)}</b> was edited by ${esc(order.editedBy)} (${esc(order.customerName || "customer")}).`).catch(() => {});
     res.json({ ok: true, order, changed, warning: `Order ${order.orderId} updated.${tgNote}${await sheetWarning()}` });
