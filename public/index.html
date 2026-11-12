@@ -265,7 +265,7 @@ ov.addEventListener("click",async e=>{
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 })();
 </script>
-<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button></div>
+<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button><button id="shNew" title="Start a new Ethiopian-month sheet" style="display:none;padding:10px 14px;border:0;border-radius:24px;background:#b89552;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">▶ Start New Month</button></div>
 <div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
 // Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
@@ -306,7 +306,14 @@ ov.addEventListener("click",async e=>{
 let shOwner=false;
 document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
 document.getElementById("shCfg").onclick=openPanel;
-(async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";}}catch{}})();
+// "Start New Month" — main admin only (the server refuses everyone else). Creates the tab of the current Ethiopian month.
+function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
+document.getElementById("shNew").onclick=()=>{
+  const b=document.getElementById("shNew"),msg="Start a NEW month sheet now? A tab for the current Ethiopian month is created in the Google Sheet and new orders of that month go into it.";
+  const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/new-month",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
+  const w=window.Telegram?.WebApp;if(w&&w.showConfirm){w.showConfirm(msg,ok=>{if(ok)go();});}else if(confirm(msg))go();
+};
+(async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";else document.getElementById("shNew").style.display="inline-block";}}catch{}})();
 })();
 </script>
 <button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
