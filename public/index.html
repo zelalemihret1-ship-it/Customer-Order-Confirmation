@@ -336,6 +336,8 @@ function render(msg,good){
     +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
     :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
       +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
+  +((!s.configured||s.lastError)?'<div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><b>🔗 Connect once — saved for all time</b><div style="font-size:13px;color:#555;margin:4px 0">Paste the Web app URL (ends with /exec). After it connects, the app remembers it permanently, even after restarts.</div><input id="shUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shKey" placeholder="Password (only if you set SECRET in the script)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shLink" placeholder="Sheet address (optional, so the button can open it)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><button data-a="connect" style="'+bs+';background:#188038">✅ Connect &amp; save permanently</button></div>':'')
+  +(s.configured&&s.saved?'<p style="font-size:12px;color:#188038">🔒 Connection saved permanently — it reconnects by itself after any restart or Google hiccup.</p>':'')
   +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
   +(s.lastError?'<p style="color:#c62828;font-size:13px;white-space:pre-wrap">⚠ '+esc(s.lastError)+'</p>':'')
   +'<div id="shMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap;color:'+(good===false?'#c62828':'#188038')+'">'+esc(msg||"")+'</div>';
@@ -346,6 +348,13 @@ ov.addEventListener("click",async e=>{
   const a=b.dataset.a;
   if(a==="close"){ov.style.display="none";return;}
   if(a==="open"){if(st?.url)openExternal(st.url);return;}
+  if(a==="connect"){
+    const v=i=>((document.getElementById(i)||{}).value||"").trim();
+    b.disabled=true;b.textContent="Connecting…";
+    try{const r=await fetch("/api/sheets/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scriptUrl:v("shUrl"),scriptKey:v("shKey"),sheetUrl:v("shLink")})});const d=await r.json();st={...st,...d};render(d.message||d.error,!!d.ok);}
+    catch(err){render("❌ "+err.message,false);}
+    return;
+  }
   if(a==="test"||a==="sync"){
     const label=b.textContent;b.disabled=true;b.textContent="Working…";
     try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render(d.message||d.error,!!d.ok);}
