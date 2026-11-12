@@ -246,6 +246,7 @@ const pick=document.getElementById("pickWrap");if(pick)pick.style.display="none"
     const r=await fetch("/api/orders/"+encodeURIComponent(editId)),d=await r.json();
     if(!r.ok||!d.ok)throw Error(d.error||"Could not load the order.");
     order=d.order;
+    if(order.paidFull){result.textContent="🔒 This order is closed (paid in full). It can no longer be edited.";submitBtn.disabled=true;form.querySelectorAll("input,select,textarea,button").forEach(el=>{el.disabled=true;});}
     FIELDS.forEach(k=>{const el=form.elements[k];if(el)el.value=order[k]??"";});
     const p=String(order.product||"");addProductOption(p);
     const opt=[...productSelect.options].find(o=>o.value.toLowerCase()===p.toLowerCase());
