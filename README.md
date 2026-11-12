@@ -119,3 +119,6 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - **Menu** tab: clickable list of every page and every month tab. Most pages also have the same clickable bar on row 3.
 - **Reports** tab: yellow dropdowns – SHOW (orders / payment / advance / delivery fees / balance due / paid-in-full / cards delivered / comments), STATUS, PRODUCT, BREAK DOWN BY, DAILY ENDS ON. Daily (30 days), Monthly (every Ethiopian month tab), Yearly (Ethiopian year) tables + 4 graphs follow the selection.
 - `_Data` is a hidden helper tab for Reports (do not edit).
+
+### If you see "Service Spreadsheets failed while accessing document"
+That is Google being busy/overloaded. The script now retries automatically (up to 4 times), flushes after each step, and only does the heavy restyle when something changed (not on every server start). To force a rebuild once: send {"action":"setup","force":true} or bump LAYOUT_V in the script.
