@@ -91,3 +91,12 @@ ETHIOPIAN MONTH TABS + START NEW MONTH
    (or press Sync ALL in the gear panel). You can delete the backup tab afterwards.
  - Dashboard totals add up ALL month tabs.
  - After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+v45 – SETTINGS MENU, ARCHIVE & START NEW, SUMMARY + GRAPHS
+ - All control buttons now live inside ONE ⚙ settings icon (bottom right): Open Google Sheet, Summary, Graphs, Sheet test/sync (main admin),
+   ♻ Archive old list & Start New (main admin), 👥 Manage Assigned Admins (main admin), 🔗 Connect my Telegram account.
+ - ♻ Archive old list & Start New (main admin only, server-enforced): every month tab + the Activity Log are KEPT as "Archive <date> · …" tabs,
+   a clean new month tab is created, and orders created before that moment are never written to the sheet again.
+ - Google Sheet tabs now start with "Dashboard" (summary in numbers) and "Graphs" (charts), then the month tabs.
+ - "Status" column now sits right after "Order Code" (existing tabs are re-mapped by column name automatically; no data is lost).
+ - After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
