@@ -1605,7 +1605,8 @@ function auditKeyboard(order) {
     ? { text: "✅ Paid in full — recorded", callback_data: `paiddone:${order.id}` }
     : { text: "💰 Customer paid in full", callback_data: `paid:${order.id}` });
   // ✏️ Edit order: opens the order form pre-filled (mini app). Needs an https PUBLIC_BASE_URL.
-  row.push(/^https:/i.test(PUBLIC_BASE_URL || "")
+  // Once the order is PAID IN FULL it is closed: the edit section is removed.
+  if (!order.paidFull) row.push(/^https:/i.test(PUBLIC_BASE_URL || "")
     ? { text: "✏️ Edit order", web_app: { url: `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/?edit=${order.id}` } }
     : { text: "✏️ Edit order", callback_data: `editorder:${order.id}` });
   return { inline_keyboard: [row] };
@@ -2326,7 +2327,7 @@ app.get("/api/orders/:id", async (req, res) => {
     await supabaseReady; if (supabase) await loadOrders();
     const o = orders.find(x => String(x.id) === String(req.params.id));
     if (!o) return res.status(404).json({ ok: false, error: "Order not found." });
-    res.json({ ok: true, order: Object.fromEntries([...EDITABLE_FIELDS, "id", "photo", "cardImage", "status"].map(k => [k, o[k] ?? ""])) });
+    res.json({ ok: true, order: Object.fromEntries([...EDITABLE_FIELDS, "id", "photo", "cardImage", "status"].map(k => [k, o[k] ?? ""]).concat([["paidFull", !!o.paidFull]])) });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 // Swap the card picture + caption in the admin cross-check copies (and the customer's bot message) after an edit.
@@ -2352,6 +2353,7 @@ app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 },
     await supabaseReady; if (supabase) await loadOrders();
     const order = orders.find(x => String(x.id) === String(req.params.id));
     if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
+    if (order.paidFull) return res.status(403).json({ ok: false, error: "This order is closed (paid in full). It can no longer be edited." });
     const body = req.body || {}, changed = [];
     for (const k of EDITABLE_FIELDS) {
       if (!(k in body)) continue;
@@ -2557,7 +2559,8 @@ app.post("/api/telegram/webhook", async (req, res) => {
       if (!order) { await answer("This order was not found."); }
       else if (action === "editorder") {
         const fromId = String(callback.from?.id || "");
-        await answer(allAdminChatIds(order).includes(fromId) ? "Editing needs PUBLIC_BASE_URL (https) on the server. Set it, then press ✏️ Edit order again." : "Only admins can do this.");
+        if (order.paidFull) await answer("This order is closed (paid in full). Editing is no longer available.");
+        else await answer(allAdminChatIds(order).includes(fromId) ? "Editing needs PUBLIC_BASE_URL (https) on the server. Set it, then press ✏️ Edit order again." : "Only admins can do this.");
       }
       else if (action === "paid" || action === "paiddone") {
         // Admin-only: mark the order as paid in full after the customer confirmed and sent the full payment.
