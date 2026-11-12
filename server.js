@@ -849,15 +849,30 @@ function readCreds() {
   return email && key ? { email, key } : null;
 }
 const creds = readCreds();
-const SCRIPT_URL = (process.env.GOOGLE_SCRIPT_URL || "").trim(), SCRIPT_KEY = (process.env.GOOGLE_SCRIPT_KEY || "").trim();
+let SCRIPT_URL = (process.env.GOOGLE_SCRIPT_URL || "").trim(), SCRIPT_KEY = (process.env.GOOGLE_SCRIPT_KEY || "").trim();
 let scriptSheetUrl = (process.env.GOOGLE_SHEET_URL || "").trim();
-const FORM_RAW = (process.env.GOOGLE_FORM_URL || "").trim();
-const FORM = (() => { // pre-filled Google Form link → submit address + the one answer box
+let FORM_RAW = (process.env.GOOGLE_FORM_URL || "").trim();
+let FORM = null;
+const parseForm = () => { // pre-filled Google Form link → submit address + the one answer box
   const id = FORM_RAW.match(/forms\/d\/e\/([\w-]+)/), en = FORM_RAW.match(/entry\.(\d+)/);
-  return id && en ? { url: `https://docs.google.com/forms/d/e/${id[1]}/formResponse`, entry: "entry." + en[1] } : null;
-})();
-const DIRECT = !!(SCRIPT_URL || FORM_RAW); // direct (no Google Cloud / API) mode: Web app, or Google Form
+  FORM = id && en ? { url: `https://docs.google.com/forms/d/e/${id[1]}/formResponse`, entry: "entry." + en[1] } : null;
+};
+parseForm();
+// DIRECT is recomputed whenever the saved connection changes
+let DIRECT = !!(SCRIPT_URL || FORM_RAW); // direct (no Google Cloud / API) mode: Web app, or Google Form
 const configured = () => !!(DIRECT || (SHEET_ID && creds));
+// ── PERMANENT CONNECTION: once the sheet is connected it is saved (file + Supabase) and restored on every start. It is never forgotten on errors. ──
+let persistFn = async () => {}; // wired to file/Supabase storage below, after the module
+const connectionState = () => ({ scriptUrl: SCRIPT_URL, scriptKey: SCRIPT_KEY, sheetUrl: scriptSheetUrl, formUrl: FORM_RAW, cutoffMs: 0, savedAt: new Date().toISOString() });
+function applyConnection(c) {
+  if (!c) return;
+  if (c.scriptUrl) SCRIPT_URL = String(c.scriptUrl).trim();
+  if (c.scriptKey != null && c.scriptKey !== "") SCRIPT_KEY = String(c.scriptKey).trim();
+  if (c.sheetUrl) scriptSheetUrl = String(c.sheetUrl).trim();
+  if (c.formUrl) { FORM_RAW = String(c.formUrl).trim(); parseForm(); }
+  DIRECT = !!(SCRIPT_URL || FORM_RAW);
+  readyP = null;
+}
 // Google Form route: no public Web app needed. The form is public, a trigger inside the sheet reads each submission.
 async function callForm(payload) {
   if (!FORM) throw new Error("GOOGLE_FORM_URL is wrong. Paste the pre-filled link of your form (it contains /forms/d/e/…/viewform and entry.123456=…).");
@@ -960,7 +975,7 @@ let summaryUrl = "", graphsUrl = "", cutoffMs = 0; // cutoffMs: orders created b
 const isOld = o => cutoffMs > 0 && o && o.createdAt && Date.parse(o.createdAt) < cutoffMs;
 function ready() {
   if (DIRECT) {
-    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); }).catch(e => { readyP = null; lastError = e.message; throw e; });
+    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); Promise.resolve(persistFn(connectionState())).catch(() => {}); }).catch(e => { readyP = null; lastError = e.message; throw e; });
     return readyP;
   }
   if (!readyP) readyP = setup().catch(e => { readyP = null; lastError = e.message; throw e; });
@@ -1156,6 +1171,21 @@ function startFresh(by = "Admin") {
     return SCRIPT_URL ? d : { ok: true, name: "", archived: "", url: "", sent: true };
   });
 }
+/** Connect (or re-connect) from the app: checks the link, then SAVES it permanently. */
+async function connect(input = {}) {
+  const prev = connectionState();
+  const url = String(input.scriptUrl || "").trim(), form = String(input.formUrl || "").trim();
+  if (!url && !form) throw new Error("Paste the Google Web app URL (…/exec) first.");
+  applyConnection({ scriptUrl: url, scriptKey: input.scriptKey, sheetUrl: input.sheetUrl, formUrl: form });
+  try { await enqueue(async () => { readyP = null; await ready(); }); }
+  catch (e) { applyConnection(prev); throw e; } // a wrong link never replaces a working saved one
+  await persistFn(connectionState());
+  return { ok: true };
+}
+/** Background keep-alive: if the sheet is saved but the last call failed (Google hiccup, restart…), quietly reconnect. Never forgets the link. */
+function keepAlive(everyMs = 120000) {
+  setInterval(() => { if (configured() && lastError && !readyP) enqueue(async () => { readyP = null; await ready(); }).then(() => console.log("Google Sheet reconnected."), () => {}); }, everyMs).unref?.();
+}
 /** Connection test / first setup. */
 function test() {
   if (!configured()) return Promise.reject(new Error("Not configured."));
@@ -1165,13 +1195,29 @@ function test() {
 function status() {
   return {
     configured: configured(), hasSheetId: !!(DIRECT || SHEET_ID), hasCredentials: !!(DIRECT || creds), serviceAccount: DIRECT ? "Direct connection (no API)" : creds?.email || "",
-    url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl
+    url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl, saved: !!(SCRIPT_URL || FORM_RAW)
   };
 }
-module.exports = { track, idle, log, syncAll, newMonth, startFresh, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
+
+// ── Google Sheet connection: saved on disk AND in Supabase, restored on every start (env variables stay as a fallback) ──
+const SHEET_CONN_FILES = [path.join(__dirname, "data", "sheet-connection.json"), path.join(BUSINESS_STORE_DIR, "sheet-connection.json")];
+async function saveSheetConnection(c) {
+  const text = JSON.stringify(c);
+  for (const f of SHEET_CONN_FILES) { try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); } catch {} }
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "google_sheet_connection", value: c, updated_at: new Date().toISOString() }); } catch (e) { console.warn("Sheet connection Supabase save failed:", e.message); } }
+}
+async function restoreSheetConnection() {
+  let c = null;
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "google_sheet_connection").maybeSingle(); if (data?.value && (data.value.scriptUrl || data.value.formUrl)) c = data.value; } catch {} }
+  if (!c) for (const f of SHEET_CONN_FILES) { try { const j = JSON.parse(fs.readFileSync(f, "utf8")); if (j && (j.scriptUrl || j.formUrl)) { c = j; break; } } catch {} }
+  if (c) { sheets.applyConnection(c); console.log("Google Sheet connection restored from saved settings."); }
+  else if (sheets.configured()) await saveSheetConnection({ scriptUrl: process.env.GOOGLE_SCRIPT_URL || "", scriptKey: process.env.GOOGLE_SCRIPT_KEY || "", sheetUrl: process.env.GOOGLE_SHEET_URL || "", formUrl: process.env.GOOGLE_FORM_URL || "" }); // first run: keep the env link permanently too
+}
+sheets.setPersist(saveSheetConnection);
 
 async function persistBusinessConnections() {
   // Always keep a local copy, and mirror to Supabase when configured.
@@ -2414,6 +2460,10 @@ app.get("/api/sheets/status", (req, res) => {
   if (req.actor?.role === "owner") return res.json({ ok: true, ...st });
   res.json({ ok: true, configured: st.configured, url: st.url, summaryUrl: st.summaryUrl, graphsUrl: st.graphsUrl });
 });
+app.post("/api/sheets/connect", async (req, res) => { // main admin only: connect once, saved for all time
+  try { await sheets.connect(req.body || {}); res.json({ ok: true, message: "✅ Google Sheet connected and saved. It stays connected permanently, even after restarts.", ...sheets.status() }); }
+  catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
+});
 app.post("/api/sheets/test", async (req, res) => {
   try { const r = await sheets.test(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
   catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
@@ -2693,6 +2743,8 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
       ? Promise.all([loadOrders(), restoreBusinessConnections(), restoreCustomers()]).then(() => console.log("Supabase data restored."), error => console.error("Supabase restore failed:", error.message))
       : Promise.resolve();
     await supabaseReady;
+    await restoreSheetConnection(); // the saved Google Sheet link comes back by itself
+    sheets.keepAlive();
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
