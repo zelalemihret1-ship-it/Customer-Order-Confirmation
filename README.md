@@ -206,3 +206,10 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
  - Thank-you bug fixed: the check for the customer's chat ID was written with a broken pattern, so the message was never sent (and line breaks showed as "\n"). Now the customer gets the thank-you right after the admin presses "Paid in full"; the admin sees whether it was delivered.
  - Cards to customers: the bot sends the card to the customer when they have pressed Start. If not, the order is saved as "waiting" and the card is sent AUTOMATICALLY the moment the customer opens/starts the bot (matched by Telegram ID or @username). Admins get a note when it is delivered.
  - Telegram rule: a bot cannot message someone who never opened it, so the customer must open the bot once (the order warning shows the bot link to send them).
+
+## v57 – CARD TO CUSTOMER: PERSONAL START LINK + FALLBACKS
+ - If the card cannot be delivered when the order is saved, the admin warning now shows a personal link: https://t.me/<bot>?start=o_<order token>. When the customer opens it and presses Start, the card is delivered immediately (matched by the link itself, so it works even if the server forgot the customer's @username or ID, e.g. after a Render restart without Supabase).
+ - Cards are also still auto-delivered when a known customer (by Telegram ID or @username) opens the bot.
+ - If the card photo itself cannot be sent, the bot now falls back to a text message with the answer button instead of failing.
+ - Telegram rule: a bot cannot message a person who never opened it, so a customer who never started the bot needs that one tap.
+ - Keep Supabase configured so customers are remembered between restarts.
