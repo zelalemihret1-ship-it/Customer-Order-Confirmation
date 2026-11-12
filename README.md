@@ -172,3 +172,13 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Graphs tab: the total graphs now cover the same window as the time graphs (last 12 days / weeks / months / years), so they are no longer empty when "today" has no orders.
   The sheet is now built part by part: if one tab fails, the others are still built and the reason is shown in red in cell A3 of the Graphs tab.
 - After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+## v53 – GRAPHS ALWAYS VISIBLE · EDITED ORDER RE-SENT · SEPARATE ANSWER BUTTON
+- Graphs tab: the numbers behind the graphs are now calculated by the script and written as plain values (no formulas), so the charts cannot stay blank.
+  They refresh when you change the yellow drop-down (B3), whenever an order is saved, and when the sheet is rebuilt. Totals cover the same last 12 days / weeks / months / years as the time graphs.
+  The script also tries to install an "edit" trigger on setup (a permission prompt may appear when you deploy).
+- Edited order: saving an edit re-sends it to the customer the same way the order first went: bot card -> Telegram Business -> your connected Telegram account.
+  The message header says "✏️ EDITED ORDER". If it cannot be sent, the reason is shown on the edit screen.
+- Cards sent from your own Telegram account: when the customer has pressed Start in the AMBAR bot, the answer link now comes as a SEPARATE message with a real button
+  (a personal account cannot attach bot buttons). If the customer never pressed Start, the text link stays inside the card.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server.
