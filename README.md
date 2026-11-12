@@ -201,3 +201,8 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
  - If Google fails for a moment, the server quietly reconnects every 2 minutes, and each new order retries on its own.
  - Existing GOOGLE_SCRIPT_URL / GOOGLE_FORM_URL settings still work and are saved permanently on first start. Nothing else was changed.
  - For best permanence keep Supabase configured (Render's disk can be wiped on redeploy; Supabase keeps the link).
+
+## v56 – CARD TO CUSTOMER + THANK-YOU AFTER FULL PAYMENT
+ - Thank-you bug fixed: the check for the customer's chat ID was written with a broken pattern, so the message was never sent (and line breaks showed as "\n"). Now the customer gets the thank-you right after the admin presses "Paid in full"; the admin sees whether it was delivered.
+ - Cards to customers: the bot sends the card to the customer when they have pressed Start. If not, the order is saved as "waiting" and the card is sent AUTOMATICALLY the moment the customer opens/starts the bot (matched by Telegram ID or @username). Admins get a note when it is delivered.
+ - Telegram rule: a bot cannot message someone who never opened it, so the customer must open the bot once (the order warning shows the bot link to send them).
