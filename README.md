@@ -192,3 +192,4 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Paid in full = order closed: after "💰 Customer paid in full" the ✏️ Edit order button disappears from the admin bot, the edit page shows "closed", and the server
   refuses any edit of that order. Everything else is unchanged.
 - After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server (the Graphs tab is rebuilt on start).
+- v54b: charts now send only basic options (colours, stacking, legend, donut, bar width, size); fonts / axis styling / chart-area options were removed because an unsupported option can leave an empty frame.
