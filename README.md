@@ -81,3 +81,13 @@ GOOGLE SHEET LOOKS EMPTY? Your data is in the tab called "Orders" (bottom of the
 default tab and formats it as a table (dark header, banded rows, filter buttons, colored Status, Delivery Type / Service columns).
 After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> use the new /exec URL -> restart the server (or press Test)
 so the formatting is applied. Tabs: Orders (table), Activity Log (table), Dashboard (totals, by product, by delivery type, by service, latest movements).
+
+ETHIOPIAN MONTH TABS + START NEW MONTH
+ - Each Ethiopian month gets its own tab in the Google Sheet (e.g. "Hidar 2019"). An order goes to the month of its Order Date
+   (or its creation date if no Order Date). Later updates (confirm / reject / comments) stay in the same row.
+ - Columns START WITH THE CUSTOMER INFORMATION: Customer Name, Phone, Telegram Username, Telegram Chat ID, Location, then the order details.
+ - "▶ Start New Month" button (main admin only; the server refuses everyone else) creates / opens the tab of the current Ethiopian month.
+ - Your old single "Orders" tab is renamed "Old Orders (backup)". When the server restarts, all existing orders are filed into the month tabs automatically
+   (or press Sync ALL in the gear panel). You can delete the backup tab afterwards.
+ - Dashboard totals add up ALL month tabs.
+ - After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
