@@ -768,10 +768,29 @@ function readCreds() {
 const creds = readCreds();
 const SCRIPT_URL = (process.env.GOOGLE_SCRIPT_URL || "").trim(), SCRIPT_KEY = (process.env.GOOGLE_SCRIPT_KEY || "").trim();
 let scriptSheetUrl = (process.env.GOOGLE_SHEET_URL || "").trim();
-const configured = () => !!(SCRIPT_URL || (SHEET_ID && creds));
+const FORM_RAW = (process.env.GOOGLE_FORM_URL || "").trim();
+const FORM = (() => { // pre-filled Google Form link → submit address + the one answer box
+  const id = FORM_RAW.match(/forms\/d\/e\/([\w-]+)/), en = FORM_RAW.match(/entry\.(\d+)/);
+  return id && en ? { url: `https://docs.google.com/forms/d/e/${id[1]}/formResponse`, entry: "entry." + en[1] } : null;
+})();
+const DIRECT = !!(SCRIPT_URL || FORM_RAW); // direct (no Google Cloud / API) mode: Web app, or Google Form
+const configured = () => !!(DIRECT || (SHEET_ID && creds));
+// Google Form route: no public Web app needed. The form is public, a trigger inside the sheet reads each submission.
+async function callForm(payload) {
+  if (!FORM) throw new Error("GOOGLE_FORM_URL is wrong. Paste the pre-filled link of your form (it contains /forms/d/e/…/viewform and entry.123456=…).");
+  if (payload.action === "state") return { ok: true, values: null, row: 0 };
+  const r = await fetch(FORM.url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ [FORM.entry]: JSON.stringify({ ...payload, key: SCRIPT_KEY }), fvv: "1", pageHistory: "0" }).toString(), redirect: "manual" });
+  const loc = r.headers.get("location") || "";
+  if (r.status === 401 || r.status === 403 || /accounts\.google\.com|ServiceLogin/i.test(loc)) throw new Error(`The Google Form asks people to sign in (HTTP ${r.status}). In the form: Settings → Responses → turn OFF "Restrict to users in <organization>" and "Limit to 1 response"; make sure "Collect email addresses" is OFF.`);
+  if (r.status === 404) throw new Error("Google Form not found. Re-copy the pre-filled link (it must contain /forms/d/e/…).");
+  if (r.status === 400) throw new Error("Google Form rejected the answer. The form must have exactly ONE question of type Paragraph, and it must not be 'Required' with other questions.");
+  if (r.status >= 500) throw new Error("Google Form error HTTP " + r.status);
+  return { ok: true };
+}
 
 // ── direct connection through a Google Apps Script web app (no Google Cloud / API) ──
 async function callScript(payload) {
+  if (!SCRIPT_URL) return callForm(payload);
   // Accept the URL however it was pasted: with quotes/spaces, "GOOGLE_SCRIPT_URL=…", or just the deployment ID.
   let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, "");
   const found = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i);
@@ -855,7 +874,7 @@ function orderRow(o, created, updated) {
 // ── one-time setup: create tabs, headers, formatting, dashboard ────────────────
 let readyP = null, lastError = "", lastOkAt = "", lastSyncAt = "";
 function ready() {
-  if (SCRIPT_URL) {
+  if (DIRECT) {
     if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; lastError = ""; lastOkAt = stamp(); }).catch(e => { readyP = null; lastError = e.message; throw e; });
     return readyP;
   }
@@ -931,7 +950,7 @@ const rowFromRange = range => { const m = String(range || "").match(/!.*?(\d+)(?
 
 async function appendLog(entries) {
   if (!entries.length) return;
-  if (SCRIPT_URL) { await callScript({ action: "log", logs: entries }); return; }
+  if (DIRECT) { await callScript({ action: "log", logs: entries }); return; }
   await g(`/values/${q(`'${T_LOG}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: entries } });
 }
 const logRow = (event, o, details, by) => [stamp(), event, clean(o?.orderId), clean(o?.product), clean(o?.customerName), clean(details), clean(by)];
@@ -957,11 +976,11 @@ function diffEvents(o, prev) {
 
 async function upsertOrder(order) {
   await ready();
-  if (SCRIPT_URL) {
+  if (DIRECT) {
     const st = await callScript({ action: "state", id: String(order.id) });
     const prev = st.values ? parseRow(st.values, st.row) : null, now = stamp();
     const values = orderRow(order, prev?.created || (order.createdAt ? stamp(order.createdAt) : now), now);
-    await callScript({ action: "upsert", id: String(order.id), row: values, logs: diffEvents(order, prev) });
+    await callScript({ action: "upsert", id: String(order.id), row: values, logs: SCRIPT_URL ? diffEvents(order, prev) : [] }); // Form mode: the sheet script writes the log itself
     lastOkAt = stamp(); lastError = "";
     return;
   }
@@ -1002,11 +1021,17 @@ function log(event, details = "", by = "") {
 /** Rebuild/refresh every order row in one go (owner button). */
 function syncAll(allOrders, by = "Owner") {
   if (!configured()) return Promise.reject(new Error("Google Sheet is not configured."));
-  if (SCRIPT_URL) return enqueue(async () => {
+  if (DIRECT) return enqueue(async () => {
     await ready();
     const now = stamp();
     const rowsOut = allOrders.map(o => orderRow(o, o.createdAt ? stamp(o.createdAt) : now, now));
-    const d = await callScript({ action: "syncAll", rows: rowsOut, logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed`, by)] });
+    let d = {};
+    if (SCRIPT_URL) d = await callScript({ action: "syncAll", rows: rowsOut, logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed`, by)] });
+    else { // Form mode: small batches, one form submission each
+      for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", rows: rowsOut.slice(i, i + 10), logs: [] });
+      await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders sent (the sheet script adds / refreshes them within a minute)`, by)] });
+      d = { added: "—", updated: "—" };
+    }
     lastSyncAt = stamp(); lastOkAt = lastSyncAt; lastError = "";
     return { total: allOrders.length, added: d.added, updated: d.updated };
   });
@@ -1028,13 +1053,13 @@ function syncAll(allOrders, by = "Owner") {
 /** Connection test / first setup. */
 function test() {
   if (!configured()) return Promise.reject(new Error("Not configured."));
-  if (SCRIPT_URL) return enqueue(async () => { readyP = null; await ready(); return { ok: true }; });
+  if (DIRECT) return enqueue(async () => { readyP = null; await ready(); return { ok: true }; });
   return enqueue(async () => { await ready(); await loadRows(); return { ok: true, orders: rows.size }; });
 }
 function status() {
   return {
-    configured: configured(), hasSheetId: !!(SCRIPT_URL || SHEET_ID), hasCredentials: !!(SCRIPT_URL || creds), serviceAccount: SCRIPT_URL ? "Google Apps Script (direct)" : creds?.email || "",
-    url: SCRIPT_URL ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError
+    configured: configured(), hasSheetId: !!(DIRECT || SHEET_ID), hasCredentials: !!(DIRECT || creds), serviceAccount: DIRECT ? "Direct connection (no API)" : creds?.email || "",
+    url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError
   };
 }
 module.exports = { track, log, syncAll, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
@@ -2173,6 +2198,19 @@ app.post("/api/sheets/sync", async (req, res) => {
     const r = await sheets.syncAll(orders, req.actor?.name || "Owner");
     res.json({ ok: true, message: `✅ Synced ${r.total} orders (${r.added} new in the sheet, ${r.updated} refreshed).`, ...sheets.status() });
   } catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
+});
+
+// ── Built-in Orders Sheet (no Google needed): every admin sees ALL orders in one table ──
+app.get("/api/sheet/orders", requireAccess, async (req, res) => {
+  try {
+    await supabaseReady;
+    if (supabase) await loadOrders();
+    const { orderRow, ORDER_HEAD } = sheets._internals;
+    const fmt = d => d ? new Date(d).toLocaleString("sv-SE", { timeZone: process.env.SHEET_TIMEZONE || "Africa/Addis_Ababa" }) : "";
+    const rows = [...orders].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .map(o => orderRow(o, fmt(o.createdAt), fmt(o.updatedAt || o.createdAt)));
+    res.json({ ok: true, head: ORDER_HEAD, rows, google: sheets.status().url || "" });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 app.get("/api/orders", async (req, res) => {
