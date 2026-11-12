@@ -193,3 +193,11 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
   refuses any edit of that order. Everything else is unchanged.
 - After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server (the Graphs tab is rebuilt on start).
 - v54b: charts now send only basic options (colours, stacking, legend, donut, bar width, size); fonts / axis styling / chart-area options were removed because an unsupported option can leave an empty frame.
+
+## v55 – GOOGLE SHEET: CONNECT ONCE, CONNECTED FOR ALL TIME
+ - Main admin: ⚙ → 📊 Google Sheet → paste the Web app URL (…/exec) → "Connect & save permanently". The link is checked, then saved on disk AND in Supabase (`app_settings.google_sheet_connection`).
+ - On every server start the saved link is restored automatically (before anything else), so a restart / redeploy never disconnects the sheet.
+ - A wrong link never replaces a working saved one. Errors never erase the saved link.
+ - If Google fails for a moment, the server quietly reconnects every 2 minutes, and each new order retries on its own.
+ - Existing GOOGLE_SCRIPT_URL / GOOGLE_FORM_URL settings still work and are saved permanently on first start. Nothing else was changed.
+ - For best permanence keep Supabase configured (Render's disk can be wiped on redeploy; Supabase keeps the link).
