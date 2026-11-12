@@ -869,7 +869,21 @@ async function callForm(payload) {
 }
 
 // ── direct connection through a Google Apps Script web app (no Google Cloud / API) ──
+const delayMs = ms => new Promise(r => setTimeout(r, ms));
+// Google answers "Lock timeout" / "busy" while another update runs. Wait and try again (still inside the one-at-a-time queue).
+const BUSY_RE = /lock timeout|another process was holding|is busy|busy\b|Service Spreadsheets|too many simultaneous|invoked too many times|try again|temporar|HTTP 5\d\d|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR|timeout|aborted/i;
 async function callScript(payload) {
+  const waits = [3000, 6000, 10000, 15000];
+  for (let attempt = 0; ; attempt++) {
+    try { return await callScriptOnce(payload); }
+    catch (e) {
+      if (attempt >= waits.length || !SCRIPT_URL || !BUSY_RE.test(String(e && e.message || e))) throw e;
+      console.warn(`Google Sheet busy (${String(e.message).slice(0, 80)}) — retry ${attempt + 1}/${waits.length} in ${waits[attempt] / 1000}s`);
+      await delayMs(waits[attempt]);
+    }
+  }
+}
+async function callScriptOnce(payload) {
   if (!SCRIPT_URL) return callForm(payload);
   // Accept the URL however it was pasted: with quotes/spaces, "GOOGLE_SCRIPT_URL=…", or just the deployment ID.
   let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, "");
@@ -879,9 +893,9 @@ async function callScript(payload) {
   if (!/^https:\/\/script\.google(usercontent)?\.com\//i.test(url)) throw new Error(`GOOGLE_SCRIPT_URL is wrong (the server received: "${SCRIPT_URL.slice(0, 70)}"). Paste the Web app URL from Deploy → Manage deployments, starting with https://script.google.com/ and ending with /exec.`);
   if (/\/dev(\?|$)/.test(url)) throw new Error("GOOGLE_SCRIPT_URL ends with /dev (test URL). Use the Web app URL that ends with /exec.");
   // Apps Script answers a POST with a redirect; follow it by hand (the answer is read with GET).
-  let r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "manual" });
+  let r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "manual", signal: AbortSignal.timeout(120000) });
   let at = url;
-  for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual" }); }
+  for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual", signal: AbortSignal.timeout(120000) }); }
   const t = await r.text();
   let d;
   try { d = JSON.parse(t); } catch {
@@ -1015,7 +1029,8 @@ async function setup() {
 
 // ── serialized write queue (never blocks, never throws into the order flow) ────
 let chain = Promise.resolve();
-const enqueue = fn => { const p = chain.then(fn); chain = p.catch(() => { }); return p; };
+let pendingJobs = 0;
+const enqueue = fn => { pendingJobs++; const p = chain.then(fn); chain = p.catch(() => { }).then(() => { pendingJobs--; }); return p; };
 
 // ── Orders tab: known rows cache ───────────────────────────────────────────────
 let rows = null; // Map(id -> { row, created, status, comments, delivered, closed, note })
@@ -1063,7 +1078,7 @@ async function upsertOrder(order) {
     const now = stamp();
     const values = orderRow(order, order.createdAt ? stamp(order.createdAt) : now, now);
     let lastErr;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 1; i++) { // callScript() already waits and retries when the sheet is busy
       try { await callScript({ action: "upsert", id: String(order.id), head: ORDER_HEAD, row: values }); lastOkAt = stamp(); lastError = ""; return; }
       catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
     }
@@ -1115,12 +1130,12 @@ function syncAll(allOrders, by = "Owner") {
     let d = {};
     if (SCRIPT_URL) {
       let added = 0, updated = 0;
-      for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; }
+      for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; await delayMs(1500); }
       await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders refreshed (${added} new)`, by)] });
       d = { added, updated };
     }
     else { // Form mode: small batches, one form submission each
-      for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 10), logs: [] });
+      for (let i = 0; i < rowsOut.length; i += 10) { await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 10), logs: [] }); await delayMs(1500); }
       await callScript({ action: "log", logs: [logRow("Full sync", null, `${allOrders.length} orders sent (the sheet script adds / refreshes them within a minute)`, by)] });
       d = { added: "—", updated: "—" };
     }
@@ -1175,7 +1190,7 @@ function status() {
     url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl
   };
 }
-module.exports = { track, idle, log, syncAll, newMonth, startFresh, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { busy: () => pendingJobs > 0, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
@@ -1210,7 +1225,7 @@ async function uploadToSupabase(file, folder, contentType) {
 }
 // After an order is saved, tell the admin straight away if the Google Sheet could not be updated.
 async function sheetWarning() {
-  try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : " ✅ Saved to the Google Sheet."; } catch { return ""; }
+  try { if (!sheets.configured()) return ""; await sheets.idle(); if (sheets.busy()) return " ⏳ Google Sheet is busy — still saving, it retries automatically."; const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : " ✅ Saved to the Google Sheet."; } catch { return ""; }
 }
 async function saveOrderRecord(order) {
   const saved = await saveOrderRecordCore(order);
@@ -2569,7 +2584,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
-    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message));
+    if (sheets.configured()) setTimeout(() => { sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message)); }, 30000);
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
 module.exports = app;
