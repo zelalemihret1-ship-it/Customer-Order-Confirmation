@@ -76,3 +76,8 @@ UPDATE: orders are saved to the Google Sheet in ONE step per order (new row, or 
  - If saving fails, the order screen now shows "Google Sheet NOT updated: <reason>".
  - On every server start, all existing orders are synced into the sheet automatically; the main admin can also press Sync ALL.
  - After you change google-sheet-script.gs: Save -> Deploy -> New deployment, and use the new /exec URL.
+
+GOOGLE SHEET LOOKS EMPTY? Your data is in the tab called "Orders" (bottom of the sheet). The new script puts Orders FIRST, removes the empty
+default tab and formats it as a table (dark header, banded rows, filter buttons, colored Status, Delivery Type / Service columns).
+After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> use the new /exec URL -> restart the server (or press Test)
+so the formatting is applied. Tabs: Orders (table), Activity Log (table), Dashboard (totals, by product, by delivery type, by service, latest movements).
