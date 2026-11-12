@@ -825,7 +825,7 @@ const T_ORDERS = "Orders", T_LOG = "Activity Log", T_DASH = "Dashboard";
 const ORDER_HEAD = [ // customer information comes first
   "Customer Name", "Phone", "Telegram Username", "Telegram Chat ID", "Location",
   "Order Code", "Status", "Order Date", "Completion Date", "Delivery Type", "Delivery Service", "Delivery Fee", "Delivery Date",
-  "Product", "Length (cm)", "Width (cm)", "Height (cm)", "Material", "Color", "Style", "Design", "Handle", "Door", "Partition", "Drawer",
+  "Product", "Length (cm)", "Width (cm)", "Height (cm)", "Material", "Color", "Style", "Design", "Handle", "Door", "Partition", "Drawer", "Additional Features",
   "Payment", "Advance", "Paid In Full", "Delivered To Customer", "Answer Closed", "Comments", "Latest Comment",
   "Created At", "Last Updated", "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note",
   "ID"
@@ -940,7 +940,7 @@ function orderRow(o, created, updated) {
   const set = (h, v) => { row[COL[h]] = typeof v === "number" ? v : clean(v); };
   set("ID", o.id); set("Order Code", o.orderId); set("Created At", created); set("Last Updated", updated); set("Status", o.status || "Pending");
   set("Product", o.product); set("Length (cm)", o.length); set("Width (cm)", o.width); set("Height (cm)", o.height);
-  set("Material", o.material); set("Color", o.color); set("Style", o.style); set("Design", o.design); set("Handle", o.handle); set("Door", o.door); set("Partition", o.partition); set("Drawer", o.drawer);
+  set("Material", o.material); set("Color", o.color); set("Style", o.style); set("Design", o.design); set("Handle", o.handle); set("Door", o.door); set("Partition", o.partition); set("Drawer", o.drawer); set("Additional Features", o.additionalFeatures);
   set("Customer Name", o.customerName); set("Phone", o.phone || o.telegramPhone); set("Telegram Username", o.telegramUsername); set("Telegram Chat ID", o.telegramChatId);
   set("Order Date", o.orderDate); set("Delivery Date", o.deliveryDate); set("Delivery Type", o.deliveryType); set("Delivery Fee", o.deliveryFee); set("Location", o.location); set("Payment", o.payment); set("Advance", o.advance); set("Paid In Full", o.paidFull ? "Yes" : "No");
   set("Delivered To Customer", o.sent ? "Yes" : "No"); set("Answer Closed", o.closed ? "Yes" : "No");
@@ -1587,6 +1587,7 @@ async function sendAuditCopies(order, filePath) {
         body.append("photo", new Blob([bytes], { type: "image/png" }), "order-card.png");
         body.append("caption", auditCaptionHtml(order));
         body.append("parse_mode", "HTML");
+        body.append("reply_markup", JSON.stringify(auditKeyboard(order)));
         return body;
       });
       copies.push({ chat_id: target, message_id: sent.message_id });
@@ -1599,10 +1600,15 @@ async function sendAuditCopies(order, filePath) {
 // Admin-only button on the bot's cross-check copy: appears after the customer CONFIRMED the order.
 // The admin taps it once the customer has sent the full payment -> the order is marked "Paid In Full" (data confirmed).
 function auditKeyboard(order) {
-  if (order.status !== "Confirmed") return undefined;
-  return { inline_keyboard: [[order.paidFull
+  const row = [];
+  if (order.status === "Confirmed") row.push(order.paidFull
     ? { text: "✅ Paid in full — recorded", callback_data: `paiddone:${order.id}` }
-    : { text: "💰 Customer paid in full", callback_data: `paid:${order.id}` }]] };
+    : { text: "💰 Customer paid in full", callback_data: `paid:${order.id}` });
+  // ✏️ Edit order: opens the order form pre-filled (mini app). Needs an https PUBLIC_BASE_URL.
+  row.push(/^https:/i.test(PUBLIC_BASE_URL || "")
+    ? { text: "✏️ Edit order", web_app: { url: `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/?edit=${order.id}` } }
+    : { text: "✏️ Edit order", callback_data: `editorder:${order.id}` });
+  return { inline_keyboard: [row] };
 }
 async function updateAuditCopies(order) {
   for (const c of order.auditCopies || []) {
@@ -2294,51 +2300,66 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
   }
 });
 
-// ── AMBAR assistant: admins write extra features / corrections; saved + sent to the main admin in Telegram ──
-const NOTES_FILE = path.join(__dirname, "data", "assistant-notes.json");
-let assistantNotes = []; // [{ id, type: "feature"|"correction", text, by, byId, at, done }]
-async function loadAssistantNotes() {
-  let list = [];
-  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "assistant_notes").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
-  if (!list.length) { try { list = JSON.parse(fs.readFileSync(NOTES_FILE, "utf8")); } catch {} }
-  assistantNotes = Array.isArray(list) ? list.filter(n => n && n.id && n.text) : [];
-}
-async function saveAssistantNotes() {
-  assistantNotes = assistantNotes.slice(-500);
-  try { fs.mkdirSync(path.dirname(NOTES_FILE), { recursive: true }); fs.writeFileSync(NOTES_FILE, JSON.stringify(assistantNotes)); } catch {}
-  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "assistant_notes", value: assistantNotes, updated_at: new Date().toISOString() }); } catch {} }
-}
-app.use("/api/assistant", requireAccess);
-app.get("/api/assistant/notes", (req, res) => {
-  const mine = req.actor?.role === "owner" ? assistantNotes : assistantNotes.filter(n => n.byId && n.byId === req.actor?.telegramId);
-  res.json({ ok: true, owner: req.actor?.role === "owner", notes: mine.slice(-60) });
-});
-app.post("/api/assistant/notes", async (req, res) => {
+// ── Edit an existing order (✏️ button in the admin bot). The Google Sheet row of the SAME order is updated, never a new row. ──
+const EDITABLE_FIELDS = ["orderId", "product", "length", "width", "height", "material", "color", "style", "design", "handle", "door", "partition", "drawer", "additionalFeatures",
+  "customerName", "phone", "location", "telegramUsername", "telegramPhone", "payment", "advance", "orderDate", "completionDate", "deliveryType", "deliveryService", "deliveryFee", "deliveryDate"];
+app.get("/api/orders/:id", async (req, res) => {
   try {
-    const type = req.body?.type === "correction" ? "correction" : "feature";
-    const text = String(req.body?.text || "").replace(/\r/g, "").trim().slice(0, 2000);
-    if (text.length < 3) return res.json({ ok: false, error: "Please write a little more so I understand what you need." });
-    await loadAssistantNotes();
-    const note = { id: (assistantNotes.reduce((m, n) => Math.max(m, Number(n.id) || 0), 0) + 1), type, text, by: req.actor?.name || "Admin", byId: req.actor?.telegramId || "", at: new Date().toISOString(), done: false };
-    assistantNotes.push(note);
-    await saveAssistantNotes();
-    const targets = [...new Set([...OWNER_IDS, ADMIN_CHAT_ID].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)))];
-    const head = type === "correction" ? "🛠 <b>Correction</b>" : "✨ <b>New feature</b>";
-    const body = `🤖 <b>AMBAR assistant</b>\n${head} · #${note.id}\n<b>From:</b> ${esc(note.by)}\n\n${esc(text)}`;
-    const sent = await Promise.all(targets.map(to => safely("Assistant note", () => telegram("sendMessage", { chat_id: to, text: body, parse_mode: "HTML" })).then(r => !!r).catch(() => false)));
-    const reached = sent.some(Boolean);
-    res.json({ ok: true, note, notified: reached, reply: reached
-      ? `✅ Got it! I saved your ${type === "correction" ? "correction" : "feature request"} as #${note.id} and sent it to the main admin in Telegram.`
-      : `✅ Saved as #${note.id}. (I could not message the main admin in Telegram right now, but it is stored and the main admin can see it in this box.)` });
-  } catch (e) { res.json({ ok: false, error: e.message }); }
+    await supabaseReady; if (supabase) await loadOrders();
+    const o = orders.find(x => String(x.id) === String(req.params.id));
+    if (!o) return res.status(404).json({ ok: false, error: "Order not found." });
+    res.json({ ok: true, order: Object.fromEntries([...EDITABLE_FIELDS, "id", "photo", "cardImage", "status"].map(k => [k, o[k] ?? ""])) });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
-app.post("/api/assistant/notes/:id/done", async (req, res) => { // main admin only
-  if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Only the main admin can mark a note as done." });
-  await loadAssistantNotes();
-  const n = assistantNotes.find(x => String(x.id) === String(req.params.id));
-  if (!n) return res.json({ ok: false, error: "Note not found." });
-  n.done = !n.done; await saveAssistantNotes();
-  res.json({ ok: true, note: n });
+// Swap the card picture + caption in the admin cross-check copies (and the customer's bot message) after an edit.
+async function refreshCardMessages(order, filePath) {
+  const bytes = await fs.promises.readFile(filePath);
+  const edit = (chatId, messageId, caption, markup) => tgApi.sendForm("editMessageMedia", () => {
+    const body = new FormData();
+    body.append("chat_id", String(chatId)); body.append("message_id", String(messageId));
+    body.append("media", JSON.stringify({ type: "photo", media: "attach://card", caption, parse_mode: "HTML" }));
+    body.append("card", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
+    if (markup) body.append("reply_markup", JSON.stringify(markup));
+    return body;
+  });
+  let admins = 0, customer = false;
+  for (const c of order.auditCopies || []) {
+    try { await edit(c.chat_id, c.message_id, auditCaptionHtml(order), auditKeyboard(order)); admins++; }
+    catch (e) { if (!/not modified/i.test(e.message)) console.warn("Edit audit copy failed:", e.message); }
+  }
+  if (order.sender === "bot" && order.botButtonsMessageId && order.telegramChatId) {
+    try {
+      const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "";
+      await edit(order.telegramChatId, order.botButtonsMessageId, cardCaptionHtml(order, mark, ""), order.closed ? lockedKeyboard(order) : keyboard(order.id, order));
+      customer = true;
+    } catch (e) { if (!/not modified/i.test(e.message)) console.warn("Edit customer card failed:", e.message); }
+  }
+  return { admins, customer };
+}
+app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const order = orders.find(x => String(x.id) === String(req.params.id));
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
+    const body = req.body || {}, changed = [];
+    for (const k of EDITABLE_FIELDS) {
+      if (!(k in body)) continue;
+      let nv = String(body[k] ?? "").trim();
+      if (k === "orderId") { nv = nv.slice(0, 40); if (!nv) return res.status(400).json({ ok: false, error: "Order code cannot be empty." }); }
+      if (String(order[k] ?? "") !== nv) { order[k] = nv; changed.push(k); }
+    }
+    if (order.deliveryType !== "By Ambar Delivery") { order.deliveryFee = ""; order.deliveryService = ""; }
+    const productPhoto = req.files?.productPhoto?.[0], cardImage = req.files?.cardImage?.[0];
+    if (productPhoto) { order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype); changed.push("photo"); }
+    if (cardImage) order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
+    if (!changed.length && !cardImage) return res.json({ ok: true, order, changed, warning: "Nothing was changed." });
+    order.editedAt = new Date().toISOString(); order.editedBy = req.actor?.name || "Admin";
+    await saveOrderRecord(order); // the sheet upsert is keyed by the order ID → the same row is updated
+    let tgNote = "";
+    if (cardImage) { const r = await refreshCardMessages(order, cardImage.path).catch(() => ({ admins: 0, customer: false })); tgNote = ` Card updated in the admin bot (${r.admins})${r.customer ? " and in the customer's chat" : ""}.`; }
+    notifyAdminsText(order, `✏️ <b>${esc(order.orderId)}</b> was edited by ${esc(order.editedBy)} (${esc(order.customerName || "customer")}).`).catch(() => {});
+    res.json({ ok: true, order, changed, warning: `Order ${order.orderId} updated.${tgNote}${await sheetWarning()}` });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 // ── Google Sheet (MAIN ADMIN / OWNER ONLY) ─────────────────────────────────────
@@ -2497,6 +2518,10 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const order = orders.find(item => String(item.id) === String(id));
       const answer = text => safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text }));
       if (!order) { await answer("This order was not found."); }
+      else if (action === "editorder") {
+        const fromId = String(callback.from?.id || "");
+        await answer(allAdminChatIds(order).includes(fromId) ? "Editing needs PUBLIC_BASE_URL (https) on the server. Set it, then press ✏️ Edit order again." : "Only admins can do this.");
+      }
       else if (action === "paid" || action === "paiddone") {
         // Admin-only: mark the order as paid in full after the customer confirmed and sent the full payment.
         const fromId = String(callback.from?.id || "");
@@ -2623,7 +2648,6 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
       : Promise.resolve();
     await supabaseReady;
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
-    await loadAssistantNotes();
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
     if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message));
