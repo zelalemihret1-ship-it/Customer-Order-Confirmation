@@ -130,3 +130,11 @@ Fixed in two places:
  - google-sheet-script.gs: waits up to 50 s for the lock WITHOUT throwing an exception (answers "busy" so the server retries); Google-Form mode keeps trying for ~4.5 minutes instead of silently dropping an order.
 To apply: deploy server.js. Then paste the new google-sheet-script.gs into Apps Script -> Save -> Deploy -> Manage deployments -> pencil -> Version: New version -> Deploy (the same /exec URL keeps working). The server fix already helps even before you update the script.
 If it still appears often: open Apps Script -> Executions and make sure no old run is stuck; and avoid pressing Sync ALL while orders are being created.
+
+### v49 – FIX: Google Sheet "connected" but the Open button did not open it
+ - The button used to refuse to open the sheet whenever the last write had an error (e.g. an old "Lock timeout"). It now opens the sheet whenever its address is known; errors are only shown in the ⚙ panel.
+ - The sheet address is now learned from the script at start-up (the 30 s delay now only applies to the big "sync all"), and the status call learns it on demand, so it is not empty after a deploy.
+ - GOOGLE_SHEET_URL may be pasted any way (with quotes, "GOOGLE_SHEET_URL=…", a share link, or just the sheet id) – it is cleaned automatically.
+ - The panel has a real link ("📊 Open Google Sheet ↗") that always works when tapped, inside Telegram and in a normal browser; if a browser blocks pop-ups the sheet opens in the same tab.
+ - If the address is still unknown, the panel says so and "Test connection" fills it in.
+ To open it: tap ⚙ (bottom right) → "📊 Open Google Sheet".
