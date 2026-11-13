@@ -213,3 +213,26 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
  - If the card photo itself cannot be sent, the bot now falls back to a text message with the answer button instead of failing.
  - Telegram rule: a bot cannot message a person who never opened it, so a customer who never started the bot needs that one tap.
  - Keep Supabase configured so customers are remembered between restarts.
+
+## v58 – CREATE & SEND ORDER CARD → SELECTED CUSTOMER
+ - The "Select customer" list now shows everyone who pressed Start in the AMBAR bot, for the main admin AND for every assigned admin (before, assigned admins saw an empty list). Names are shown properly, and choosing one fills the customer's chat ID, @username and name.
+ - "📨 Create & Send Order Card" sends the card with its button straight to the selected customer through the AMBAR bot. Assigned admins no longer need their own connected Telegram account for this.
+ - If the customer has not pressed Start, the order is still saved and the personal start link (see v57) is shown.
+
+## v59 – CARD REACHES THE SELECTED CUSTOMER (AND THE ADMIN BOT)
+ - The order result now names exactly who received the card (customer name / @username) and warns if the chosen chat belongs to an admin account.
+ - Admin accounts no longer appear in the "Select customer" list (they pressed Start too, but they are not customers).
+ - When the admin has Telegram Business connected, the customer ALSO receives the card in their normal chat with the admin, in addition to the AMBAR bot copy. Admin cross-check copies in the AMBAR bot are unchanged.
+
+## v60 – FOUR BUTTONS ON THE CUSTOMER'S ORDER CARD
+ The card the customer receives now has four clickable buttons right under it:
+ 1. 🔗 መልስ ለመስጠት ክፈት – opens the answer page (unchanged)
+ 2. ✅ Confirm Order – confirms the order from the message itself
+ 3. ❌ Reject Order – rejects it
+ 4. 💬 Comment – the bot asks the customer to type the comment, saves it and tells the admins
+ After an answer the buttons stay visible but locked, the card shows the final status, and the admin bot copies update as before. The order form and everything else are unchanged.
+
+## v61 – CARD ALWAYS GETS SENT (button fallback)
+ - The card is first sent with the 4 buttons. If Telegram refuses that keyboard for any reason, it is automatically re-sent with the 🔗 answer button only, and then with no buttons, so the customer always receives the card. Applies to the AMBAR bot send and the Telegram Business send.
+ - If the card photo itself cannot be sent, a text message with the buttons is sent instead.
+ - Real Telegram errors (blocked bot, customer never pressed Start, etc.) are shown in the order result.
