@@ -1564,7 +1564,11 @@ app.get("/cards/:id.jpg", async (req, res) => {
 app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/my-account"], requireAccess);
 app.use("/api/business", ownerOnly);
 
-app.get("/api/customers", (req, res) => req.actor?.role === "admin" ? res.json([...customers.values()].filter(c => String(businessConnections.get(String(c.businessConnectionId || ""))?.user?.id || "") === req.actor.telegramId).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)) : res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
+app.get("/api/customers", (req, res) => {
+  const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
+  const adminIds = new Set(allAdminChatIds({})); // admins are not customers
+  res.json([...customers.values()].filter(c => mine(c) && !adminIds.has(String(c.id))).map(c => ({ ...c, first_name: c.name || c.first_name || "" })).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
+});
 
 function esc(value = "") {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -1579,10 +1583,22 @@ function lockedKeyboard(order) {
   ] };
 }
 function keyboard(id, order, opts = {}) {
-  // The Telegram message itself must contain ONLY one action: open the answer page.
-  // Confirm / Reject / Comment live on the answer page, not in the message keyboard.
+  // The customer's order message carries FOUR buttons right under the card:
+  //   1) 🔗 መልስ ለመስጠት ክፈት (opens the answer page)   2) ✅ Confirm Order   3) ❌ Reject Order   4) 💬 Comment
+  // Once the order is answered the same buttons stay visible but locked (see lockedKeyboard).
+  if (order && order.closed) return lockedKeyboard(order);
   const link = opts.noLink ? "" : answerLink(order);
-  return { inline_keyboard: link ? [[{ text: "🔗 መልስ ለመስጠት ክፈት", url: link }]] : [] };
+  const rows = [];
+  if (link) rows.push([{ text: "🔗 መልስ ለመስጠት ክፈት", url: link }]);
+  rows.push([{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }]);
+  rows.push([{ text: "💬 Comment", callback_data: `comment:${id}` }]);
+  return { inline_keyboard: rows };
+}
+// Fallback layouts: if Telegram ever refuses the 4-button keyboard, the card is still delivered (4 buttons → link only → no buttons).
+function keyboardAttempts(order) {
+  const full = keyboard(order.id, order), link = answerLink(order);
+  const linkOnly = link && !order.closed ? { inline_keyboard: [[{ text: "🔗 መልስ ለመስጠት ክፈት", url: link }]] } : null;
+  return [full, linkOnly, null].filter((x, i, a) => i === a.length - 1 || x);
 }
 function activeBusinessConnection() {
   // Prefer the explicitly configured connection when present.
@@ -1671,17 +1687,23 @@ async function sendCardAsAdmin(chatId, filePath, order, connection) {
   let lastError;
   for (const conn of attempts) {
     try {
-      const sent = await tgApi.sendForm("sendPhoto", () => {
-        const body = new FormData();
-        body.append("business_connection_id", String(conn.id));
-        body.append("chat_id", String(chatId).trim());
-        body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
-        body.append("caption", caption);
-        body.append("parse_mode", "HTML");
-        // Put the answer button on the ORIGINAL send. Never wait for a customer message/update.
-        body.append("reply_markup", JSON.stringify(keyboard(order.id, order)));
-        return body;
-      });
+      let sent, markupErr;
+      for (const markup of keyboardAttempts(order)) { // 4 buttons first; plain link / no buttons only if Telegram refuses them
+        try {
+          sent = await tgApi.sendForm("sendPhoto", () => {
+            const body = new FormData();
+            body.append("business_connection_id", String(conn.id));
+            body.append("chat_id", String(chatId).trim());
+            body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
+            body.append("caption", caption);
+            body.append("parse_mode", "HTML");
+            if (markup) body.append("reply_markup", JSON.stringify(markup));
+            return body;
+          });
+          markupErr = null; break;
+        } catch (e) { markupErr = e; if (peerProblem.test(e.message) || /BUSINESS_CONNECTION_INVALID/i.test(e.message)) break; }
+      }
+      if (markupErr) throw markupErr;
 
       // The answer button is included ONLY on the original card message.
       // Do not send a second fallback message: the customer must receive exactly one button.
@@ -1889,26 +1911,31 @@ async function sendAnswerButton(order, chatId) {
 }
 async function sendBotCard(order, chatId, filePath, opts = {}) {
   if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
-  try {
-    const bytes = await fs.promises.readFile(filePath);
-    const sent = await tgApi.sendForm("sendPhoto", () => {
-      const body = new FormData();
-      body.append("chat_id", String(chatId));
-      body.append("photo", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
-      body.append("caption", cardCaptionHtml(order, "", "", { noLink: true, edited: !!opts.edited }));
-      body.append("parse_mode", "HTML");
-      body.append("reply_markup", JSON.stringify(keyboard(order.id, order)));
-      return body;
-    });
-    return { ok: true, messageId: sent.message_id };
-  } catch (error) {
-    // Photo failed (size / format / Telegram hiccup): still reach the customer with a text message + the answer button.
-    if (/blocked|chat not found|can't initiate|deactivated|Forbidden/i.test(error.message)) return { ok: false, error: error.message };
+  let bytes; try { bytes = await fs.promises.readFile(filePath); } catch (e) { return { ok: false, error: "card file: " + e.message }; }
+  const hard = /blocked|chat not found|can't initiate|deactivated|Forbidden/i;
+  let lastError = "";
+  for (const markup of keyboardAttempts(order)) {
     try {
-      const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", reply_markup: keyboard(order.id, order), text: cardCaptionHtml(order, "", "Please review your order below 👇", { noLink: true, edited: !!opts.edited }) });
-      return { ok: true, messageId: sent.message_id, fallback: true };
-    } catch (e2) { return { ok: false, error: error.message + " | " + e2.message }; }
+      const sent = await tgApi.sendForm("sendPhoto", () => {
+        const body = new FormData();
+        body.append("chat_id", String(chatId));
+        body.append("photo", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
+        body.append("caption", cardCaptionHtml(order, "", "", { noLink: true, edited: !!opts.edited }));
+        body.append("parse_mode", "HTML");
+        if (markup) body.append("reply_markup", JSON.stringify(markup));
+        return body;
+      });
+      return { ok: true, messageId: sent.message_id };
+    } catch (error) { lastError = error.message; if (hard.test(error.message)) return { ok: false, error: error.message }; }
   }
+  // Photo itself failed: text message + buttons.
+  for (const markup of keyboardAttempts(order)) {
+    try {
+      const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}), text: cardCaptionHtml(order, "", "Please review your order below 👇", { noLink: true, edited: !!opts.edited }) });
+      return { ok: true, messageId: sent.message_id, fallback: true };
+    } catch (e2) { lastError += " | " + e2.message; }
+  }
+  return { ok: false, error: lastError };
 }
 
 // ── Cards that could not be delivered yet (customer has not pressed Start) are sent AUTOMATICALLY the moment the customer opens the bot ──
@@ -2344,14 +2371,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     //  • assigned admin: ONLY their own connected account.
     const isOwner = req.actor?.role === "owner";
     const account = accountFor(req.actor);
-    if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who messaged your account), or connect your Telegram account to send by @username / phone." });
+    if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who pressed Start in the AMBAR bot), or connect your Telegram account to send by @username / phone." });
     const allConns = [...businessConnections.values()];
     const myConn = order.telegramChatId
       ? (allConns.find(c => isUsable(c) && String(c.user?.id || "") === String(req.actor?.telegramId || ""))
         || (isOwner ? (allConns.find(c => isUsable(c) && OWNER_IDS.includes(String(c.user?.id || ""))) || await businessConnectionForCustomer(order.telegramChatId).catch(() => null)) : null))
       : null;
 
-    if (!isOwner && !account?.ready && !myConn) return res.status(400).json({ ok: false, error: "Connect your own Telegram account first (or connect the bot in Telegram Business): tap '🔗 Connect my Telegram account', then send the order again." });
+    if (!isOwner && !account?.ready && !myConn && !/^\d{5,}$/.test(String(order.telegramChatId || ""))) return res.status(400).json({ ok: false, error: "Choose the customer from the list (people who pressed Start in the AMBAR bot), or connect your own Telegram account, then send the order again." });
     if (supabase) await loadOrders();
     order.id = nextId++;
     order.token = order.token || require("crypto").randomBytes(12).toString("hex"); // answer-page link token
@@ -2375,11 +2402,13 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
       if (direct.ok) { order.sender = "bot"; order.telegramMessageId = direct.messageId; order.botButtonsMessageId = direct.messageId; order.sent = true; order.buttonsLine = "✅ card + Open answer link sent in one message"; sentFrom = "the AMBAR bot (card with buttons)"; }
       else directFailure = direct.error;
     }
-    if (!order.sent && myConn) {
+    // The customer ALSO gets the card in their normal chat with the admin (Telegram Business), not only from the bot.
+    if (myConn) {
       try {
         const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
-        order.sender = "admin_business_account"; order.buttonsLine = "✅ Open answer link delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
-      } catch (error) { failure = error.raw || error.message; }
+        if (!order.sent) { order.sender = "admin_business_account"; order.buttonsLine = "✅ Open answer link delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)"; }
+        else { order.adminCopyMessageId = sent.message_id; sentFrom += " + your own Telegram chat with the customer"; }
+      } catch (error) { if (!order.sent) failure = error.raw || error.message; else console.warn("Extra Business copy to customer failed:", error.raw || error.message); }
     }
     if (!order.sent && account?.ready) {
       try {
@@ -2393,7 +2422,12 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
     const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
     await saveOrderRecord(order);
-    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}${await sheetWarning()}` });
+    if (order.sent) {
+      const toAdmin = allAdminChatIds(order).includes(String(order.telegramChatId || ""));
+      const who = `${order.customerName || "the customer"} (${order.telegramUsername || "chat id " + order.telegramChatId})`;
+      const adminWarn = toAdmin ? " ⚠ WARNING: the selected chat ID belongs to an ADMIN account, not a customer — pick the real customer from the list." : "";
+      return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent to ${who} from ${sentFrom}.${adminWarn}${pollNote}${auditNote}${await sheetWarning()}` });
+    }
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
       auditCopies: audit.delivered,
       warning: `Order ${order.orderId} was saved but the card could not be sent yet: ${directFailure || failure || "the customer has not opened the AMBAR bot"}. ⏳ SEND THIS LINK TO THE CUSTOMER — when they open it and press Start, the card arrives at once: ${await botUsername().then(u => u ? "https://t.me/" + u + "?start=o_" + order.token : "(bot link unavailable)").catch(() => "")} ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
