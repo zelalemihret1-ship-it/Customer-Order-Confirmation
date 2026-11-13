@@ -213,3 +213,8 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
  - If the card photo itself cannot be sent, the bot now falls back to a text message with the answer button instead of failing.
  - Telegram rule: a bot cannot message a person who never opened it, so a customer who never started the bot needs that one tap.
  - Keep Supabase configured so customers are remembered between restarts.
+
+## v58 – CREATE & SEND ORDER CARD → SELECTED CUSTOMER
+ - The "Select customer" list now shows everyone who pressed Start in the AMBAR bot, for the main admin AND for every assigned admin (before, assigned admins saw an empty list). Names are shown properly, and choosing one fills the customer's chat ID, @username and name.
+ - "📨 Create & Send Order Card" sends the card with its button straight to the selected customer through the AMBAR bot. Assigned admins no longer need their own connected Telegram account for this.
+ - If the customer has not pressed Start, the order is still saved and the personal start link (see v57) is shown.
