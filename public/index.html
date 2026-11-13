@@ -82,7 +82,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <label>Phone<input name="phone"></label>
 <label>Location<input name="location"></label>
 
-<label class="full" id="pickWrap" style="display:none">Select customer (people who pressed Start in the AMBAR bot) — the card goes straight to them<select id="customerPick"><option value="">— Choose a customer —</option></select></label>
+<label class="full" id="pickWrap" style="display:none">Select customer (people who messaged the main admin account)<select id="customerPick"><option value="">— Choose a customer —</option></select></label>
 <label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
 <label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
 
@@ -412,7 +412,7 @@ ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]")
   }catch(err){say({ok:false,error:err.message});}});
 openBtn.onclick=()=>{ov.style.display="block";render();};
 (async()=>{try{const m=await api("/api/me");if(m.role==="admin"||m.role==="owner"){role=m.role;await refresh();
-  {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;if(form.elements.customerName&&!form.elements.customerName.value){const t=o.textContent.replace(/\s*\(@.*\)$/,"").trim();if(t&&!/^\d+$/.test(t))form.elements.customerName.value=t;}};}}catch{}}}
+  {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;};}}catch{}}}
 }catch{}})();
 })();
 </script>
