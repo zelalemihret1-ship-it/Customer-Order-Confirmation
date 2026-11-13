@@ -238,3 +238,5 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
  - Real Telegram errors (blocked bot, customer never pressed Start, etc.) are shown in the order result.
 
 ## v62 – removed the 🔢 Summary (numbers) and 📈 Graphs page buttons from the settings panel (nothing else changed).
+
+## v63 – fixed 'api is not defined' on 🗑 Start from ZERO (settings panel). Nothing else changed.
