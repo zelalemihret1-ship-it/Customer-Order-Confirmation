@@ -947,6 +947,18 @@ const q = s => encodeURIComponent(s);
 // ── helpers ────────────────────────────────────────────────────────────────────
 const stamp = (d = new Date()) => new Date(d).toLocaleString("sv-SE", { timeZone: TZ }); // 2026-11-11 14:05:09 (sortable)
 const clean = v => (v == null ? "" : String(v)).slice(0, 4000);
+// Google Sheets API values.update with RAW input treats ISO date strings as TEXT.
+// Store date-only values as Sheets serial numbers so date columns sort, filter, and format as dates.
+const sheetDateSerial = value => {
+  const s = String(value == null ? "" : value).trim();
+  const m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(s);
+  if (!m) return "";
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const ms = Date.UTC(y, mo - 1, d);
+  const check = new Date(ms);
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return "";
+  return Math.floor(ms / 86400000) + 25569;
+};
 const abs = (order, p) => !p ? "" : /^https?:/i.test(p) ? p : ((process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "") + p);
 function orderRow(o, created, updated) {
   const comments = Array.isArray(o.comments) ? o.comments : [];
@@ -957,7 +969,7 @@ function orderRow(o, created, updated) {
   set("Product", o.product); set("Length (cm)", o.length); set("Width (cm)", o.width); set("Height (cm)", o.height);
   set("Material", o.material); set("Color", o.color); set("Style", o.style); set("Design", o.design); set("Handle", o.handle); set("Door", o.door); set("Partition", o.partition); set("Drawer", o.drawer); set("Additional Features", o.additionalFeatures);
   set("Customer Name", o.customerName); set("Phone", o.phone || o.telegramPhone); set("Telegram Username", o.telegramUsername); set("Telegram Chat ID", o.telegramChatId);
-  set("Order Date", o.orderDate); set("Delivery Date", o.deliveryDate); set("Delivery Type", o.deliveryType); set("Delivery Fee", o.deliveryFee); set("Location", o.location); set("Payment", o.payment); set("Advance", o.advance); set("Paid In Full", o.paidFull ? "Yes" : "No");
+  set("Order Date", sheetDateSerial(o.orderDate)); set("Delivery Date", sheetDateSerial(o.deliveryDate)); set("Delivery Type", o.deliveryType); set("Delivery Fee", o.deliveryFee); set("Location", o.location); set("Payment", o.payment); set("Advance", o.advance); set("Paid In Full", o.paidFull ? "Yes" : "No");
   set("Delivered To Customer", o.sent ? "Yes" : "No"); set("Answer Closed", o.closed ? "Yes" : "No");
   set("Comments", comments.length); set("Latest Comment", last ? (last.decision ? `[${last.decision}] ` : "") + (last.comment || "") : "");
   set("Created By", o.createdByName); set("Created By Role", o.createdByRole);
@@ -965,7 +977,7 @@ function orderRow(o, created, updated) {
   const base = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "");
   set("Answer Link", base && o.token ? `${base}/o/${o.token}` : "");
   set("Delivery Note", o.sent ? "" : o.deliveryNote);
-  set("Completion Date", o.completionDate); set("Delivery Service", o.deliveryService);
+  set("Completion Date", sheetDateSerial(o.completionDate)); set("Delivery Service", o.deliveryService);
   return row;
 }
 
