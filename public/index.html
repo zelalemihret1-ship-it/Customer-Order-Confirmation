@@ -461,7 +461,7 @@ ov.addEventListener("click",e=>{
     ask("START FROM ZERO?\n\n1) Every order is saved in the Google Sheet as a BACKUP.\n2) ALL orders are then DELETED from the app and the Google Sheet starts new.\n\nThis cannot be undone in the app.",()=>{
       ask("Are you really sure? All orders will be removed and numbering starts again from the beginning.",async()=>{
         b.disabled=true;b.textContent="Working…";
-        try{const d=await api("/api/sheets/reset-all",{confirm:"ZERO"});say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
+        try{const d=await (await fetch("/api/sheets/reset-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:"ZERO"})})).json();say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
         b.disabled=false;b.textContent="🗑 Start from ZERO (backup + clear all)";
       });
     });
