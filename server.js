@@ -1566,7 +1566,8 @@ app.use("/api/business", ownerOnly);
 
 app.get("/api/customers", (req, res) => {
   const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
-  res.json([...customers.values()].filter(mine).map(c => ({ ...c, first_name: c.name || c.first_name || "" })).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
+  const adminIds = new Set(allAdminChatIds({})); // admins are not customers
+  res.json([...customers.values()].filter(c => mine(c) && !adminIds.has(String(c.id))).map(c => ({ ...c, first_name: c.name || c.first_name || "" })).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
 });
 
 function esc(value = "") {
@@ -2378,11 +2379,13 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
       if (direct.ok) { order.sender = "bot"; order.telegramMessageId = direct.messageId; order.botButtonsMessageId = direct.messageId; order.sent = true; order.buttonsLine = "✅ card + Open answer link sent in one message"; sentFrom = "the AMBAR bot (card with buttons)"; }
       else directFailure = direct.error;
     }
-    if (!order.sent && myConn) {
+    // The customer ALSO gets the card in their normal chat with the admin (Telegram Business), not only from the bot.
+    if (myConn) {
       try {
         const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
-        order.sender = "admin_business_account"; order.buttonsLine = "✅ Open answer link delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)";
-      } catch (error) { failure = error.raw || error.message; }
+        if (!order.sent) { order.sender = "admin_business_account"; order.buttonsLine = "✅ Open answer link delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)"; }
+        else { order.adminCopyMessageId = sent.message_id; sentFrom += " + your own Telegram chat with the customer"; }
+      } catch (error) { if (!order.sent) failure = error.raw || error.message; else console.warn("Extra Business copy to customer failed:", error.raw || error.message); }
     }
     if (!order.sent && account?.ready) {
       try {
@@ -2396,7 +2399,12 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
     const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
     await saveOrderRecord(order);
-    if (order.sent) return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent from ${sentFrom}.${pollNote}${auditNote}${await sheetWarning()}` });
+    if (order.sent) {
+      const toAdmin = allAdminChatIds(order).includes(String(order.telegramChatId || ""));
+      const who = `${order.customerName || "the customer"} (${order.telegramUsername || "chat id " + order.telegramChatId})`;
+      const adminWarn = toAdmin ? " ⚠ WARNING: the selected chat ID belongs to an ADMIN account, not a customer — pick the real customer from the list." : "";
+      return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent to ${who} from ${sentFrom}.${adminWarn}${pollNote}${auditNote}${await sheetWarning()}` });
+    }
     return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
       auditCopies: audit.delivered,
       warning: `Order ${order.orderId} was saved but the card could not be sent yet: ${directFailure || failure || "the customer has not opened the AMBAR bot"}. ⏳ SEND THIS LINK TO THE CUSTOMER — when they open it and press Start, the card arrives at once: ${await botUsername().then(u => u ? "https://t.me/" + u + "?start=o_" + order.token : "(bot link unavailable)").catch(() => "")} ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
