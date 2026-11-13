@@ -1564,7 +1564,10 @@ app.get("/cards/:id.jpg", async (req, res) => {
 app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/my-account"], requireAccess);
 app.use("/api/business", ownerOnly);
 
-app.get("/api/customers", (req, res) => req.actor?.role === "admin" ? res.json([...customers.values()].filter(c => String(businessConnections.get(String(c.businessConnectionId || ""))?.user?.id || "") === req.actor.telegramId).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)) : res.json([...customers.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 200)));
+app.get("/api/customers", (req, res) => {
+  const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
+  res.json([...customers.values()].filter(mine).map(c => ({ ...c, first_name: c.name || c.first_name || "" })).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
+});
 
 function esc(value = "") {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2344,14 +2347,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     //  • assigned admin: ONLY their own connected account.
     const isOwner = req.actor?.role === "owner";
     const account = accountFor(req.actor);
-    if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who messaged your account), or connect your Telegram account to send by @username / phone." });
+    if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who pressed Start in the AMBAR bot), or connect your Telegram account to send by @username / phone." });
     const allConns = [...businessConnections.values()];
     const myConn = order.telegramChatId
       ? (allConns.find(c => isUsable(c) && String(c.user?.id || "") === String(req.actor?.telegramId || ""))
         || (isOwner ? (allConns.find(c => isUsable(c) && OWNER_IDS.includes(String(c.user?.id || ""))) || await businessConnectionForCustomer(order.telegramChatId).catch(() => null)) : null))
       : null;
 
-    if (!isOwner && !account?.ready && !myConn) return res.status(400).json({ ok: false, error: "Connect your own Telegram account first (or connect the bot in Telegram Business): tap '🔗 Connect my Telegram account', then send the order again." });
+    if (!isOwner && !account?.ready && !myConn && !/^\d{5,}$/.test(String(order.telegramChatId || ""))) return res.status(400).json({ ok: false, error: "Choose the customer from the list (people who pressed Start in the AMBAR bot), or connect your own Telegram account, then send the order again." });
     if (supabase) await loadOrders();
     order.id = nextId++;
     order.token = order.token || require("crypto").randomBytes(12).toString("hex"); // answer-page link token
