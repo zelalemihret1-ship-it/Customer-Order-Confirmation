@@ -236,3 +236,5 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
  - The card is first sent with the 4 buttons. If Telegram refuses that keyboard for any reason, it is automatically re-sent with the 🔗 answer button only, and then with no buttons, so the customer always receives the card. Applies to the AMBAR bot send and the Telegram Business send.
  - If the card photo itself cannot be sent, a text message with the buttons is sent instead.
  - Real Telegram errors (blocked bot, customer never pressed Start, etc.) are shown in the order result.
+
+## v62 – removed the 🔢 Summary (numbers) and 📈 Graphs page buttons from the settings panel (nothing else changed).
