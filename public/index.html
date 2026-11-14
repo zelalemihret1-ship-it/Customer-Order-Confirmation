@@ -113,6 +113,56 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </form>
 </main>
 <script>
+// 🇪🇹 Ethiopian calendar date pickers (Order Date · Completion Date · Delivery Date).
+// The form value is the Ethiopian date as text "yyyy/mm/dd" (e.g. 2019/03/05). Old Gregorian "yyyy-mm-dd" values are converted automatically.
+(function(){
+const MONTHS=["Meskerem","Tikimt","Hidar","Tahsas","Tir","Yekatit","Megabit","Miazia","Ginbot","Sene","Hamle","Nehase","Pagume"];
+const pad=n=>String(n).padStart(2,"0");
+function gregToEth(y,m,d){
+  const a=Math.floor((14-m)/12),yy=y+4800-a,mm=m+12*a-3;
+  const jdn=d+Math.floor((153*mm+2)/5)+365*yy+Math.floor(yy/4)-Math.floor(yy/100)+Math.floor(yy/400)-32045;
+  const r=(jdn-1723856)%1461,n=(r%365)+365*Math.floor(r/1460);
+  return{y:4*Math.floor((jdn-1723856)/1461)+Math.floor(r/365)-Math.floor(r/1460),m:Math.floor(n/30)+1,d:(n%30)+1};
+}
+window.ethDate=function(v){
+  const s=String(v==null?"":v).trim();
+  if(/^\d{4}\/\d{2}\/\d{2}/.test(s))return s.slice(0,10);
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if(!m)return s;
+  const e=gregToEth(+m[1],+m[2],+m[3]);return e.y+"/"+pad(e.m)+"/"+pad(e.d);
+};
+const days=(y,m)=>m<13?30:(y%4===3?6:5);
+const t=new Date(),thisYear=gregToEth(t.getFullYear(),t.getMonth()+1,t.getDate()).y;
+const nativeVal=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+const css=document.createElement("style");css.textContent=".ethdate{display:grid;grid-template-columns:1fr 1.7fr 1.2fr;gap:6px}.ethdate select{margin-top:5px;padding-left:8px;padding-right:4px}";document.head.appendChild(css);
+function make(input){
+  const form=input.form;input.type="hidden";
+  const wrap=document.createElement("div");wrap.className="ethdate";
+  const dS=document.createElement("select"),mS=document.createElement("select"),yS=document.createElement("select");
+  dS.setAttribute("aria-label","Day (Ethiopian)");mS.setAttribute("aria-label","Month (Ethiopian)");yS.setAttribute("aria-label","Year (Ethiopian)");
+  const opt=(s,v,txt)=>{const o=document.createElement("option");o.value=v;o.textContent=txt;s.appendChild(o);};
+  opt(mS,"","Month");MONTHS.forEach((n,i)=>opt(mS,String(i+1),n));
+  opt(yS,"","Year");for(let y=thisYear-3;y<=thisYear+3;y++)opt(yS,String(y),String(y));
+  function fillDays(keep){const y=+yS.value||thisYear,m=+mS.value||1,max=days(y,m);dS.innerHTML="";opt(dS,"","Day");for(let i=1;i<=max;i++)opt(dS,String(i),String(i));dS.value=keep&&+keep<=max?String(+keep):"";}
+  fillDays("");
+  function push(){nativeVal.set.call(input,(yS.value&&mS.value&&dS.value)?yS.value+"/"+pad(+mS.value)+"/"+pad(+dS.value):"");}
+  function pull(){
+    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
+    if(!m){yS.value="";mS.value="";fillDays("");return;}
+    if(![...yS.options].some(o=>o.value===String(+m[1])))opt(yS,String(+m[1]),m[1]);
+    yS.value=String(+m[1]);mS.value=String(+m[2]);fillDays(m[3]);
+  }
+  [dS,mS,yS].forEach(s=>{["input","change"].forEach(ev=>s.addEventListener(ev,()=>{if(s!==dS)fillDays(dS.value);push();}));});
+  // setting form.elements.orderDate.value = "..." in code (edit mode, reset) keeps working and also accepts old Gregorian dates
+  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){nativeVal.set.call(input,window.ethDate(v));pull();}});
+  if(form)form.addEventListener("reset",()=>setTimeout(()=>{input.value="";},0));
+  [dS,mS,yS].forEach(s=>wrap.appendChild(s));
+  input.parentNode.appendChild(wrap);
+}
+["orderDate","completionDate","deliveryDate"].forEach(n=>{const el=document.querySelector('#orderForm [name="'+n+'"]');if(el&&el.type==="date")make(el);});
+})();
+</script>
+<script>
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 // Authenticate every API request with Telegram's signed Mini App initData. Keep FormData headers untouched.
 (()=>{const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const h=new Headers(init.headers||{});const data=window.Telegram?.WebApp?.initData||"";if(data)h.set("x-telegram-init-data",data);try{const k=localStorage.getItem("ownerKey");if(k)h.set("x-setup-key",k);}catch{}return nativeFetch(input,{...init,headers:h});};})();
