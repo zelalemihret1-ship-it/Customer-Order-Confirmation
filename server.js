@@ -2017,6 +2017,14 @@ async function sendCardViaUserAccount(order, filePath) {
   // Always send the card directly from the connected admin account and put the answer
   // URL in the same message immediately. Telegram renders the HTTPS URL as a clickable
   // link without requiring any later customer message.
+  // FIRST try: post the card as an inline-bot message in the customer's chat with the admin, with the real
+  // 🔗 / ✅ Confirm / ❌ Reject / 💬 Comment buttons directly under the card (no /start needed). If that fails, fall back to the old behaviour below.
+  const inl = await sendInlineButtons(admin, entity, order);
+  if (inl.ok) {
+    order.adminId = admin.id; order.adminLabel = admin.label; order.pollMessageId = 0;
+    return { message_id: inl.messageId, chatId: String(entity.id), admin, pollSent: false, pollError: "", buttons: "inline", inlineError: "", directError: "", immediateLink: true };
+  }
+  const inlineFailure = inl.error || "";
   const link = answerLink(order);
   const botReach = await botCanMessage(entity.id); // then the answer link is sent as a separate real button below
   const caption = `<b>AMBAR FURNITURE — ${order._edited ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}${botReach || !link ? "" : `\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`}`;
@@ -2047,7 +2055,7 @@ async function sendCardViaUserAccount(order, filePath) {
     pollSent: false,
     pollError: "",
     buttons: buttonMsg?.ok ? "botchat" : "link",
-    inlineError: "",
+    inlineError: inlineFailure,
     directError: "",
     immediateLink: true
   };
