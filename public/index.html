@@ -132,32 +132,75 @@ window.ethDate=function(v){
   const e=gregToEth(+m[1],+m[2],+m[3]);return e.y+"/"+pad(e.m)+"/"+pad(e.d);
 };
 const days=(y,m)=>m<13?30:(y%4===3?6:5);
-const t=new Date(),thisYear=gregToEth(t.getFullYear(),t.getMonth()+1,t.getDate()).y;
+// Ethiopian date -> weekday (0=Sunday) through the Julian Day Number
+const wday=(y,m,d)=>{const jdn=1723856+365*y+Math.floor(y/4)+30*m+d-31;return (jdn+1)%7;};
+const DOW=["Su","Mo","Tu","We","Th","Fr","Sa"];
+const t=new Date(),today=gregToEth(t.getFullYear(),t.getMonth()+1,t.getDate());
 const nativeVal=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
-const css=document.createElement("style");css.textContent=".ethdate{display:grid;grid-template-columns:1fr 1.7fr 1.2fr;gap:6px}.ethdate select{margin-top:5px;padding-left:8px;padding-right:4px}";document.head.appendChild(css);
+const css=document.createElement("style");css.textContent=
+".ethbtn{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:5px;padding:11px;border:1px solid #d6d1c7;border-radius:10px;background:#fff;color:#18382e;font-size:15px;font-weight:400;text-align:left}.ethbtn.empty{color:#8a8478}.ethbtn span.ic{font-size:16px}"+
+".ethov{position:fixed;inset:0;z-index:100000;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px}.ethcal{background:#fff;border-radius:16px;width:100%;max-width:340px;padding:14px;box-shadow:0 12px 40px #0006;color:#18382e}"+
+".ethhd{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px}.ethhd b{flex:1;text-align:center;font-size:15px}.ethhd button{padding:8px 12px;background:#153a2e;color:#fff;border-radius:9px;font-size:16px;line-height:1}"+
+".ethgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.ethgrid .dw{text-align:center;font-size:11px;font-weight:700;color:#8a8478;padding:4px 0}"+
+".ethgrid button.dy{padding:0;height:38px;border-radius:9px;background:#f8f6f1;color:#18382e;font-size:14px;font-weight:600}.ethgrid button.dy.td{border:1.5px solid #b89552}.ethgrid button.dy.sel{background:#153a2e;color:#fff}"+
+".ethft{display:flex;gap:8px;margin-top:12px}.ethft button{flex:1;padding:10px;border-radius:10px;font-size:13px}";
+document.head.appendChild(css);
 function make(input){
   const form=input.form;input.type="hidden";
-  const wrap=document.createElement("div");wrap.className="ethdate";
-  const dS=document.createElement("select"),mS=document.createElement("select"),yS=document.createElement("select");
-  dS.setAttribute("aria-label","Day (Ethiopian)");mS.setAttribute("aria-label","Month (Ethiopian)");yS.setAttribute("aria-label","Year (Ethiopian)");
-  const opt=(s,v,txt)=>{const o=document.createElement("option");o.value=v;o.textContent=txt;s.appendChild(o);};
-  opt(mS,"","Month");MONTHS.forEach((n,i)=>opt(mS,String(i+1),n));
-  opt(yS,"","Year");for(let y=thisYear-3;y<=thisYear+3;y++)opt(yS,String(y),String(y));
-  function fillDays(keep){const y=+yS.value||thisYear,m=+mS.value||1,max=days(y,m);dS.innerHTML="";opt(dS,"","Day");for(let i=1;i<=max;i++)opt(dS,String(i),String(i));dS.value=keep&&+keep<=max?String(+keep):"";}
-  fillDays("");
-  function push(){nativeVal.set.call(input,(yS.value&&mS.value&&dS.value)?yS.value+"/"+pad(+mS.value)+"/"+pad(+dS.value):"");}
-  function pull(){
+  const btn=document.createElement("button");btn.type="button";btn.className="ethbtn empty";
+  const txt=document.createElement("span"),ic=document.createElement("span");ic.className="ic";ic.textContent="📅";btn.append(txt,ic);
+  function show(){
     const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
-    if(!m){yS.value="";mS.value="";fillDays("");return;}
-    if(![...yS.options].some(o=>o.value===String(+m[1])))opt(yS,String(+m[1]),m[1]);
-    yS.value=String(+m[1]);mS.value=String(+m[2]);fillDays(m[3]);
+    if(m){txt.textContent=MONTHS[+m[2]-1]+" "+(+m[3])+", "+m[1]+"  ("+m[1]+"/"+m[2]+"/"+m[3]+")";btn.classList.remove("empty");}
+    else{txt.textContent="Select date (Ethiopian calendar)";btn.classList.add("empty");}
   }
-  [dS,mS,yS].forEach(s=>{["input","change"].forEach(ev=>s.addEventListener(ev,()=>{if(s!==dS)fillDays(dS.value);push();}));});
+  function setVal(v){nativeVal.set.call(input,v);show();}
+  function open(){
+    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
+    const sel=m?{y:+m[1],m:+m[2],d:+m[3]}:null;
+    let vy=sel?sel.y:today.y,vm=sel?sel.m:today.m;
+    const ov=document.createElement("div");ov.className="ethov";
+    const cal=document.createElement("div");cal.className="ethcal";ov.appendChild(cal);
+    const close=()=>ov.remove();
+    ov.addEventListener("click",e=>{if(e.target===ov)close();});
+    function render(){
+      cal.innerHTML="";
+      const hd=document.createElement("div");hd.className="ethhd";
+      const prev=document.createElement("button"),next=document.createElement("button"),title=document.createElement("b");
+      prev.type=next.type="button";prev.textContent="‹";next.textContent="›";title.textContent=MONTHS[vm-1]+" "+vy;
+      prev.onclick=()=>{vm--;if(vm<1){vm=13;vy--;}render();};
+      next.onclick=()=>{vm++;if(vm>13){vm=1;vy++;}render();};
+      hd.append(prev,title,next);cal.appendChild(hd);
+      const g=document.createElement("div");g.className="ethgrid";
+      DOW.forEach(n=>{const c=document.createElement("div");c.className="dw";c.textContent=n;g.appendChild(c);});
+      const first=wday(vy,vm,1);
+      for(let i=0;i<first;i++)g.appendChild(document.createElement("div"));
+      const max=days(vy,vm);
+      for(let d=1;d<=max;d++){
+        const b=document.createElement("button");b.type="button";b.className="dy";b.textContent=d;
+        if(vy===today.y&&vm===today.m&&d===today.d)b.classList.add("td");
+        if(sel&&vy===sel.y&&vm===sel.m&&d===sel.d)b.classList.add("sel");
+        b.onclick=()=>{setVal(vy+"/"+pad(vm)+"/"+pad(d));input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
+        g.appendChild(b);
+      }
+      cal.appendChild(g);
+      const ft=document.createElement("div");ft.className="ethft";
+      const bt=document.createElement("button"),bc=document.createElement("button"),bx=document.createElement("button");
+      bt.type=bc.type=bx.type="button";bt.className="gold";bc.className="danger";bx.className="primary";
+      bt.textContent="Today";bc.textContent="Clear";bx.textContent="Close";
+      bt.onclick=()=>{setVal(today.y+"/"+pad(today.m)+"/"+pad(today.d));input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
+      bc.onclick=()=>{setVal("");input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
+      bx.onclick=close;
+      ft.append(bt,bc,bx);cal.appendChild(ft);
+    }
+    render();document.body.appendChild(ov);
+  }
+  btn.addEventListener("click",open);
   // setting form.elements.orderDate.value = "..." in code (edit mode, reset) keeps working and also accepts old Gregorian dates
-  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){nativeVal.set.call(input,window.ethDate(v));pull();}});
+  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){setVal(window.ethDate(v));}});
   if(form)form.addEventListener("reset",()=>setTimeout(()=>{input.value="";},0));
-  [dS,mS,yS].forEach(s=>wrap.appendChild(s));
-  input.parentNode.appendChild(wrap);
+  show();
+  input.parentNode.appendChild(btn);
 }
 ["orderDate","completionDate","deliveryDate"].forEach(n=>{const el=document.querySelector('#orderForm [name="'+n+'"]');if(el&&el.type==="date")make(el);});
 })();
