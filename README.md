@@ -1,9 +1,3 @@
-ETHIOPIAN CALENDAR UPDATE: every date is now Ethiopian.
- - Order Date / Completion Date / Delivery Date: the order form has Day · Month (Meskerem … Pagume) · Year pickers; the card shows the date as yyyy/mm/dd (e.g. 2019/03/05).
- - Google Sheet: those dates, plus Created At / Last Updated, are Ethiopian TEXT (yyyy/mm/dd). Google no longer turns them into Gregorian dates.
-   Old rows (Gregorian) are converted automatically the next time the server starts / "Test" runs. Dashboard, Graphs (Daily/Weekly labels like "Hidar 5") and Orders View work from the Ethiopian dates.
- - To apply: paste the new google-sheet-script.gs into Apps Script, Save, Deploy -> New deployment (or "Manage deployments" -> New version), then restart the server.
-
 Ambar Furniture v54
 Customer answer page update:
 The Telegram card still has exactly ONE button: መልስ ለመስጠት ክፈት.
