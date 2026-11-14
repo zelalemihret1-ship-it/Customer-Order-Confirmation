@@ -1,913 +1,570 @@
-/**
- * AMBAR – Google Sheet connector (no Google Cloud / API needed)
- *
- * SETUP: open your Google Sheet -> Extensions -> Apps Script -> replace Code.gs with this file -> Save.
- *        Run the function "authorize" once (allow). Then Deploy -> New deployment -> Web app
- *        (Execute as: Me, Who has access: Anyone) and put the /exec URL in the server setting GOOGLE_SCRIPT_URL.
- *
- * TABS IT KEEPS
- *   • One tab per ETHIOPIAN MONTH, e.g. "Hidar 2019" (newest first). Every order goes to the month of its Order Date.
- *     Columns start with the CUSTOMER information (name, phone, Telegram, location).
- *   • Tab order: Dashboard · Find Customer · Orders View · Graphs · month tabs.
- *   • A hidden helper tab "_Data" feeds the Dashboard and Graphs (do not delete it; it is rebuilt automatically).
- *   • New orders are always inserted on TOP of their month tab.
- *   • There is NO Activity Log any more (an old "Activity Log" tab is deleted automatically).
- */
-var SHEET_ID = ""; // ONLY if this script was NOT created from the sheet's Extensions menu: paste the sheet ID here
-var SECRET = "";   // optional: any password here AND the same value in GOOGLE_SCRIPT_KEY on the server
+<!doctype html>
+<html>
+<head>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"><style>html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}</style><script>(function(){var p=function(e){e.preventDefault()};["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,p,{passive:false})});document.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1&&e.cancelable)e.preventDefault()},{passive:false});var l=0;document.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.cancelable)e.preventDefault();l=n},{passive:false});document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault()},{passive:false});document.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&["+","-","=","0"].indexOf(e.key)>-1)e.preventDefault()});})();</script>
+<title>Ambar Furniture — Telegram Mini App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:24px 18px;text-align:center;border-bottom:4px solid #b89552}
+h1{margin:0;font-size:26px;letter-spacing:.5px}.sub{opacity:.82;margin-top:6px;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+main{max-width:920px;margin:auto;padding:20px}.card{background:white;border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+h2{margin-top:0;color:#153a2e}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+label{font-weight:700;font-size:13px}input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px}
+textarea{min-height:80px}.full{grid-column:1/-1}
+button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
+.primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
+.desktop-photo-button{display:none}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
+.order-card{background:#fff;border:1px solid #e6e1d6;border-radius:22px;overflow:hidden;box-shadow:0 18px 48px #0f2a2133,0 2px 6px #0000000d;max-width:650px;margin:auto}
+.order-head{background:linear-gradient(135deg,#0f2f25 0%,#1b4d3d 100%);color:#f4efe3;padding:24px 26px;display:flex;justify-content:space-between;align-items:center;gap:15px;border-bottom:4px solid #ffa939}
+.brand{font-size:24px;font-weight:800;letter-spacing:1.2px;color:#ffa939;line-height:1.15}.tag{font-size:11px;letter-spacing:1.6px;opacity:.8;text-transform:uppercase;margin-top:6px}
+.order-id{background:#ffffff1f;color:#fff;border:1px solid #ffffff40;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:800;white-space:nowrap;letter-spacing:.5px}
+.status-pill{display:inline-block;margin-top:8px;background:#ffa93922;color:#ffd08a;border:1px solid #ffa93966;border-radius:999px;padding:3px 10px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+.status-pill.ok{background:#2ecc7122;color:#8ff0b6;border-color:#2ecc7166}.status-pill.no{background:#e74c3c22;color:#ffb3aa;border-color:#e74c3c66}
+.photo-wrap{background:#f4f1ea;padding:18px;text-align:center;color:#8a8478;font-size:13px}.order-photo{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:14px;display:block;background:#fff;box-shadow:0 6px 18px #0000001a}
+.order-body{padding:22px 26px 8px}.section-title{display:flex;align-items:center;gap:10px;font-size:12px;text-transform:uppercase;letter-spacing:1.6px;color:#153a2e;font-weight:800;margin:20px 0 12px}
+.section-title:before{content:"";width:5px;height:18px;border-radius:3px;background:#ffa939}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.info{font-size:14px;line-height:1.4;background:#f8f6f1;border:1px solid #eee9de;border-radius:12px;padding:10px 12px;color:#1c2b25;font-weight:600}.info br{display:none}.info b{display:block;color:#8a7f69;font-size:10px;text-transform:uppercase;letter-spacing:1.1px;font-weight:800;margin-bottom:3px}.divider{height:1px;background:#ebe5da;margin:20px 0 0}
+.thanks{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:14px;border-radius:12px;text-align:center;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#f4efe3;font-weight:800;margin:20px 0 6px}
+.action-row{display:flex;gap:10px;padding:16px 22px 22px;background:#fff}
+.delivery-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.delivery-option{position:relative;display:block}
+.delivery-option input{position:absolute;opacity:0;pointer-events:none}
+.delivery-option-card{display:block;border:1.5px solid #ddd4c4;border-radius:12px;padding:16px;background:#fff;cursor:pointer;transition:.15s}
+.delivery-option input:checked + .delivery-option-card{border-color:#b89552;box-shadow:0 0 0 2px #b8955226;background:#fbf7ef}
+.delivery-title{font-weight:800;color:#153a2e;font-size:15px}
+.delivery-desc{display:block;margin-top:5px;font-size:12px;color:#6d675d}
+.photo-box{border:1.5px dashed #b9af9d;border-radius:14px;padding:16px;background:#fbf9f4}
+.photo-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.photo-button{display:inline-block;background:#153a2e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800;cursor:pointer}
+.photo-name{font-size:12px;color:#6d675d}
+.photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:13px 10px;border-radius:12px;font-size:12px;font-weight:800;letter-spacing:.6px;border:1.5px solid transparent;cursor:pointer;transition:transform .12s,box-shadow .12s,filter .12s}.action:hover{transform:translateY(-1px);box-shadow:0 6px 14px #00000026}.action:active{transform:translateY(0)}.action:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}.confirm{background:#1f8a4c;color:#fff}.reject{background:#fff;color:#b3261e;border-color:#e3b4b0}.comment{background:#fff;color:#153a2e;border-color:#cfd8d3}.demo-note{padding:0 22px 18px;font-size:11px;color:#8a8478;text-align:center}.demo-msg{margin:0 22px 14px;padding:10px 12px;border-radius:10px;background:#f4f1ea;font-size:13px;color:#153a2e;text-align:center}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
+@media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
+<style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#stOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
+<style>
+</style>
+</head>
+<body>
+<div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
+<script>
+(async()=>{const gate=document.getElementById("ambarAccessGate"),msg=document.getElementById("ambarAccessMessage");gate.style.display="flex";try{const r=await fetch("/api/me");const m=await r.json();if(r.ok&&(m.role==="owner"||m.role==="admin")){document.body.classList.add("ambar-authorized");gate.style.display="none";window.AMBAR_ROLE=m.role;window.AMBAR_TELEGRAM_ID=m.telegramId||"";}else{msg.textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}}catch(e){msg.textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}})();
+</script>
+<header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
+<main>
+<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Sending account:</b> <span id="senderState">checking…</span></div>
+<form id="orderForm">
+<div class="card"><h2>Product Information</h2><div class="grid">
+<label>Order Code (type it yourself)<input name="orderId" placeholder="Type order code, e.g. Z-001" required maxlength="40" autocomplete="off"></label>
+<label>Product<select id="productSelect" required><option value="">— Choose a product —</option><option value="Shoe Shelf">Shoe Shelf</option><option value="Console Table">Console Table</option><option value="Chest Drawer">Chest Drawer</option><option value="Center Table">Center Table</option><option value="TV Stand">TV Stand</option><option value="Dining Table">Dining Table</option><option value="Mirror">Mirror</option><option value="__other">Other</option></select><input type="hidden" name="product" id="productValue"></label><label id="productOtherWrap" style="display:none">Type the product name<input id="productOther" placeholder="e.g. Bookshelf" maxlength="60" autocomplete="off"></label>
+<label class="full" id="sizeWrap" style="display:none">Shoe Shelf size (choose one, or Other to type it yourself)<select id="sizeSelect"><option value="">— Choose size —</option><option value="120|35|125">L 120 cm × W 35 cm × H 125 cm</option><option value="160|35|125">L 160 cm × W 35 cm × H 125 cm</option><option value="90|35|125">L 90 cm × W 35 cm × H 125 cm</option><option value="80|35|125">L 80 cm × W 35 cm × H 125 cm</option><option value="__other">Other (type the size)</option></select></label>
+<label>Length (cm)<input name="length" value="120"></label>
+<label>Width (cm)<input name="width" value="35"></label>
+<label>Height (cm)<input name="height" value="124"></label>
+<label>Material<input name="material"></label>
+<label>Color<input name="color"></label>
+<label>Style<input name="style"></label>
+<label>Design<input name="design"></label>
+<label>Handle<input name="handle"></label>
+<label>Door<input name="door"></label>
+<label>Partition<input name="partition"></label>
+<label>Drawer<input name="drawer"></label>
+<label class="full">Additional features<textarea name="additionalFeatures" id="additionalFeatures" maxlength="1000" rows="3" placeholder="Type any additional features of this product (optional)…"></textarea></label>
+<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📷 Choose Product Photo</label><input id="productPhoto" name="productPhoto" type="file" accept="image/*" required hidden><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Choose one photo from your phone or PC. All image formats supported by your browser. You can also drag and drop on PC.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
+</div></div>
 
-var MONTHS = ["Meskerem", "Tikimt", "Hidar", "Tahsas", "Tir", "Yekatit", "Megabit", "Miazia", "Ginbot", "Sene", "Hamle", "Nehase", "Pagume"];
-var TEXT_COLS = ["ID", "Order Code", "Phone", "Telegram Chat ID", "Telegram Username", "Created At", "Last Updated"];
-var CUSTOMER_COLS = 7; // customer information + Order Code + Status (highlighted header)
-var IDX = null;
+<div class="card"><h2>Customer Information</h2><div class="grid">
+<label>Name<input name="customerName" required></label>
+<label>Phone<input name="phone"></label>
+<label>Location<input name="location"></label>
 
-function doGet() { return out({ ok: true, message: "AMBAR sheet connector is running." }); }
+<label class="full" id="pickWrap" style="display:none">Select customer (people who pressed Start in the AMBAR bot) — the card goes straight to them<select id="customerPick"><option value="">— Choose a customer —</option></select></label>
+<label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
+<label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
 
-function doPost(e) {
-  try {
-    var d = JSON.parse(e.postData.contents);
-    if (SECRET && d.key !== SECRET) return out({ ok: false, error: "Wrong GOOGLE_SCRIPT_KEY." });
-    var lock = LockService.getScriptLock(); lock.waitLock(30000);
-    try { IDX = null; return out(run(d)); } finally { lock.releaseLock(); }
-  } catch (err) { return out({ ok: false, error: String(err) }); }
+<label class="full">Customer Telegram Chat ID (optional)<input name="telegramChatId" placeholder="Enter numeric chat ID if available"><div class="small">For direct delivery, the customer must have pressed Start in the AMBAR bot. A numeric chat ID is best; a known username can be matched after the customer starts the bot. A phone number alone cannot identify a Telegram chat.</div></label>
+</div></div>
+
+<div class="card"><h2>Service Information</h2><div class="grid">
+<label>Payment (Birr)<input name="payment" type="number"></label>
+<label>Advance (Birr)<input name="advance" type="number"></label>
+
+<label>Order Date<input name="orderDate" type="date"></label>
+<label>Completion Date<input name="completionDate" type="date"></label>
+<label>Delivery Type<select name="deliveryType" id="deliveryType">
+<option value="Self Pick Up" selected>🏠 Self Pick Up</option>
+<option value="By Ambar Delivery">🚚 By Ambar Delivery</option>
+</select></label>
+<label id="deliveryServiceField">Ambar Delivery Service<select name="deliveryService" id="deliveryService">
+<option value="Economy" selected>Economy</option>
+<option value="Express">Express</option>
+</select></label>
+<label id="deliveryFeeField">Delivery fee (Birr)<input name="deliveryFee" type="number" min="0" step="0.01" placeholder="Type delivery fee"></label>
+<label>Delivery Date<input name="deliveryDate" type="date"></label>
+</div></div>
+
+<div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
+<div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
+<p id="result"></p>
+</form>
+</main>
+<script>
+// 🇪🇹 Ethiopian calendar date pickers (Order Date · Completion Date · Delivery Date).
+// The form value is the Ethiopian date as text "yyyy/mm/dd" (e.g. 2019/03/05). Old Gregorian "yyyy-mm-dd" values are converted automatically.
+(function(){
+const MONTHS=["Meskerem","Tikimt","Hidar","Tahsas","Tir","Yekatit","Megabit","Miazia","Ginbot","Sene","Hamle","Nehase","Pagume"];
+const pad=n=>String(n).padStart(2,"0");
+function gregToEth(y,m,d){
+  const a=Math.floor((14-m)/12),yy=y+4800-a,mm=m+12*a-3;
+  const jdn=d+Math.floor((153*mm+2)/5)+365*yy+Math.floor(yy/4)-Math.floor(yy/100)+Math.floor(yy/400)-32045;
+  const r=(jdn-1723856)%1461,n=(r%365)+365*Math.floor(r/1460);
+  return{y:4*Math.floor((jdn-1723856)/1461)+Math.floor(r/365)-Math.floor(r/1460),m:Math.floor(n/30)+1,d:(n%30)+1};
 }
-
-function run(d) {
-  if (d.action === "setup") return setup(d);
-  if (d.action === "upsert") return upsert(d);
-  if (d.action === "syncAll") return syncAll(d);
-  if (d.action === "newMonth") return newMonth(d);
-  if (d.action === "startFresh") return startFresh(d);
-  if (d.action === "log") return { ok: true }; // the Activity Log was removed: log requests are accepted and ignored
-  return { ok: false, error: "Unknown action." };
-}
-
-function ss_() {
-  var s = null;
-  try { s = SpreadsheetApp.getActive(); } catch (e) { }
-  if (!s && SHEET_ID) s = SpreadsheetApp.openById(SHEET_ID);
-  if (!s) throw new Error("This script is not linked to your Google Sheet. Fix: open the sheet -> Extensions -> Apps Script and paste the code there, OR put the sheet ID in SHEET_ID at the top of the script, Save, then Deploy -> New deployment.");
-  return s;
-}
-// Run this ONE time in the editor (select authorize -> Run -> allow) after pasting / changing the code.
-function authorize() { var s = ss_(); Logger.log("Connected to: " + s.getName()); }
-
-function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-// A new Google Sheet tab only has 26 columns; make sure a tab is wide enough before reading/writing/styling it.
-function ensureCols(sheet, n) { var m = sheet.getMaxColumns(); if (m < n) sheet.insertColumnsAfter(m, n - m); }
-function sh(name) { var ss = ss_(); return ss.getSheetByName(name) || ss.insertSheet(name); }
-function now() { return ethStamp_(Utilities.formatDate(new Date(), "Africa/Addis_Ababa", "yyyy-MM-dd HH:mm:ss")); } // Ethiopian date + time
-function todayIso() { return Utilities.formatDate(new Date(), "Africa/Addis_Ababa", "yyyy-MM-dd"); }
-function colL(i) { var s = ""; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
-
-// ───────────── Ethiopian calendar ─────────────
-function ethiopian(y, m, d) {
-  var a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3;
-  var jdn = d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
-  var r = (jdn - 1723856) % 1461, n = (r % 365) + 365 * Math.floor(r / 1460);
-  return { y: 4 * Math.floor((jdn - 1723856) / 1461) + Math.floor(r / 365) - Math.floor(r / 1460), m: Math.floor(n / 30) + 1, d: (n % 30) + 1 };
-}
-// ── Ethiopian dates are stored in the sheet as TEXT "yyyy/mm/dd" (e.g. 2019/03/05) and "yyyy/mm/dd HH:mm:ss".
-//    (The slash tells them apart from old Gregorian "yyyy-mm-dd" values, which are converted automatically.)
-function pad2_(n) { return (n < 10 ? "0" : "") + n; }
-function ethStr_(y, m, d) { var yy = String(y); while (yy.length < 4) yy = "0" + yy; return yy + "/" + pad2_(m) + "/" + pad2_(d); }
-function ethToJx_(y, m, d) { return 365 * y + Math.floor(y / 4) + 30 * (m - 1) + (d - 1); } // days since the Ethiopian epoch (JDN 1723856)
-function ethToIso_(y, m, d) { // Ethiopian y/m/d -> Gregorian "yyyy-mm-dd"
-  var jdn = ethToJx_(y, m, d) + 1723856, a = jdn + 32044, b = Math.floor((4 * a + 3) / 146097), c = a - Math.floor(146097 * b / 4);
-  var dd = Math.floor((4 * c + 3) / 1461), e = c - Math.floor(1461 * dd / 4), mm = Math.floor((5 * e + 2) / 153);
-  var day = e - Math.floor((153 * mm + 2) / 5) + 1, month = mm + 3 - 12 * Math.floor(mm / 10), year = 100 * b + dd - 4800 + Math.floor(mm / 10);
-  return year + "-" + pad2_(month) + "-" + pad2_(day);
-}
-function isoToEth_(iso) { var s = String(iso); var e = ethiopian(+s.slice(0, 4), +s.slice(5, 7), +s.slice(8, 10)); return ethStr_(e.y, e.m, e.d); }
-function ethStamp_(isoDateTime) { var s = String(isoDateTime); return isoToEth_(s.slice(0, 10)) + s.slice(10); } // "2026-11-14 08:09:00" -> "2019/03/05 08:09:00"
-var ETH_RE = /^(\d{4})\/(\d{2})\/(\d{2})/;
-// Any date cell / text (Date object, Ethiopian text, old Gregorian text) -> Gregorian "yyyy-mm-dd" (used only for calculations), or "".
-function anyDateIso_(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, "Africa/Addis_Ababa", "yyyy-MM-dd");
-  var s = String(v == null ? "" : v), m = ETH_RE.exec(s);
-  if (m) return ethToIso_(+m[1], +m[2], +m[3]);
-  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : "";
-}
-// Any date value -> Ethiopian text (keeps the time part of a timestamp). Empty / unreadable values are returned unchanged.
-function toEthText_(v) {
-  if (v instanceof Date) return isoToEth_(Utilities.formatDate(v, "Africa/Addis_Ababa", "yyyy-MM-dd"));
-  var s = String(v == null ? "" : v);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return ethStamp_(s);
-  return v;
-}
-function monthNameOf(iso) { // "2026-11-12" (Gregorian) or "2019/03/03" (Ethiopian) -> "Hidar 2019"
-  var s = String(iso || ""), m = ETH_RE.exec(s);
-  if (m) return MONTHS[+m[2] - 1] + " " + (+m[1]);
-  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) s = todayIso();
-  var e = ethiopian(+s.slice(0, 4), +s.slice(5, 7), +s.slice(8, 10));
-  return MONTHS[e.m - 1] + " " + e.y;
-}
-var MONTH_RE = new RegExp("^(" + MONTHS.join("|") + ") (\\d{4})$");
-function monthKey(name) { var m = MONTH_RE.exec(name); return m ? (+m[2]) * 20 + MONTHS.indexOf(m[1]) : -1; }
-function monthSheets() { return ss_().getSheets().filter(function (s) { return MONTH_RE.test(s.getName()); }); }
-
-// ───────────── table look ─────────────
-var FONT = "Roboto", C = { dark: "#153a2e", teal: "#2f6f5e", gold: "#b89552", cream: "#faf8f3", line: "#e4dfd3", ink: "#26231e", mute: "#6b6558" };
-var CENTER_COLS = ["Order Code", "Status", "Order Date", "Completion Date", "Delivery Date", "Delivery Type", "Delivery Service", "Delivered To Customer", "Answer Closed", "Paid In Full", "Comments", "Created By Role", "Created At", "Last Updated"];
-var MONEY_COLS = ["Payment", "Advance", "Delivery Fee"];
-
-function styleTable(sheet, cols) {
-  ensureCols(sheet, cols);
-  var maxR = Math.max(sheet.getMaxRows(), 2), all = sheet.getRange(1, 1, maxR, cols);
-  all.setFontFamily(FONT).setFontSize(10).setFontColor(C.ink).setVerticalAlignment("middle").setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-  sheet.setHiddenGridlines(true);
-  sheet.setFrozenRows(1);
-  sheet.setRowHeight(1, 42);
-  if (maxR > 1) sheet.setRowHeights(2, maxR - 1, 28);
-  sheet.getRange(1, 1, 1, cols).setBackground(C.dark).setFontColor("#ffffff").setFontWeight("bold").setFontSize(10).setHorizontalAlignment("center").setVerticalAlignment("middle");
-  if (!sheet.getBandings().length) {
-    var bnd = all.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
-    bnd.setHeaderRowColor(C.dark).setFirstRowColor("#ffffff").setSecondRowColor(C.cream);
+window.ethDate=function(v){
+  const s=String(v==null?"":v).trim();
+  if(/^\d{4}\/\d{2}\/\d{2}/.test(s))return s.slice(0,10);
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if(!m)return s;
+  const e=gregToEth(+m[1],+m[2],+m[3]);return e.y+"/"+pad(e.m)+"/"+pad(e.d);
+};
+const days=(y,m)=>m<13?30:(y%4===3?6:5);
+// Ethiopian date -> weekday (0=Sunday) through the Julian Day Number
+const wday=(y,m,d)=>{const jdn=1723856+365*y+Math.floor(y/4)+30*m+d-31;return (jdn+1)%7;};
+const DOW=["Su","Mo","Tu","We","Th","Fr","Sa"];
+const t=new Date(),today=gregToEth(t.getFullYear(),t.getMonth()+1,t.getDate());
+const nativeVal=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+const css=document.createElement("style");css.textContent=
+".ethbtn{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:5px;padding:11px;border:1px solid #d6d1c7;border-radius:10px;background:#fff;color:#18382e;font-size:15px;font-weight:400;text-align:left}.ethbtn.empty{color:#8a8478}.ethbtn span.ic{font-size:16px}"+
+".ethov{position:fixed;inset:0;z-index:100000;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px}.ethcal{background:#fff;border-radius:16px;width:100%;max-width:340px;padding:14px;box-shadow:0 12px 40px #0006;color:#18382e}"+
+".ethhd{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px}.ethhd b{flex:1;text-align:center;font-size:15px}.ethhd button{padding:8px 12px;background:#153a2e;color:#fff;border-radius:9px;font-size:16px;line-height:1}"+
+".ethgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.ethgrid .dw{text-align:center;font-size:11px;font-weight:700;color:#8a8478;padding:4px 0}"+
+".ethgrid button.dy{padding:0;height:38px;border-radius:9px;background:#f8f6f1;color:#18382e;font-size:14px;font-weight:600}.ethgrid button.dy.td{border:1.5px solid #b89552}.ethgrid button.dy.sel{background:#153a2e;color:#fff}"+
+".ethft{display:flex;gap:8px;margin-top:12px}.ethft button{flex:1;padding:10px;border-radius:10px;font-size:13px}";
+document.head.appendChild(css);
+function make(input){
+  const form=input.form;input.type="hidden";
+  const btn=document.createElement("button");btn.type="button";btn.className="ethbtn empty";
+  const txt=document.createElement("span"),ic=document.createElement("span");ic.className="ic";ic.textContent="📅";btn.append(txt,ic);
+  function show(){
+    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
+    if(m){txt.textContent=MONTHS[+m[2]-1]+" "+(+m[3])+", "+m[1]+"  ("+m[1]+"/"+m[2]+"/"+m[3]+")";btn.classList.remove("empty");}
+    else{txt.textContent="Select date (Ethiopian calendar)";btn.classList.add("empty");}
   }
-  if (!sheet.getFilter()) all.createFilter();
-  all.setBorder(true, true, true, true, false, true, C.line, SpreadsheetApp.BorderStyle.SOLID);
-  sizeColumns(sheet, cols);
-}
-function sizeColumns(sheet, cols) {
-  sheet.autoResizeColumns(1, cols);
-  for (var c = 1; c <= cols; c++) { var w = sheet.getColumnWidth(c) + 24; if (w > 280) w = 280; if (w < 110) w = 110; sheet.setColumnWidth(c, w); }
-}
-function styleOrders(o, head) {
-  var H = function (n) { return head.indexOf(n) + 1; };
-  styleTable(o, head.length);
-  o.getRange(1, 1, 1, 5).setBackground(C.gold);                       // customer information
-  o.getRange(1, 6, 1, 2).setBackground(C.teal);                        // Order Code + Status
-  o.getRange(1, 1, 1, 7).setBorder(null, null, null, true, null, null, "#ffffff", SpreadsheetApp.BorderStyle.SOLID_THICK);
-  // colour-coded header groups so the 41 columns are easy to scan
-  [["Customer Name", "Location", C.gold], ["Order Code", "Status", C.teal], ["Order Date", "Delivery Date", "#3f6c9e"],
-   ["Product", "Additional Features", C.dark], ["Payment", "Paid In Full", "#8a5a2b"], ["Delivered To Customer", head[head.length - 1], "#5b5648"]].forEach(function (g) {
-    var a = H(g[0]), z = H(g[1]); if (a > 0 && z >= a) o.getRange(1, a, 1, z - a + 1).setBackground(g[2]);
-  });
-  o.setFrozenColumns(1);
-  if (H("ID") > 0) o.hideColumns(H("ID")); // technical ID column
-  var maxR = Math.max(o.getMaxRows(), 2), body = maxR - 1;
-  TEXT_COLS.forEach(function (n) { if (H(n)) o.getRange(2, H(n), body, 1).setNumberFormat("@"); });
-  ["Order Date", "Completion Date", "Delivery Date"].forEach(function (n) { if (H(n)) o.getRange(2, H(n), body, 1).setNumberFormat("@"); }); // Ethiopian dates are TEXT (yyyy/mm/dd) so Google never turns them into Gregorian dates
-  MONEY_COLS.forEach(function (n) { if (H(n)) o.getRange(2, H(n), body, 1).setNumberFormat("#,##0").setHorizontalAlignment("right"); });
-  CENTER_COLS.forEach(function (n) { if (H(n)) o.getRange(2, H(n), body, 1).setHorizontalAlignment("center"); });
-  o.getRange(2, H("Customer Name"), body, 1).setFontWeight("bold");
-  o.getRange(2, H("Status"), body, 1).setFontWeight("bold");
-  var sc = o.getRange(2, H("Status"), body, 1), dc = o.getRange(2, H("Delivered To Customer"), body, 1), pc = o.getRange(2, H("Paid In Full"), body, 1);
-  var rule = function (rng, text, bg, fg) { return SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(text).setBackground(bg).setFontColor(fg).setRanges([rng]).build(); };
-  o.setConditionalFormatRules([
-    rule(sc, "Confirmed", "#d6f0dc", "#14532d"), rule(sc, "Rejected", "#fbd9d9", "#8a1f1f"), rule(sc, "Pending", "#fff0c2", "#7a5a00"),
-    rule(dc, "Yes", "#d6f0dc", "#14532d"), rule(dc, "No", "#fbd9d9", "#8a1f1f"),
-    rule(pc, "Yes", "#b7e4c0", "#14532d")
-  ]);
-}
-
-// ───────────── month tabs ─────────────
-// Tabs that are no longer used are removed (their data is only a formula view of the month tabs, nothing is lost).
-function removeExtraTabs_() {
-  var ss = ss_();
-  ["Customers", "Payments", "Deliveries", "Products", "Activity Log"].forEach(function (n) {
-    var t = ss.getSheetByName(n);
-    if (t && ss.getSheets().length > 1) ss.deleteSheet(t);
-  });
-}
-function arrangeTabs() {
-  var ss = ss_(), ms = monthSheets().sort(function (a, b) { return monthKey(b.getName()) - monthKey(a.getName()); });
-  removeExtraTabs_();
-  var order = [sh("Dashboard"), sh("Find Customer"), sh("Orders View"), sh("Graphs")].concat(ms);
-  order.forEach(function (s, i) { ss.setActiveSheet(s); ss.moveActiveSheet(i + 1); });
-  var target = ms.length ? ms[0] : order[0];
-  var dd = ss.getSheetByName(DATA); // hidden helper tab always goes last
-  if (dd) { try { if (dd.isSheetHidden()) dd.showSheet(); ss.setActiveSheet(dd); ss.moveActiveSheet(ss.getNumSheets()); } catch (e) { } }
-  ss.setActiveSheet(target);
-  if (dd) { try { dd.hideSheet(); } catch (e) { } }
-}
-function getMonthSheet(name, head) {
-  var ss = ss_(), s = ss.getSheetByName(name);
-  if (s) return s;
-  s = ss.insertSheet(name);
-  ensureCols(s, head.length);
-  s.getRange(1, 1, 1, head.length).setValues([head]);
-  styleOrders(s, head);
-  arrangeTabs();
-  buildAll_(head);
-  return s;
-}
-function orderMonth(head, row) {
-  var ix = function (n) { return head.indexOf(n); }, ok = function (v) { return /^\d{4}-\d{2}-\d{2}/.test(String(v || "")); };
-  var od = anyDateIso_(row[ix("Order Date")]), ca = anyDateIso_(row[ix("Created At")]);
-  return monthNameOf(od || ca || todayIso());
-}
-// One-time (and harmless to repeat) conversion of old Gregorian dates in a month tab to Ethiopian text.
-function migrateDates_(s, head) {
-  var n = s.getLastRow(); if (n < 2) return;
-  ["Order Date", "Completion Date", "Delivery Date", "Created At", "Last Updated"].forEach(function (name) {
-    var c = head.indexOf(name) + 1; if (c < 1) return;
-    var rng = s.getRange(2, c, n - 1, 1), vals = rng.getValues(), changed = false;
-    var outV = vals.map(function (r) { var nv = toEthText_(r[0]); if (nv !== r[0]) changed = true; return [nv]; });
-    if (changed) { rng.setNumberFormat("@"); rng.setValues(outV); }
-  });
-}
-
-// ───────────── find / save one order ─────────────
-function buildIndex() {
-  IDX = {};
-  monthSheets().forEach(function (s) {
-    var n = s.getLastRow(); if (n < 2) return;
-    var h = s.getRange(1, 1, 1, Math.max(1, s.getLastColumn())).getValues()[0], c = h.indexOf("ID") + 1;
-    if (c < 1) return;
-    s.getRange(2, c, n - 1, 1).getValues().forEach(function (v, i) { if (v[0] !== "") IDX[String(v[0])] = { s: s, r: i + 2 }; });
-  });
-}
-function findOrder(id) { if (!IDX) buildIndex(); return IDX[String(id)] || null; }
-
-function saveOrder(head, row, quiet) {
-  var ix = function (n) { return head.indexOf(n); };
-  var id = String(row[ix("ID")]), loc = findOrder(id), target, r, prev = null;
-  if (loc) { target = loc.s; r = loc.r; prev = target.getRange(r, 1, 1, head.length).getValues()[0]; }
-  else {
-    // NEW ORDER GOES ON TOP (row 2, right under the header); older orders move down.
-    target = getMonthSheet(orderMonth(head, row), head); r = 2;
-    ensureCols(target, head.length);
-    target.insertRowBefore(2);
-    if (target.getMaxRows() >= 3) target.getRange(3, 1, 1, head.length).copyTo(target.getRange(2, 1, 1, head.length), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-    target.setRowHeight(2, 28);
-    Object.keys(IDX).forEach(function (k) { if (IDX[k].s.getSheetId() === target.getSheetId()) IDX[k].r++; }); // rows moved down by one
-  }
-  if (prev && prev[ix("Created At")] !== "") row[ix("Created At")] = prev[ix("Created At")];
-  target.getRange(r, 1, 1, row.length).setValues([row]);
-  IDX[id] = { s: target, r: r };
-  return { sheet: target.getName(), row: r };
-}
-
-function upsert(d) {
-  var r = saveOrder(d.head, d.row, false);
-  // Rebuild the hidden _Data source after every order/payment/status update.
-  // Dashboard KPI formulas and Graphs read _Data, so this keeps them live.
-  try { buildData_(d.head, monthSheets()); SpreadsheetApp.flush(); } catch (e) { console.error("Dashboard data refresh failed:", e); }
-  try { refreshGraphs_(); } catch (e) { }
-  return { ok: true, sheet: r.sheet, row: r.row };
-}
-
-function syncAll(d) {
-  var added = 0, updated = 0, touched = {};
-  var ci = d.head.indexOf("Created At");
-  d.rows.slice().sort(function (a, b) { return String(a[ci] || "") < String(b[ci] || "") ? -1 : String(a[ci] || "") > String(b[ci] || "") ? 1 : 0; }).forEach(function (row) { // oldest first -> newest ends on top
-    var existed = !!findOrder(row[d.head.indexOf("ID")]);
-    var r = saveOrder(d.head, row, true); touched[r.sheet] = true;
-    if (existed) updated++; else added++;
-  });
-  Object.keys(touched).forEach(function (n) { try { var s = ss_().getSheetByName(n); sizeColumns(s, d.head.length); } catch (e) { } });
-  // A bulk sync must refresh the Dashboard's hidden data table too (not just the visible order tabs).
-  try { buildData_(d.head, monthSheets()); SpreadsheetApp.flush(); } catch (e) { console.error("Dashboard data refresh failed:", e); }
-  try { refreshGraphs_(); } catch (e) { }
-  return { ok: true, added: added, updated: updated };
-}
-
-// "Start New Month": creates (or opens) the tab of the current Ethiopian month.
-function newMonth(d) {
-  var ss = ss_(), name = monthNameOf(d.date || todayIso()), existed = !!ss.getSheetByName(name);
-  var s = getMonthSheet(name, d.head);
-  ss.setActiveSheet(s);
-  return { ok: true, name: name, created: !existed, url: ss.getUrl() + "#gid=" + s.getSheetId() };
-}
-
-// "Start from ZERO" (backup): every current month tab is KEPT as a "Backup ..." tab (nothing is deleted), then a clean
-// current-month tab is created. Orders created before this moment are never written to the sheet again (the server reads CUTOFF).
-function startFresh(d) {
-  var ss = ss_(), stamp = ethStamp_(Utilities.formatDate(new Date(), "Africa/Addis_Ababa", "yyyy-MM-dd HHmm")).replace(/\//g, "-"), archived = 0, head = d.head;
-  var uniq = function (base) { var n = base.slice(0, 95), k = 1, t = n; while (ss.getSheetByName(t)) t = n + " (" + (++k) + ")"; return t; };
-  monthSheets().forEach(function (s) { s.setName(uniq("Backup " + stamp + " · " + s.getName())); s.setTabColor("#999999"); archived++; });
-  var cutoff = Date.now();
-  PropertiesService.getScriptProperties().setProperty("CUTOFF", String(cutoff));
-  var name = monthNameOf(todayIso()), s = getMonthSheet(name, head);
-  arrangeTabs(); buildAll_(head);
-  try { sh("Find Customer").getRange("B4").clearContent(); } catch (e) { }
-  ss.setActiveSheet(s);
-  return { ok: true, name: name, archived: archived, cutoff: cutoff, url: ss.getUrl() + "#gid=" + s.getSheetId() };
-}
-function sortNewestFirst_(s, head) {
-  var n = s.getLastRow(), c = head.indexOf("Created At") + 1; if (n < 3 || c < 1) return;
-  s.getRange(2, 1, n - 1, head.length).sort({ column: c, ascending: false });
-}
-function cutoff_() { return Number(PropertiesService.getScriptProperties().getProperty("CUTOFF") || 0); }
-function gidUrl_(name) { var t = ss_().getSheetByName(name); return t ? ss_().getUrl() + "#gid=" + t.getSheetId() : ""; }
-
-// Old tabs may have the columns in an older order: re-map every row by column NAME so nothing is lost or mislabeled.
-function migrate(s, head) {
-  var n = s.getLastRow(), c = s.getLastColumn(); if (c < 1) return;
-  var oldH = s.getRange(1, 1, 1, c).getValues()[0];
-  if (oldH.join("|") === head.join("|")) return;
-  var data = n > 1 ? s.getRange(2, 1, n - 1, c).getValues() : [];
-  var map = head.map(function (h) { return oldH.indexOf(h); });
-  var outRows = data.map(function (r) { return map.map(function (i) { return i < 0 ? "" : r[i]; }); });
-  ensureCols(s, Math.max(c, head.length));
-  s.showColumns(1, Math.max(c, head.length));
-  var maxR = Math.max(s.getMaxRows(), 2);
-  s.getRange(2, 1, maxR - 1, Math.max(c, head.length)).setNumberFormat("General");
-  if (c > head.length) s.getRange(1, head.length + 1, Math.max(n, 1), c - head.length).clearContent();
-  s.getRange(1, 1, 1, head.length).setValues([head]);
-  if (outRows.length) s.getRange(2, 1, outRows.length, head.length).setValues(outRows);
-}
-
-// ───────────── setup (runs on server start / Test) ─────────────
-function setup(d) {
-  var ss = ss_(), head = d.orderHead;
-  try { ss.setSpreadsheetTimeZone("Africa/Addis_Ababa"); } catch (e) { } // "today" in the graphs = Addis Ababa today
-  // An old single "Orders" tab becomes a backup; its orders are re-filed into the month tabs by the app's sync.
-  var old = ss.getSheetByName("Orders");
-  if (old) { old.setName("Old Orders (backup)"); old.setTabColor("#999999"); }
-  sh("Dashboard");
-  ss.getSheets().forEach(function (s) { // remove empty default tabs
-    var n = s.getName();
-    if (n !== "Dashboard" && n !== DATA && !MONTH_RE.test(n) && n.indexOf("Form Responses") !== 0 && n.indexOf("Old Orders") !== 0 && s.getLastRow() === 0 && s.getLastColumn() === 0 && ss.getSheets().length > 1) ss.deleteSheet(s);
-  });
-  monthSheets().forEach(function (s) { migrate(s, head); migrateDates_(s, head); styleOrders(s, head); sortNewestFirst_(s, head); }); // keep headers + column order current, newest order on top
-  var cur = getMonthSheet(monthNameOf(todayIso()), head);
-  arrangeTabs(); buildAll_(head); ensureGraphTrigger_();
-  var total = 0; monthSheets().forEach(function (s) { total += Math.max(0, s.getLastRow() - 1); });
-  return { ok: true, orders: total, month: cur.getName(), url: ss.getUrl(), summaryUrl: gidUrl_("Dashboard"), graphsUrl: gidUrl_("Graphs"), cutoff: cutoff_(), buildError: PropertiesService.getScriptProperties().getProperty("LAST_BUILD_ERROR") || "" };
-}
-
-function banner_(sh_, lastCol, text, sub) {
-  sh_.getRange(1, 1, sh_.getMaxRows(), sh_.getMaxColumns()).setFontFamily(FONT).setFontColor(C.ink);
-  sh_.setHiddenGridlines(true);
-  sh_.getRange(1, 1, 1, lastCol).merge().setValue("   " + text).setBackground(C.dark).setFontColor("#ffffff").setFontSize(18).setFontWeight("bold").setVerticalAlignment("middle").setHorizontalAlignment("left");
-  sh_.setRowHeight(1, 54);
-  sh_.getRange(2, 1, 1, lastCol).merge().setValue("   " + sub + "  ·  updated " + now()).setBackground(C.gold).setFontColor("#ffffff").setFontSize(9).setVerticalAlignment("middle");
-  sh_.setRowHeight(2, 24);
-}
-function section_(sh_, row, lastCol, text) {
-  sh_.getRange(row, 1, 1, lastCol).merge().setValue(text).setFontSize(10).setFontWeight("bold").setFontColor(C.mute).setVerticalAlignment("bottom").setBorder(null, null, true, null, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  sh_.setRowHeight(row, 30);
-}
-function tableHead_(rng) { rng.setBackground(C.dark).setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle"); }
-
-// ───────────── helper data tab (hidden) + view helpers ─────────────
-// "_Data" is ONE flat, live table of every order (date, Ethiopian month/year, status, money, product, delivery …) plus
-// "this day / week / month / year" flags. The Dashboard and the Graphs read only from here, so switching a view is instant.
-var DATA = "_Data";
-var T_VIEWS = ["Daily", "Weekly", "Monthly", "Yearly"];                       // time graphs: last 12 days / weeks / months / years
-var P_VIEWS = ["Today", "This week", "This month", "This year", "All time"];  // totals: only the chosen period
-var NPTS = 12;
-var STATUS_COLORS = ["#f2a93b", "#2e9e4f", "#d2453f"];                        // Pending, Confirmed, Rejected
-var CAL = { today: "'_Data'!$U$2", weekStart: "'_Data'!$V$2", ethMonth: "'_Data'!$W$2", ethYear: "'_Data'!$X$2" };
-
-function ensureRows(sheet, n) { var m = sheet.getMaxRows(); if (m < n) sheet.insertRowsAfter(m, n - m); }
-function dcol_(c) { return "'" + DATA + "'!$" + c + ":$" + c; }
-function ethLabel_(idx) { return "CHOOSE(MOD(" + idx + ",13)+1," + MONTHS.map(function (m) { return '"' + m + '"'; }).join(",") + ')&" "&INT((' + idx + ")/13)"; }
-
-// Count / sum for the Daily-Weekly-Monthly-Yearly graphs. m = cell (1..4), k1/k2 = this row's from/to cells.
-function tAgg_(m, k1, k2, fn, sumCol, crit) {
-  var ex = (crit || []).map(function (x) { return "," + dcol_(x[0]) + "," + x[1]; }).join(""), sc = fn === "SUMIFS" ? dcol_(sumCol) + "," : "";
-  var one = function (col, a) { return fn + "(" + sc + dcol_(col) + "," + a + ex + ")"; };
-  var range = fn + "(" + sc + dcol_("A") + ',">="&' + k1 + "," + dcol_("A") + ',"<="&' + k2 + ex + ")";
-  return "CHOOSE(" + m + "," + one("A", k1) + "," + range + "," + one("B", k1) + "," + one("C", k1) + ")";
-}
-// Count / sum for the Today / This week / This month / This year / All time views. w = cell (1..5).
-function pAgg_(w, fn, sumCol, crit) {
-  var ex = (crit || []).map(function (x) { return "," + dcol_(x[0]) + "," + x[1]; }).join(""), sc = fn === "SUMIFS" ? dcol_(sumCol) + "," : "";
-  var one = function (flag) { return fn + "(" + sc + dcol_(flag) + ",1" + ex + ")"; };
-  return "CHOOSE(" + w + "," + one("O") + "," + one("P") + "," + one("Q") + "," + one("R") + "," + one("S") + ")";
-}
-function keepSel_(s, cells) { var o = {}; cells.forEach(function (a) { try { o[a] = String(s.getRange(a).getDisplayValue()); } catch (e) { } }); return o; }
-
-// Yellow drop-down cell (merged over `span` columns). Keeps the viewer's previous choice when the tab is rebuilt.
-function dropdown_(g, row, col, span, list, kept, def) {
-  var r = g.getRange(row, col, 1, span);
-  if (span > 1) r.merge();
-  var v = kept && list.indexOf(kept) >= 0 ? kept : def;
-  r.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).setHelpText("Click the arrow and choose a view").build());
-  g.getRange(row, col).setValue(v);
-  r.setBackground("#fff4c9").setFontWeight("bold").setFontSize(11).setFontColor(C.dark).setHorizontalAlignment("center").setVerticalAlignment("middle")
-    .setBorder(true, true, true, true, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-}
-// Card header above a graph: [ title (formula) ........ VIEW ▾ [drop-down] ]
-function chartHeader_(g, row, c1, c2, titleFormula, list, kept, def) {
-  var selCol = c2 - 1, lab = selCol - 1, tEnd = lab - 1;
-  g.getRange(row, c1, 1, c2 - c1 + 1).setBackground(C.cream).setBorder(true, null, null, null, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  var t = g.getRange(row, c1, 1, tEnd - c1 + 1).merge();
-  t.setFormula(titleFormula).setFontSize(12).setFontWeight("bold").setFontColor(C.dark).setVerticalAlignment("middle").setHorizontalAlignment("left");
-  g.getRange(row, lab).setValue("VIEW  ▾").setFontSize(9).setFontWeight("bold").setFontColor(C.mute).setHorizontalAlignment("right").setVerticalAlignment("middle");
-  dropdown_(g, row, selCol, 2, list, kept, def);
-  g.setRowHeight(row, 34);
-}
-
-// Formula text: turns a column x of dates into date NUMBERS. Accepts Ethiopian text "yyyy/mm/dd[ hh:mm:ss]", old Gregorian text "yyyy-mm-dd", or a real date.
-function serialExpr_(x) {
-  var t = x + '&""', ey = 'VALUE(LEFT(' + t + ',4))';
-  return 'IF(ISNUMBER(' + x + '),' + x + ',IF(ISNUMBER(SEARCH("/",' + t + ')),365*' + ey + '+INT(' + ey + '/4)+30*(VALUE(MID(' + t + ',6,2))-1)+VALUE(MID(' + t + ',9,2))-1-691163,DATEVALUE(LEFT(' + t + ',10))))';
-}
-// Formula text: Ethiopian "Month day" label of the date number d (e.g. "Hidar 5").
-function ethDayLabelFormula_(d) {
-  return 'LET(jx,(' + d + ')+691163,rx,MOD(jx,1461),nx,MOD(rx,365)+365*INT(rx/1460),CHOOSE(INT(nx/30)+1,' + MONTHS.map(function (m) { return '"' + m + '"'; }).join(",") + ')&" "&(MOD(nx,30)+1))';
-}
-function buildData_(head, ms) {
-  var d = sh(DATA);
-  try { if (d.isSheetHidden()) d.showSheet(); } catch (e) { }
-  d.clear(); ensureCols(d, 24); ensureRows(d, 5000);
-  d.getRange(1, 1, 1, 19).setValues([["Date", "Eth month #", "Eth year", "Status", "Payment", "Advance", "Product", "Delivery Type", "Delivery Service", "Delivered", "Paid In Full", "Answer Closed", "Comments", "Delivery Fee", "Today", "This week", "This month", "This year", "All time"]]);
-  d.getRange(1, 21, 1, 4).setValues([["Today", "Week start (Mon)", "Eth month #", "Eth year"]]);
-  d.getRange("U2").setFormula("=TODAY()");
-  d.getRange("V2").setFormula("=U2-WEEKDAY(U2,2)+1");
-  d.getRange("W2").setFormula("=LET(jx,U2+691163,rx,MOD(jx,1461),nx,MOD(rx,365)+365*INT(rx/1460),(4*INT(jx/1461)+INT(rx/365)-INT(rx/1460))*13+INT(nx/30))");
-  d.getRange("X2").setFormula("=LET(jx,U2+691163,rx,MOD(jx,1461),4*INT(jx/1461)+INT(rx/365)-INT(rx/1460))");
-  d.getRange("A1:X1").setFontWeight("bold").setBackground(C.dark).setFontColor("#ffffff");
-  d.getRange("A2:C").setNumberFormat("0"); d.getRange("O2:S").setNumberFormat("0"); d.getRange("U2:X2").setNumberFormat("0");
-  d.setTabColor("#999999");
-  if (ms.length) {
-    var I = function (n) { return head.indexOf(n) + 1; }, col = function (n) { return "INDEX(ff,0," + I(n) + ")"; };
-    var num = function (n) { return "ARRAYFORMULA(IFERROR(VALUE(" + col(n) + "),0))"; };
-    var f = "LET(dd," + unionOf_(ms, head) + ",ff,FILTER(dd,INDEX(dd,0," + I("ID") + ')<>""),' +
-      "od," + col("Order Date") + ",ca," + col("Created At") + "," +
-      'd1,ARRAYFORMULA(IFERROR(' + serialExpr_("od") + ',"")),d2,ARRAYFORMULA(IFERROR(' + serialExpr_("ca") + ',"")),dt,ARRAYFORMULA(IF(d1<>"",d1,d2)),' +   // order date, else creation date (Ethiopian text is converted to a date number here)
-      'jj,ARRAYFORMULA(IF(dt="","",dt+691163)),rr,ARRAYFORMULA(IF(jj="","",MOD(jj,1461))),nn,ARRAYFORMULA(IF(jj="","",MOD(rr,365)+365*INT(rr/1460))),' +
-      'ey,ARRAYFORMULA(IF(jj="","",4*INT(jj/1461)+INT(rr/365)-INT(rr/1460))),mi,ARRAYFORMULA(IF(jj="","",ey*13+INT(nn/30))),' +  // Ethiopian year / month number
-      'fa,ARRAYFORMULA(IF(dt="",0,--(dt=$U$2))),fb,ARRAYFORMULA(IF(dt="",0,(dt>=$V$2)*(dt<=$V$2+6))),' +
-      'fc,ARRAYFORMULA(IF(mi="",0,--(mi=$W$2))),fd,ARRAYFORMULA(IF(ey="",0,--(ey=$X$2))),fe,ARRAYFORMULA(--(INDEX(ff,0,' + I("ID") + ')<>"")),' +
-      "HSTACK(dt,mi,ey," + col("Status") + "," + num("Payment") + "," + num("Advance") + "," + col("Product") + "," + col("Delivery Type") + "," + col("Delivery Service") + "," +
-      col("Delivered To Customer") + "," + col("Paid In Full") + "," + col("Answer Closed") + "," + num("Comments") + "," + num("Delivery Fee") + ",fa,fb,fc,fd,fe))";
-    d.getRange("A2").setFormula('=IFERROR(' + f + ',"")');
-  }
-  try { d.hideSheet(); } catch (e) { }
-}
-
-// One time-series table (12 rows) for the Daily / Weekly / Monthly / Yearly graphs.
-//   kind "status": Period | Pending | Confirmed | Rejected     kind "money": Period | Payment | Advance
-// Returns the cell address of the view number and the range the chart reads.
-function timeBlock_(g, r0, c0, selRef, kind) {
-  var nv = kind === "status" ? 3 : 2, kc1 = c0 + 1 + nv, kc2 = kc1 + 1, mCol = kc2 + 2;
-  var A = function (r, c) { return g.getRange(r, c).getA1Notation(); };
-  var heads = kind === "status" ? ["Period", "Pending", "Confirmed", "Rejected", "From", "To"] : ["Period", "Payment (Birr)", "Advance (Birr)", "From", "To"];
-  g.getRange(r0, c0, 1, heads.length).setValues([heads]);
-  g.getRange(r0, mCol).setValue("view #").setFontColor(C.mute).setHorizontalAlignment("right");
-  g.getRange(r0, mCol + 1).setFormula('=IFERROR(MATCH(' + selRef + ',{"Daily","Weekly","Monthly","Yearly"},0),3)');
-  var m = "$" + g.getRange(r0, mCol + 1).getA1Notation().replace(/(\d+)/, "$$$1");
-  for (var k = 0; k < NPTS; k++) {
-    var i = NPTS - 1 - k, r = r0 + 1 + k, d = CAL.today + "-" + i, w = CAL.weekStart + "-" + 7 * i, mo = "(" + CAL.ethMonth + "-" + i + ")", yr = CAL.ethYear + "-" + i;
-    g.getRange(r, c0).setFormula("=CHOOSE(" + m + "," + ethDayLabelFormula_(d) + "," + ethDayLabelFormula_(w) + "," + ethLabel_(mo) + ",TEXT(" + yr + ',"0"))');
-    g.getRange(r, kc1).setFormula("=CHOOSE(" + m + "," + d + "," + w + "," + mo + "," + yr + ")");
-    g.getRange(r, kc2).setFormula("=CHOOSE(" + m + "," + d + "," + w + "+6," + mo + "," + yr + ")");
-    var k1 = "$" + A(r, kc1).replace(/(\d+)/, "$$$1"), k2 = "$" + A(r, kc2).replace(/(\d+)/, "$$$1");
-    if (kind === "status") ["Pending", "Confirmed", "Rejected"].forEach(function (st, j) { g.getRange(r, c0 + 1 + j).setFormula("=" + tAgg_(m, k1, k2, "COUNTIFS", "", [["D", '"' + st + '"']])); });
-    else { g.getRange(r, c0 + 1).setFormula("=" + tAgg_(m, k1, k2, "SUMIFS", "E", [])); g.getRange(r, c0 + 2).setFormula("=" + tAgg_(m, k1, k2, "SUMIFS", "F", [])); }
-  }
-  tableHead_(g.getRange(r0, c0, 1, heads.length));
-  g.getRange(r0 + 1, c0 + 1, NPTS, nv).setNumberFormat("#,##0").setHorizontalAlignment("center");
-  g.getRange(r0 + 1, kc1, NPTS, 2).setNumberFormat("0").setFontColor("#9a9486").setHorizontalAlignment("center");
-  return { m: m, range: g.getRange(r0, c0, NPTS + 1, 1 + nv),
-    from: "$" + A(r0 + 1, kc1).replace(/(\d+)/, "$$$1"), to: "$" + A(r0 + NPTS, kc2).replace(/(\d+)/, "$$$1") };
-}
-
-// Fixed categories counted for the Today … All time views.  cats: [[label, criterion], …]
-function fixedBlock_(g, r0, c0, wRef, head, cats, dataCol) {
-  g.getRange(r0, c0, 1, 2).setValues([[head, "Orders"]]); tableHead_(g.getRange(r0, c0, 1, 2));
-  cats.forEach(function (c, i) {
-    g.getRange(r0 + 1 + i, c0).setValue(c[0]);
-    g.getRange(r0 + 1 + i, c0 + 1).setFormula("=" + pAgg_(wRef, "COUNTIFS", "", [[dataCol, '"' + c[1] + '"']])).setNumberFormat("#,##0").setHorizontalAlignment("center");
-  });
-  return g.getRange(r0, c0, cats.length + 1, 2);
-}
-// Top-N categories (products …) for the Today … All time views.
-function queryBlock_(sh_, r0, c0, wRef, colNo, label, limit) {
-  var c = "Col" + colNo;
-  sh_.getRange(r0, c0).setFormula('=IFERROR(QUERY(' + "'" + DATA + "'!$A$2:$S" + ',"select ' + c + ', count(' + c + ') where ' + c + ' is not null and ' + c + " <> '' and \"&CHOOSE(" + wRef + ',"Col15","Col16","Col17","Col18","Col19")&" = 1 group by ' + c + ' order by count(' + c + ') desc limit ' + limit + ' label ' + c + " '" + label + "', count(" + c + ") 'Orders'\",0),{\"" + label + '","Orders";"no orders",0})');
-}
-
-// Totals for the Graphs tab: the same window as the time graphs (first From … last To), so a graph is never empty just because "today" has no orders.
-function wAgg_(m, from, to, fn, sumCol, crit) {
-  var ex = (crit || []).map(function (x) { return "," + dcol_(x[0]) + "," + x[1]; }).join(""), sc = fn === "SUMIFS" ? dcol_(sumCol) + "," : "";
-  var rng = function (col) { return fn + "(" + sc + dcol_(col) + ',">="&' + from + "," + dcol_(col) + ',"<="&' + to + ex + ")"; };
-  return "CHOOSE(" + m + "," + rng("A") + "," + rng("A") + "," + rng("B") + "," + rng("C") + ")";
-}
-function fixedBlockW_(g, r0, c0, A, head, cats, dataCol) {
-  g.getRange(r0, c0, 1, 2).setValues([[head, "Orders"]]); tableHead_(g.getRange(r0, c0, 1, 2));
-  cats.forEach(function (c, i) {
-    g.getRange(r0 + 1 + i, c0).setValue(c[0]);
-    g.getRange(r0 + 1 + i, c0 + 1).setFormula("=" + wAgg_(A.m, A.from, A.to, "COUNTIFS", "", [[dataCol, '"' + c[1] + '"']])).setNumberFormat("#,##0").setHorizontalAlignment("center");
-  });
-  return g.getRange(r0, c0, cats.length + 1, 2);
-}
-function queryBlockW_(sh_, r0, c0, A, colNo, label, limit) {
-  var c = "Col" + colNo, dc = 'CHOOSE(' + A.m + ',"Col1","Col1","Col2","Col3")';
-  sh_.getRange(r0, c0).setFormula('=IFERROR(QUERY(' + "'" + DATA + "'!$A$2:$S" + ',"select ' + c + ', count(' + c + ') where ' + c + " is not null and " + c + " <> '' and \"&" + dc + '&" >= "&' + A.from + '&" and "&' + dc + '&" <= "&' + A.to +
-    '&" group by ' + c + ' order by count(' + c + ') desc limit ' + limit + ' label ' + c + " '" + label + "', count(" + c + ") 'Orders'\",0),{\"" + label + '","Orders";"no orders",0})');
-}
-function viewNo_(g, r, c, label, selRef, list) {
-  g.getRange(r, c).setValue(label).setFontColor(C.mute).setHorizontalAlignment("right");
-  g.getRange(r, c + 1).setFormula("=IFERROR(MATCH(" + selRef + ",{" + list.map(function (x) { return '"' + x + '"'; }).join(",") + "},0)," + list.length + ")");
-  return "$" + g.getRange(r, c + 1).getA1Notation().replace(/(\d+)/, "$$$1");
-}
-
-// ───────────── chart look ─────────────
-var AXES = { hAxis: { textStyle: { color: C.mute, fontSize: 10 }, baselineColor: C.line }, vAxis: { textStyle: { color: C.mute, fontSize: 10 }, gridlines: { color: "#ece8de" }, baselineColor: C.line, minValue: 0 } };
-// Only the basic, always-supported chart settings are used (colours, stacking, legend, donut hole, bar width, size).
-// Fancy styling (fonts, axis objects, chart-area boxes) is NOT sent, because one unsupported option makes Google Sheets draw an empty frame.
-var SAFE_OPTS_ = { colors: 1, isStacked: 1, pieHole: 1, pieSliceText: 1, sliceVisibilityThreshold: 1, bar: 1 };
-function addChart_(g, type, rng, row, col, w, h, opts) {
-  var ch = g.newChart().setChartType(type).addRange(rng).setNumHeaders(1).setPosition(row, col, 0, 0)
-    .setOption("width", w).setOption("height", h)
-    .setOption("legend", { position: (opts && opts.legend && opts.legend.position === "none") ? "none" : (type === Charts.ChartType.PIE ? "right" : "bottom") });
-  Object.keys(opts || {}).forEach(function (k) { if (SAFE_OPTS_[k]) ch.setOption(k, opts[k]); });
-  g.insertChart(ch.build());
-}
-function colOpts_(colors, stacked) { return { colors: colors, isStacked: !!stacked, bar: { groupWidth: "58%" }, hAxis: AXES.hAxis, vAxis: AXES.vAxis }; }
-function donutOpts_(colors) { return { colors: colors, pieHole: 0.6, pieSliceText: "percentage", pieSliceBorderColor: "#ffffff", sliceVisibilityThreshold: 0, pieSliceTextStyle: { color: "#ffffff", fontSize: 12, bold: true }, legend: { position: "right", textStyle: { color: C.ink, fontSize: 11 } }, chartArea: { left: 16, top: 16, width: "92%", height: "84%" } }; }
-function viewWord_(m) { return 'CHOOSE(' + m + ',"days","weeks","months (Ethiopian)","years (Ethiopian)")'; }
-
-// ───────────── Dashboard ─────────────
-function buildDashboard(head) {
-  var b = sh("Dashboard"), ms = monthSheets().sort(function (a, c) { return monthKey(c.getName()) - monthKey(a.getName()); });
-  var keep = keepSel_(b, ["B3"]);
-  b.getCharts().forEach(function (c) { b.removeChart(c); });
-  try { b.getRange(1, 1, b.getMaxRows(), b.getMaxColumns()).breakApart(); } catch (e) { }
-  b.clear(); b.getRange(1, 1, b.getMaxRows(), b.getMaxColumns()).clearDataValidations(); b.setConditionalFormatRules([]);
-  ensureCols(b, 16); ensureRows(b, 80); b.setRowHeights(1, 80, 21);
-  for (var c = 1; c <= 6; c++) b.setColumnWidth(c, 175);
-  b.setColumnWidth(7, 24);
-  banner_(b, 6, "AMBAR FURNITURE  ·  Summary", "Live numbers — switch the period with the yellow box (Today · This week · This month · This year · All time)");
-  b.setTabColor(C.dark);
-  if (!ms.length) { b.getRange("A4").setValue("No orders yet."); return; }
-  var H = function (n) { return head.indexOf(n) + 1; }, ID = colL(H("ID")), cur = monthNameOf(todayIso());
-
-  // controls
-  b.getRange("A3").setValue("VIEW  ▾").setFontSize(10).setFontWeight("bold").setFontColor(C.mute).setHorizontalAlignment("right").setVerticalAlignment("middle");
-  dropdown_(b, 3, 2, 2, P_VIEWS, keep["B3"], "All time");
-  b.getRange("D3:F3").merge().setValue("◄ click the yellow box to change the period of the numbers below").setFontSize(9).setFontColor(C.mute).setVerticalAlignment("middle");
-  b.setRowHeight(3, 38);
-  // hidden-in-plain-sight helper cells (bottom of the tab)
-  var DR = 39;
-  section_(b, DR, 6, "HELPER CELL  (do not type here)");
-  var w = viewNo_(b, DR + 1, 1, "numbers view #", "$B$3", P_VIEWS);
-  b.getRange(DR + 1, 1, 1, 8).setFontSize(9);
-
-  // key numbers
-  b.getRange(4, 1, 1, 6).merge().setFormula('="KEY NUMBERS  ·  "&UPPER($B$3)').setFontSize(10).setFontWeight("bold").setFontColor(C.mute).setVerticalAlignment("bottom").setBorder(null, null, true, null, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  b.setRowHeight(4, 30);
-  var cnt = function (col, v) { return "=" + pAgg_(w, "COUNTIFS", "", [[col, '"' + v + '"']]); }, sum = function (col) { return "=" + pAgg_(w, "SUMIFS", col, []); };
-  var tiles = [
-    ["TOTAL ORDERS", "=" + pAgg_(w, "COUNTIFS", "", []), C.dark],
-    ["THIS MONTH · " + cur.toUpperCase(), "=IFERROR(COUNTA('" + cur + "'!" + ID + "2:" + ID + "),0)", C.dark],
-    ["PENDING", cnt("D", "Pending"), "#b07d00"],
-    ["CONFIRMED", cnt("D", "Confirmed"), "#1f8a4c"],
-    ["REJECTED", cnt("D", "Rejected"), "#c0392b"],
-    ["PAID IN FULL", cnt("K", "Yes"), "#1f8a4c"],
-    ["CARDS DELIVERED", cnt("J", "Yes"), "#1f8a4c"],
-    ["CARDS NOT DELIVERED", cnt("J", "No"), "#c0392b"],
-    ["CUSTOMER ANSWERED", cnt("L", "Yes"), C.dark],
-    ["CUSTOMER COMMENTS", sum("M"), C.dark],
-    ["DELIVERY FEES (BIRR)", sum("N"), C.dark],
-    ["ADVANCE PAID (BIRR)", sum("F"), C.dark]
-  ];
-  tiles.forEach(function (t, i) {
-    var r = 5 + Math.floor(i / 6) * 3, c = 1 + (i % 6);
-    var lab = b.getRange(r, c), val = b.getRange(r + 1, c);
-    lab.setValue(t[0]).setFontSize(8).setFontWeight("bold").setFontColor(C.mute).setBackground(C.cream).setHorizontalAlignment("center").setVerticalAlignment("bottom");
-    val.setFormula(t[1]).setFontSize(24).setFontWeight("bold").setFontColor(t[2]).setBackground(C.cream).setHorizontalAlignment("center").setVerticalAlignment("middle").setNumberFormat("#,##0");
-    b.getRange(r, c, 2, 1).setBorder(true, true, true, true, false, false, C.line, SpreadsheetApp.BorderStyle.SOLID);
-    b.getRange(r, c, 2, 1).setBorder(null, true, null, true, null, null, "#ffffff", SpreadsheetApp.BorderStyle.SOLID_THICK);
-    b.setRowHeight(r, 26); b.setRowHeight(r + 1, 50);
-  });
-  b.setRowHeight(7, 12); b.setRowHeight(10, 12);
-
-  // breakdown (follows the period chosen at the top)
-  b.getRange(12, 1, 1, 6).merge().setFormula('="BREAKDOWN  ·  "&UPPER($B$3)').setFontSize(10).setFontWeight("bold").setFontColor(C.mute).setVerticalAlignment("bottom").setBorder(null, null, true, null, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  b.setRowHeight(12, 30);
-  queryBlock_(b, 13, 1, w, 7, "Product", 10);
-  queryBlock_(b, 13, 3, w, 8, "Delivery type", 10);
-  queryBlock_(b, 13, 5, w, 9, "Delivery service", 10);
-  ["A13:B13", "C13:D13", "E13:F13"].forEach(function (a) { tableHead_(b.getRange(a)); });
-  b.setRowHeight(13, 30);
-  b.getRange("A14:F23").setBorder(null, null, true, null, null, true, C.line, SpreadsheetApp.BorderStyle.SOLID);
-  ["B14:B23", "D14:D23", "F14:F23"].forEach(function (a) { b.getRange(a).setHorizontalAlignment("center").setFontWeight("bold"); });
-  ["A14:A23", "C14:C23", "E14:E23"].forEach(function (a) { b.getRange(a).setBackground(C.cream); });
-
-  // latest orders (replaces the old "latest movements" list)
-  section_(b, 25, 6, "LATEST 10 ORDERS");
-  b.getRange(26, 1, 1, 6).setValues([["Order", "Customer", "Product", "Status", "Order date", "Completion date"]]); tableHead_(b.getRange("A26:F26")); b.setRowHeight(26, 30);
-  b.getRange("A27").setFormula("=IFERROR(CHOOSECOLS(ARRAY_CONSTRAIN('Orders View'!A5:K,10,11),1,2,8,4,5,6),\"no orders yet\")");
-  var body = b.getRange("A27:F36");
-  body.setBorder(null, null, true, null, null, true, C.line, SpreadsheetApp.BorderStyle.SOLID).setFontSize(10).setHorizontalAlignment("center").setVerticalAlignment("middle");
-  b.getRange("A27:A36").setFontWeight("bold"); // order / completion dates arrive as Ethiopian text (yyyy/mm/dd)
-  var sc = b.getRange("D27:D36"), rules = [];
-  STATUS_RULES.slice(0, 3).forEach(function (r) { rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(r[0]).setBackground(r[1]).setFontColor(r[2]).setRanges([sc]).build()); });
-  b.setConditionalFormatRules(rules);
-}
-
-// ───────────── Graphs ─────────────
-// ONE yellow drop-down (cell B3) controls EVERY graph on this tab: Daily · Weekly · Monthly · Yearly.
-// The numbers behind the graphs are calculated by this script and written as plain values (no formulas), so the graphs always show.
-// They are refreshed (1) when you change the drop-down, (2) whenever an order is saved, (3) when the sheet is rebuilt.
-function chartTitle_(g, row, c1, c2) {
-  var r = g.getRange(row, c1, 1, c2 - c1 + 1);
-  r.setBackground(C.cream).setBorder(true, null, null, null, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  r.merge().setFontSize(12).setFontWeight("bold").setFontColor(C.dark).setVerticalAlignment("middle").setHorizontalAlignment("left");
-  g.setRowHeight(row, 34);
-}
-var GRAPH_VIEWS = ["Daily", "Weekly", "Monthly", "Yearly"];
-
-// ----- pure calculation (tested outside Google Sheets) -----
-// orders: [{ date: "yyyy-mm-dd", status, payment, advance, product, deliveryType, deliveryService, delivered }]
-function dayNum_(iso) { var p = String(iso).slice(0, 10).split("-"); return Math.floor(Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000); }
-function dayLabel_(n) { var d = new Date(n * 86400000), e = ethiopian(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); return MONTHS[e.m - 1] + " " + e.d; } // Ethiopian "Hidar 5"
-function dayEth_(n) { var d = new Date(n * 86400000), e = ethiopian(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); return { y: e.y, mi: e.y * 13 + (e.m - 1) }; }
-function computeGraphData_(orders, view, todayIso_) {
-  var t = dayNum_(todayIso_), mb = ((t + 4) % 7 + 6) % 7, ws = t - mb, te = dayEth_(t), vi = Math.max(0, GRAPH_VIEWS.indexOf(view)), periods = [];
-  for (var k = NPTS - 1; k >= 0; k--) {
-    if (vi === 0) periods.push({ label: dayLabel_(t - k), a: t - k, b: t - k, key: "d" });
-    else if (vi === 1) periods.push({ label: dayLabel_(ws - 7 * k), a: ws - 7 * k, b: ws - 7 * k + 6, key: "d" });
-    else if (vi === 2) { var ix = te.mi - k; periods.push({ label: MONTHS[((ix % 13) + 13) % 13] + " " + Math.floor(ix / 13), a: ix, b: ix, key: "mi" }); }
-    else periods.push({ label: String(te.y - k), a: te.y - k, b: te.y - k, key: "y" });
-  }
-  var rows = orders.map(function (o) { var n = dayNum_(o.date), e = dayEth_(n); return { o: o, d: n, mi: e.mi, y: e.y }; });
-  var inP = function (r, p) { var v = p.key === "d" ? r.d : p.key === "mi" ? r.mi : r.y; return v >= p.a && v <= p.b; };
-  var win = function (r) { return periods.some(function (p) { return inP(r, p); }); };
-  var status = [], money = [];
-  periods.forEach(function (p) {
-    var pend = 0, conf = 0, rej = 0, pay = 0, adv = 0;
-    rows.forEach(function (r) {
-      if (!inP(r, p)) return;
-      var st = r.o.status; if (st === "Confirmed") conf++; else if (st === "Rejected") rej++; else pend++;
-      pay += Number(r.o.payment) || 0; adv += Number(r.o.advance) || 0;
-    });
-    status.push([p.label, pend, conf, rej]); money.push([p.label, pay, adv]);
-  });
-  var inWin = rows.filter(win).map(function (r) { return r.o; }), count = function (fn) { return inWin.filter(fn).length; };
-  var prod = {}; inWin.forEach(function (o) { var k = String(o.product || "").trim(); if (k) prod[k] = (prod[k] || 0) + 1; });
-  var products = Object.keys(prod).map(function (k) { return [k, prod[k]]; }).sort(function (x, y) { return y[1] - x[1]; }).slice(0, 8);
-  var noOrders = !inWin.length;
-  return {
-    view: GRAPH_VIEWS[vi], total: inWin.length, status: status, money: money,
-    pie: {
-      status: [["Pending", count(function (o) { return o.status !== "Confirmed" && o.status !== "Rejected"; })], ["Confirmed", count(function (o) { return o.status === "Confirmed"; })], ["Rejected", count(function (o) { return o.status === "Rejected"; })]],
-      products: products.length ? products : [["no orders", 0]],
-      delivery: [["Self Pick Up", count(function (o) { return o.deliveryType === "Self Pick Up"; })], ["By Ambar Delivery", count(function (o) { return o.deliveryType === "By Ambar Delivery"; })]],
-      cards: [["Delivered", count(function (o) { return o.delivered === "Yes"; })], ["Not delivered", count(function (o) { return o.delivered !== "Yes"; })]],
-      service: [["Economy", count(function (o) { return o.deliveryService === "Economy"; })], ["Express", count(function (o) { return o.deliveryService === "Express"; })]]
-    },
-    noOrders: noOrders
-  };
-}
-
-// ----- read the orders from the month tabs -----
-function cellDate_(v) { return anyDateIso_(v); } // Gregorian "yyyy-mm-dd" for the calculations (cells hold Ethiopian text or old dates)
-function readOrdersForGraphs_() {
-  var out = [];
-  monthSheets().forEach(function (s) {
-    var n = s.getLastRow(), c = s.getLastColumn(); if (n < 2 || c < 1) return;
-    var all = s.getRange(1, 1, n, c).getValues(), h = all[0], ix = function (name) { return h.indexOf(name); };
-    var iId = ix("ID"), iOd = ix("Order Date"), iCa = ix("Created At");
-    for (var r = 1; r < all.length; r++) {
-      var row = all[r]; if (iId < 0 || String(row[iId]) === "") continue;
-      var date = cellDate_(iOd >= 0 ? row[iOd] : "") || cellDate_(iCa >= 0 ? row[iCa] : "") || todayIso();
-      var g = function (name) { var i = ix(name); return i < 0 ? "" : row[i]; };
-      out.push({ date: date, status: String(g("Status")), payment: g("Payment"), advance: g("Advance"), product: g("Product"), deliveryType: String(g("Delivery Type")), deliveryService: String(g("Delivery Service")), delivered: String(g("Delivered To Customer")) });
+  function setVal(v){nativeVal.set.call(input,v);show();}
+  function open(){
+    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
+    const sel=m?{y:+m[1],m:+m[2],d:+m[3]}:null;
+    let vy=sel?sel.y:today.y,vm=sel?sel.m:today.m;
+    const ov=document.createElement("div");ov.className="ethov";
+    const cal=document.createElement("div");cal.className="ethcal";ov.appendChild(cal);
+    const close=()=>ov.remove();
+    ov.addEventListener("click",e=>{if(e.target===ov)close();});
+    function render(){
+      cal.innerHTML="";
+      const hd=document.createElement("div");hd.className="ethhd";
+      const prev=document.createElement("button"),next=document.createElement("button"),title=document.createElement("b");
+      prev.type=next.type="button";prev.textContent="‹";next.textContent="›";title.textContent=MONTHS[vm-1]+" "+vy;
+      prev.onclick=()=>{vm--;if(vm<1){vm=13;vy--;}render();};
+      next.onclick=()=>{vm++;if(vm>13){vm=1;vy++;}render();};
+      hd.append(prev,title,next);cal.appendChild(hd);
+      const g=document.createElement("div");g.className="ethgrid";
+      DOW.forEach(n=>{const c=document.createElement("div");c.className="dw";c.textContent=n;g.appendChild(c);});
+      const first=wday(vy,vm,1);
+      for(let i=0;i<first;i++)g.appendChild(document.createElement("div"));
+      const max=days(vy,vm);
+      for(let d=1;d<=max;d++){
+        const b=document.createElement("button");b.type="button";b.className="dy";b.textContent=d;
+        if(vy===today.y&&vm===today.m&&d===today.d)b.classList.add("td");
+        if(sel&&vy===sel.y&&vm===sel.m&&d===sel.d)b.classList.add("sel");
+        b.onclick=()=>{setVal(vy+"/"+pad(vm)+"/"+pad(d));input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
+        g.appendChild(b);
+      }
+      cal.appendChild(g);
+      const ft=document.createElement("div");ft.className="ethft";
+      const bt=document.createElement("button"),bc=document.createElement("button"),bx=document.createElement("button");
+      bt.type=bc.type=bx.type="button";bt.className="gold";bc.className="danger";bx.className="primary";
+      bt.textContent="Today";bc.textContent="Clear";bx.textContent="Close";
+      bt.onclick=()=>{setVal(today.y+"/"+pad(today.m)+"/"+pad(today.d));input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
+      bc.onclick=()=>{setVal("");input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
+      bx.onclick=close;
+      ft.append(bt,bc,bx);cal.appendChild(ft);
     }
-  });
-  return out;
+    render();document.body.appendChild(ov);
+  }
+  btn.addEventListener("click",open);
+  // setting form.elements.orderDate.value = "..." in code (edit mode, reset) keeps working and also accepts old Gregorian dates
+  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){setVal(window.ethDate(v));}});
+  if(form)form.addEventListener("reset",()=>setTimeout(()=>{input.value="";},0));
+  show();
+  input.parentNode.appendChild(btn);
 }
+["orderDate","completionDate","deliveryDate"].forEach(n=>{const el=document.querySelector('#orderForm [name="'+n+'"]');if(el&&el.type==="date")make(el);});
+})();
+</script>
+<script>
+const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
+// Authenticate every API request with Telegram's signed Mini App initData. Keep FormData headers untouched.
+(()=>{const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const h=new Headers(init.headers||{});const data=window.Telegram?.WebApp?.initData||"";if(data)h.set("x-telegram-init-data",data);try{const k=localStorage.getItem("ownerKey");if(k)h.set("x-setup-key",k);}catch{}return nativeFetch(input,{...init,headers:h});};})();
+// Bot-only delivery: no Telegram Business status check or personal-account connection is needed.
+const form=document.getElementById("orderForm"),preview=document.getElementById("preview"),result=document.getElementById("result");
+const photoInput=document.getElementById("productPhoto"),photoStatus=document.getElementById("photoStatus"),photoPreview=document.getElementById("selectedPhotoPreview");
+let photoUrl=null;
+function vals(){
+ const v=Object.fromEntries(new FormData(form).entries());
+ if(v.deliveryType!=="By Ambar Delivery"){v.deliveryFee="";v.deliveryService="";}
+ return v;
+}
+const productSelect=document.getElementById("productSelect"),productOther=document.getElementById("productOther"),productOtherWrap=document.getElementById("productOtherWrap"),productValue=document.getElementById("productValue");
+const CUSTOM_KEY="customProducts";
+function loadCustomProducts(){try{return JSON.parse(localStorage.getItem(CUSTOM_KEY)||"[]");}catch{return [];}}
+function saveCustomProduct(name){try{const l=loadCustomProducts();if(!l.some(x=>x.toLowerCase()===name.toLowerCase())){l.push(name);localStorage.setItem(CUSTOM_KEY,JSON.stringify(l));}}catch{}}
+function addProductOption(name){if(!name)return;if([...productSelect.options].some(o=>o.value.toLowerCase()===name.toLowerCase()))return;const o=document.createElement("option");o.value=name;o.textContent=name;productSelect.insertBefore(o,productSelect.querySelector('option[value="__other"]'));}
+loadCustomProducts().forEach(addProductOption);
+const sizeSelect=document.getElementById("sizeSelect"),sizeWrap=document.getElementById("sizeWrap");
+const dimInputs=["length","width","height"].map(n=>form.querySelector('[name="'+n+'"]'));
+let fillingSize=false;
+function isShoeShelf(){return String(productValue.value||"").trim().toLowerCase()==="shoe shelf";}
+function syncSize(){const show=isShoeShelf();sizeWrap.style.display=show?"":"none";if(!show)sizeSelect.value="";}
+function applySize(){
+  const v=sizeSelect.value;
+  if(!v)return;
+  if(v==="__other"){dimInputs.forEach(i=>{i.value="";});dimInputs[0].focus();previewCard();return;} // type the size yourself
+  const [l,w,h]=v.split("|");fillingSize=true;
+  [l,w,h].forEach((x,i)=>{dimInputs[i].value=x;});
+  fillingSize=false;previewCard();
+}
+sizeSelect.addEventListener("change",applySize);
+// if the size is typed/edited by hand after choosing a preset, show it as "Other"
+dimInputs.forEach(i=>i.addEventListener("input",()=>{if(fillingSize||!isShoeShelf())return;const cur=dimInputs.map(x=>x.value.trim()).join("|");const match=[...sizeSelect.options].find(o=>o.value&&o.value!=="__other"&&o.value===cur);sizeSelect.value=match?match.value:"__other";}));
+function syncProduct(){const other=productSelect.value==="__other";productOtherWrap.style.display=other?"":"none";productOther.required=other;productValue.value=other?productOther.value.trim():productSelect.value;syncSize();}
+productSelect.addEventListener("change",()=>{syncProduct();if(productSelect.value==="__other")productOther.focus();});
+productOther.addEventListener("input",syncProduct);
+// when the typed name is finished, add it to the selection list and select it
+productOther.addEventListener("change",()=>{const n=productOther.value.trim();if(!n)return;addProductOption(n);saveCustomProduct(n);const match=[...productSelect.options].find(o=>o.value.toLowerCase()===n.toLowerCase());if(match)productSelect.value=match.value;syncProduct();previewCard();});
+form.addEventListener("reset",()=>setTimeout(()=>{productOther.value="";syncProduct();},0));
+syncProduct();
+function esc(v){return String(v??"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function field(k,v){return v?`<div class="info"><b>${esc(k)}</b><br>${esc(v)}</div>`:"";}
+function setPhoto(file){
+ if(photoUrl){URL.revokeObjectURL(photoUrl);photoUrl=null;}
+ photoPreview.hidden=true; photoPreview.removeAttribute("src"); photoName.textContent="No photo selected";
+ if(!file){photoStatus.textContent="Choose any photo format supported by your browser (image/*).";previewCard();return;}
+ const isImage=(file.type||"").toLowerCase().startsWith("image/");
+ if(!isImage){photoInput.value="";photoStatus.textContent="❌ Please choose a photo/image file supported by your browser.";return;}
+ if(file.size>15*1024*1024){photoInput.value="";photoStatus.textContent="❌ Image must be 15 MB or smaller.";return;}
+ photoUrl=URL.createObjectURL(file);
+ photoPreview.src=photoUrl; photoPreview.hidden=false;
+ photoName.textContent=file.name;
+ photoStatus.textContent=`Selected: ${file.name} (${(file.size/1048576).toFixed(2)} MB)`;
+ previewCard();
+}
+photoInput.addEventListener("change",()=>setPhoto(photoInput.files?.[0]||null));
+const photoDropZone=document.getElementById("photoDropZone"), photoName=document.getElementById("photoName");
+["dragenter","dragover"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="#b89552";}));
+["dragleave","drop"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="";}));
+photoDropZone.addEventListener("drop",e=>{const f=e.dataTransfer.files?.[0];if(!f)return;try{const dt=new DataTransfer();dt.items.add(f);photoInput.files=dt.files;}catch(_){}setPhoto(f);});
+function previewCard(){
+ const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
+ const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k]))),field("Additional features",v.additionalFeatures)].filter(Boolean).join("");
+ const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
+ const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Order Date",v.orderDate),field("Completion Date",v.completionDate),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
+ preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Order code")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div></div>`;
+}
+function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
+function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=()=>{URL.revokeObjectURL(u);no(Error("Unable to read selected photo."))};i.src=u;});}
+function drawWrap(ctx,text,x,y,max){const words=String(text).split(/\s+/);let line="";for(const word of words){const t=line?line+" "+word:word;if(ctx.measureText(t).width>max&&line){ctx.fillText(line,x,y);line=word;y+=32;}else line=t;}if(line){ctx.fillText(line,x,y);y+=40;}return y;}
+async function makeCard(v,file){
+ const img=await loadImg(file),c=document.createElement("canvas");c.width=1080;c.height=1920;const x=c.getContext("2d");if(!x)throw Error("Canvas image generation is not supported in this browser.");
+ const W=1080,pad=64; x.fillStyle="#e9e5da";x.fillRect(0,0,W,1920);
+ // card body with soft shadow
+ x.save();x.shadowColor="rgba(15,42,33,.28)";x.shadowBlur=36;x.shadowOffsetY=10;x.fillStyle="#fff";rounded(x,24,24,W-48,1872,34);x.restore();
+ // header (clipped to the rounded card)
+ x.save();x.beginPath();x.roundRect(24,24,W-48,1872,34);x.clip();
+ const g=x.createLinearGradient(24,24,W-24,204);g.addColorStop(0,"#0f2f25");g.addColorStop(1,"#1b4d3d");x.fillStyle=g;x.fillRect(24,24,W-48,180);
+ x.fillStyle="#ffa939";x.fillRect(24,200,W-48,5);
+ x.fillStyle="#f6f3ec";x.fillRect(24,205,W-48,1691);x.restore();
+ x.fillStyle="#ffa939";x.font="800 50px Arial";x.fillText("AMBAR FURNITURE",pad,98);
+ x.fillStyle="rgba(244,239,227,.82)";x.font="600 22px Arial";x.fillText("CUSTOMER ORDER CARD",pad,142);
+ x.fillStyle="rgba(255,255,255,.14)";rounded(x,786,66,230,72,36);x.strokeStyle="rgba(255,255,255,.35)";x.lineWidth=2;x.beginPath();x.roundRect(786,66,230,72,36);x.stroke();
+ x.fillStyle="#fff";x.font="800 28px Arial";x.textAlign="center";x.fillText(v.orderId||"",901,113);x.textAlign="left";
+ // Product image panel
+ x.save();x.shadowColor="rgba(0,0,0,.14)";x.shadowBlur=20;x.shadowOffsetY=6;x.fillStyle="#fff";rounded(x,pad,226,W-pad*2,580,24);x.restore();
+ const maxW=W-pad*2-36,maxH=540,scale=Math.min(maxW/img.width,maxH/img.height),iw=img.width*scale,ih=img.height*scale;
+ x.save();x.beginPath();x.roundRect(pad+18,246,maxW,maxH,16);x.clip();x.drawImage(img,pad+18+(maxW-iw)/2,246+(maxH-ih)/2,iw,ih);x.restore();
+ let y=852;
+ const section=t=>{x.fillStyle="#ffa939";rounded(x,pad,y-22,7,28,3);x.fillStyle="#153a2e";x.font="800 22px Arial";x.fillText(t.toUpperCase(),pad+22,y);y+=42;};
+ const line=(k,val)=>{if(!String(val??"").trim())return;const text=String(val);x.fillStyle="#8a7f69";x.font="800 19px Arial";x.fillText(k.toUpperCase(),pad,y);x.fillStyle="#14211b";x.font="600 22px Arial";let yy=y;const max=850;const words=text.split(/\s+/);let line="";for(const w of words){const t=line?line+" "+w:w;if(x.measureText(t).width>max&&line){x.fillText(line,pad+190,yy);yy+=29;line=w}else line=t}if(line)x.fillText(line,pad+190,yy);y=Math.max(y+32,yy+38)};
+ const divider=()=>{x.strokeStyle="#e0dacd";x.lineWidth=2;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
+ section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));line("Extra features",v.additionalFeatures);
+ divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
+ divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Order date",v.orderDate);line("Completion date",v.completionDate);line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
+ const tg=x.createLinearGradient(pad,1790,W-pad,1864);tg.addColorStop(0,"#0f2f25");tg.addColorStop(1,"#1b4d3d");x.fillStyle=tg;rounded(x,pad,1790,W-pad*2,74,18);x.fillStyle="#ffa939";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
+ return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate card image.")),"image/jpeg",0.95));
+}
+const deliveryFeeField=document.getElementById("deliveryFeeField"),deliveryServiceField=document.getElementById("deliveryServiceField");
+function syncDelivery(){
+ const isDelivery=form.elements.deliveryType.value==="By Ambar Delivery";
+ deliveryFeeField.style.display=isDelivery?"":"none";
+ deliveryServiceField.style.display=isDelivery?"":"none";
+ if(!isDelivery) form.elements.deliveryFee.value="";
+}
+form.elements.deliveryType.addEventListener("change",()=>{syncDelivery();previewCard();});
+form.addEventListener("reset",()=>setTimeout(syncDelivery));
+syncDelivery();
+form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
+form.addEventListener("submit",async e=>{
+ e.preventDefault();if(productSelect.value==="__other"){const n=productOther.value.trim();if(n){addProductOption(n);saveCustomProduct(n);}}syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product (or type it if you chose Other).";(productSelect.value==="__other"?productOther:productSelect).focus();return;}const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Please type the Order code.";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
+ const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.jpg`);btn.textContent="Sending order card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||("Order card sent to the customer from "+(d.sentFrom||"your Telegram account")+"."))+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but the card was not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
+});
+previewCard();
+</script>
+<script>
+// ✏️ Edit mode: opened from the "✏️ Edit order" button in the admin bot  (…/?edit=<order id>).
+// The form is pre-filled; saving updates the SAME order (and the same Google Sheet row) instead of creating a new one.
+(function(){
+const editId=new URLSearchParams(location.search).get("edit");if(!editId)return;
+const FIELDS=["orderId","length","width","height","material","color","style","design","handle","door","partition","drawer","additionalFeatures","customerName","phone","location","telegramUsername","telegramPhone","payment","advance","orderDate","completionDate","deliveryType","deliveryService","deliveryFee","deliveryDate"];
+const submitBtn=form.querySelector('button[type="submit"]');let order=null,saving=false;
+document.querySelector("header .sub").textContent="✏️ Edit order";
+submitBtn.textContent="💾 Save changes";photoInput.required=false;
+document.getElementById("photoStatus").textContent="Keep the current product photo, or choose a new one to replace it.";
+const pick=document.getElementById("pickWrap");if(pick)pick.style.display="none";
+(async()=>{
+  try{
+    const r=await fetch("/api/orders/"+encodeURIComponent(editId)),d=await r.json();
+    if(!r.ok||!d.ok)throw Error(d.error||"Could not load the order.");
+    order=d.order;
+    if(order.paidFull){result.textContent="🔒 This order is closed (paid in full). It can no longer be edited.";submitBtn.disabled=true;form.querySelectorAll("input,select,textarea,button").forEach(el=>{el.disabled=true;});}
+    FIELDS.forEach(k=>{const el=form.elements[k];if(el)el.value=order[k]??"";});
+    const p=String(order.product||"");addProductOption(p);
+    const opt=[...productSelect.options].find(o=>o.value.toLowerCase()===p.toLowerCase());
+    if(opt)productSelect.value=opt.value;else{productSelect.value="__other";productOther.value=p;}
+    syncProduct();syncDelivery();
+    if(order.photo){photoPreview.src=order.photo;photoPreview.hidden=false;}
+    previewCard();result.textContent="";
+  }catch(e){result.textContent="❌ "+e.message;submitBtn.disabled=true;}
+})();
+document.addEventListener("submit",async e=>{
+  if(e.target!==form)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  if(!order||saving)return;
+  syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product.";return;}
+  saving=true;submitBtn.disabled=true;result.textContent="Saving changes…";
+  try{
+    let file=photoInput.files?.[0];
+    if(!file){const pr=await fetch(order.photo),blob=await pr.blob();file=new File([blob],"photo.jpg",{type:blob.type||"image/jpeg"});}
+    const png=await makeCard(vals(),file),fd=new FormData(form);
+    fd.append("cardImage",png,"ambar-order-"+(vals().orderId||"card")+".jpg");
+    const r=await fetch("/api/orders/"+encodeURIComponent(editId),{method:"PUT",body:fd}),d=await r.json();
+    if(!r.ok||!d.ok)throw Error(d.error||"Could not save the changes.");
+    if(d.order)order=Object.assign(order,d.order);
+    result.textContent="✅ "+(d.warning||"Order updated.");
+  }catch(err){result.textContent="❌ "+err.message;}
+  finally{saving=false;submitBtn.disabled=false;}
+},true);
+})();
+</script>
+<button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #c18b3a;color:#f3c77c;font:600 14px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(14px)">👥 Manage Assigned Admins</button>
+<div id="acOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="acBox" style="background:#fff;max-width:560px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
+<script>
+(function(){
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
+const ov=document.getElementById("acOverlay"),box=document.getElementById("acBox");
+const say=(d)=>{const m=document.getElementById("acMsg");if(m){m.className="msg "+(d.ok?"ok":"bad");m.textContent=d.message||d.error||"";}};
+const val=id=>(document.getElementById(id)||{}).value||"";
+async function render(keepMsg){
+  const me=await api("/api/me");
+  if(me.role!=="owner"){
+    box.innerHTML='<h2>⚙️ Admin Control</h2><p>Only the owner can manage admins. Enter the owner key (ADMIN_SETUP_KEY):</p><input id="acKey" type="password" placeholder="Owner key"><button data-a="key">Enter</button><button class="grey" data-a="close">Close</button><div id="acMsg" class="msg"></div>';return;}
+  const a=await api("/api/setup/app-admins");
+  if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
 
-// positions of the (visible, plain) tables the charts read
-var GR = { status: [86, 1], money: [101, 1], pStatus: [116, 1], pProd: [116, 4], pDel: [116, 7], pCards: [116, 10], pSvc: [116, 13] };
-function fillGraphData_(g) {
-  var v = String(g.getRange("B3").getDisplayValue()); if (GRAPH_VIEWS.indexOf(v) < 0) v = "Monthly";
-  var d = computeGraphData_(readOrdersForGraphs_(), v, todayIso()), W = { Daily: "days", Weekly: "weeks", Monthly: "months (Ethiopian)", Yearly: "years (Ethiopian)" }[v];
-  g.getRange(86, 1, 45, 16).clearContent();   // remove old rows so a shorter list never leaves stale numbers behind
-  // The first column holds LABELS ("Nov 12", "2019" ...). It is stored as plain TEXT, otherwise Google Sheets turns it into a date / number,
-  // the chart then treats it as data (a huge bar) and the real graph looks empty.
-  var put = function (pos, head, rows, numeric) {
-    g.getRange(pos[0], pos[1], 1, head.length).setValues([head]);
-    g.getRange(pos[0] + 1, pos[1], rows.length, 1).setNumberFormat("@");
-    var body = g.getRange(pos[0] + 1, pos[1], rows.length, head.length);
-    body.setValues(rows.map(function (r) { return [String(r[0])].concat(r.slice(1).map(Number)); }));
-    if (head.length > 1) g.getRange(pos[0] + 1, pos[1] + 1, rows.length, head.length - 1).setNumberFormat("#,##0").setHorizontalAlignment("center");
-    return body;
-  };
-  // a pie with all zeros is drawn blank: add a grey "no orders" slice only in that case
-  var pie = function (rows) { var sum = rows.reduce(function (a, r) { return a + Number(r[1] || 0); }, 0); return rows.concat([["(no orders)", sum === 0 ? 1 : 0]]); };
-  put(GR.status, ["Period", "Pending", "Confirmed", "Rejected"], d.status);
-  put(GR.money, ["Period", "Payment (Birr)", "Advance (Birr)"], d.money);
-  put(GR.pStatus, ["Status", "Orders"], pie(d.pie.status)); put(GR.pProd, ["Product", "Orders"], d.pie.products);
-  put(GR.pDel, ["Delivery type", "Orders"], pie(d.pie.delivery)); put(GR.pCards, ["Card delivery", "Orders"], pie(d.pie.cards)); put(GR.pSvc, ["Delivery service", "Orders"], d.pie.service);
-  var last = " ·  last " + NPTS + " " + W, tot = last + "  ·  " + d.total + " orders";
-  var T = { A4: "Orders over time by status" + last, A24: "Money over time" + last, G24: "Orders by status" + tot, A44: "Orders by product" + tot, G44: "Orders by delivery type" + tot, A64: "Cards delivered vs not delivered" + tot, G64: "Delivery service" + tot };
-  Object.keys(T).forEach(function (a) { g.getRange(a).setValue(T[a]); });
-  g.getRange("A3").setValue("VIEW  ▾");
-  g.getRange("E3").setValue(d.noOrders ? "No orders in this period yet — choose another view (for example Monthly or Yearly)" : "◄ click the yellow box: Daily · Weekly · Monthly · Yearly — all graphs below change together");
-  SpreadsheetApp.flush();
+  const people=(a.appAdmins||[]).map(p=>'<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>').join("")||'<p><small>No admins assigned yet.</small></p>';
+  box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
+  +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
+  +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
+  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><button data-a="addperson">Assign admin</button>'
+  +'<h3>📨 Message delivery</h3><p><small>Uses BOT_TOKEN only. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal Telegram login is needed.</small></p>'
+  +'<div id="acMsg" class="msg"></div>';
 }
-// Called when an order is saved / the dropdown changes. Does nothing until the Graphs tab has been built.
-function refreshGraphs_() {
-  var g = ss_().getSheetByName("Graphs"); if (!g || String(g.getRange("A86").getValue()) !== "Period") return;
-  fillGraphData_(g);
-  if (g.getCharts().length !== GRAPH_CHARTS) buildGraphCharts_(g);   // charts were deleted / never built: draw them again
+ov.addEventListener("click",async e=>{
+  const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  const act=b.dataset.a;
+  try{
+  if(act==="close"){ov.style.display="none";return;}
+  if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
+  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId")});await render();say(d);return;}
+  if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
+  }catch(err){say({ok:false,error:err.message});}
+});
+(async()=>{try{const m=await api("/api/me");if(m.role==="owner")document.getElementById("acOpen").style.display="block";}catch{}})();
+document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
+})();
+</script>
+<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button><button id="shNew" title="Start a new Ethiopian-month sheet" style="display:none;padding:10px 14px;border:0;border-radius:24px;background:#b89552;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">♻ Archive old list &amp; Start New</button></div>
+<div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<script>
+// Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
+(function(){
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(p,post)=>{const r=await fetch(p,post?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:{});return r.json();};
+const bar=document.getElementById("shBar"),ov=document.getElementById("shOverlay"),box=document.getElementById("shBox");
+const bs='font-size:15px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box;border:0;border-radius:8px;color:#fff;background:#1a73e8;cursor:pointer';
+let st=null;
+function openExternal(u){try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(u);return;}}catch{}window.open(u,"_blank","noopener");}
+async function status(){try{st=await api("/api/sheets/status");}catch{st={ok:false,error:"Could not reach the server."};}return st;}
+function render(msg,good){
+  const s=st||{};
+  const ok=s.configured&&!s.lastError;
+  box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
+  +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
+  +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
+    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
+    :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
+      +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
+  +((!s.configured||s.lastError)?'<div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><b>🔗 Connect once — saved for all time</b><div style="font-size:13px;color:#555;margin:4px 0">Paste the Web app URL (ends with /exec). After it connects, the app remembers it permanently, even after restarts.</div><input id="shUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shKey" placeholder="Password (only if you set SECRET in the script)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shLink" placeholder="Sheet address (optional, so the button can open it)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><button data-a="connect" style="'+bs+';background:#188038">✅ Connect &amp; save permanently</button></div>':'')
+  +(s.configured&&s.saved?'<p style="font-size:12px;color:#188038">🔒 Connection saved permanently — it reconnects by itself after any restart or Google hiccup.</p>':'')
+  +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
+  +(s.lastError?'<p style="color:#c62828;font-size:13px;white-space:pre-wrap">⚠ '+esc(s.lastError)+'</p>':'')
+  +'<div id="shMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap;color:'+(good===false?'#c62828':'#188038')+'">'+esc(msg||"")+'</div>';
 }
-function onEdit(e) { onGraphEdit(e); }
-function onGraphEdit(e) {
-  try {
-    var r = e && e.range; if (!r || r.getSheet().getName() !== "Graphs") return;
-    if (r.getRow() === 3 && r.getColumn() >= 2 && r.getColumn() <= 4) { fillGraphData_(r.getSheet()); if (r.getSheet().getCharts().length !== GRAPH_CHARTS) buildGraphCharts_(r.getSheet()); }
-  } catch (err) { }
+async function openPanel(){ov.style.display="block";box.textContent="Loading…";await status();render();}
+ov.addEventListener("click",async e=>{
+  const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  const a=b.dataset.a;
+  if(a==="close"){ov.style.display="none";return;}
+  if(a==="open"){if(st?.url)openExternal(st.url);return;}
+  if(a==="connect"){
+    const v=i=>((document.getElementById(i)||{}).value||"").trim();
+    b.disabled=true;b.textContent="Connecting…";
+    try{const r=await fetch("/api/sheets/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scriptUrl:v("shUrl"),scriptKey:v("shKey"),sheetUrl:v("shLink")})});const d=await r.json();st={...st,...d};render(d.message||d.error,!!d.ok);}
+    catch(err){render("❌ "+err.message,false);}
+    return;
+  }
+  if(a==="test"||a==="sync"){
+    const label=b.textContent;b.disabled=true;b.textContent="Working…";
+    try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render(d.message||d.error,!!d.ok);}
+    catch(err){render("❌ "+err.message,false);}
+  }
+});
+// Main button: opens the sheet directly when connected; otherwise shows the setup panel.
+let shOwner=false;
+document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
+document.getElementById("shCfg").onclick=openPanel;
+// "Archive old list & Start New" — main admin only (the server refuses everyone else).
+function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
+document.getElementById("shNew").onclick=()=>{
+  const b=document.getElementById("shNew"),msg="Archive the OLD list and start the Google Sheet as NEW?\n\nAll current month tabs are kept as 'Backup …' tabs (nothing is deleted). A clean new month tab is created and only NEW orders go into it.";
+  const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/start-new",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
+  const w=window.Telegram?.WebApp;if(w&&w.showConfirm){w.showConfirm(msg,ok=>{if(ok)go();});}else if(confirm(msg))go();
+};
+window.AMBAR_openSheetTab=async(which)=>{await status();const u=which==="graphs"?st.graphsUrl:which==="summary"?st.summaryUrl:st.url;if(u)openExternal(u);else alert("The Google Sheet is not connected yet.");};
+(async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";else document.getElementById("shNew").style.display="inline-block";}}catch{}})();
+})();
+</script>
+<button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
+<div id="myOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="myBox" style="background:#fff;max-width:520px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
+<script>
+(function(){
+const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
+const ov=document.getElementById("myOverlay"),box=document.getElementById("myBox"),openBtn=document.getElementById("myOpen");
+const st='font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc';
+const btn='font-size:15px;padding:10px;margin:3px 0;width:100%;border:0;border-radius:8px;color:#fff;background:#1a73e8';
+const val=id=>(document.getElementById(id)||{}).value||"";
+const say=d=>{const m=document.getElementById("myMsg");if(m){m.style.color=d.ok?"#0a7d2c":"#c62828";m.textContent=d.message||d.error||"";}};
+let role="";
+// Once connected the Connect button disappears; the status box shows the account and a small Disconnect link.
+async function refresh(){
+  const ss=document.getElementById("senderState");
+  const s=await api("/api/my-account").catch(()=>({ok:false}));
+  const connected=!!(s.ok&&s.connected);
+  openBtn.style.display=(role&&!connected)?"block":"none";
+  if(!ss)return;
+  if(connected)ss.innerHTML='<span style="color:#176b3a;font-weight:700">✓ Connected: '+esc(s.label||"your account")+'</span> <a href="#" id="myDisc" style="font-size:12px">Disconnect</a>';
+  else ss.innerHTML=role==="owner"?'<span style="color:#176b3a;font-weight:700">Main admin account (Telegram Business)</span> <span class="small">— tap 🔗 Connect my Telegram account to also reach customers who never messaged you.</span>':'<span style="color:#9a3c26;font-weight:700">Not connected — tap 🔗 Connect my Telegram account</span>';
+  const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
 }
-function ensureGraphTrigger_() { // installable trigger: also works when the script is not attached to the sheet
-  try {
-    var has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === "onGraphEdit"; });
-    if (!has) ScriptApp.newTrigger("onGraphEdit").forSpreadsheet(ss_()).onEdit().create();
-  } catch (e) { }
+async function render(){
+  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>Order cards you create are sent from <b>your own</b> Telegram account. Only you can use it.</p>'
+  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><button style="'+btn+'" data-a="send">Send code</button><input id="myCode" style="'+st+'" placeholder="Code Telegram sent you"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
+  +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
 }
-
-function buildGraphs(head) {
-  var g = sh("Graphs"), ms = monthSheets(), keep = keepSel_(g, ["B3"]);
-  g.getCharts().forEach(function (c) { g.removeChart(c); });
-  try { g.getRange(1, 1, g.getMaxRows(), g.getMaxColumns()).breakApart(); } catch (e) { }
-  g.clear(); g.getRange(1, 1, g.getMaxRows(), g.getMaxColumns()).clearDataValidations();
-  ensureCols(g, 16); ensureRows(g, 130);
-  for (var c = 1; c <= 16; c++) g.setColumnWidth(c, 100);
-  banner_(g, 12, "AMBAR FURNITURE  ·  Graphs", "ONE button for every graph — choose Daily · Weekly · Monthly · Yearly in the yellow box");
-  g.setTabColor(C.gold);
-  g.setRowHeights(3, 90, 21);
-  g.getRange(85, 1, 45, 16).setFontSize(9).setFontColor(C.ink);
-
-  // the ONE control
-  g.getRange("A3").setValue("VIEW  ▾").setFontSize(10).setFontWeight("bold").setFontColor(C.mute).setHorizontalAlignment("right").setVerticalAlignment("middle");
-  dropdown_(g, 3, 2, 3, GRAPH_VIEWS, keep["B3"], "Monthly");
-  g.getRange("E3:L3").merge().setFontSize(9).setFontColor(C.mute).setVerticalAlignment("middle");
-  g.setRowHeight(3, 38);
-
-  section_(g, 84, 16, "DATA BEHIND THE GRAPHS  (calculated by the script — do not type here)");
-  [[86, 1, 4], [101, 1, 3], [116, 1, 2], [116, 4, 2], [116, 7, 2], [116, 10, 2], [116, 13, 2]].forEach(function (p) { tableHead_(g.getRange(p[0], p[1], 1, p[2])); });
-  [[4, 1, 12], [24, 1, 6], [24, 7, 12], [44, 1, 6], [44, 7, 12], [64, 1, 6], [64, 7, 12]].forEach(function (p) { chartTitle_(g, p[0], p[1], p[2]); });
-  fillGraphData_(g);   // numbers + titles (plain values)
-
-  buildGraphCharts_(g);
-}
-var GRAPH_CHARTS = 7;
-// Draws the 7 graphs. Every chart is created on its own, so one problem can never leave the whole tab empty; a problem is written in cell E3.
-function buildGraphCharts_(g) {
-  g.getCharts().forEach(function (c) { g.removeChart(c); });
-  var R = function (pos, rows, cols) { return g.getRange(pos[0], pos[1], rows, cols); };
-  var GREY = "#cfc9bb";
-  var specs = [
-    [Charts.ChartType.COLUMN, R(GR.status, NPTS + 1, 4), 5, 1, 1196, 340, colOpts_(STATUS_COLORS, true)],
-    [Charts.ChartType.COLUMN, R(GR.money, NPTS + 1, 3), 25, 1, 596, 340, colOpts_([C.dark, C.gold], false)],
-    [Charts.ChartType.PIE, R(GR.pStatus, 5, 2), 25, 7, 596, 340, donutOpts_(STATUS_COLORS.concat([GREY]))],
-    [Charts.ChartType.BAR, R(GR.pProd, 9, 2), 45, 1, 596, 340, { colors: [C.teal], legend: { position: "none" }, bar: { groupWidth: "62%" }, hAxis: AXES.vAxis, vAxis: AXES.hAxis }],
-    [Charts.ChartType.PIE, R(GR.pDel, 4, 2), 45, 7, 596, 340, donutOpts_([C.dark, C.gold, GREY])],
-    [Charts.ChartType.PIE, R(GR.pCards, 4, 2), 65, 1, 596, 340, donutOpts_(["#2e9e4f", "#d2453f", GREY])],
-    [Charts.ChartType.COLUMN, R(GR.pSvc, 3, 2), 65, 7, 596, 340, { colors: ["#3f6c9e"], legend: { position: "none" }, bar: { groupWidth: "46%" }, hAxis: AXES.hAxis, vAxis: AXES.vAxis }]
-  ], errs = [];
-  specs.forEach(function (sp, i) { try { addChart_(g, sp[0], sp[1], sp[2], sp[3], sp[4], sp[5], sp[6]); } catch (e) { errs.push("graph " + (i + 1) + ": " + e.message); } });
-  if (errs.length) g.getRange("E3").setValue("⚠ " + errs.join(" | ").slice(0, 300)).setFontColor("#c0392b");
-  else g.getRange("E3").setFontColor(C.mute);
-  return errs;
-}
-
-// ───────────── modern tables: Find Customer + one table per topic ─────────────
-function buildAll_(head) {
-  var ms = monthSheets().sort(function (a, c) { return monthKey(c.getName()) - monthKey(a.getName()); });
-  var step = function (name, fn) { try { fn(); return ""; } catch (e) { return name + ": " + e.message; } };
-  var errs = [step("Data", function () { buildData_(head, ms); }), step("Dashboard", function () { buildDashboard(head); }),
-    step("Graphs", function () { buildGraphs(head); }), step("Views", function () { buildViews(head); })].filter(String);
-  if (errs.length) {
-    try { PropertiesService.getScriptProperties().setProperty("LAST_BUILD_ERROR", errs.join(" | ").slice(0, 900)); sh("Graphs").getRange("A3").setValue("⚠ " + errs.join(" | ").slice(0, 400)).setFontColor("#c0392b"); } catch (e) { }
-  } else { try { PropertiesService.getScriptProperties().deleteProperty("LAST_BUILD_ERROR"); } catch (e) { } }
-  arrangeTabs();
-}
-function unionOf_(ms, head) { return "{" + ms.map(function (s) { return "'" + s.getName() + "'!A2:" + colL(head.length); }).join(";") + "}"; }
-var STATUS_RULES = [["Confirmed", "#d6f0dc", "#14532d"], ["Rejected", "#fbd9d9", "#8a1f1f"], ["Pending", "#fff0c2", "#7a5a00"], ["Yes", "#d6f0dc", "#14532d"], ["No", "#fbd9d9", "#8a1f1f"]];
-var STATUS_COLS = ["Status", "Paid In Full", "Delivered To Customer", "Answer Closed"];
-var MONEY_ALL = ["Payment", "Advance", "Delivery Fee", "Balance"];
-
-// Spec: [{h: "Header text", c: "Column name in the order head" | "=Balance"}]
-function chooseCols_(head, spec) { return spec.filter(function (x) { return x.c !== "=Balance"; }).map(function (x) { return head.indexOf(x.c) + 1; }); }
-function balanceExpr_(head, f) {
-  var I = function (n) { return head.indexOf(n) + 1; };
-  return 'ARRAYFORMULA(IF(INDEX(' + f + ',0,' + I("Paid In Full") + ')="Yes",0,IFERROR(VALUE(INDEX(' + f + ',0,' + I("Payment") + ')),0)-IFERROR(VALUE(INDEX(' + f + ',0,' + I("Advance") + ')),0)))';
-}
-function tableExpr_(head, spec, f) { // expression that returns the chosen columns of f (+ Balance when asked)
-  var cols = chooseCols_(head, spec), expr = "CHOOSECOLS(" + f + "," + cols.join(",") + ")";
-  if (spec.some(function (x) { return x.c === "=Balance"; })) expr = "HSTACK(" + expr + "," + balanceExpr_(head, f) + ")";
-  return expr;
-}
-function formatTable_(sh_, hdrRow, firstRow, rows, spec) {
-  var n = spec.length;
-  tableHead_(sh_.getRange(hdrRow, 1, 1, n)); sh_.setRowHeight(hdrRow, 32);
-  var body = sh_.getRange(firstRow, 1, rows, n);
-  body.setFontSize(10).setVerticalAlignment("middle").setBorder(null, null, true, null, null, true, C.line, SpreadsheetApp.BorderStyle.SOLID);
-  var rules = sh_.getConditionalFormatRules();
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A' + firstRow + '<>"",ISEVEN(ROW()))').setBackground(C.cream).setRanges([body]).build());
-  spec.forEach(function (x, i) {
-    var col = sh_.getRange(firstRow, i + 1, rows, 1);
-    if (STATUS_COLS.indexOf(x.c) >= 0) {
-      col.setHorizontalAlignment("center").setFontWeight("bold");
-      STATUS_RULES.forEach(function (r) { rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(r[0]).setBackground(r[1]).setFontColor(r[2]).setRanges([col]).build()); });
-    } else if (MONEY_ALL.indexOf(x.c) >= 0) col.setNumberFormat("#,##0").setHorizontalAlignment("right");
-    else if (x.c === "Order Code") col.setFontWeight("bold").setHorizontalAlignment("center");
-    else if (/Date$/.test(x.c)) col.setHorizontalAlignment("center");
-  });
-  sh_.setConditionalFormatRules(rules);
-}
-function resetView_(g, nCols) {
-  try { g.getRange(1, 1, g.getMaxRows(), g.getMaxColumns()).breakApart(); } catch (e) { }
-  var f = g.getFilter(); if (f) f.remove();
-  g.setConditionalFormatRules([]);
-  g.getBandings().forEach(function (b) { b.remove(); });
-  g.clear(); ensureCols(g, Math.max(nCols, 8));
-  g.setFrozenRows(0);
-}
-
-// One full-width table (all orders, newest first) per topic.
-function view_(name, title, sub, color, head, ms, spec, widths) {
-  var g = sh(name); resetView_(g, spec.length);
-  banner_(g, spec.length, title, sub); g.setTabColor(color);
-  spec.forEach(function (x, i) { g.getRange(4, i + 1).setValue(x.h); g.setColumnWidth(i + 1, widths && widths[i] ? widths[i] : 140); });
-  if (!ms.length) { g.getRange("A5").setValue("No orders yet."); return; }
-  var I = function (n) { return head.indexOf(n) + 1; };
-  var f = 'LET(dd,' + unionOf_(ms, head) + ',ff,FILTER(dd,INDEX(dd,0,' + I("ID") + ')<>""),ss,SORT(ff,' + I("Created At") + ',FALSE),' + tableExpr_(head, spec, "ss") + ')';
-  g.getRange("A5").setFormula('=IFERROR(' + f + ',"No orders yet.")');
-  formatTable_(g, 4, 5, 400, spec);
-  g.setFrozenRows(4);
-  g.getRange(4, 1, 401, spec.length).createFilter();
-}
-
-function findCustomer_(head, ms) {
-  var g = sh("Find Customer"), keep = "";
-  try { keep = g.getRange("B4").getDisplayValue(); } catch (e) { }
-  resetView_(g, 8);
-  banner_(g, 8, "AMBAR FURNITURE  ·  Find Customer", "Type ONE thing in the yellow box: a NAME (or part of it), @username, Telegram Chat ID, Order Code or phone — everything about that customer appears below");
-  g.setTabColor(C.gold);
-  [150, 150, 150, 150, 150, 140, 150, 150].forEach(function (w, i) { g.setColumnWidth(i + 1, w); });
-  g.getRange("A4").setValue("SEARCH ▶").setFontWeight("bold").setFontColor(C.mute).setHorizontalAlignment("right").setVerticalAlignment("middle");
-  g.getRange("B4:D4").merge().setNumberFormat("@").setValue(keep).setBackground("#fff4c9").setFontSize(14).setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle")
-    .setBorder(true, true, true, true, null, null, C.gold, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  g.getRange("E4:H4").merge().setValue("← name (or part of a name), @username, Chat ID, Order Code or phone (0911… / +251911… / 251911… all work)").setFontSize(9).setFontColor(C.mute).setVerticalAlignment("middle");
-  g.setRowHeight(4, 40);
-  if (!ms.length) { g.getRange("A6").setValue("No orders yet."); return; }
-  var I = function (n) { return head.indexOf(n) + 1; }, ALL = unionOf_(ms, head);
-  var k = 'LOWER(TRIM(SUBSTITUTE($B$4&"","@","")))';
-  var mask = 'ARRAYFORMULA((LOWER(TRIM(SUBSTITUTE(INDEX(dd,0,' + I("Telegram Username") + ')&"","@","")))=kk)+(TRIM(INDEX(dd,0,' + I("Telegram Chat ID") + ')&"")=TRIM($B$4&""))+(LOWER(TRIM(INDEX(dd,0,' + I("Order Code") + ')&""))=kk)+(LEN(REGEXREPLACE($B$4&"","[^0-9]",""))>=7)*(RIGHT(REGEXREPLACE(INDEX(dd,0,' + I("Phone") + ')&"","[^0-9]",""),9)=RIGHT(REGEXREPLACE($B$4&"","[^0-9]",""),9))+ISNUMBER(SEARCH(kk,INDEX(dd,0,' + I("Customer Name") + ')&"")))>0'; // + NAME contains the typed text
-  var base = 'LET(dd,' + ALL + ',kk,' + k + ',ff,FILTER(dd,' + mask + '),';
-  // row 5: which customers matched (a name can match several people)
-  g.getRange("A5:H5").merge().setFormula('=IF(TRIM($B$4&"")="","",IFERROR(' + base + 'LET(nm,UNIQUE(INDEX(ff,0,' + I("Customer Name") + ')),"Found "&ROWS(nm)&" customer(s): "&TEXTJOIN(", ",TRUE,nm)&IF(ROWS(nm)>1,"   —   showing the first one; type more of the name (or @username / phone) to narrow it down.",""))),"No customer found — check the spelling."))')
-    .setFontSize(9).setFontColor(C.mute).setFontStyle("italic").setVerticalAlignment("middle");
-  g.setRowHeight(5, 24);
-  var guard = function (inner, first) { return '=IF(TRIM($B$4&"")="","' + (first ? "Type a @username, Chat ID, Order Code or phone in the yellow box above." : "") + '",IFERROR(' + inner + ',"' + (first ? "No customer found — check the spelling." : "") + '"))'; };
-
-  section_(g, 6, 8, "CUSTOMER");
-  var labels = ["NAME", "PHONE", "TELEGRAM", "CHAT ID", "LOCATION", "ORDERS", "TOTAL PAYMENT", "ADVANCE PAID"];
-  var vals = [I("Customer Name"), I("Phone"), I("Telegram Username"), I("Telegram Chat ID"), I("Location")].map(function (ci) { return base + 'INDEX(ff,1,' + ci + '))'; });
-  vals.push(base + 'ROWS(ff))');
-  vals.push(base + 'SUM(ARRAYFORMULA(IFERROR(VALUE(INDEX(ff,0,' + I("Payment") + ')),0))))');
-  vals.push(base + 'SUM(ARRAYFORMULA(IFERROR(VALUE(INDEX(ff,0,' + I("Advance") + ')),0))))');
-  labels.forEach(function (lab, i) {
-    g.getRange(7, i + 1).setValue(lab).setFontSize(8).setFontWeight("bold").setFontColor(C.mute).setBackground(C.cream).setHorizontalAlignment("center").setVerticalAlignment("bottom");
-    var v = g.getRange(8, i + 1);
-    v.setFormula('=IF(TRIM($B$4&"")="","—",IFERROR(' + vals[i] + ',"—"))').setFontSize(i < 5 ? 11 : 16).setFontWeight("bold").setFontColor(C.dark).setBackground(C.cream).setHorizontalAlignment("center").setVerticalAlignment("middle").setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
-    if (i >= 6) v.setNumberFormat("#,##0");
-    if (i === 3) v.setNumberFormat("@");
-    g.getRange(7, i + 1, 2, 1).setBorder(true, true, true, true, false, false, C.line, SpreadsheetApp.BorderStyle.SOLID);
-  });
-  g.setRowHeight(7, 24); g.setRowHeight(8, 48);
-
-  var blocks = [
-    ["ORDERS", [{ h: "Order Code", c: "Order Code" }, { h: "Status", c: "Status" }, { h: "Order Date", c: "Order Date" }, { h: "Completion Date", c: "Completion Date" }, { h: "Product", c: "Product" }, { h: "Customer answered", c: "Answer Closed" }, { h: "Latest comment", c: "Latest Comment" }]],
-    ["PAYMENTS", [{ h: "Order Code", c: "Order Code" }, { h: "Product", c: "Product" }, { h: "Payment", c: "Payment" }, { h: "Advance", c: "Advance" }, { h: "Paid In Full", c: "Paid In Full" }, { h: "Balance", c: "=Balance" }]],
-    ["DELIVERY", [{ h: "Order Code", c: "Order Code" }, { h: "Delivery Type", c: "Delivery Type" }, { h: "Service", c: "Delivery Service" }, { h: "Fee", c: "Delivery Fee" }, { h: "Delivery Date", c: "Delivery Date" }, { h: "Card delivered", c: "Delivered To Customer" }, { h: "Note", c: "Delivery Note" }]],
-    ["PRODUCT DETAILS", [{ h: "Order Code", c: "Order Code" }, { h: "Product", c: "Product" }, { h: "Length (cm)", c: "Length (cm)" }, { h: "Width (cm)", c: "Width (cm)" }, { h: "Height (cm)", c: "Height (cm)" }, { h: "Material", c: "Material" }, { h: "Color", c: "Color" }, { h: "Style", c: "Style" }]]
-  ];
-  var row = 10, ROWS = 12;
-  blocks.forEach(function (b, bi) {
-    var spec = b[1];
-    section_(g, row, 8, b[0] + "  (up to " + ROWS + " latest orders of this customer)");
-    spec.forEach(function (x, i) { g.getRange(row + 1, i + 1).setValue(x.h); });
-    g.getRange(row + 2, 1).setFormula(guard('ARRAY_CONSTRAIN(' + base + tableExpr_(head, spec, "ff") + '),' + ROWS + ',' + spec.length + ')', bi === 0));
-    formatTable_(g, row + 1, row + 2, ROWS, spec);
-    row += ROWS + 4;
-  });
-  g.setFrozenRows(4);
-}
-
-function buildViews(head) {
-  var ms = monthSheets().sort(function (a, c) { return monthKey(c.getName()) - monthKey(a.getName()); });
-  findCustomer_(head, ms);
-  view_("Orders View", "AMBAR FURNITURE  ·  Orders", "Every order, newest first, with its exact Ethiopian Order / Completion / Delivery dates (yyyy/mm/dd) — use the filter arrows on the header row", C.dark, head, ms, [
-    { h: "Order Code", c: "Order Code" }, { h: "Customer", c: "Customer Name" }, { h: "Telegram", c: "Telegram Username" }, { h: "Status", c: "Status" }, { h: "Order Date", c: "Order Date" },
-    { h: "Completion Date", c: "Completion Date" }, { h: "Delivery Date", c: "Delivery Date" }, { h: "Product", c: "Product" }, { h: "Customer answered", c: "Answer Closed" }, { h: "Created by", c: "Created By" }, { h: "Latest comment", c: "Latest Comment" }
-  ], [110, 190, 150, 110, 120, 130, 120, 170, 130, 150, 260]);
-}
-
-// ───────────── GOOGLE FORM MODE (only if the Web app link gives HTTP 401) ─────────────
-// 1) Google Form with ONE "Paragraph" question, linked to THIS spreadsheet (Responses -> Link to Sheets).
-// 2) Form menu -> "Get pre-filled link" -> put it in the server setting GOOGLE_FORM_URL.
-// 3) Run "setupFormMode" ONE time here (allow permissions).
-function setupFormMode() {
-  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "onFormSubmit") ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger("onFormSubmit").forSpreadsheet(ss_()).onFormSubmit().create();
-}
-function onFormSubmit(e) {
-  var lock = LockService.getScriptLock(); lock.waitLock(30000);
-  try {
-    var d = JSON.parse(e.values[e.values.length - 1]);
-    if (SECRET && d.key !== SECRET) return;
-    IDX = null; run(d);
-  } catch (err) { /* ignore broken submissions */ } finally { lock.releaseLock(); }
-}
+ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  try{const a=b.dataset.a;
+  if(a==="close"){ov.style.display="none";return;}
+  if(a==="send"){say(await api("/api/my-account/send-code",{phone:val("myPhone")}));return;}
+  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
+  }catch(err){say({ok:false,error:err.message});}});
+openBtn.onclick=()=>{ov.style.display="block";render();};
+(async()=>{try{const m=await api("/api/me");if(m.role==="admin"||m.role==="owner"){role=m.role;await refresh();
+  {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;if(form.elements.customerName&&!form.elements.customerName.value){const t=o.textContent.replace(/\s*\(@.*\)$/,"").trim();if(t&&!/^\d+$/.test(t))form.elements.customerName.value=t;}};}}catch{}}}
+}catch{}})();
+})();
+</script>
+<style>
+#acOpen,#shBar,#myOpen{display:none!important}
+#stOpen{position:fixed;right:14px;bottom:14px;z-index:9998;width:40px;height:40px;padding:0;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(24,22,19,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:#f3d9a4;display:none;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.28);cursor:pointer;transition:transform .2s,background .2s}#stOpen:hover,#stOpen:active{transform:rotate(60deg);background:rgba(24,22,19,.9)}#stOpen svg{width:20px;height:20px}
+#stBox button{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;font:500 14px system-ui,sans-serif;padding:11px 12px;margin:5px 0;border:1px solid #ece6d8;border-radius:12px;background:#faf8f3;color:#222;cursor:pointer;transition:background .15s}#stBox button:hover{background:#f1ebdd}
+#stBox button.main{background:#153a2e;color:#fff;border-color:#153a2e}
+#stBox button.warn{background:#fff6e5;color:#8a5a00;border-color:#e6c47a}
+#stBox h4{margin:14px 0 2px;font:700 12px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#777}
+</style>
+<button id="stOpen" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+<div id="stOverlay" style="display:none;position:fixed;inset:0;z-index:99997;background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow:auto;flex-direction:column;justify-content:flex-end"><div id="stBox" style="background:#fff;max-width:400px;margin:auto 12px 12px auto;border-radius:20px;padding:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);font-family:system-ui,sans-serif;color:#222"></div></div>
+<script>
+// ONE settings icon holds every control button. The old floating buttons stay hidden and are triggered from here.
+(function(){
+const gear=document.getElementById("stOpen"),ov=document.getElementById("stOverlay"),box=document.getElementById("stBox");
+let role="";
+const items=()=>{
+  const L=[];
+  L.push('<h4>Google Sheet</h4>');
+  L.push('<button class="main" data-c="sheet">📊 Open Google Sheet</button>');
+  if(role==="owner"){
+    L.push('<button data-c="cfg">🔌 Sheet connection: test / sync all</button>');
+    L.push('<button class="warn" data-c="zero">🗑 Start from ZERO (backup + clear all)</button>');
+    L.push('<h4>Admins</h4>');
+    L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
+  }
+  L.push('<h4>My account</h4>');
+  L.push('<button data-c="connect">🔗 Connect my Telegram account</button>');
+  return L.join("");
+};
+function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="flex";}
+const go=id=>{ov.style.display="none";const e=document.getElementById(id);if(e)e.click();};
+gear.onclick=show;
+ov.addEventListener("click",e=>{
+  const b=e.target.closest("button[data-c]");if(!b){if(e.target===ov)ov.style.display="none";return;}
+  const c=b.dataset.c;
+  if(c==="close"){ov.style.display="none";return;}
+  if(c==="sheet"){go("shOpen");return;}
+  if(c==="summary"||c==="graphs"){ov.style.display="none";window.AMBAR_openSheetTab&&window.AMBAR_openSheetTab(c);return;}
+  if(c==="cfg"){go("shCfg");return;}
+  if(c==="zero"){
+    const w=window.Telegram?.WebApp,say=m=>{if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);};
+    const ask=(m,cb)=>{if(w&&w.showConfirm){w.showConfirm(m,ok=>{if(ok)cb();});}else if(confirm(m))cb();};
+    ask("START FROM ZERO?\n\n1) Every order is saved in the Google Sheet as a BACKUP.\n2) ALL orders are then DELETED from the app and the Google Sheet starts new.\n\nThis cannot be undone in the app.",()=>{
+      ask("Are you really sure? All orders will be removed and numbering starts again from the beginning.",async()=>{
+        b.disabled=true;b.textContent="Working…";
+        try{const d=await (await fetch("/api/sheets/reset-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:"ZERO"})})).json();say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
+        b.disabled=false;b.textContent="🗑 Start from ZERO (backup + clear all)";
+      });
+    });
+    return;
+  }
+  if(c==="admins"){go("acOpen");return;}
+  if(c==="connect"){go("myOpen");return;}
+});
+(async()=>{try{const r=await fetch("/api/me");const m=await r.json();if(m.role==="owner"||m.role==="admin"){role=m.role;gear.style.display="flex";}}catch{}})();
+})();
+</script>
+</body>
+</html>
