@@ -1,3 +1,5 @@
+ETHIOPIAN CALENDAR PICKER (v65): Order / Completion / Delivery date now open a calendar grid (Ethiopian months, Pagume 5/6 days, Today / Clear). Orders View now shows the exact Order, Completion and Delivery dates (yyyy/mm/dd) - paste the new google-sheet-script.gs into Apps Script and deploy a new version.
+
 ETHIOPIAN CALENDAR UPDATE: every date is now Ethiopian.
  - Order Date / Completion Date / Delivery Date: the order form has Day · Month (Meskerem … Pagume) · Year pickers; the card shows the date as yyyy/mm/dd (e.g. 2019/03/05).
  - Google Sheet: those dates, plus Created At / Last Updated, are Ethiopian TEXT (yyyy/mm/dd). Google no longer turns them into Gregorian dates.
