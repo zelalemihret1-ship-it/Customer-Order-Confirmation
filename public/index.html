@@ -113,81 +113,51 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 </form>
 </main>
 <script>
-// 🇪🇹 Ethiopian calendar date picker (Order Date · Completion Date · Delivery Date).
-// Tap the field → a calendar opens with Ethiopian months (Meskerem … Pagume). The saved value stays a normal date (yyyy-mm-dd), exactly as before.
+// 🇪🇹 Ethiopian calendar date pickers (Order Date · Completion Date · Delivery Date).
+// The form value is the Ethiopian date as text "yyyy/mm/dd" (e.g. 2019/03/05). Old Gregorian "yyyy-mm-dd" values are converted automatically.
 (function(){
 const MONTHS=["Meskerem","Tikimt","Hidar","Tahsas","Tir","Yekatit","Megabit","Miazia","Ginbot","Sene","Hamle","Nehase","Pagume"];
-const WD=["Seg","Mak","Rob","Ham","Arb","Qid","Ehu"]; // Ethiopian week: Monday (Segno) first
 const pad=n=>String(n).padStart(2,"0");
-function gregToEth(y,m,d){const a=Math.floor((14-m)/12),yy=y+4800-a,mm=m+12*a-3;
+function gregToEth(y,m,d){
+  const a=Math.floor((14-m)/12),yy=y+4800-a,mm=m+12*a-3;
   const jdn=d+Math.floor((153*mm+2)/5)+365*yy+Math.floor(yy/4)-Math.floor(yy/100)+Math.floor(yy/400)-32045;
   const r=(jdn-1723856)%1461,n=(r%365)+365*Math.floor(r/1460);
-  return{y:4*Math.floor((jdn-1723856)/1461)+Math.floor(r/365)-Math.floor(r/1460),m:Math.floor(n/30)+1,d:(n%30)+1};}
-function ethToGreg(y,m,d){const jdn=365*y+Math.floor(y/4)+30*(m-1)+(d-1)+1723856,a=jdn+32044,b=Math.floor((4*a+3)/146097),c=a-Math.floor(146097*b/4);
-  const dd=Math.floor((4*c+3)/1461),e=c-Math.floor(1461*dd/4),mm=Math.floor((5*e+2)/153);
-  return{y:100*b+dd-4800+Math.floor(mm/10),m:mm+3-12*Math.floor(mm/10),d:e-Math.floor((153*mm+2)/5)+1};}
-const isoOf=(y,m,d)=>{const g=ethToGreg(y,m,d);return g.y+"-"+pad(g.m)+"-"+pad(g.d);};
-const ethOf=iso=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||""));return m?gregToEth(+m[1],+m[2],+m[3]):null;};
-const dim=(y,m)=>m<13?30:(y%4===3?6:5);
-const wdMon=(y,m,d)=>{const g=ethToGreg(y,m,d);return(new Date(Date.UTC(g.y,g.m-1,g.d)).getUTCDay()+6)%7;};
-window.ethShow=v=>{const e=ethOf(v);return e?MONTHS[e.m-1]+" "+e.d+", "+e.y:(v||"");}; // used on the order card
-const now=new Date(),today=gregToEth(now.getFullYear(),now.getMonth()+1,now.getDate());
-const css=document.createElement("style");css.textContent=
-".ecBack{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100001;display:flex;align-items:center;justify-content:center;padding:14px}"+
-".ecBox{background:#fff;border-radius:16px;padding:14px;width:100%;max-width:340px;box-shadow:0 18px 60px #0006;font:14px system-ui;color:#26231e}"+
-".ecHead{display:flex;gap:6px;align-items:center;margin-bottom:8px}.ecHead select{margin:0;padding:8px 6px;font-size:14px;flex:1;min-width:0}"+
-".ecHead button{width:38px;height:38px;border:0;border-radius:10px;background:#153a2e;color:#fff;font-size:20px;line-height:1;cursor:pointer}"+
-".ecGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}.ecGrid b{font-size:11px;color:#6b6558;padding:4px 0}"+
-".ecGrid button{border:0;border-radius:10px;background:#f4f1ea;padding:10px 0;font-size:14px;cursor:pointer;color:#26231e}"+
-".ecGrid button.t{outline:2px solid #b89552}.ecGrid button.s{background:#153a2e;color:#fff;font-weight:700}"+
-".ecFoot{display:flex;justify-content:space-between;gap:8px;margin-top:10px}.ecFoot button{flex:1;border:0;border-radius:10px;padding:10px;background:#eee;font-size:14px;cursor:pointer}.ecFoot button.g{background:#b89552;color:#fff}"+
-".ecIn{cursor:pointer;background:#fff}";document.head.appendChild(css);
+  return{y:4*Math.floor((jdn-1723856)/1461)+Math.floor(r/365)-Math.floor(r/1460),m:Math.floor(n/30)+1,d:(n%30)+1};
+}
+window.ethDate=function(v){
+  const s=String(v==null?"":v).trim();
+  if(/^\d{4}\/\d{2}\/\d{2}/.test(s))return s.slice(0,10);
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if(!m)return s;
+  const e=gregToEth(+m[1],+m[2],+m[3]);return e.y+"/"+pad(e.m)+"/"+pad(e.d);
+};
+const days=(y,m)=>m<13?30:(y%4===3?6:5);
+const t=new Date(),thisYear=gregToEth(t.getFullYear(),t.getMonth()+1,t.getDate()).y;
 const nativeVal=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+const css=document.createElement("style");css.textContent=".ethdate{display:grid;grid-template-columns:1fr 1.7fr 1.2fr;gap:6px}.ethdate select{margin-top:5px;padding-left:8px;padding-right:4px}";document.head.appendChild(css);
 function make(input){
   const form=input.form;input.type="hidden";
-  const shown=document.createElement("input");shown.type="text";shown.readOnly=true;shown.className="ecIn";shown.placeholder="Select date";shown.setAttribute("aria-label",input.name+" (Ethiopian calendar)");
-  input.parentNode.appendChild(shown);
-  const show=()=>{const e=ethOf(nativeVal.get.call(input));shown.value=e?MONTHS[e.m-1]+" "+e.d+", "+e.y:"";};
-  const commit=iso=>{nativeVal.set.call(input,iso);show();input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));};
-  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){const m=/^(\d{4}-\d{2}-\d{2})/.exec(String(v==null?"":v));nativeVal.set.call(input,m?m[1]:"");show();}});
-  if(form)form.addEventListener("reset",()=>setTimeout(()=>{input.value="";},0));
-  let open=false;
-  function pop(){
-    if(open)return;open=true;
-    const sel=ethOf(nativeVal.get.call(input)),v={y:(sel||today).y,m:(sel||today).m};
-    const back=document.createElement("div");back.className="ecBack";const box=document.createElement("div");box.className="ecBox";back.appendChild(box);
-    const close=()=>{back.remove();open=false;};
-    back.addEventListener("mousedown",e=>{if(e.target===back)close();});
-    function draw(){
-      box.innerHTML="";
-      const head=document.createElement("div");head.className="ecHead";
-      const prev=document.createElement("button");prev.type="button";prev.textContent="‹";
-      const next=document.createElement("button");next.type="button";next.textContent="›";
-      const ms=document.createElement("select"),ys=document.createElement("select");
-      MONTHS.forEach((n,i)=>{const o=document.createElement("option");o.value=i+1;o.textContent=n;ms.appendChild(o);});ms.value=v.m;
-      for(let y=today.y-10;y<=today.y+10;y++){const o=document.createElement("option");o.value=y;o.textContent=y;ys.appendChild(o);}
-      if(![...ys.options].some(o=>+o.value===v.y)){const o=document.createElement("option");o.value=v.y;o.textContent=v.y;ys.appendChild(o);}ys.value=v.y;
-      prev.onclick=()=>{v.m--;if(v.m<1){v.m=13;v.y--;}draw();};next.onclick=()=>{v.m++;if(v.m>13){v.m=1;v.y++;}draw();};
-      ms.onchange=()=>{v.m=+ms.value;draw();};ys.onchange=()=>{v.y=+ys.value;draw();};
-      head.append(prev,ms,ys,next);box.appendChild(head);
-      const grid=document.createElement("div");grid.className="ecGrid";
-      WD.forEach(w=>{const b=document.createElement("b");b.textContent=w;grid.appendChild(b);});
-      for(let i=0;i<wdMon(v.y,v.m,1);i++)grid.appendChild(document.createElement("span"));
-      for(let d=1;d<=dim(v.y,v.m);d++){
-        const b=document.createElement("button");b.type="button";b.textContent=d;
-        if(sel&&sel.y===v.y&&sel.m===v.m&&sel.d===d)b.className="s";else if(today.y===v.y&&today.m===v.m&&today.d===d)b.className="t";
-        b.onclick=()=>{commit(isoOf(v.y,v.m,d));close();};grid.appendChild(b);
-      }
-      box.appendChild(grid);
-      const foot=document.createElement("div");foot.className="ecFoot";
-      const clr=document.createElement("button");clr.type="button";clr.textContent="Clear";clr.onclick=()=>{commit("");close();};
-      const td=document.createElement("button");td.type="button";td.className="g";td.textContent="Today";td.onclick=()=>{commit(isoOf(today.y,today.m,today.d));close();};
-      const cl=document.createElement("button");cl.type="button";cl.textContent="Close";cl.onclick=close;
-      foot.append(clr,td,cl);box.appendChild(foot);
-    }
-    draw();document.body.appendChild(back);
+  const wrap=document.createElement("div");wrap.className="ethdate";
+  const dS=document.createElement("select"),mS=document.createElement("select"),yS=document.createElement("select");
+  dS.setAttribute("aria-label","Day (Ethiopian)");mS.setAttribute("aria-label","Month (Ethiopian)");yS.setAttribute("aria-label","Year (Ethiopian)");
+  const opt=(s,v,txt)=>{const o=document.createElement("option");o.value=v;o.textContent=txt;s.appendChild(o);};
+  opt(mS,"","Month");MONTHS.forEach((n,i)=>opt(mS,String(i+1),n));
+  opt(yS,"","Year");for(let y=thisYear-3;y<=thisYear+3;y++)opt(yS,String(y),String(y));
+  function fillDays(keep){const y=+yS.value||thisYear,m=+mS.value||1,max=days(y,m);dS.innerHTML="";opt(dS,"","Day");for(let i=1;i<=max;i++)opt(dS,String(i),String(i));dS.value=keep&&+keep<=max?String(+keep):"";}
+  fillDays("");
+  function push(){nativeVal.set.call(input,(yS.value&&mS.value&&dS.value)?yS.value+"/"+pad(+mS.value)+"/"+pad(+dS.value):"");}
+  function pull(){
+    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
+    if(!m){yS.value="";mS.value="";fillDays("");return;}
+    if(![...yS.options].some(o=>o.value===String(+m[1])))opt(yS,String(+m[1]),m[1]);
+    yS.value=String(+m[1]);mS.value=String(+m[2]);fillDays(m[3]);
   }
-  shown.addEventListener("click",pop);
+  [dS,mS,yS].forEach(s=>{["input","change"].forEach(ev=>s.addEventListener(ev,()=>{if(s!==dS)fillDays(dS.value);push();}));});
+  // setting form.elements.orderDate.value = "..." in code (edit mode, reset) keeps working and also accepts old Gregorian dates
+  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){nativeVal.set.call(input,window.ethDate(v));pull();}});
+  if(form)form.addEventListener("reset",()=>setTimeout(()=>{input.value="";},0));
+  [dS,mS,yS].forEach(s=>wrap.appendChild(s));
+  input.parentNode.appendChild(wrap);
 }
 ["orderDate","completionDate","deliveryDate"].forEach(n=>{const el=document.querySelector('#orderForm [name="'+n+'"]');if(el&&el.type==="date")make(el);});
 })();
@@ -258,7 +228,7 @@ function previewCard(){
  const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
  const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k]))),field("Additional features",v.additionalFeatures)].filter(Boolean).join("");
  const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
- const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Order Date",ethShow(v.orderDate)),field("Completion Date",ethShow(v.completionDate)),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",ethShow(v.deliveryDate))].filter(Boolean).join("");
+ const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Order Date",v.orderDate),field("Completion Date",v.completionDate),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
  preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Order code")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div></div>`;
 }
 function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
@@ -288,7 +258,7 @@ async function makeCard(v,file){
  const divider=()=>{x.strokeStyle="#e0dacd";x.lineWidth=2;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
  section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));line("Extra features",v.additionalFeatures);
  divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
- divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Order date",ethShow(v.orderDate));line("Completion date",ethShow(v.completionDate));line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",ethShow(v.deliveryDate));
+ divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Order date",v.orderDate);line("Completion date",v.completionDate);line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
  const tg=x.createLinearGradient(pad,1790,W-pad,1864);tg.addColorStop(0,"#0f2f25");tg.addColorStop(1,"#1b4d3d");x.fillStyle=tg;rounded(x,pad,1790,W-pad*2,74,18);x.fillStyle="#ffa939";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
  return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate card image.")),"image/jpeg",0.95));
 }
