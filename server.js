@@ -945,7 +945,25 @@ async function g(path, { method = "GET", body } = {}) {
 const q = s => encodeURIComponent(s);
 
 // ── helpers ────────────────────────────────────────────────────────────────────
-const stamp = (d = new Date()) => new Date(d).toLocaleString("sv-SE", { timeZone: TZ }); // 2026-11-11 14:05:09 (sortable)
+// ── Ethiopian calendar: every date written to the sheet is an Ethiopian date, text "yyyy/mm/dd" ──
+function gregToEth(y, m, d) {
+  const a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3;
+  const jdn = d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+  const r = (jdn - 1723856) % 1461, n = (r % 365) + 365 * Math.floor(r / 1460);
+  return { y: 4 * Math.floor((jdn - 1723856) / 1461) + Math.floor(r / 365) - Math.floor(r / 1460), m: Math.floor(n / 30) + 1, d: (n % 30) + 1 };
+}
+const ethText = e => String(e.y).padStart(4, "0") + "/" + String(e.m).padStart(2, "0") + "/" + String(e.d).padStart(2, "0");
+// Order / Completion / Delivery date: new orders already hold Ethiopian "yyyy/mm/dd"; older orders hold Gregorian "yyyy-mm-dd" → converted.
+const ethDate = v => {
+  const s = String(v == null ? "" : v).trim();
+  if (/^\d{4}\/\d{2}\/\d{2}/.test(s)) return s.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? ethText(gregToEth(+m[1], +m[2], +m[3])) : s;
+};
+const stamp = (d = new Date()) => { // 2019/03/03 14:05:09  (Ethiopian date, sortable)
+  const g = new Date(d).toLocaleString("sv-SE", { timeZone: TZ }); // 2026-11-11 14:05:09
+  return ethDate(g.slice(0, 10)) + g.slice(10);
+};
 const clean = v => (v == null ? "" : String(v)).slice(0, 4000);
 const abs = (order, p) => !p ? "" : /^https?:/i.test(p) ? p : ((process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "") + p);
 function orderRow(o, created, updated) {
@@ -957,7 +975,7 @@ function orderRow(o, created, updated) {
   set("Product", o.product); set("Length (cm)", o.length); set("Width (cm)", o.width); set("Height (cm)", o.height);
   set("Material", o.material); set("Color", o.color); set("Style", o.style); set("Design", o.design); set("Handle", o.handle); set("Door", o.door); set("Partition", o.partition); set("Drawer", o.drawer); set("Additional Features", o.additionalFeatures);
   set("Customer Name", o.customerName); set("Phone", o.phone || o.telegramPhone); set("Telegram Username", o.telegramUsername); set("Telegram Chat ID", o.telegramChatId);
-  set("Order Date", o.orderDate); set("Delivery Date", o.deliveryDate); set("Delivery Type", o.deliveryType); set("Delivery Fee", o.deliveryFee); set("Location", o.location); set("Payment", o.payment); set("Advance", o.advance); set("Paid In Full", o.paidFull ? "Yes" : "No");
+  set("Order Date", ethDate(o.orderDate)); set("Delivery Date", ethDate(o.deliveryDate)); set("Delivery Type", o.deliveryType); set("Delivery Fee", o.deliveryFee); set("Location", o.location); set("Payment", o.payment); set("Advance", o.advance); set("Paid In Full", o.paidFull ? "Yes" : "No");
   set("Delivered To Customer", o.sent ? "Yes" : "No"); set("Answer Closed", o.closed ? "Yes" : "No");
   set("Comments", comments.length); set("Latest Comment", last ? (last.decision ? `[${last.decision}] ` : "") + (last.comment || "") : "");
   set("Created By", o.createdByName); set("Created By Role", o.createdByRole);
@@ -965,7 +983,7 @@ function orderRow(o, created, updated) {
   const base = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "");
   set("Answer Link", base && o.token ? `${base}/o/${o.token}` : "");
   set("Delivery Note", o.sent ? "" : o.deliveryNote);
-  set("Completion Date", o.completionDate); set("Delivery Service", o.deliveryService);
+  set("Completion Date", ethDate(o.completionDate)); set("Delivery Service", o.deliveryService);
   return row;
 }
 
@@ -2476,6 +2494,7 @@ app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 },
       if (!(k in body)) continue;
       let nv = String(body[k] ?? "").trim();
       if (k === "orderId") { nv = nv.slice(0, 40); if (!nv) return res.status(400).json({ ok: false, error: "Order code cannot be empty." }); }
+      if (k === "orderDate" || k === "completionDate" || k === "deliveryDate") { nv = ethDate(nv); if (ethDate(order[k]) === nv) continue; } // old Gregorian date == same Ethiopian date → not a change
       if (String(order[k] ?? "") !== nv) { order[k] = nv; changed.push(k); }
     }
     if (order.deliveryType !== "By Ambar Delivery") { order.deliveryFee = ""; order.deliveryService = ""; }
