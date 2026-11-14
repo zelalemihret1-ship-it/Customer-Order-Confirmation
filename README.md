@@ -1,3 +1,5 @@
+FIND CUSTOMER (v66): phone search now accepts a leading 0 or + (0911..., +251911..., 251911... all find the same customer). Paste the new google-sheet-script.gs into Apps Script and deploy a new version.
+
 ETHIOPIAN CALENDAR PICKER (v65): Order / Completion / Delivery date now open a calendar grid (Ethiopian months, Pagume 5/6 days, Today / Clear). Orders View now shows the exact Order, Completion and Delivery dates (yyyy/mm/dd) - paste the new google-sheet-script.gs into Apps Script and deploy a new version.
 
 ETHIOPIAN CALENDAR UPDATE: every date is now Ethiopian.
