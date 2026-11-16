@@ -1065,6 +1065,16 @@ async function loadRows() {
 }
 const rowFromRange = range => { const m = String(range || "").match(/!.*?(\d+)(?::[A-Z]+(\d+))?$/); return m ? Number(m[1]) : 0; };
 
+// New orders go to the TOP of the Orders tab (row 2, just under the header); older orders move down.
+async function insertAtTop(valuesRows) {
+  if (!valuesRows.length) return;
+  const meta = await g("?fields=sheets.properties");
+  const sid = (meta.sheets || []).map(x => x.properties).find(p => p.title === T_ORDERS)?.sheetId;
+  if (sid == null) throw new Error("Orders tab not found in the Google Sheet.");
+  await g(":batchUpdate", { method: "POST", body: { requests: [{ insertDimension: { range: { sheetId: sid, dimension: "ROWS", startIndex: 1, endIndex: 1 + valuesRows.length }, inheritFromBefore: false } }] } });
+  await g(`/values/${q(`'${T_ORDERS}'!A2:${LAST_COL}${1 + valuesRows.length}`)}?valueInputOption=RAW`, { method: "PUT", body: { values: valuesRows } });
+}
+
 // The Activity Log was removed from the Google Sheet: movements are no longer written anywhere.
 async function appendLog() { }
 const logRow = (event, o, details, by) => [stamp(), event, clean(o?.orderId), clean(o?.product), clean(o?.customerName), clean(details), clean(by)];
@@ -1114,8 +1124,9 @@ async function upsertOrder(order) {
     rowNo = prev.row;
     await g(`/values/${q(`'${T_ORDERS}'!A${rowNo}:${LAST_COL}${rowNo}`)}?valueInputOption=RAW`, { method: "PUT", body: { values: [values] } });
   } else {
-    const r = await g(`/values/${q(`'${T_ORDERS}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: [values] } });
-    rowNo = rowFromRange(r.updates?.updatedRange);
+    await insertAtTop([values]);
+    await loadRows(); // every older row moved down by one
+    rowNo = rows.get(id)?.row || 2;
   }
   rows.set(id, parseRow(values, rowNo));
   await appendLog(events);
@@ -1156,12 +1167,12 @@ function syncAll(allOrders, by = "Owner") {
   return enqueue(async () => {
     await ready(); await loadRows();
     const now = stamp(), updates = [], fresh = [], events = [];
-    for (const o of allOrders) {
+    for (const o of [...allOrders].sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))) { // newest first
       const prev = rows.get(String(o.id)), created = prev?.created || (o.createdAt ? stamp(o.createdAt) : now), v = orderRow(o, created, now);
       if (prev) updates.push({ range: `'${T_ORDERS}'!A${prev.row}:${LAST_COL}${prev.row}`, values: [v] }); else { fresh.push(v); events.push(logRow("Order created", o, "added by full sync", "System")); }
     }
     for (let i = 0; i < updates.length; i += 200) await g("/values:batchUpdate", { method: "POST", body: { valueInputOption: "RAW", data: updates.slice(i, i + 200) } });
-    for (let i = 0; i < fresh.length; i += 200) await g(`/values/${q(`'${T_ORDERS}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: fresh.slice(i, i + 200) } });
+    if (fresh.length) await insertAtTop(fresh);
     await appendLog([...events, logRow("Full sync", null, `${allOrders.length} orders refreshed (${fresh.length} new to the sheet)`, by)]);
     await loadRows();
     lastSyncAt = stamp(); lastOkAt = lastSyncAt; lastError = "";
