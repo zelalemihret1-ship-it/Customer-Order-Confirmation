@@ -141,7 +141,12 @@ button:disabled{opacity:.5;cursor:default}
       <select id="fStatus"><option value="">All order statuses</option></select>
       <select id="fSales"><option value="">All sales names</option></select>
     </div>
-    <div class="row" style="margin-bottom:10px"><button class="gold" type="button" id="copyBtn">📋 Copy as table (paste into Google Sheet)</button></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="primary" type="button" id="sheetBtn">📊 Open Google Sheet (Callers tab)</button>
+      <button class="ghost" type="button" id="syncBtn" style="display:none">🔄 Send all to Google Sheet</button>
+      <button class="gold" type="button" id="copyBtn">📋 Copy as table</button>
+    </div>
+    <div id="listMsg" class="notice"></div>
     <div class="count" id="listCount"></div>
     <div id="list"></div>
   </section>
@@ -149,13 +154,13 @@ button:disabled{opacity:.5;cursor:default}
 <script>
 const $=id=>document.getElementById(id);
 const REJ=["Price too high","Changed mind","Delivery problem","Found elsewhere","No response","Other"];
-let ME={role:"",name:""},NOW={date:"",time:""},NEXT="0001",ALL=[],CUR=null,OPT={};
+let SHEET="",ME={role:"",name:""},NOW={date:"",time:""},NEXT="0001",ALL=[],CUR=null,OPT={};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const say=(t,k)=>{const n=$("notice");n.className="notice "+(k||"info");n.textContent=t;};
 const clearSay=()=>{$("notice").className="notice";$("notice").textContent="";};
 const fill=(sel,arr)=>{$(sel).innerHTML=arr.map(v=>`<option>${esc(v)}</option>`).join("");};
 const ethSlash=v=>{const d=String(v||"").replace(/\D/g,"").slice(0,8);return d.length>6?d.slice(0,4)+"/"+d.slice(4,6)+"/"+d.slice(6):d.length>4?d.slice(0,4)+"/"+d.slice(4):d;};
-async function api(path,method,body){const r=await fetch(path,{method:method||"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json();}catch{}d.status=r.status;return d;}
+async function api(path,method,body){const r=await fetch(path,{method:method||"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});let d={},parsed=true;try{d=await r.json();}catch{parsed=false;}d.status=r.status;d.parsed=parsed;return d;}
 
 function blank(){
   CUR=null;
@@ -190,8 +195,11 @@ function setTab(t){
 }
 async function refresh(){
   const d=await api("/api/callers");
-  if(!d.ok)throw new Error(d.error||"Access denied");
-  ME=d.me;NOW=d.now;NEXT=d.nextId;ALL=d.customers;OPT=d.options;
+  if(!d.ok){
+    if(!d.parsed)throw new Error("The server does not have the Callers Data update yet (HTTP "+d.status+"). Upload the new files (server.js, public/callers.html) and restart the server.");
+    throw new Error(d.error||("Access denied (HTTP "+d.status+")."));
+  }
+  ME=d.me;SHEET=d.sheetUrl||"";NOW=d.now;NEXT=d.nextId;ALL=d.customers;OPT=d.options;
   $("cnt").textContent=ALL.length;
   if(!CUR)$("cidShow").textContent=NEXT;
 }
@@ -229,7 +237,7 @@ $("f").addEventListener("submit",async e=>{
   const body={};for(const k of ["phone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName"])body[k]=$(k).value;
   const d=CUR?await api("/api/callers/"+CUR.id,"PUT",body):await api("/api/callers","POST",body);
   $("saveBtn").disabled=false;
-  if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);say(d.message,"ok");if(c)load(c);say(d.message,"ok");}
+  if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);if(c)load(c);say(d.message,d.sheet&&!d.sheet.ok?"info":"ok");}
   else if(d.duplicate&&d.customer){load(d.customer);say(d.error,"bad");}
   else say(d.error||"Could not save.","bad");
 });
@@ -239,6 +247,18 @@ $("delBtn").onclick=()=>{
   const m=`Delete customer ${CUR.id} (${CUR.name})? The ID will not be reused.`;
   if(w&&w.showConfirm)w.showConfirm(m,ok=>{if(ok)run();});else if(confirm(m))run();
 };
+$("sheetBtn").onclick=()=>{
+  const m=$("listMsg");
+  if(!SHEET){m.className="notice bad";m.textContent="The Google Sheet is not connected yet. Main admin: open the order page → ⚙ Settings → Sheet connection and paste the Web app URL.";return;}
+  try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(SHEET);return;}}catch{}
+  window.open(SHEET,"_blank");
+};
+$("syncBtn").onclick=async()=>{
+  const m=$("listMsg");$("syncBtn").disabled=true;m.className="notice info";m.textContent="Sending…";
+  const d=await api("/api/callers/sync","POST",{});$("syncBtn").disabled=false;
+  m.className="notice "+(d.ok?"ok":"bad");m.textContent=d.ok?d.message:("Google Sheet NOT updated: "+(d.error||"unknown error"));
+  if(d.ok)await refresh();
+};
 $("copyBtn").onclick=async()=>{
   const H=["Customer ID","Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
   const cell=v=>String(v==null?"":v).replace(/[\t\r\n]+/g," ");
@@ -246,7 +266,7 @@ $("copyBtn").onclick=async()=>{
   const text=[H.join("\t"),...rows].join("\n");
   try{await navigator.clipboard.writeText(text);$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}
   catch{const t=document.createElement("textarea");t.value=text;document.body.appendChild(t);t.select();try{document.execCommand("copy");$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}catch{$("copyBtn").textContent="Copy failed";}t.remove();}
-  setTimeout(()=>{$("copyBtn").textContent="📋 Copy as table (paste into Google Sheet)";},2500);
+  setTimeout(()=>{$("copyBtn").textContent="📋 Copy as table";},2500);
 };
 
 (async()=>{
@@ -256,9 +276,10 @@ $("copyBtn").onclick=async()=>{
     fill("customerStatus",OPT.customerStatus);fill("source",OPT.source);fill("orderStatus",OPT.orderStatus);
     $("fStatus").innerHTML='<option value="">All order statuses</option>'+OPT.orderStatus.map(s=>`<option>${esc(s)}</option>`).join("");
     gate.style.display="none";blank();
+    if(ME.role==="owner")$("syncBtn").style.display="inline-block";
   }catch(e){
-    let m="Access denied. Open this page from the AMBAR Telegram bot, using an assigned admin account.";
-    try{const r=await (await fetch("/api/me")).json();if(r.error)m=r.error;}catch{}
+    let m=(e&&e.message)||"Could not open Callers Data.";
+    if(/Access denied|not an assigned admin|UNAUTHORISED/i.test(m)){try{const r=await (await fetch("/api/me")).json();if(r.error)m=r.error;}catch{}}
     $("gateMsg").textContent=m;
   }
 })();
