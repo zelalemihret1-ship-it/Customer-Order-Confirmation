@@ -779,7 +779,6 @@ app.get(["/", "/index.html"], sendPage("index.html", PAGE_INDEX));
 app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/customers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
-app.get("/connections.html", sendPage("connections.html", "<!doctype html><meta charset=utf-8><p>public/connections.html is missing. Keep the public folder in the deploy.</p>"));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
@@ -3014,7 +3013,11 @@ app.put("/api/callers/:id", async (req, res) => {
   const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
   res.json({ ok: true, customer: rec, sheet, message: `Updated customer ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
 });
-// (The separate customers-only sync was removed: "Sync All" on the Connections page sends orders and customers together.)
+app.post("/api/callers/sync", async (req, res) => { // owner only: write every customer to the "Callers" tab (back-fill / repair)
+  if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
+  const sheet = await pushAllCallers();
+  res.json({ ok: sheet.ok, sheet, error: sheet.ok ? "" : sheet.error, message: sheet.ok ? `Google Sheet updated: ${callersDb.list.length} customers.` : "" });
+});
 app.delete("/api/callers/:id", async (req, res) => {
   if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
   const before = callersDb.list.length;
