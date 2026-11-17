@@ -433,8 +433,8 @@ function render(msg,good){
   const ok=s.configured&&!s.lastError;
   box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
   +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
-  +(s.configured?'<button data-a="all" style="'+bs+';background:#188038">⚡ Connect &amp; sync EVERYTHING (one click)</button><button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="ver" style="'+bs+';background:#5f6368">🔍 Check script version</button><button data-a="copy" style="'+bs+';background:#5f6368">📋 Copy latest script</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL (orders + customers) to the sheet now</button>'
-    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. <b>Sync ALL</b> sends every order and all customer information (Customers Data tab) in one go. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
+  +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync-orders" style="'+bs+';background:#b06f00">🔄 1 · Sync main order index (orders)</button><button data-a="sync-customers" style="'+bs+';background:#8a5a00">👥 2 · Sync Customers Data</button><button data-a="sync" style="'+bs+';background:#7a4a00">⚡ 3 · Sync ALL (orders + customers)</button>'
+    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. <b>1</b> sends the orders, <b>2</b> sends the customer information (Customers Data tab), <b>3</b> sends both. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
     :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
       +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
   +((!s.configured||s.lastError)?'<div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><b>🔗 Connect once — saved for all time</b><div style="font-size:13px;color:#555;margin:4px 0">Paste the Web app URL (ends with /exec). After it connects, the app remembers it permanently, even after restarts.</div><input id="shUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shKey" placeholder="Password (only if you set SECRET in the script)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shLink" placeholder="Sheet address (optional, so the button can open it)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><button data-a="all" style="'+bs+';background:#188038">⚡ Connect &amp; sync EVERYTHING (one click)</button></div>':'')
@@ -456,21 +456,9 @@ ov.addEventListener("click",async e=>{
     catch(err){render("❌ "+err.message,false);}
     return;
   }
-  if(a==="ver"){
-    b.disabled=true;b.textContent="Checking…";
-    try{const d=await api("/api/sheets/check-version",true);render(d.message||d.error,!!d.ok);}catch(err){render("❌ "+err.message,false);}
-    return;
-  }
-  if(a==="copy"){
-    try{const t=await (await fetch("/api/sheets/script")).text();
-      try{await navigator.clipboard.writeText(t);}catch{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();}
-      render("📋 Script copied ("+t.length+" characters). Now: Sheet → Extensions → Apps Script → select all → paste → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then tap 🔍 Check script version.",true);
-    }catch(err){render("❌ Could not copy: "+err.message,false);}
-    return;
-  }
-  if(a==="test"||a==="sync"){
+  if(a==="test"||a==="sync"||a==="sync-orders"||a==="sync-customers"){
     const label=b.textContent;b.disabled=true;b.textContent="Working…";
-    try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render(d.message||d.error,!!d.ok);}
+    try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render((d.message||"")+(d.ok||!d.error?"":((d.message?"\n\n":"")+d.error)),!!d.ok);}
     catch(err){render("❌ "+err.message,false);}
   }
 });
