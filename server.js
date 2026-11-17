@@ -1196,7 +1196,17 @@ const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "username", "Locatio
 function callersCall(payload) {
   if (!SCRIPT_URL) return Promise.resolve({ ok: false, error: "Google Sheet is not connected (main admin: ⚙ → Sheet connection → paste the Web app /exec URL)." });
   return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
-    .catch(e => ({ ok: false, error: /unknown action/i.test(String(e && e.message || e)) ? "Your Google Apps Script is still the OLD version. Open the sheet → Extensions → Apps Script, paste the NEW google-sheet-script.gs, Save, then Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. (If you make a New deployment instead, paste its new /exec link in ⚙ Sheet connection.)" : String(e && e.message || e).slice(0, 300) }));
+    .catch(async e => {
+      if (!/unknown action/i.test(String(e && e.message || e))) return { ok: false, error: String(e && e.message || e).slice(0, 300) };
+      const v = await scriptVersionNow();
+      return { ok: false, error: `The Google link saved in this app still runs an OLD script${v ? ` (it answers: "${v}")` : ""}; the new one must say "v71". Fix: paste the new google-sheet-script.gs in Extensions → Apps Script → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then open the /exec link in a browser: it must show "v71". If it does not, you are editing a different script or deployment than the link saved in ⚙ Sheet connection.` };
+    });
+}
+async function scriptVersionNow() { // asks the saved Web app link which script version it is really running
+  try {
+    let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, ""); const f = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i); if (f) url = f[0];
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) }); const d = JSON.parse(await r.text()); return String(d.version || "no version (very old script)");
+  } catch { return ""; }
 }
 const callerSave = row => callersCall({ action: "callerUpsert", row });
 const callersSyncAll = rows => callersCall({ action: "callersSync", rows });
@@ -2901,7 +2911,7 @@ function callerError(f) {
   if (f.orderStatus === "Rejected" && !f.rejectionReason) return "Write the rejection reason.";
   return "";
 }
-const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => a.seq - b.seq).map(callerSheetRow)));
+const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow))); // newest customer first
 const callerSheetRow = c => [c.id, c.phone, c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
 let callersSheetUrl = "";
 const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, error: (r && r.error) || "Google Sheet not updated." }; };
