@@ -416,79 +416,6 @@ ov.addEventListener("click",async e=>{
 document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
 })();
 </script>
-<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button><button id="shNew" title="Start a new Ethiopian-month sheet" style="display:none;padding:10px 14px;border:0;border-radius:24px;background:#b89552;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">♻ Archive old list &amp; Start New</button></div>
-<div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<script>
-// Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
-(function(){
-const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const api=async(p,post)=>{const r=await fetch(p,post?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:{});return r.json();};
-const bar=document.getElementById("shBar"),ov=document.getElementById("shOverlay"),box=document.getElementById("shBox");
-const bs='font-size:15px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box;border:0;border-radius:8px;color:#fff;background:#1a73e8;cursor:pointer';
-let st=null;
-function openExternal(u){try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(u);return;}}catch{}window.open(u,"_blank","noopener");}
-async function status(){try{st=await api("/api/sheets/status");}catch{st={ok:false,error:"Could not reach the server."};}return st;}
-function render(msg,good){
-  const s=st||{};
-  const ok=s.configured&&!s.lastError;
-  box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
-  +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
-  +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="ver" style="'+bs+';background:#5f6368">🔍 Check script version</button><button data-a="copy" style="'+bs+';background:#5f6368">📋 Copy latest script</button><button data-a="sync" style="'+bs+';background:#b06f00">🔄 Sync ALL orders to the sheet now</button>'
-    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
-    :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
-      +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
-  +((!s.configured||s.lastError)?'<div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><b>🔗 Connect once — saved for all time</b><div style="font-size:13px;color:#555;margin:4px 0">Paste the Web app URL (ends with /exec). After it connects, the app remembers it permanently, even after restarts.</div><input id="shUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shKey" placeholder="Password (only if you set SECRET in the script)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shLink" placeholder="Sheet address (optional, so the button can open it)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><button data-a="connect" style="'+bs+';background:#188038">✅ Connect &amp; save permanently</button></div>':'')
-  +(s.configured&&s.saved?'<p style="font-size:12px;color:#188038">🔒 Connection saved permanently — it reconnects by itself after any restart or Google hiccup.</p>':'')
-  +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
-  +(s.lastError?'<p style="color:#c62828;font-size:13px;white-space:pre-wrap">⚠ '+esc(s.lastError)+'</p>':'')
-  +'<div id="shMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap;color:'+(good===false?'#c62828':'#188038')+'">'+esc(msg||"")+'</div>';
-}
-async function openPanel(){ov.style.display="block";box.textContent="Loading…";await status();render();}
-ov.addEventListener("click",async e=>{
-  const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  const a=b.dataset.a;
-  if(a==="close"){ov.style.display="none";return;}
-  if(a==="open"){if(st?.url)openExternal(st.url);return;}
-  if(a==="connect"){
-    const v=i=>((document.getElementById(i)||{}).value||"").trim();
-    b.disabled=true;b.textContent="Connecting…";
-    try{const r=await fetch("/api/sheets/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scriptUrl:v("shUrl"),scriptKey:v("shKey"),sheetUrl:v("shLink")})});const d=await r.json();st={...st,...d};render(d.message||d.error,!!d.ok);}
-    catch(err){render("❌ "+err.message,false);}
-    return;
-  }
-  if(a==="ver"){
-    b.disabled=true;b.textContent="Checking…";
-    try{const d=await api("/api/sheets/check-version",true);render(d.message||d.error,!!d.ok);}catch(err){render("❌ "+err.message,false);}
-    return;
-  }
-  if(a==="copy"){
-    try{const t=await (await fetch("/api/sheets/script")).text();
-      try{await navigator.clipboard.writeText(t);}catch{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();}
-      render("📋 Script copied ("+t.length+" characters). Now: Sheet → Extensions → Apps Script → select all → paste → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then tap 🔍 Check script version.",true);
-    }catch(err){render("❌ Could not copy: "+err.message,false);}
-    return;
-  }
-  if(a==="test"||a==="sync"){
-    const label=b.textContent;b.disabled=true;b.textContent="Working…";
-    try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render(d.message||d.error,!!d.ok);}
-    catch(err){render("❌ "+err.message,false);}
-  }
-});
-// Main button: opens the sheet directly when connected; otherwise shows the setup panel.
-let shOwner=false;
-document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
-document.getElementById("shCfg").onclick=openPanel;
-// "Archive old list & Start New" — main admin only (the server refuses everyone else).
-function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
-document.getElementById("shNew").onclick=()=>{
-  const b=document.getElementById("shNew"),msg="Archive the OLD list and start the Google Sheet as NEW?\n\nAll current month tabs are kept as 'Backup …' tabs (nothing is deleted). A clean new month tab is created and only NEW orders go into it.";
-  const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/start-new",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
-  const w=window.Telegram?.WebApp;if(w&&w.showConfirm){w.showConfirm(msg,ok=>{if(ok)go();});}else if(confirm(msg))go();
-};
-window.AMBAR_openSheetTab=async(which)=>{await status();const u=which==="graphs"?st.graphsUrl:which==="summary"?st.summaryUrl:st.url;if(u)openExternal(u);else alert("The Google Sheet is not connected yet.");};
-(async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";else document.getElementById("shNew").style.display="inline-block";}}catch{}})();
-})();
-</script>
 <button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
 <div id="myOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="myBox" style="background:#fff;max-width:520px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
@@ -530,7 +457,7 @@ openBtn.onclick=()=>{ov.style.display="block";render();};
 })();
 </script>
 <style>
-#acOpen,#shBar,#myOpen{display:none!important}
+#acOpen,#myOpen{display:none!important}
 #stOpen{position:fixed;right:14px;bottom:14px;z-index:9998;width:40px;height:40px;padding:0;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(24,22,19,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:#f3d9a4;display:none;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.28);cursor:pointer;transition:transform .2s,background .2s}#stOpen:hover,#stOpen:active{transform:rotate(60deg);background:rgba(24,22,19,.9)}#stOpen svg{width:20px;height:20px}
 #stBox button{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;font:500 14px system-ui,sans-serif;padding:11px 12px;margin:5px 0;border:1px solid #ece6d8;border-radius:12px;background:#faf8f3;color:#222;cursor:pointer;transition:background .15s}#stBox button:hover{background:#f1ebdd}
 #stBox button.main{background:#153a2e;color:#fff;border-color:#153a2e}
@@ -548,11 +475,9 @@ const items=()=>{
   const L=[];
   L.push('<h4>Customers</h4>');
   L.push('<button class="main" data-c="callers">👥 Customers Data (Customer IDs)</button>');
-  L.push('<h4>Google Sheet</h4>');
-  L.push('<button class="main" data-c="sheet">📊 Open Google Sheet</button>');
+  L.push('<h4>Connections</h4>');
+  L.push('<button class="main" data-c="connections">🔌 Connections (Google Sheet · Sync All)</button>');
   if(role==="owner"){
-    L.push('<button data-c="cfg">🔌 Sheet connection: test / sync all</button>');
-    L.push('<button class="warn" data-c="zero">🗑 Start from ZERO (backup + clear all)</button>');
     L.push('<h4>Admins</h4>');
     L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
   }
@@ -568,21 +493,7 @@ ov.addEventListener("click",e=>{
   const c=b.dataset.c;
   if(c==="close"){ov.style.display="none";return;}
   if(c==="callers"){window.location.href="/callers.html"+(window.location.hash||"");return;}
-  if(c==="sheet"){go("shOpen");return;}
-  if(c==="summary"||c==="graphs"){ov.style.display="none";window.AMBAR_openSheetTab&&window.AMBAR_openSheetTab(c);return;}
-  if(c==="cfg"){go("shCfg");return;}
-  if(c==="zero"){
-    const w=window.Telegram?.WebApp,say=m=>{if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);};
-    const ask=(m,cb)=>{if(w&&w.showConfirm){w.showConfirm(m,ok=>{if(ok)cb();});}else if(confirm(m))cb();};
-    ask("START FROM ZERO?\n\n1) Every order is saved in the Google Sheet as a BACKUP.\n2) ALL orders are then DELETED from the app and the Google Sheet starts new.\n\nThis cannot be undone in the app.",()=>{
-      ask("Are you really sure? All orders will be removed and numbering starts again from the beginning.",async()=>{
-        b.disabled=true;b.textContent="Working…";
-        try{const d=await (await fetch("/api/sheets/reset-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:"ZERO"})})).json();say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
-        b.disabled=false;b.textContent="🗑 Start from ZERO (backup + clear all)";
-      });
-    });
-    return;
-  }
+  if(c==="connections"){window.location.href="/connections.html"+(window.location.hash||"");return;}
   if(c==="admins"){go("acOpen");return;}
   if(c==="connect"){go("myOpen");return;}
 });
