@@ -1,7 +1,9 @@
-v73 - CUSTOMERS DATA FIRST + LIVE ORDERS VIEW + RESTORED GRAPHS
- - Customers Data is now the first tab in the Google Sheet.
+v73 - ONE SHARED GOOGLE SHEET + CUSTOMER SEARCH + LIVE ORDERS VIEW + GRAPHS
+ - The order form index and Customers Data index use ONE Google spreadsheet and ONE Apps Script deployment. Customers Data is the first tab.
  - Orders View is restored as a combined view of every month, with Ethiopian calendar dates and newest order/time at the top. It refreshes after each save and full sync.
  - Graphs is restored and rebuilt from the live hidden _Data table; chart refresh runs after order changes.
+ - /exec reports the short version field "v73" for reliable version checking.
+ - Customer ID / name / phone search now displays matching choices immediately while typing, including normalized phone digits.
  - Run AMBAR -> Fix now (newest order on top) after updating the Apps Script to rebuild the tabs and charts.
 
 v72 - SHEET CONNECTION PANEL: new buttons "Check script version" (shows which version your saved /exec link really runs vs the latest) and "Copy latest script" (copies google-sheet-script.gs so you can paste it in Apps Script). The expected version in the error message now follows the script file automatically.
