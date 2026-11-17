@@ -142,8 +142,7 @@ button:disabled{opacity:.5;cursor:default}
       <select id="fSales"><option value="">All sales names</option></select>
     </div>
     <div class="row" style="margin-bottom:10px">
-      <button class="primary" type="button" id="sheetBtn">📊 Open Google Sheet (Customers Data tab)</button>
-      <button class="ghost" type="button" id="syncBtn" style="display:none">🔄 Send all to Google Sheet</button>
+      <button class="primary" type="button" id="connBtn">🔌 Connections · Google Sheet · Sync All</button>
       <button class="gold" type="button" id="copyBtn">📋 Copy as table</button>
     </div>
     <div id="listMsg" class="notice"></div>
@@ -247,18 +246,8 @@ $("delBtn").onclick=()=>{
   const m=`Delete customer ${CUR.id} (${CUR.name})? The ID will not be reused.`;
   if(w&&w.showConfirm)w.showConfirm(m,ok=>{if(ok)run();});else if(confirm(m))run();
 };
-$("sheetBtn").onclick=()=>{
-  const m=$("listMsg");
-  if(!SHEET){m.className="notice bad";m.textContent="The Google Sheet is not connected yet. Main admin: open the order page → ⚙ Settings → Sheet connection and paste the Web app URL.";return;}
-  try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(SHEET);return;}}catch{}
-  window.open(SHEET,"_blank");
-};
-$("syncBtn").onclick=async()=>{
-  const m=$("listMsg");$("syncBtn").disabled=true;m.className="notice info";m.textContent="Sending…";
-  const d=await api("/api/callers/sync","POST",{});$("syncBtn").disabled=false;
-  m.className="notice "+(d.ok?"ok":"bad");m.textContent=d.ok?d.message:("Google Sheet NOT updated: "+(d.error||"unknown error"));
-  if(d.ok)await refresh();
-};
+// The Google Sheet link, open button and Sync All live on ONE page now: Connections.
+$("connBtn").onclick=()=>{window.location.href="/connections.html"+(window.location.hash||"");};
 $("copyBtn").onclick=async()=>{
   const H=["Customer ID","Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
   const cell=v=>String(v==null?"":v).replace(/[\t\r\n]+/g," ");
@@ -276,7 +265,6 @@ $("copyBtn").onclick=async()=>{
     fill("customerStatus",OPT.customerStatus);fill("source",OPT.source);fill("orderStatus",OPT.orderStatus);
     $("fStatus").innerHTML='<option value="">All order statuses</option>'+OPT.orderStatus.map(s=>`<option>${esc(s)}</option>`).join("");
     gate.style.display="none";blank();
-    if(ME.role==="owner")$("syncBtn").style.display="inline-block";
   }catch(e){
     let m=(e&&e.message)||"Could not open Customers Data.";
     if(/Access denied|not an assigned admin|UNAUTHORISED/i.test(m)){try{const r=await (await fetch("/api/me")).json();if(r.error)m=r.error;}catch{}}
