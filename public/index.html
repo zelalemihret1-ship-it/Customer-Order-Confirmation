@@ -547,7 +547,7 @@ ov.addEventListener("click",e=>{
   const b=e.target.closest("button[data-c]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   const c=b.dataset.c;
   if(c==="close"){ov.style.display="none";return;}
-  if(c==="callers"){window.location.href="/callers.html";return;}
+  if(c==="callers"){window.location.href="/callers.html"+(window.location.hash||"");return;}
   if(c==="sheet"){go("shOpen");return;}
   if(c==="summary"||c==="graphs"){ov.style.display="none";window.AMBAR_openSheetTab&&window.AMBAR_openSheetTab(c);return;}
   if(c==="cfg"){go("shCfg");return;}
