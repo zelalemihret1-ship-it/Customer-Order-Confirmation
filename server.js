@@ -1202,14 +1202,16 @@ function callersCall(payload) {
       return { ok: false, error: `The Google link saved in this app still runs an OLD script${v ? ` (it answers: "${v}")` : ""}; the new one must say "${expectedScriptVersion().short}". Fix: paste the new google-sheet-script.gs in Extensions → Apps Script → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then open the /exec link in a browser: it must show "${expectedScriptVersion().short}". If it does not, you are editing a different script or deployment than the link saved in ⚙ Sheet connection.` };
     });
 }
-const SCRIPT_FILE = path.join(__dirname, "google-sheet-script.gs");
+const SCRIPT_VERSION_FALLBACK = "v71"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
-  try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); return { full: t, short: v ? v[0] : t }; } catch { return { full: "", short: "" }; }
+  try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
+  return { full: "", short: SCRIPT_VERSION_FALLBACK };
 }
 async function scriptVersionNow() { // asks the saved Web app link which script version it is really running
   try {
     let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, ""); const f = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i); if (f) url = f[0];
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) }); const d = JSON.parse(await r.text()); return String(d.version || "no version (very old script)");
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) }); const txt = await r.text(); scriptVersionNow.raw = txt.slice(0, 200); const d = JSON.parse(txt); return String(d.version || "no version (very old script)");
   } catch { return ""; }
 }
 const callerSave = row => callersCall({ action: "callerUpsert", row });
@@ -2593,15 +2595,16 @@ app.get("/api/sheets/status", (req, res) => {
   res.json({ ok: true, configured: st.configured, url: st.url, summaryUrl: st.summaryUrl, graphsUrl: st.graphsUrl });
 });
 app.get("/api/sheets/script", (req, res) => { // main admin: the exact latest google-sheet-script.gs, ready to copy/paste
+  if (!fs.existsSync(sheets.SCRIPT_FILE)) return res.status(404).type("text/plain").send("google-sheet-script.gs is not on the server. Open it from the project files and paste it into Apps Script.");
   res.type("text/plain; charset=utf-8").sendFile(sheets.SCRIPT_FILE);
 });
 app.post("/api/sheets/check-version", async (req, res) => { // which script version is the saved /exec link REALLY running?
-  const want = sheets.expectedScriptVersion(); const live = await sheets.scriptVersionNow();
+  const want = sheets.expectedScriptVersion(); const live = await sheets.scriptVersionNow(); const raw = sheets.scriptVersionNow.raw || "";
   const ok = !!live && !!want.short && live.includes(want.short);
   res.json({ ok, expected: want.short, live,
     message: ok ? `✅ The saved Google link runs the latest script (${live}).`
       : !live ? "❌ Could not reach the saved Google link (it did not answer). Check the /exec link in ⚙ Sheet connection."
-      : `❌ The saved Google link runs an OLD script: it answers "${live}", but it must say "${want.short}".\n\n1) Tap "📋 Copy latest script" below.\n2) Open the sheet → Extensions → Apps Script. Select ALL the code, paste, Save.\n3) Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.\n4) Tap "🔍 Check script version" again.\n\nStill old? You are editing a different script/deployment than the link saved here — open that exact /exec link in a browser and use the Apps Script project it belongs to, or create a New deployment and paste its new /exec link in "Connect".` });
+      : `❌ The saved Google link runs an OLD script: it answers "${live}", but it must say "${want.short}".\n\n1) Tap "📋 Copy latest script" below.\n2) Open the sheet → Extensions → Apps Script. Select ALL the code, paste, Save.\n3) Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.\n4) Tap "🔍 Check script version" again.\n\nThe link answered: ${raw || "(nothing)"}\n\nStill old? You are editing a different script/deployment than the link saved here — open that exact /exec link in a browser and use the Apps Script project it belongs to, or create a New deployment and paste its new /exec link in "Connect".` });
 });
 app.post("/api/sheets/connect", async (req, res) => { // main admin only: connect once, saved for all time
   try { await sheets.connect(req.body || {}); res.json({ ok: true, message: "✅ Google Sheet connected and saved. It stays connected permanently, even after restarts.", ...sheets.status() }); }
