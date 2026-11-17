@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Ambar Furniture — Callers Data</title>
+<title>Ambar Furniture — Customers Data</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
@@ -67,12 +67,12 @@ button:disabled{opacity:.5;cursor:default}
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 <header>
   <a class="back" href="/">← Order Cards</a>
-  <h1>📞 Callers Data</h1>
-  <div class="sub">Customer call log · separate from order confirmation</div>
+  <h1>👥 Customers Data</h1>
+  <div class="sub">Customer list · filled by sales or by the customer · separate from order confirmation</div>
 </header>
 <main>
   <div class="tabs">
-    <button id="tabForm" class="on">➕ Add / Update Call</button>
+    <button id="tabForm" class="on">➕ Add / Update Customer</button>
     <button id="tabList">📋 Customers (<span id="cnt">0</span>)</button>
   </div>
 
@@ -101,7 +101,7 @@ button:disabled{opacity:.5;cursor:default}
             <select id="source"></select>
           </label>
           <label class="full">Last Conversation
-            <textarea id="lastConversation" placeholder="What was said in the last call / chat…"></textarea>
+            <textarea id="lastConversation" placeholder="What was said in the last call / chat / message…"></textarea>
           </label>
           <label>Date <input id="date" placeholder="yyyy/mm/dd" inputmode="numeric" maxlength="10"></label>
           <label>Time <input id="time" type="time"></label>
@@ -142,7 +142,7 @@ button:disabled{opacity:.5;cursor:default}
       <select id="fSales"><option value="">All sales names</option></select>
     </div>
     <div class="row" style="margin-bottom:10px">
-      <button class="primary" type="button" id="sheetBtn">📊 Open Google Sheet (Callers tab)</button>
+      <button class="primary" type="button" id="sheetBtn">📊 Open Google Sheet (Customers Data tab)</button>
       <button class="ghost" type="button" id="syncBtn" style="display:none">🔄 Send all to Google Sheet</button>
       <button class="gold" type="button" id="copyBtn">📋 Copy as table</button>
     </div>
@@ -196,7 +196,7 @@ function setTab(t){
 async function refresh(){
   const d=await api("/api/callers");
   if(!d.ok){
-    if(!d.parsed)throw new Error("The server does not have the Callers Data update yet (HTTP "+d.status+"). Upload the new files (server.js, public/callers.html) and restart the server.");
+    if(!d.parsed)throw new Error("The server does not have the Customers Data update yet (HTTP "+d.status+"). Upload the new files (server.js, public/callers.html) and restart the server.");
     throw new Error(d.error||("Access denied (HTTP "+d.status+")."));
   }
   ME=d.me;SHEET=d.sheetUrl||"";NOW=d.now;NEXT=d.nextId;ALL=d.customers;OPT=d.options;
@@ -278,7 +278,7 @@ $("copyBtn").onclick=async()=>{
     gate.style.display="none";blank();
     if(ME.role==="owner")$("syncBtn").style.display="inline-block";
   }catch(e){
-    let m=(e&&e.message)||"Could not open Callers Data.";
+    let m=(e&&e.message)||"Could not open Customers Data.";
     if(/Access denied|not an assigned admin|UNAUTHORISED/i.test(m)){try{const r=await (await fetch("/api/me")).json();if(r.error)m=r.error;}catch{}}
     $("gateMsg").textContent=m;
   }
