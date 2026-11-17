@@ -1,3 +1,5 @@
+v71 - NEWEST CUSTOMER ON TOP in the Customers Data tab (new customers are inserted right under the header; "Send all to Google Sheet" writes newest first). The script version is now "v71": open your Web app /exec link in a browser, it must show v71. If it shows an older version, the Google link saved in the app still runs the old script (paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> Edit -> New version -> Deploy). The "Unknown action" message in the app now tells you which version the link answers with.
+
 v70 - CUSTOMERS DATA + CUSTOMER-ID ORDER ID
  - "Callers Data" is renamed "Customers Data" (customers sometimes fill it themselves). Page: /customers.html (the old /callers.html still works). The Google Sheet tab is now "Customers Data" (an old "Callers" tab is renamed automatically, rows kept).
  - ORDER FORM: step 1 is the Customer ID. Choose the customer (search by ID / name / phone) -> Name, Phone, Location and @username are filled and the Order ID is made automatically (it is used as the Order Code, card and sheet).
