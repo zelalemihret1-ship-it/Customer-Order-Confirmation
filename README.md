@@ -1,3 +1,10 @@
+CALLERS DATA (v67): new separate page /callers.html (open it from ⚙ Settings -> "📞 Callers Data"). Fields: Customer ID, Phone Number, Name, username, Location, Status, Last Conversation, Date, Time, Order Status, Rejection Reason, Sales Name, Total Spend, Order id, Source.
+ - Customer ID is automatic: 0001, 0002, 0003 ... and is never reused (even after a delete).
+ - One customer = one ID: the phone number is the key (0911..., +251911..., 251911... are the same customer). Typing a known phone opens that customer; saving updates the same ID and keeps the earlier conversation in "Earlier conversations".
+ - Sales Name is filled automatically with the logged-in admin's name. Only the main admin can change it; only the main admin can delete a customer.
+ - Stored in data/callers.json and in Supabase app_settings.callers_data (same as the admin list). Date is Ethiopian (yyyy/mm/dd). "Copy as table" pastes straight into Google Sheets.
+ - The order confirmation page (index.html) is unchanged apart from the new Settings button.
+
 FIND CUSTOMER (v66): phone search now accepts a leading 0 or + (0911..., +251911..., 251911... all find the same customer). Paste the new google-sheet-script.gs into Apps Script and deploy a new version.
 
 ETHIOPIAN CALENDAR PICKER (v65): Order / Completion / Delivery date now open a calendar grid (Ethiopian months, Pagume 5/6 days, Today / Clear). Orders View now shows the exact Order, Completion and Delivery dates (yyyy/mm/dd) - paste the new google-sheet-script.gs into Apps Script and deploy a new version.
