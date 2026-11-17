@@ -1,3 +1,9 @@
+v73 - CUSTOMERS DATA FIRST + LIVE ORDERS VIEW + RESTORED GRAPHS
+ - Customers Data is now the first tab in the Google Sheet.
+ - Orders View is restored as a combined view of every month, with Ethiopian calendar dates and newest order/time at the top. It refreshes after each save and full sync.
+ - Graphs is restored and rebuilt from the live hidden _Data table; chart refresh runs after order changes.
+ - Run AMBAR -> Fix now (newest order on top) after updating the Apps Script to rebuild the tabs and charts.
+
 v72 - SHEET CONNECTION PANEL: new buttons "Check script version" (shows which version your saved /exec link really runs vs the latest) and "Copy latest script" (copies google-sheet-script.gs so you can paste it in Apps Script). The expected version in the error message now follows the script file automatically.
 
 v71 - NEWEST CUSTOMER ON TOP in the Customers Data tab (new customers are inserted right under the header; "Send all to Google Sheet" writes newest first). The script version is now "v71": open your Web app /exec link in a browser, it must show v71. If it shows an older version, the Google link saved in the app still runs the old script (paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> Edit -> New version -> Deploy). The "Unknown action" message in the app now tells you which version the link answers with.
