@@ -1199,7 +1199,7 @@ function callersCall(payload) {
     .catch(async e => {
       if (!/unknown action/i.test(String(e && e.message || e))) return { ok: false, error: String(e && e.message || e).slice(0, 300) };
       const v = await scriptVersionNow();
-      return { ok: false, error: `The Google link saved in this app still runs an OLD script${v ? ` (it answers: "${v}")` : ""}; the new one must say "${expectedScriptVersion().short}". FIX (2 minutes): tap "📋 Copy latest script" in ⚙ Sheet connection → in Google: Extensions → Apps Script → select ALL, paste, Save → run "authorize" once (Allow) → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then tap "🔍 Check script version" (it must say ${expectedScriptVersion().short}) and "Sync ALL". NO SHEET OR SCRIPT TO FIX? Create a NEW one: script.google.com → New project → paste the script → Save → run "authorize" → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link in ⚙ Sheet connection → Connect. The script creates a new Google Sheet by itself (orders + Customers Data tab), then tap "Sync ALL".` };
+      return { ok: false, error: "The Google script you connected is an old one and cannot store customers. Paste the new google-sheet-script.gs in a NEW project at script.google.com → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone), then paste the new /exec link in ⚙ Sheet connection → Connect. The Customers Data tab is created for you." };
     });
 }
 const SCRIPT_VERSION_FALLBACK = "v74"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
@@ -2596,18 +2596,6 @@ app.get("/api/sheets/status", (req, res) => {
   if (req.actor?.role === "owner") return res.json({ ok: true, role: "owner", ...st, ...counts });
   res.json({ ok: true, role: req.actor?.role || "admin", configured: st.configured, url: st.url, summaryUrl: st.summaryUrl, graphsUrl: st.graphsUrl, lastOkAt: st.lastOkAt, lastSyncAt: st.lastSyncAt, ...counts });
 });
-app.get("/api/sheets/script", (req, res) => { // main admin: the exact latest google-sheet-script.gs, ready to copy/paste
-  if (!fs.existsSync(sheets.SCRIPT_FILE)) return res.status(404).type("text/plain").send("google-sheet-script.gs is not on the server. Open it from the project files and paste it into Apps Script.");
-  res.type("text/plain; charset=utf-8").sendFile(sheets.SCRIPT_FILE);
-});
-app.post("/api/sheets/check-version", async (req, res) => { // which script version is the saved /exec link REALLY running?
-  const want = sheets.expectedScriptVersion(); const live = await sheets.scriptVersionNow(); const raw = sheets.scriptVersionNow.raw || "";
-  const ok = !!live && !!want.short && live.includes(want.short);
-  res.json({ ok, expected: want.short, live,
-    message: ok ? `✅ The saved Google link runs the latest script (${live}).`
-      : !live ? "❌ Could not reach the saved Google link (it did not answer). Check the /exec link in ⚙ Sheet connection."
-      : `❌ The saved Google link runs an OLD script: it answers "${live}", but it must say "${want.short}".\n\n1) Tap "📋 Copy latest script" below.\n2) Open the sheet → Extensions → Apps Script. Select ALL the code, paste, Save.\n3) Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.\n4) Tap "🔍 Check script version" again.\n\nThe link answered: ${raw || "(nothing)"}\n\nStill old? You are editing a different script/deployment than the link saved here — open that exact /exec link in a browser and use the Apps Script project it belongs to, or create a New deployment and paste its new /exec link in "Connect".` });
-});
 app.post("/api/sheets/connect", async (req, res) => { // main admin only: connect once, saved for all time
   try { await sheets.connect(req.body || {}); res.json({ ok: true, message: "✅ Google Sheet connected and saved. It stays connected permanently, even after restarts.", ...sheets.status() }); }
   catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
@@ -2646,25 +2634,32 @@ app.post("/api/sheets/reset-all", async (req, res) => { // MAIN ADMIN ONLY: back
 });
 // SYNC ALL: one button, one Google Sheet. Orders AND customer data are sent together; the result reports each part separately
 // (one part failing never hides the other).
-async function syncEverything(by) {
-  const parts = { orders: { ok: false, error: "" }, customers: { ok: false, error: "" } };
+async function syncOrdersPart(by) {
   try { await supabaseReady; if (supabase) await loadOrders(); } catch {}
-  try {
-    const r = await sheets.syncAll(orders, by);
-    parts.orders = { ok: true, total: r.total, added: r.added, updated: r.updated };
-  } catch (e) { parts.orders = { ok: false, error: String(e && e.message || e).slice(0, 300) }; }
+  try { const r = await sheets.syncAll(orders, by); return { ok: true, total: r.total, added: r.added, updated: r.updated }; }
+  catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 400) }; }
+}
+async function syncCustomersPart() {
   try {
     const c = await pushAllCallers(); // newest customer first, written to the "Customers Data" tab of the same sheet
-    parts.customers = c.ok ? { ok: true, total: callersDb.list.length } : { ok: false, error: c.error || "Customers were not written." };
-  } catch (e) { parts.customers = { ok: false, error: String(e && e.message || e).slice(0, 300) }; }
-  const ok = parts.orders.ok && parts.customers.ok;
-  const line = (label, p) => p.ok ? `✅ ${label}: ${p.total} synced` + (p.added !== undefined ? ` (${p.added} new, ${p.updated} refreshed)` : "") : `❌ ${label}: ${p.error}`;
-  return { ok, parts, message: `${line("Orders", parts.orders)}\n${line("Customers (Customers Data tab)", parts.customers)}`, error: ok ? "" : "Sync finished with a problem." };
+    return c.ok ? { ok: true, total: callersDb.list.length } : { ok: false, error: c.error || "Customers were not written." };
+  } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 400) }; }
 }
-app.post("/api/sheets/sync", async (req, res) => {
-  const r = await syncEverything(req.actor?.name || "Owner");
+const partLine = (label, p) => !p ? "" : p.ok ? `✅ ${label}: ${p.total} synced` + (p.added !== undefined ? ` (${p.added} new, ${p.updated} refreshed)` : "") : `❌ ${label}: ${p.error}`;
+async function syncEverything(by, which = "all") { // which: "orders" | "customers" | "all"
+  const parts = {};
+  if (which !== "customers") parts.orders = await syncOrdersPart(by);
+  if (which !== "orders") parts.customers = await syncCustomersPart();
+  const ok = Object.values(parts).every(p => p.ok);
+  return { ok, parts, message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers)].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
+}
+const syncRoute = which => async (req, res) => {
+  const r = await syncEverything(req.actor?.name || "Owner", which);
   res.json({ ...r, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
-});
+};
+app.post("/api/sheets/sync-orders", syncRoute("orders"));       // 1) the main order index only
+app.post("/api/sheets/sync-customers", syncRoute("customers")); // 2) the Customers Data tab only
+app.post("/api/sheets/sync", syncRoute("all"));                // 3) everything
 // ONE-CLICK CONNECT (⚙ Settings): saves the Google link (when one is typed), checks the script, creates every tab incl. "Customers Data",
 // then sends ALL data (orders + customers) to the same sheet.
 app.post("/api/sheets/connect-all", async (req, res) => {
@@ -2674,12 +2669,7 @@ app.post("/api/sheets/connect-all", async (req, res) => {
     else if (sheets.configured()) { await sheets.test(); steps.push("✅ Connection checked."); }
     else return res.json({ ok: false, error: "Paste the Google Web app link (it ends with /exec) first.", ...sheets.status() });
   } catch (e) { return res.json({ ok: false, error: e.message, ...sheets.status() }); }
-  const want = sheets.expectedScriptVersion(), live = await sheets.scriptVersionNow();
-  if (live && want.short && !live.includes(want.short)) {
-    return res.json({ ok: false, message: steps.join("\n"), ...sheets.status(),
-      error: `The saved Google link still runs an OLD script (it answers "${live}"; it must say "${want.short}"), so the Customers Data tab cannot be filled yet.\n\n1) Tap "📋 Copy latest script".\n2) In Google: Extensions → Apps Script → select ALL, paste, Save, run "authorize" once (Allow).\n3) Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.\n4) Press this button again.\n\nNo sheet / script to fix? script.google.com → New project → paste the script → Save → authorize → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the NEW /exec link here. The script creates a new Google Sheet by itself.` });
-  }
-  steps.push(`✅ Script ${live || want.short} · tabs ready (Orders, Customers Data, …).`);
+  steps.push("✅ Google Sheet reached.");
   const r = await syncEverything(by);
   res.json({ ok: r.ok, parts: r.parts, message: steps.join("\n") + "\n" + r.message, error: r.error, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
 });
