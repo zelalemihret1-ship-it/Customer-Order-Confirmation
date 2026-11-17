@@ -2652,7 +2652,9 @@ async function syncEverything(by, which = "all") { // which: "orders" | "custome
   if (which !== "customers") parts.orders = await syncOrdersPart(by);
   if (which !== "orders") parts.customers = await syncCustomersPart();
   const ok = Object.values(parts).every(p => p.ok);
-  return { ok, parts, needsScript: !!(parts.customers && parts.customers.needsScript), message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers)].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
+  const sid = u => (String(u || "").match(/\/d\/([\w-]+)/) || [])[1] || "", oId = sid(sheets.status().url), cId = sid(callersSheetUrl);
+  const sameLine = parts.orders?.ok && parts.customers?.ok && oId && cId ? (oId === cId ? "✅ Orders and Customers Data are in the SAME Google Sheet." : "⚠ Orders and Customers went to DIFFERENT Google Sheets — press Connect & sync EVERYTHING again.") : "";
+  return { ok, parts, needsScript: !!(parts.customers && parts.customers.needsScript), message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers), sameLine].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
 }
 const syncRoute = which => async (req, res) => {
   const r = await syncEverything(req.actor?.name || "Owner", which);
