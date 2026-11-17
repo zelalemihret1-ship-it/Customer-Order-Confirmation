@@ -1202,7 +1202,7 @@ function callersCall(payload) {
       return { ok: false, error: `The Google link saved in this app still runs an OLD script${v ? ` (it answers: "${v}")` : ""}; the new one must say "${expectedScriptVersion().short}". Fix: paste the new google-sheet-script.gs in Extensions → Apps Script → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then open the /exec link in a browser: it must show "${expectedScriptVersion().short}". If it does not, you are editing a different script or deployment than the link saved in ⚙ Sheet connection.` };
     });
 }
-const SCRIPT_VERSION_FALLBACK = "v71"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_VERSION_FALLBACK = "v73"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
 const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
   try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
