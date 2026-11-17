@@ -2590,8 +2590,9 @@ const sheetsAccess = (req, res, next) => {
   res.status(403).json({ ok: false, error: "Only the main admin can change the Google Sheet connection." });
 };
 app.use("/api/sheets", requireAccess, sheetsAccess);
-app.get("/api/sheets/status", (req, res) => {
+app.get("/api/sheets/status", async (req, res) => {
   const st = sheets.status();
+  if (req.actor?.role === "owner" && st.configured) { st.scriptVersion = (await sheets.scriptVersionNow()) || "not reachable"; st.scriptWanted = sheets.expectedScriptVersion().short; }
   // How much data is in the app (what "Sync ALL" sends).
   const counts = { orderCount: Array.isArray(orders) ? orders.length : 0, customerCount: callersDb.list.length };
   if (req.actor?.role === "owner") return res.json({ ok: true, role: "owner", ...st, ...counts });
@@ -2681,6 +2682,8 @@ app.post("/api/sheets/connect-all", async (req, res) => {
     else return res.json({ ok: false, error: "Paste the Google Web app link (it ends with /exec) first.", ...sheets.status() });
   } catch (e) { return res.json({ ok: false, error: e.message, ...sheets.status() }); }
   steps.push("✅ Google Sheet reached.");
+  { const v = await sheets.scriptVersionNow(), want = sheets.expectedScriptVersion().short;
+    if (v !== want) steps.push(`⚠ This link runs script "${v || "unknown"}", not ${want}. It is the OLD deployment link. Open your NEW Web app link in a browser: it must show "version":"${want}". Paste THAT link here.`); }
   const r = await syncEverything(by);
   res.json({ ok: r.ok, needsScript: r.needsScript, parts: r.parts, message: steps.join("\n") + "\n" + r.message, error: r.error, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
 });
