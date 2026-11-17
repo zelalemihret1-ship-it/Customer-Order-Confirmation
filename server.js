@@ -777,6 +777,7 @@ const sendPage = (file, fallback) => (req, res) => {
 };
 app.get(["/", "/index.html"], sendPage("index.html", PAGE_INDEX));
 app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
+app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
@@ -2828,6 +2829,103 @@ app.post("/api/telegram/webhook", async (req, res) => {
   }
 });
 
+// ── CALLERS DATA (separate index: /callers.html) ─────────────────────────────────
+// One record per customer. Customer ID = 0001, 0002, 0003 … and is never reused.
+// The same phone number always finds the SAME customer (one ID for one customer).
+// Sales Name is filled automatically with the name of the admin who is logged in.
+const CALLERS_FILE = path.join(__dirname, "data", "callers.json");
+let callersDb = { nextSeq: 1, list: [] };
+async function loadCallers() {
+  let db = null;
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "callers_data").maybeSingle(); if (data?.value && Array.isArray(data.value.list)) db = data.value; } catch {} }
+  if (!db) { try { const f = JSON.parse(fs.readFileSync(CALLERS_FILE, "utf8")); if (f && Array.isArray(f.list)) db = f; } catch {} }
+  if (db) { callersDb = { nextSeq: Math.max(Number(db.nextSeq) || 1, ...db.list.map(c => (Number(c.seq) || 0) + 1), 1), list: db.list }; }
+}
+async function saveCallers() {
+  try { fs.mkdirSync(path.dirname(CALLERS_FILE), { recursive: true }); fs.writeFileSync(CALLERS_FILE, JSON.stringify(callersDb)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "callers_data", value: callersDb, updated_at: new Date().toISOString() }); } catch {} }
+}
+const callerId = n => String(n).padStart(4, "0");
+// 0911…, +251911…, 251911… and 911… are the same customer.
+const phoneKey = p => { let d = String(p || "").replace(/\D/g, "").replace(/^0+/, ""); if (d.startsWith("251") && d.length >= 11) d = d.slice(3); return d; };
+const CALLER_STATUS = ["New Lead", "Interested", "Customer", "Not Interested"];
+const CALL_ORDER_STATUS = ["Pending", "Confirmed", "Rejected", "Follow-up"];
+const CALLER_SOURCES = ["Telegram", "Facebook", "Instagram", "TikTok", "Phone Call", "Walk-in", "Referral", "Other"];
+const callerNow = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: TZ }); return { date: ethDate(g.slice(0, 10)), time: g.slice(11, 16) }; };
+const callerPick = (v, list, fallback) => list.includes(String(v)) ? String(v) : fallback;
+function callerFields(b, actor, prev) {
+  const now = callerNow();
+  const username = String(b.username || "").trim().replace(/^@+/, "");
+  const orderStatus = callerPick(b.orderStatus, CALL_ORDER_STATUS, prev?.orderStatus || "Pending");
+  const spend = Number(String(b.totalSpend ?? "").replace(/,/g, ""));
+  const d = /^\d{4}\/\d{2}\/\d{2}$/.test(String(b.date || "").trim()) ? String(b.date).trim() : (prev?.date || now.date);
+  const t = /^\d{2}:\d{2}$/.test(String(b.time || "").trim()) ? String(b.time).trim() : (prev?.time || now.time);
+  return {
+    phone: clean(b.phone).trim().slice(0, 30),
+    name: clean(b.name).trim().slice(0, 120),
+    username: username ? "@" + username.slice(0, 60) : "",
+    location: clean(b.location).trim().slice(0, 160),
+    customerStatus: callerPick(b.customerStatus, CALLER_STATUS, prev?.customerStatus || "New Lead"),
+    lastConversation: clean(b.lastConversation).trim().slice(0, 1500),
+    date: d, time: t, orderStatus,
+    rejectionReason: orderStatus === "Rejected" ? clean(b.rejectionReason).trim().slice(0, 300) : "",
+    totalSpend: Number.isFinite(spend) && spend > 0 ? spend : 0,
+    orderId: clean(b.orderId).trim().slice(0, 60),
+    source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram")
+  };
+}
+function callerError(f) {
+  if (phoneKey(f.phone).length < 7) return "Enter a valid phone number.";
+  if (!f.name) return "Enter the customer name.";
+  if (f.orderStatus === "Rejected" && !f.rejectionReason) return "Write the rejection reason.";
+  return "";
+}
+app.use("/api/callers", requireAccess);
+app.get("/api/callers", (req, res) => {
+  const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
+  res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), nextId: callerId(callersDb.nextSeq), customers: list,
+    options: { customerStatus: CALLER_STATUS, orderStatus: CALL_ORDER_STATUS, source: CALLER_SOURCES } });
+});
+app.get("/api/callers/lookup", (req, res) => {
+  const k = phoneKey(req.query.phone);
+  res.json({ ok: true, customer: k.length >= 7 ? (callersDb.list.find(c => phoneKey(c.phone) === k) || null) : null });
+});
+app.post("/api/callers", async (req, res) => {
+  const f = callerFields(req.body || {}, req.actor);
+  const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
+  const dup = callersDb.list.find(c => phoneKey(c.phone) === phoneKey(f.phone));
+  if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
+  // Sales Name = the logged-in admin's name. Only the owner may type another sales name.
+  const sales = req.actor.role === "owner" && String(req.body?.salesName || "").trim() ? String(req.body.salesName).trim().slice(0, 80) : (req.actor.name || "");
+  const seq = callersDb.nextSeq++;
+  const rec = { id: callerId(seq), seq, ...f, salesName: sales, createdBy: req.actor.name || "", createdAt: stamp(), updatedAt: stamp(), history: [] };
+  callersDb.list.push(rec); await saveCallers();
+  res.json({ ok: true, customer: rec, message: `Saved. Customer ID ${rec.id}` });
+});
+app.put("/api/callers/:id", async (req, res) => {
+  const rec = callersDb.list.find(c => c.id === req.params.id);
+  if (!rec) return res.status(404).json({ ok: false, error: "Customer not found." });
+  const f = callerFields(req.body || {}, req.actor, rec);
+  const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
+  const dup = callersDb.list.find(c => c.id !== rec.id && phoneKey(c.phone) === phoneKey(f.phone));
+  if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
+  const watch = ["lastConversation", "date", "time", "orderStatus", "rejectionReason", "totalSpend", "orderId"];
+  if (watch.some(k => String(rec[k] ?? "") !== String(f[k] ?? ""))) {
+    rec.history = [{ date: rec.date, time: rec.time, lastConversation: rec.lastConversation, orderStatus: rec.orderStatus, rejectionReason: rec.rejectionReason, totalSpend: rec.totalSpend, orderId: rec.orderId, by: req.actor.name || "" }, ...(rec.history || [])].slice(0, 50);
+  }
+  Object.assign(rec, f); // the ID never changes
+  if (req.actor.role === "owner" && String(req.body?.salesName || "").trim()) rec.salesName = String(req.body.salesName).trim().slice(0, 80);
+  rec.updatedAt = stamp(); await saveCallers();
+  res.json({ ok: true, customer: rec, message: `Updated customer ${rec.id}` });
+});
+app.delete("/api/callers/:id", async (req, res) => {
+  if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
+  const before = callersDb.list.length;
+  callersDb.list = callersDb.list.filter(c => c.id !== req.params.id); // numbering is NOT reused
+  if (callersDb.list.length === before) return res.status(404).json({ ok: false, error: "Customer not found." });
+  await saveCallers(); res.json({ ok: true, message: "Deleted." });
+});
+
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendPage("index.html", PAGE_INDEX));
 
@@ -2844,6 +2942,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await restoreSheetConnection(); // the saved Google Sheet link comes back by itself
     sheets.keepAlive();
     await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
+    await loadCallers(); // callers data (Customer IDs 0001, 0002 …)
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
     if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message));
