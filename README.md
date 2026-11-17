@@ -1,3 +1,8 @@
+v68 - CALLERS GOOGLE SHEET: every save on the Callers Data page is also written to a "Callers" tab (columns exactly as your list, Customer ID 0001... in column A, one row per customer; saving the same customer updates the same row). Needs the Apps Script Web app link (GOOGLE_SCRIPT_URL / main admin's Sheet connection).
+ - You MUST paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> New version, then restart the server.
+ - Main admin: Customers tab -> "Send all to Google Sheet" back-fills / repairs the tab. Everyone: "Open Google Sheet (Callers tab)".
+ - Fixed: the Callers page now shows the real reason when it cannot open (old server without the update, or your Telegram ID is not assigned) instead of one generic message.
+
 CALLERS DATA (v67): new separate page /callers.html (open it from ⚙ Settings -> "📞 Callers Data"). Fields: Customer ID, Phone Number, Name, username, Location, Status, Last Conversation, Date, Time, Order Status, Rejection Reason, Sales Name, Total Spend, Order id, Source.
  - Customer ID is automatic: 0001, 0002, 0003 ... and is never reused (even after a delete).
  - One customer = one ID: the phone number is the key (0911..., +251911..., 251911... are the same customer). Typing a known phone opens that customer; saving updates the same ID and keeps the earlier conversation in "Earlier conversations".
