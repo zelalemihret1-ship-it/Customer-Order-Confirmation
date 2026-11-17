@@ -262,7 +262,7 @@ $("syncBtn").onclick=async()=>{
 $("copyBtn").onclick=async()=>{
   const H=["Customer ID","Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
   const cell=v=>String(v==null?"":v).replace(/[\t\r\n]+/g," ");
-  const rows=[...ALL].sort((a,b)=>a.seq-b.seq).map(c=>[c.id,c.phone,c.name,c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
+  const rows=[...ALL].sort((a,b)=>b.seq-a.seq).map(c=>[c.id,c.phone,c.name,c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
   const text=[H.join("\t"),...rows].join("\n");
   try{await navigator.clipboard.writeText(text);$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}
   catch{const t=document.createElement("textarea");t.value=text;document.body.appendChild(t);t.select();try{document.execCommand("copy");$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}catch{$("copyBtn").textContent="Copy failed";}t.remove();}
