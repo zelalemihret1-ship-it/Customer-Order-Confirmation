@@ -778,6 +778,7 @@ const sendPage = (file, fallback) => (req, res) => {
 app.get(["/", "/index.html"], sendPage("index.html", PAGE_INDEX));
 app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/customers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
@@ -994,7 +995,7 @@ let summaryUrl = "", graphsUrl = "", cutoffMs = 0; // cutoffMs: orders created b
 const isOld = o => cutoffMs > 0 && o && o.createdAt && Date.parse(o.createdAt) < cutoffMs;
 function ready() {
   if (DIRECT) {
-    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); Promise.resolve(persistFn(connectionState())).catch(() => {}); }).catch(e => { readyP = null; lastError = e.message; throw e; });
+    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD, callerHead: CALLER_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); Promise.resolve(persistFn(connectionState())).catch(() => {}); }).catch(e => { readyP = null; lastError = e.message; throw e; });
     return readyP;
   }
   if (!readyP) readyP = setup().catch(e => { readyP = null; lastError = e.message; throw e; });
@@ -1195,7 +1196,7 @@ const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "username", "Locatio
 function callersCall(payload) {
   if (!SCRIPT_URL) return Promise.resolve({ ok: false, error: "Google Sheet is not connected (main admin: ⚙ → Sheet connection → paste the Web app /exec URL)." });
   return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
-    .catch(e => ({ ok: false, error: String(e && e.message || e).slice(0, 300) }));
+    .catch(e => ({ ok: false, error: /unknown action/i.test(String(e && e.message || e)) ? "Your Google Apps Script is still the OLD version. Open the sheet → Extensions → Apps Script, paste the NEW google-sheet-script.gs, Save, then Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. (If you make a New deployment instead, paste its new /exec link in ⚙ Sheet connection.)" : String(e && e.message || e).slice(0, 300) }));
 }
 const callerSave = row => callersCall({ action: "callerUpsert", row });
 const callersSyncAll = rows => callersCall({ action: "callersSync", rows });
@@ -2419,7 +2420,14 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (supabase) await loadOrders();
     order.id = nextId++;
     order.token = order.token || require("crypto").randomBytes(12).toString("hex"); // answer-page link token
-    order.orderId = String(order.orderId || "").trim().slice(0, 40); // typed by the admin
+    if (String(order.customerId || "").trim()) { // Order ID = Customer ID + Ethiopian month (+ A, B, C … for the next orders of that customer)
+      const cust = callersDb.list.find(c => c.id === String(order.customerId).trim());
+      if (!cust) { nextId--; return res.status(400).json({ ok: false, error: "Customer ID " + order.customerId + " was not found in Customers Data." }); }
+      order.customerId = cust.id;
+      order.orderId = nextOrderId(cust.id, order.orderDate, order.orderId);
+      reservedOrderIds.add(order.orderId.toLowerCase());
+    } else order.customerId = "";
+    order.orderId = String(order.orderId || "").trim().slice(0, 40); // Order ID (made from the Customer ID, or typed when "no customer ID" was chosen)
     if (!order.orderId) { nextId--; return res.status(400).json({ ok: false, error: "Please type the Order code (e.g. Z-001)." }); }
     order.status = "Pending";
     order.createdAt = order.createdAt || new Date().toISOString();
@@ -2430,6 +2438,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.strictAdmin = !isOwner; order.onlyConnection = true;
     order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
     await saveOrderRecord(order); // delivery failures must never discard an order
+    linkOrderToCustomer(order).catch(() => {}); // add this Order ID to the customer's row in Customers Data
 
     let sentFrom = "", failure = "", pollNote = "", directFailure = "";
     // Best route first: the bot sends the card photo WITH the 3 buttons as ONE message (visible immediately).
@@ -2574,7 +2583,7 @@ app.post("/api/sheets/connect", async (req, res) => { // main admin only: connec
   catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
 });
 app.post("/api/sheets/test", async (req, res) => {
-  try { const r = await sheets.test(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
+  try { const r = await sheets.test(); await pushAllCallers(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
   catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
 });
 app.post("/api/sheets/new-month", async (req, res) => { // main admin only (sheetsAccess blocks everyone else)
@@ -2609,6 +2618,7 @@ app.post("/api/sheets/sync", async (req, res) => {
   try {
     await supabaseReady; if (supabase) await loadOrders();
     const r = await sheets.syncAll(orders, req.actor?.name || "Owner");
+    await pushAllCallers(); // the Callers tab of the same sheet is refreshed too
     res.json({ ok: true, message: `✅ Synced ${r.total} orders (${r.added} new in the sheet, ${r.updated} refreshed).`, ...sheets.status() });
   } catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
 });
@@ -2881,7 +2891,7 @@ function callerFields(b, actor, prev) {
     date: d, time: t, orderStatus,
     rejectionReason: orderStatus === "Rejected" ? cH.clean(b.rejectionReason).trim().slice(0, 300) : "",
     totalSpend: Number.isFinite(spend) && spend > 0 ? spend : 0,
-    orderId: cH.clean(b.orderId).trim().slice(0, 60),
+    orderId: cH.clean(b.orderId).trim().slice(0, 300),
     source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram")
   };
 }
@@ -2891,10 +2901,40 @@ function callerError(f) {
   if (f.orderStatus === "Rejected" && !f.rejectionReason) return "Write the rejection reason.";
   return "";
 }
+const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => a.seq - b.seq).map(callerSheetRow)));
 const callerSheetRow = c => [c.id, c.phone, c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
 let callersSheetUrl = "";
 const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, error: (r && r.error) || "Google Sheet not updated." }; };
+// ── ORDER ID = Customer ID + Ethiopian month (+ letter when the same customer orders again that month) ──
+// 0007-03 (first order), 0007-03A (second), 0007-03B (third) …  Change ORDER_ID_SEP to "" for 000703 / 000703A.
+const ORDER_ID_SEP = "-";
+const letterSuffix = n => { let t = "", k = n + 1; while (k > 0) { const m = (k - 1) % 26; t = String.fromCharCode(65 + m) + t; k = Math.floor((k - 1) / 26); } return t; }; // 0→A 1→B … 26→AA
+const reservedOrderIds = new Set();
+const orderMonth2 = dateLike => { const e = cH.ethDate(dateLike || ""); return /^\d{4}\/\d{2}\/\d{2}$/.test(e) ? e.slice(5, 7) : callerNow().date.slice(5, 7); };
+const orderIdInUse = code => { const k = String(code).toLowerCase(); return reservedOrderIds.has(k) || (Array.isArray(orders) && orders.some(o => String(o.orderId || "").toLowerCase() === k)); };
+function nextOrderId(customerId, dateLike, wanted) {
+  const base = `${customerId}${ORDER_ID_SEP}${orderMonth2(dateLike)}`;
+  const w = String(wanted || "").trim();
+  let code = "";
+  if (w && w.toUpperCase().startsWith(base) && /^[A-Z]*$/.test(w.slice(base.length).toUpperCase()) && !orderIdInUse(w)) code = base + w.slice(base.length).toUpperCase();
+  for (let i = -1; !code; i++) { const c = i < 0 ? base : base + letterSuffix(i); if (!orderIdInUse(c)) code = c; }
+  return code;
+}
+async function linkOrderToCustomer(order) { // the customer's "Order id" column lists every order code of that customer
+  const rec = callersDb.list.find(c => c.id === String(order.customerId || ""));
+  if (!rec || !order.orderId) return;
+  const codes = String(rec.orderId || "").split(/\s*,\s*/).filter(Boolean);
+  if (!codes.includes(order.orderId)) codes.push(order.orderId);
+  rec.orderId = codes.join(", ").slice(0, 300); rec.updatedAt = cH.stamp();
+  await saveCallers();
+  sheets.callerSave(callerSheetRow(rec)).then(sheetNote).catch(() => {});
+}
 app.use("/api/callers", requireAccess);
+app.get("/api/callers/order-id", (req, res) => {
+  const cust = callersDb.list.find(c => c.id === String(req.query.customerId || "").trim());
+  if (!cust) return res.status(404).json({ ok: false, error: "Customer ID not found." });
+  res.json({ ok: true, orderId: nextOrderId(cust.id, req.query.date), customer: { id: cust.id, name: cust.name, phone: cust.phone, username: cust.username, location: cust.location } });
+});
 app.get("/api/callers", (req, res) => {
   const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
   res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), sheetUrl: callersSheetUrl || sheets.status().url || "", nextId: callerId(callersDb.nextSeq), customers: list,
@@ -2936,7 +2976,7 @@ app.put("/api/callers/:id", async (req, res) => {
 });
 app.post("/api/callers/sync", async (req, res) => { // owner only: write every customer to the "Callers" tab (back-fill / repair)
   if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
-  const sheet = sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => a.seq - b.seq).map(callerSheetRow)));
+  const sheet = await pushAllCallers();
   res.json({ ok: sheet.ok, sheet, error: sheet.ok ? "" : sheet.error, message: sheet.ok ? `Google Sheet updated: ${callersDb.list.length} customers.` : "" });
 });
 app.delete("/api/callers/:id", async (req, res) => {
@@ -2968,7 +3008,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadCallers(); // callers data (Customer IDs 0001, 0002 …)
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
-    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); }, e => console.warn("Google Sheet not ready:", e.message));
+    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); return pushAllCallers(); }).then(c => { if (c && !c.ok) console.warn("Callers tab:", c.error); }, e => console.warn("Google Sheet not ready:", e.message));
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
 module.exports = app;
