@@ -1,4 +1,9 @@
-## Latest update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
+## Latest update (v78) - ONE-CLICK CONNECT (⚙ Settings)
+
+- ⚙ Settings -> "⚡ Connect Google Sheet (one click · all data)" uses the same original Apps Script link method on the main page. One button saves the link, checks the script version, creates every tab (incl. "Customers Data" in the SAME spreadsheet as the orders) and sends ALL data: orders + customers. Result lines are shown per part.
+- Needs google-sheet-script.gs v74 (included). If the saved link runs an older script, the button says so and shows the fix steps.
+
+## Previous update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
 
 - google-sheet-script.gs is now v74. If it is not linked to any sheet (or the sheet was deleted / cannot be opened) it CREATES a new Google Sheet in your Drive by itself and remembers it. Orders and the Customers Data tab always live in that ONE file. Run function `createNewSheet` in the editor to deliberately start with a fresh file.
 - You MUST paste the new script, run `authorize` once, and deploy a NEW VERSION (or a New deployment and paste the new /exec link in ⚙ Sheet connection). "no version (very old script)" means the saved link still runs old code.
