@@ -1227,7 +1227,7 @@ function status() {
     url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl, saved: !!(SCRIPT_URL || FORM_RAW)
   };
 }
-module.exports = { callerSave, callersSyncAll, callerRemove, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { helpers: { TZ, ethDate, stamp, clean }, callerSave, callersSyncAll, callerRemove, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
@@ -2843,6 +2843,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
 // One record per customer. Customer ID = 0001, 0002, 0003 … and is never reused.
 // The same phone number always finds the SAME customer (one ID for one customer).
 // Sales Name is filled automatically with the name of the admin who is logged in.
+const cH = sheets.helpers; // TZ, ethDate, stamp, clean live inside the sheet module
 const CALLERS_FILE = path.join(__dirname, "data", "callers.json");
 let callersDb = { nextSeq: 1, list: [] };
 async function loadCallers() {
@@ -2861,7 +2862,7 @@ const phoneKey = p => { let d = String(p || "").replace(/\D/g, "").replace(/^0+/
 const CALLER_STATUS = ["New Lead", "Interested", "Customer", "Not Interested"];
 const CALL_ORDER_STATUS = ["Pending", "Confirmed", "Rejected", "Follow-up"];
 const CALLER_SOURCES = ["Telegram", "Facebook", "Instagram", "TikTok", "Phone Call", "Walk-in", "Referral", "Other"];
-const callerNow = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: TZ }); return { date: ethDate(g.slice(0, 10)), time: g.slice(11, 16) }; };
+const callerNow = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: cH.TZ }); return { date: cH.ethDate(g.slice(0, 10)), time: g.slice(11, 16) }; };
 const callerPick = (v, list, fallback) => list.includes(String(v)) ? String(v) : fallback;
 function callerFields(b, actor, prev) {
   const now = callerNow();
@@ -2871,16 +2872,16 @@ function callerFields(b, actor, prev) {
   const d = /^\d{4}\/\d{2}\/\d{2}$/.test(String(b.date || "").trim()) ? String(b.date).trim() : (prev?.date || now.date);
   const t = /^\d{2}:\d{2}$/.test(String(b.time || "").trim()) ? String(b.time).trim() : (prev?.time || now.time);
   return {
-    phone: clean(b.phone).trim().slice(0, 30),
-    name: clean(b.name).trim().slice(0, 120),
+    phone: cH.clean(b.phone).trim().slice(0, 30),
+    name: cH.clean(b.name).trim().slice(0, 120),
     username: username ? "@" + username.slice(0, 60) : "",
-    location: clean(b.location).trim().slice(0, 160),
+    location: cH.clean(b.location).trim().slice(0, 160),
     customerStatus: callerPick(b.customerStatus, CALLER_STATUS, prev?.customerStatus || "New Lead"),
-    lastConversation: clean(b.lastConversation).trim().slice(0, 1500),
+    lastConversation: cH.clean(b.lastConversation).trim().slice(0, 1500),
     date: d, time: t, orderStatus,
-    rejectionReason: orderStatus === "Rejected" ? clean(b.rejectionReason).trim().slice(0, 300) : "",
+    rejectionReason: orderStatus === "Rejected" ? cH.clean(b.rejectionReason).trim().slice(0, 300) : "",
     totalSpend: Number.isFinite(spend) && spend > 0 ? spend : 0,
-    orderId: clean(b.orderId).trim().slice(0, 60),
+    orderId: cH.clean(b.orderId).trim().slice(0, 60),
     source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram")
   };
 }
@@ -2911,7 +2912,7 @@ app.post("/api/callers", async (req, res) => {
   // Sales Name = the logged-in admin's name. Only the owner may type another sales name.
   const sales = req.actor.role === "owner" && String(req.body?.salesName || "").trim() ? String(req.body.salesName).trim().slice(0, 80) : (req.actor.name || "");
   const seq = callersDb.nextSeq++;
-  const rec = { id: callerId(seq), seq, ...f, salesName: sales, createdBy: req.actor.name || "", createdAt: stamp(), updatedAt: stamp(), history: [] };
+  const rec = { id: callerId(seq), seq, ...f, salesName: sales, createdBy: req.actor.name || "", createdAt: cH.stamp(), updatedAt: cH.stamp(), history: [] };
   callersDb.list.push(rec); await saveCallers();
   const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
   res.json({ ok: true, customer: rec, sheet, message: `Saved. Customer ID ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
@@ -2929,7 +2930,7 @@ app.put("/api/callers/:id", async (req, res) => {
   }
   Object.assign(rec, f); // the ID never changes
   if (req.actor.role === "owner" && String(req.body?.salesName || "").trim()) rec.salesName = String(req.body.salesName).trim().slice(0, 80);
-  rec.updatedAt = stamp(); await saveCallers();
+  rec.updatedAt = cH.stamp(); await saveCallers();
   const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
   res.json({ ok: true, customer: rec, sheet, message: `Updated customer ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
 });
