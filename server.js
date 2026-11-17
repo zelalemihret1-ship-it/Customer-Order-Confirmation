@@ -1198,8 +1198,9 @@ function callersCall(payload) {
   return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
     .catch(async e => {
       if (!/unknown action/i.test(String(e && e.message || e))) return { ok: false, error: String(e && e.message || e).slice(0, 300) };
-      const v = await scriptVersionNow();
-      return { ok: false, error: "The Google script you connected is an old one and cannot store customers. Paste the new google-sheet-script.gs in a NEW project at script.google.com → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone), then paste the new /exec link in ⚙ Sheet connection → Connect. The Customers Data tab is created for you." };
+      const v = await scriptVersionNow(), want = expectedScriptVersion().short;
+      const seen = v ? `Your saved link runs script "${v}"` : "Your saved link did not report a script version (very old script)";
+      return { ok: false, needsScript: true, error: `${seen}, but the Customers Data tab needs ${want}. Fix (2 minutes, once): tap "Copy new script" below → script.google.com → New project → paste → Save → run "authorize" once → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link here and press Connect & sync. The script creates the Google Sheet and the Customers Data tab by itself. (If you pasted it into your OLD project, use Deploy → Manage deployments → Edit → Version: New version → Deploy.)` };
     });
 }
 const SCRIPT_VERSION_FALLBACK = "v74"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
@@ -2642,7 +2643,7 @@ async function syncOrdersPart(by) {
 async function syncCustomersPart() {
   try {
     const c = await pushAllCallers(); // newest customer first, written to the "Customers Data" tab of the same sheet
-    return c.ok ? { ok: true, total: callersDb.list.length } : { ok: false, error: c.error || "Customers were not written." };
+    return c.ok ? { ok: true, total: callersDb.list.length } : { ok: false, needsScript: !!c.needsScript, error: c.error || "Customers were not written." };
   } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 400) }; }
 }
 const partLine = (label, p) => !p ? "" : p.ok ? `✅ ${label}: ${p.total} synced` + (p.added !== undefined ? ` (${p.added} new, ${p.updated} refreshed)` : "") : `❌ ${label}: ${p.error}`;
@@ -2651,12 +2652,20 @@ async function syncEverything(by, which = "all") { // which: "orders" | "custome
   if (which !== "customers") parts.orders = await syncOrdersPart(by);
   if (which !== "orders") parts.customers = await syncCustomersPart();
   const ok = Object.values(parts).every(p => p.ok);
-  return { ok, parts, message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers)].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
+  return { ok, parts, needsScript: !!(parts.customers && parts.customers.needsScript), message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers)].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
 }
 const syncRoute = which => async (req, res) => {
   const r = await syncEverything(req.actor?.name || "Owner", which);
   res.json({ ...r, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
 };
+// The latest Google script, served by the app so it can be copied with one tap (main admin only).
+app.get("/api/sheets/script", (req, res) => { try { res.type("text/plain; charset=utf-8").send(fs.readFileSync(sheets.SCRIPT_FILE, "utf8")); } catch (e) { res.status(404).type("text/plain").send("google-sheet-script.gs was not found on the server."); } });
+// Backup: every customer as CSV (opens in Google Sheets / Excel) — works even while the Google script is old.
+app.get("/api/sheets/customers.csv", (req, res) => {
+  const esc = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`, head = ["Customer ID", "Phone Number", "Name", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
+  const rows = [...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow);
+  res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": "attachment; filename=customers-data.csv" }).send("\ufeff" + [head, ...rows].map(r => r.map(esc).join(",")).join("\r\n"));
+});
 app.post("/api/sheets/sync-orders", syncRoute("orders"));       // 1) the main order index only
 app.post("/api/sheets/sync-customers", syncRoute("customers")); // 2) the Customers Data tab only
 app.post("/api/sheets/sync", syncRoute("all"));                // 3) everything
@@ -2671,7 +2680,7 @@ app.post("/api/sheets/connect-all", async (req, res) => {
   } catch (e) { return res.json({ ok: false, error: e.message, ...sheets.status() }); }
   steps.push("✅ Google Sheet reached.");
   const r = await syncEverything(by);
-  res.json({ ok: r.ok, parts: r.parts, message: steps.join("\n") + "\n" + r.message, error: r.error, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
+  res.json({ ok: r.ok, needsScript: r.needsScript, parts: r.parts, message: steps.join("\n") + "\n" + r.message, error: r.error, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
 });
 
 app.get("/api/orders", async (req, res) => {
@@ -2955,7 +2964,7 @@ function callerError(f) {
 const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow))); // newest customer first
 const callerSheetRow = c => [c.id, c.phone, c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
 let callersSheetUrl = "";
-const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, error: (r && r.error) || "Google Sheet not updated." }; };
+const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, needsScript: !!(r && r.needsScript), error: (r && r.error) || "Google Sheet not updated." }; };
 // ── ORDER ID = Customer ID + Ethiopian month (+ letter when the same customer orders again that month) ──
 // 0007-03 (first order), 0007-03A (second), 0007-03B (third) …  Change ORDER_ID_SEP to "" for 000703 / 000703A.
 const ORDER_ID_SEP = "-";
