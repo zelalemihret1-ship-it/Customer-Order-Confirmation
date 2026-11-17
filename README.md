@@ -1,3 +1,10 @@
+v70 - CUSTOMERS DATA + CUSTOMER-ID ORDER ID
+ - "Callers Data" is renamed "Customers Data" (customers sometimes fill it themselves). Page: /customers.html (the old /callers.html still works). The Google Sheet tab is now "Customers Data" (an old "Callers" tab is renamed automatically, rows kept).
+ - ORDER FORM: step 1 is the Customer ID. Choose the customer (search by ID / name / phone) -> Name, Phone, Location and @username are filled and the Order ID is made automatically (it is used as the Order Code, card and sheet).
+   Order ID = Customer ID + Ethiopian month of the Order Date (today's month by default):  0007-03  (first order), 0007-03A (same customer orders again that month), 0007-03B, 0007-03C ...  A new month starts again at 0007-04.
+   Each new Order ID is also added to that customer's "Order id" column in Customers Data. "No Customer ID" in the list lets you still type an order code by hand. To drop the "-" use ORDER_ID_SEP in server.js.
+ - "Google Sheet NOT updated: Unknown action" = the Apps Script in Google is the OLD version. Paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> Edit (pencil) -> Version: New version -> Deploy. The message in the app now says this.
+
 v69 - CALLERS TAB IN THE MAIN GOOGLE SHEET: the "Callers" tab is a new section of the SAME spreadsheet as Dashboard / Find Customer / Analysis / month tabs (placed right after Analysis). It is now created automatically when the sheet connects (server start, Test, Sync ALL) and filled with every customer; later saves update their row. Paste the new google-sheet-script.gs -> Save -> Deploy -> New version, then restart.
 
 v68 - CALLERS GOOGLE SHEET: every save on the Callers Data page is also written to a "Callers" tab (columns exactly as your list, Customer ID 0001... in column A, one row per customer; saving the same customer updates the same row). Needs the Apps Script Web app link (GOOGLE_SCRIPT_URL / main admin's Sheet connection).
