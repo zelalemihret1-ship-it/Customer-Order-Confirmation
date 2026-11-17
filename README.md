@@ -1,3 +1,11 @@
+## Latest update (v76) - CONNECTIONS PAGE + SYNC ALL
+
+- New front page `/connections.html` (Settings -> Connections). It is the ONE place for the Google Sheet connection: connect/save the link, open the sheet, test, check/copy the script, archive & start new, start from ZERO.
+- ONE Google Sheet, ONE link. The old floating Google Sheet buttons, the Settings entries (Open Google Sheet / Sheet connection / Start from ZERO) and the separate "Send all to Google Sheet" button on the Customers page were removed.
+- **Sync All** (main admin) sends orders AND customer data together and shows live progress. Each part reports its own result, so one failing never hides the other. Endpoint: POST /api/sheets/sync (the old /api/callers/sync was removed).
+- Every admin can open the Connections page to see the status, counts and open the sheet. Only the main admin can connect, sync or use the danger zone.
+- No change to the Apps Script: keep google-sheet-script.gs as it is.
+
 ## Latest update
 
 - Restored the original compact customer selector: type an ID, name, or phone in the search box, then choose a match from the single-line dropdown.
