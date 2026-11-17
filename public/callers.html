@@ -1,0 +1,267 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Ambar Furniture — Callers Data</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+// Same sign-in as the order page: every /api request carries Telegram's signed init data.
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+</script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:18px 16px;text-align:center;border-bottom:4px solid #b89552;position:relative}
+header h1{margin:0;font-size:22px;letter-spacing:.5px}
+header .sub{opacity:.82;margin-top:5px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase}
+header a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#f4efe3;text-decoration:none;font-size:12px;font-weight:700;border:1px solid #ffffff55;border-radius:999px;padding:7px 11px}
+main{max-width:920px;margin:auto;padding:14px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;border:0;border-radius:12px;padding:13px 8px;font-weight:700;font-size:14px;background:#fff;color:#153a2e;border:1.5px solid #ddd4c4;cursor:pointer}
+.tabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
+.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+h2{margin:0 0 12px;color:#153a2e;font-size:17px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.full{grid-column:1/-1}
+label{font-weight:700;font-size:13px;display:block}
+input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px;font-family:inherit;background:#fff;color:#18382e}
+textarea{min-height:90px;resize:vertical}
+input[readonly]{background:#f0ece1;color:#5b574c;font-weight:700}
+.idbox{display:flex;align-items:center;gap:10px;background:#153a2e;color:#f4efe3;border-radius:14px;padding:12px 16px;margin-bottom:14px}
+.idbox b{font-size:26px;letter-spacing:2px;color:#ffa939}
+.idbox span{font-size:12px;opacity:.85}
+.notice{border-radius:12px;padding:11px 13px;font-size:13px;font-weight:700;margin-bottom:12px;display:none}
+.notice.info{display:block;background:#fff6e0;border:1px solid #e9c46a;color:#7a5600}
+.notice.ok{display:block;background:#eaf6ee;border:1px solid #2e9e4f;color:#176b3a}
+.notice.bad{display:block;background:#fdecea;border:1px solid #e3b4b0;color:#b3261e}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+button.primary,button.gold,button.ghost,button.danger{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer;font-size:15px}
+.primary{background:#153a2e;color:#fff}.gold{background:#b89552;color:#fff}
+.ghost{background:#fff;color:#153a2e;border:1.5px solid #cfd8d3}.danger{background:#fff;color:#b3261e;border:1.5px solid #e3b4b0}
+button:disabled{opacity:.5;cursor:default}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips button{border:1px solid #d6d1c7;background:#faf8f3;border-radius:999px;padding:6px 11px;font-size:12px;cursor:pointer;color:#153a2e}
+.tools{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.tools input,.tools select{margin:0;flex:1;min-width:140px}
+.cust{background:#fff;border:1px solid #e4ded2;border-radius:16px;padding:14px;margin-bottom:10px;cursor:pointer;box-shadow:0 3px 12px #0000000d}
+.cust .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cid{background:#153a2e;color:#ffa939;border-radius:8px;padding:4px 10px;font-weight:800;letter-spacing:1px;font-size:14px}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;margin-left:4px;background:#f1ede2;color:#5b574c}
+.pill.Confirmed,.pill.Customer{background:#e1f4e8;color:#176b3a}
+.pill.Rejected,.pill.Not\ Interested{background:#fdeceb;color:#b3261e}
+.pill.Pending,.pill.Follow-up,.pill.Interested{background:#fff1d6;color:#8a5a00}
+.cust .nm{font-weight:800;margin-top:8px;font-size:16px}
+.cust .meta{font-size:12px;color:#6d675d;margin-top:3px;line-height:1.5}
+.cust .conv{font-size:13px;margin-top:7px;color:#2b3f37;white-space:pre-wrap}
+.hist{font-size:12px;border-left:3px solid #b89552;padding:4px 10px;margin:8px 0;color:#4a463d;background:#faf8f3;border-radius:0 8px 8px 0}
+.empty{text-align:center;color:#8a8478;padding:26px 10px;font-size:14px}
+.count{font-size:12px;color:#6d675d;margin:0 2px 10px}
+#gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
+#gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
+@media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
+</style>
+</head>
+<body>
+<div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
+<header>
+  <a class="back" href="/">← Order Cards</a>
+  <h1>📞 Callers Data</h1>
+  <div class="sub">Customer call log · separate from order confirmation</div>
+</header>
+<main>
+  <div class="tabs">
+    <button id="tabForm" class="on">➕ Add / Update Call</button>
+    <button id="tabList">📋 Customers (<span id="cnt">0</span>)</button>
+  </div>
+
+  <section id="viewForm">
+    <div class="card">
+      <div class="idbox"><div><span>Customer ID</span><br><b id="cidShow">—</b></div><span id="cidHint" style="margin-left:auto;text-align:right">New customer</span></div>
+      <div id="notice" class="notice"></div>
+      <form id="f" autocomplete="off">
+        <div class="grid">
+          <label>Phone Number
+            <input id="phone" inputmode="tel" placeholder="0911… or +251911…" required>
+          </label>
+          <label>Name
+            <input id="name" required>
+          </label>
+          <label>Username
+            <input id="username" placeholder="@customer_username">
+          </label>
+          <label>Location
+            <input id="location">
+          </label>
+          <label>Status
+            <select id="customerStatus"></select>
+          </label>
+          <label>Source
+            <select id="source"></select>
+          </label>
+          <label class="full">Last Conversation
+            <textarea id="lastConversation" placeholder="What was said in the last call / chat…"></textarea>
+          </label>
+          <label>Date <input id="date" placeholder="yyyy/mm/dd" inputmode="numeric" maxlength="10"></label>
+          <label>Time <input id="time" type="time"></label>
+          <label>Order Status
+            <select id="orderStatus"></select>
+          </label>
+          <label>Order ID
+            <input id="orderId" placeholder="e.g. Z-001">
+          </label>
+          <label class="full" id="rejWrap" style="display:none">Rejection Reason
+            <input id="rejectionReason" placeholder="Why did the customer reject?">
+            <div class="chips" id="rejChips"></div>
+          </label>
+          <label>Total Spend (Birr)
+            <input id="totalSpend" type="number" min="0" step="0.01" inputmode="decimal">
+          </label>
+          <label>Sales Name
+            <input id="salesName" readonly>
+          </label>
+        </div>
+        <div class="row" style="margin-top:16px">
+          <button class="primary" type="submit" id="saveBtn">💾 Save Customer</button>
+          <button class="ghost" type="button" id="newBtn">✚ New customer</button>
+          <button class="danger" type="button" id="delBtn" style="display:none">🗑 Delete</button>
+        </div>
+      </form>
+    </div>
+    <div class="card" id="histCard" style="display:none">
+      <h2>Earlier conversations</h2>
+      <div id="hist"></div>
+    </div>
+  </section>
+
+  <section id="viewList" style="display:none">
+    <div class="tools">
+      <input id="q" placeholder="Search ID, name, phone, @username…">
+      <select id="fStatus"><option value="">All order statuses</option></select>
+      <select id="fSales"><option value="">All sales names</option></select>
+    </div>
+    <div class="row" style="margin-bottom:10px"><button class="gold" type="button" id="copyBtn">📋 Copy as table (paste into Google Sheet)</button></div>
+    <div class="count" id="listCount"></div>
+    <div id="list"></div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const REJ=["Price too high","Changed mind","Delivery problem","Found elsewhere","No response","Other"];
+let ME={role:"",name:""},NOW={date:"",time:""},NEXT="0001",ALL=[],CUR=null,OPT={};
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const say=(t,k)=>{const n=$("notice");n.className="notice "+(k||"info");n.textContent=t;};
+const clearSay=()=>{$("notice").className="notice";$("notice").textContent="";};
+const fill=(sel,arr)=>{$(sel).innerHTML=arr.map(v=>`<option>${esc(v)}</option>`).join("");};
+const ethSlash=v=>{const d=String(v||"").replace(/\D/g,"").slice(0,8);return d.length>6?d.slice(0,4)+"/"+d.slice(4,6)+"/"+d.slice(6):d.length>4?d.slice(0,4)+"/"+d.slice(4):d;};
+async function api(path,method,body){const r=await fetch(path,{method:method||"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json();}catch{}d.status=r.status;return d;}
+
+function blank(){
+  CUR=null;
+  $("f").reset();
+  $("cidShow").textContent=NEXT;$("cidHint").textContent="New customer";
+  $("customerStatus").value="New Lead";$("source").value="Telegram";$("orderStatus").value="Pending";
+  $("date").value=NOW.date;$("time").value=NOW.time;
+  $("salesName").value=ME.name||"";$("salesName").readOnly=ME.role!=="owner";
+  $("rejWrap").style.display="none";$("delBtn").style.display="none";$("histCard").style.display="none";
+  $("saveBtn").textContent="💾 Save Customer";clearSay();
+}
+function load(c){
+  CUR=c;
+  $("cidShow").textContent=c.id;$("cidHint").textContent="Existing customer — saving updates this ID";
+  for(const k of ["phone","name","username","location","customerStatus","source","lastConversation","orderStatus","orderId","rejectionReason"])$(k).value=c[k]||"";
+  $("totalSpend").value=c.totalSpend||"";
+  // a new conversation: keep the old text visible, but set date / time to now so the update is dated correctly
+  $("date").value=NOW.date;$("time").value=NOW.time;
+  $("salesName").value=c.salesName||ME.name||"";$("salesName").readOnly=ME.role!=="owner";
+  $("rejWrap").style.display=c.orderStatus==="Rejected"?"block":"none";
+  $("delBtn").style.display=ME.role==="owner"?"inline-block":"none";
+  $("saveBtn").textContent="💾 Update Customer "+c.id;
+  const h=c.history||[];
+  $("histCard").style.display=h.length?"block":"none";
+  $("hist").innerHTML=h.map(x=>`<div class="hist"><b>${esc(x.date)} ${esc(x.time)}</b> · ${esc(x.orderStatus)}${x.orderId?" · "+esc(x.orderId):""}${x.totalSpend?" · "+Number(x.totalSpend).toLocaleString()+" Birr":""}<br>${esc(x.lastConversation||"—")}${x.rejectionReason?"<br><i>Reason: "+esc(x.rejectionReason)+"</i>":""}</div>`).join("");
+  setTab("form");window.scrollTo({top:0,behavior:"smooth"});
+}
+function setTab(t){
+  $("viewForm").style.display=t==="form"?"block":"none";$("viewList").style.display=t==="list"?"block":"none";
+  $("tabForm").classList.toggle("on",t==="form");$("tabList").classList.toggle("on",t==="list");
+  if(t==="list")renderList();
+}
+async function refresh(){
+  const d=await api("/api/callers");
+  if(!d.ok)throw new Error(d.error||"Access denied");
+  ME=d.me;NOW=d.now;NEXT=d.nextId;ALL=d.customers;OPT=d.options;
+  $("cnt").textContent=ALL.length;
+  if(!CUR)$("cidShow").textContent=NEXT;
+}
+function renderList(){
+  const q=$("q").value.trim().toLowerCase(),st=$("fStatus").value,sl=$("fSales").value;
+  const rows=ALL.filter(c=>(!st||c.orderStatus===st)&&(!sl||c.salesName===sl)&&(!q||[c.id,c.name,c.phone,c.username,c.location,c.orderId].join(" ").toLowerCase().includes(q)));
+  $("listCount").textContent=rows.length+" of "+ALL.length+" customers";
+  $("list").innerHTML=rows.length?rows.map(c=>`<div class="cust" data-id="${esc(c.id)}"><div class="top"><span class="cid">${esc(c.id)}</span><span><span class="pill ${esc(c.customerStatus)}">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></span></div>
+  <div class="nm">${esc(c.name)}</div>
+  <div class="meta">📞 ${esc(c.phone)}${c.username?" · "+esc(c.username):""}${c.location?" · 📍 "+esc(c.location):""}<br>🗓 ${esc(c.date)} ${esc(c.time)} · ${esc(c.source)} · 👤 ${esc(c.salesName||"—")}${c.orderId?" · 🧾 "+esc(c.orderId):""}${c.totalSpend?" · 💰 "+Number(c.totalSpend).toLocaleString()+" Birr":""}</div>
+  ${c.lastConversation?`<div class="conv">${esc(c.lastConversation.length>160?c.lastConversation.slice(0,160)+"…":c.lastConversation)}</div>`:""}
+  ${c.rejectionReason?`<div class="meta" style="color:#b3261e">❌ ${esc(c.rejectionReason)}</div>`:""}</div>`).join(""):`<div class="empty">No customers found.</div>`;
+  const sales=[...new Set(ALL.map(c=>c.salesName).filter(Boolean))];
+  const keep=$("fSales").value;$("fSales").innerHTML='<option value="">All sales names</option>'+sales.map(s=>`<option ${s===keep?"selected":""}>${esc(s)}</option>`).join("");
+}
+$("list").addEventListener("click",e=>{const b=e.target.closest(".cust");if(!b)return;const c=ALL.find(x=>x.id===b.dataset.id);if(c)load(c);});
+["q","fStatus","fSales"].forEach(i=>$(i).addEventListener("input",renderList));
+$("tabForm").onclick=()=>setTab("form");$("tabList").onclick=()=>setTab("list");
+$("newBtn").onclick=()=>{blank();setTab("form");};
+$("date").addEventListener("input",()=>{$("date").value=ethSlash($("date").value);});
+$("orderStatus").addEventListener("change",()=>{$("rejWrap").style.display=$("orderStatus").value==="Rejected"?"block":"none";});
+$("rejChips").innerHTML=REJ.map(r=>`<button type="button">${r}</button>`).join("");
+$("rejChips").addEventListener("click",e=>{const b=e.target.closest("button");if(b)$("rejectionReason").value=b.textContent;});
+
+// One customer = one ID: as soon as a known phone number is typed, that customer is opened instead of creating a new one.
+let lookT;
+$("phone").addEventListener("input",()=>{clearTimeout(lookT);lookT=setTimeout(async()=>{
+  const p=$("phone").value.trim();if(p.replace(/\D/g,"").length<7)return;
+  const d=await api("/api/callers/lookup?phone="+encodeURIComponent(p));
+  if(d.ok&&d.customer&&(!CUR||CUR.id!==d.customer.id)){load(d.customer);say(`This phone number already belongs to customer ${d.customer.id} (${d.customer.name}). Opened — saving will update the same ID.`,"info");}
+},500);});
+
+$("f").addEventListener("submit",async e=>{
+  e.preventDefault();$("saveBtn").disabled=true;
+  const body={};for(const k of ["phone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName"])body[k]=$(k).value;
+  const d=CUR?await api("/api/callers/"+CUR.id,"PUT",body):await api("/api/callers","POST",body);
+  $("saveBtn").disabled=false;
+  if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);say(d.message,"ok");if(c)load(c);say(d.message,"ok");}
+  else if(d.duplicate&&d.customer){load(d.customer);say(d.error,"bad");}
+  else say(d.error||"Could not save.","bad");
+});
+$("delBtn").onclick=()=>{
+  if(!CUR)return;const w=window.Telegram?.WebApp;
+  const run=async()=>{const d=await api("/api/callers/"+CUR.id,"DELETE");if(d.ok){await refresh();blank();say("Deleted. The ID number is not reused.","ok");}else say(d.error||"Could not delete.","bad");};
+  const m=`Delete customer ${CUR.id} (${CUR.name})? The ID will not be reused.`;
+  if(w&&w.showConfirm)w.showConfirm(m,ok=>{if(ok)run();});else if(confirm(m))run();
+};
+$("copyBtn").onclick=async()=>{
+  const H=["Customer ID","Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
+  const cell=v=>String(v==null?"":v).replace(/[\t\r\n]+/g," ");
+  const rows=[...ALL].sort((a,b)=>a.seq-b.seq).map(c=>[c.id,c.phone,c.name,c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
+  const text=[H.join("\t"),...rows].join("\n");
+  try{await navigator.clipboard.writeText(text);$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}
+  catch{const t=document.createElement("textarea");t.value=text;document.body.appendChild(t);t.select();try{document.execCommand("copy");$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}catch{$("copyBtn").textContent="Copy failed";}t.remove();}
+  setTimeout(()=>{$("copyBtn").textContent="📋 Copy as table (paste into Google Sheet)";},2500);
+};
+
+(async()=>{
+  const gate=$("gate");gate.style.display="flex";
+  try{
+    await refresh();
+    fill("customerStatus",OPT.customerStatus);fill("source",OPT.source);fill("orderStatus",OPT.orderStatus);
+    $("fStatus").innerHTML='<option value="">All order statuses</option>'+OPT.orderStatus.map(s=>`<option>${esc(s)}</option>`).join("");
+    gate.style.display="none";blank();
+  }catch(e){
+    let m="Access denied. Open this page from the AMBAR Telegram bot, using an assigned admin account.";
+    try{const r=await (await fetch("/api/me")).json();if(r.error)m=r.error;}catch{}
+    $("gateMsg").textContent=m;
+  }
+})();
+</script>
+</body>
+</html>
