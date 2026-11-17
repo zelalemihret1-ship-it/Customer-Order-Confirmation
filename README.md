@@ -1,4 +1,9 @@
-## Latest update (v78) - ONE-CLICK CONNECT (⚙ Settings)
+## Latest update (v79) - THREE SYNC BUTTONS, NO VERSION CHECK
+
+- ⚙ Sheet connection now has three syncs: 1 = main order index (orders), 2 = Customers Data tab, 3 = ALL. Each one reports its own result.
+- Removed: "Check script version", "Copy latest script" and the script-version block in the one-click connect. Orders keep syncing even with an older Google script; the Customers Data tab needs google-sheet-script.gs (included) pasted in a NEW project -> Deploy -> New deployment -> Web app (Me / Anyone); paste the new /exec link in ⚙ Sheet connection -> Connect. The script creates the Google Sheet and the Customers Data tab by itself.
+
+## Previous update (v78) - ONE-CLICK CONNECT (⚙ Settings)
 
 - ⚙ Settings -> "⚡ Connect Google Sheet (one click · all data)" uses the same original Apps Script link method on the main page. One button saves the link, checks the script version, creates every tab (incl. "Customers Data" in the SAME spreadsheet as the orders) and sends ALL data: orders + customers. Result lines are shown per part.
 - Needs google-sheet-script.gs v74 (included). If the saved link runs an older script, the button says so and shows the fix steps.
