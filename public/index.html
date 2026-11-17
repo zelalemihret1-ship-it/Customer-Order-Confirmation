@@ -61,7 +61,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <div class="card" id="custIdCard"><h2>1 · Customer ID</h2><div class="grid">
 <label class="full" id="custPickWrap">Choose the customer first — the Customer ID fills the customer information and makes the Order ID
 <input id="custSearch" placeholder="Search ID, name or phone…" autocomplete="off">
-<select id="custIdPick" size="5" aria-label="Matching customers"><option value="">— Type an ID, name or phone to see matching customers —</option></select>
+<select id="custIdPick" size="1" aria-label="Matching customers"><option value="">— Choose Customer ID —</option></select>
 <div class="small" id="custIdHelp">Customer not in the list? <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the customer in Customers Data</a> first.</div></label>
 <input type="hidden" name="customerId" id="customerIdField">
 </div></div>
@@ -607,9 +607,9 @@ function options(){
     return text.includes(q)||(qd.length>=3&&phone.includes(qd));
   });
   pick.innerHTML='<option value="">'+(q?'— Select a matching customer —':'— Type an ID, name or phone to search —')+'</option>'+rows.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" — "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("")+'<option value="__manual">✍️ No Customer ID — type the order code myself</option>';
-  pick.size=Math.max(3,Math.min(6,rows.length+1));
+  pick.size=1; // Keep the original compact, single-line customer selector; search results appear in its dropdown.
   pick.value=keep&&[...pick.options].some(o=>o.value===keep)?keep:"";
-  if(q)help.textContent=rows.length?rows.length+" matching customer(s) — select one below.":"No matching customer. Check the ID, name or phone, or add the customer in Customers Data.";
+  if(q)help.textContent=rows.length?rows.length+" matching customer(s) — open the customer list and choose one.":"No matching customer. Check the ID, name or phone, or add the customer in Customers Data.";
 }
 async function newOrderId(){
   if(!cid.value)return;
