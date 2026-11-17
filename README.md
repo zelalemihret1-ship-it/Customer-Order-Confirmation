@@ -1,3 +1,5 @@
+v69 - CALLERS TAB IN THE MAIN GOOGLE SHEET: the "Callers" tab is a new section of the SAME spreadsheet as Dashboard / Find Customer / Analysis / month tabs (placed right after Analysis). It is now created automatically when the sheet connects (server start, Test, Sync ALL) and filled with every customer; later saves update their row. Paste the new google-sheet-script.gs -> Save -> Deploy -> New version, then restart.
+
 v68 - CALLERS GOOGLE SHEET: every save on the Callers Data page is also written to a "Callers" tab (columns exactly as your list, Customer ID 0001... in column A, one row per customer; saving the same customer updates the same row). Needs the Apps Script Web app link (GOOGLE_SCRIPT_URL / main admin's Sheet connection).
  - You MUST paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> New version, then restart the server.
  - Main admin: Customers tab -> "Send all to Google Sheet" back-fills / repairs the tab. Everyone: "Open Google Sheet (Callers tab)".
