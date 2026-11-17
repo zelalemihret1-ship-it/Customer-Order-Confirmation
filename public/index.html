@@ -61,7 +61,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <div class="card" id="custIdCard"><h2>1 · Customer ID</h2><div class="grid">
 <label class="full" id="custPickWrap">Choose the customer first — the Customer ID fills the customer information and makes the Order ID
 <input id="custSearch" placeholder="Search ID, name or phone…" autocomplete="off">
-<select id="custIdPick" size="1"><option value="">— Choose Customer ID —</option></select>
+<select id="custIdPick" size="5" aria-label="Matching customers"><option value="">— Type an ID, name or phone to see matching customers —</option></select>
 <div class="small" id="custIdHelp">Customer not in the list? <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the customer in Customers Data</a> first.</div></label>
 <input type="hidden" name="customerId" id="customerIdField">
 </div></div>
@@ -597,11 +597,19 @@ if(!form||!pick)return;
 if(new URLSearchParams(location.search).get("edit")){document.getElementById("custPickWrap").style.display="none";return;} // edit mode keeps the existing Order ID
 let list=[];const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const setVal=(n,v)=>{const el=form.elements[n];if(el){el.value=v||"";el.dispatchEvent(new Event("input",{bubbles:true}));}};
+function digits(v){return String(v||"").replace(/\D/g,"");}
 function options(){
-  const q=search.value.trim().toLowerCase(),keep=pick.value;
-  const rows=list.filter(c=>!q||[c.id,c.name,c.phone,c.username].join(" ").toLowerCase().includes(q));
-  pick.innerHTML='<option value="">— Choose Customer ID —</option>'+rows.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" — "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("")+'<option value="__manual">✍️ No Customer ID — type the order code myself</option>';
+  const raw=search.value.trim(),q=raw.toLowerCase(),qd=digits(raw),keep=pick.value;
+  const rows=list.filter(c=>{
+    if(!q)return true;
+    const text=[c.id,c.name,c.phone,c.username].join(" ").toLowerCase();
+    const phone=digits(c.phone);
+    return text.includes(q)||(qd.length>=3&&phone.includes(qd));
+  });
+  pick.innerHTML='<option value="">'+(q?'— Select a matching customer —':'— Type an ID, name or phone to search —')+'</option>'+rows.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" — "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("")+'<option value="__manual">✍️ No Customer ID — type the order code myself</option>';
+  pick.size=Math.max(3,Math.min(6,rows.length+1));
   pick.value=keep&&[...pick.options].some(o=>o.value===keep)?keep:"";
+  if(q)help.textContent=rows.length?rows.length+" matching customer(s) — select one below.":"No matching customer. Check the ID, name or phone, or add the customer in Customers Data.";
 }
 async function newOrderId(){
   if(!cid.value)return;
@@ -622,7 +630,7 @@ search.addEventListener("input",options);
 form.addEventListener("reset",()=>setTimeout(()=>{cid.value="";oid.readOnly=true;oid.value="";search.value="";options();},0));
 // the Ethiopian month of the Order Date is used when an Order Date is chosen (today's month otherwise)
 let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.orderDate.value:"";if(d!==lastDate){lastDate=d;if(cid.value)newOrderId();}},1200);
-(async()=>{try{const r=await fetch("/api/callers"),d=await r.json();if(d.ok){list=[...d.customers].sort((a,b)=>a.id<b.id?-1:1);options();if(!list.length)help.innerHTML='No customers yet. <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the first customer in Customers Data</a>, or choose "No Customer ID" in the list.';}}catch{}})();
+(async()=>{try{const r=await fetch("/api/callers"),d=await r.json();if(d.ok){list=[...d.customers].sort((a,b)=>String(b.updatedAt||b.createdAt||b.seq||b.id).localeCompare(String(a.updatedAt||a.createdAt||a.seq||a.id),undefined,{numeric:true}));options();if(!list.length)help.innerHTML='No customers yet. <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the first customer in Customers Data</a>, or choose "No Customer ID" in the list.';}}catch{help.textContent="Could not load customers. Check your connection and refresh.";}})();
 })();
 </script>
 </body>
