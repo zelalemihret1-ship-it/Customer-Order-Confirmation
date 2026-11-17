@@ -1190,6 +1190,16 @@ function startFresh(by = "Admin") {
     return SCRIPT_URL ? d : { ok: true, name: "", archived: "", url: "", sent: true };
   });
 }
+/** Callers Data tab ("Callers"): needs the Apps Script Web app link (GOOGLE_SCRIPT_URL). Never throws; returns { ok, error }. */
+const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
+function callersCall(payload) {
+  if (!SCRIPT_URL) return Promise.resolve({ ok: false, error: "Google Sheet is not connected (main admin: ⚙ → Sheet connection → paste the Web app /exec URL)." });
+  return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
+    .catch(e => ({ ok: false, error: String(e && e.message || e).slice(0, 300) }));
+}
+const callerSave = row => callersCall({ action: "callerUpsert", row });
+const callersSyncAll = rows => callersCall({ action: "callersSync", rows });
+const callerRemove = id => callersCall({ action: "callerDelete", id });
 /** Connect (or re-connect) from the app: checks the link, then SAVES it permanently. */
 async function connect(input = {}) {
   const prev = connectionState();
@@ -1217,7 +1227,7 @@ function status() {
     url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl, saved: !!(SCRIPT_URL || FORM_RAW)
   };
 }
-module.exports = { track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { callerSave, callersSyncAll, callerRemove, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
@@ -2880,10 +2890,13 @@ function callerError(f) {
   if (f.orderStatus === "Rejected" && !f.rejectionReason) return "Write the rejection reason.";
   return "";
 }
+const callerSheetRow = c => [c.id, c.phone, c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
+let callersSheetUrl = "";
+const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, error: (r && r.error) || "Google Sheet not updated." }; };
 app.use("/api/callers", requireAccess);
 app.get("/api/callers", (req, res) => {
   const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
-  res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), nextId: callerId(callersDb.nextSeq), customers: list,
+  res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), sheetUrl: callersSheetUrl || sheets.status().url || "", nextId: callerId(callersDb.nextSeq), customers: list,
     options: { customerStatus: CALLER_STATUS, orderStatus: CALL_ORDER_STATUS, source: CALLER_SOURCES } });
 });
 app.get("/api/callers/lookup", (req, res) => {
@@ -2900,7 +2913,8 @@ app.post("/api/callers", async (req, res) => {
   const seq = callersDb.nextSeq++;
   const rec = { id: callerId(seq), seq, ...f, salesName: sales, createdBy: req.actor.name || "", createdAt: stamp(), updatedAt: stamp(), history: [] };
   callersDb.list.push(rec); await saveCallers();
-  res.json({ ok: true, customer: rec, message: `Saved. Customer ID ${rec.id}` });
+  const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
+  res.json({ ok: true, customer: rec, sheet, message: `Saved. Customer ID ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
 });
 app.put("/api/callers/:id", async (req, res) => {
   const rec = callersDb.list.find(c => c.id === req.params.id);
@@ -2916,14 +2930,22 @@ app.put("/api/callers/:id", async (req, res) => {
   Object.assign(rec, f); // the ID never changes
   if (req.actor.role === "owner" && String(req.body?.salesName || "").trim()) rec.salesName = String(req.body.salesName).trim().slice(0, 80);
   rec.updatedAt = stamp(); await saveCallers();
-  res.json({ ok: true, customer: rec, message: `Updated customer ${rec.id}` });
+  const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
+  res.json({ ok: true, customer: rec, sheet, message: `Updated customer ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
+});
+app.post("/api/callers/sync", async (req, res) => { // owner only: write every customer to the "Callers" tab (back-fill / repair)
+  if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
+  const sheet = sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => a.seq - b.seq).map(callerSheetRow)));
+  res.json({ ok: sheet.ok, sheet, error: sheet.ok ? "" : sheet.error, message: sheet.ok ? `Google Sheet updated: ${callersDb.list.length} customers.` : "" });
 });
 app.delete("/api/callers/:id", async (req, res) => {
   if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
   const before = callersDb.list.length;
   callersDb.list = callersDb.list.filter(c => c.id !== req.params.id); // numbering is NOT reused
   if (callersDb.list.length === before) return res.status(404).json({ ok: false, error: "Customer not found." });
-  await saveCallers(); res.json({ ok: true, message: "Deleted." });
+  await saveCallers();
+  const sheet = sheetNote(await sheets.callerRemove(req.params.id));
+  res.json({ ok: true, sheet, message: "Deleted." + (sheet.ok ? "" : " Google Sheet NOT updated: " + sheet.error) });
 });
 
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
