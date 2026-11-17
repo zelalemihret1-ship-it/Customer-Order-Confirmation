@@ -1,3 +1,8 @@
+## Latest update (v80) - GUIDED FIX FOR "Customers: old Google script"
+
+- When the Customers sync finds an old Google script, the app now says exactly which script version your link runs and shows a box with: **Copy new script**, **Open script.google.com**, and **Download customers (CSV backup)**. Paste the new script in a NEW project -> Deploy -> New deployment -> Web app (Me / Anyone) -> paste the new /exec link -> Connect & sync. The script creates the Google Sheet + Customers Data tab itself.
+- New routes: GET /api/sheets/script, GET /api/sheets/customers.csv.
+
 ## Latest update (v79) - THREE SYNC BUTTONS, NO VERSION CHECK
 
 - ⚙ Sheet connection now has three syncs: 1 = main order index (orders), 2 = Customers Data tab, 3 = ALL. Each one reports its own result.
