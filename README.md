@@ -1,4 +1,7 @@
-## Latest update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS
+## Latest update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
+
+- google-sheet-script.gs is now v74. If it is not linked to any sheet (or the sheet was deleted / cannot be opened) it CREATES a new Google Sheet in your Drive by itself and remembers it. Orders and the Customers Data tab always live in that ONE file. Run function `createNewSheet` in the editor to deliberately start with a fresh file.
+- You MUST paste the new script, run `authorize` once, and deploy a NEW VERSION (or a New deployment and paste the new /exec link in ⚙ Sheet connection). "no version (very old script)" means the saved link still runs old code.
 
 - The original Google Sheet panel is unchanged (📊 Google Sheet button / ⚙ Settings -> Sheet connection).
 - "Sync ALL (orders + customers) to the sheet now" sends every order AND all customer information (Customers Data tab) to the same sheet, and reports each part separately (one failing never hides the other).
