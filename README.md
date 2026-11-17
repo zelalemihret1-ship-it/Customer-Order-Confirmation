@@ -1,3 +1,8 @@
+## Latest update
+
+- Restored the original compact customer selector: type an ID, name, or phone in the search box, then choose a match from the single-line dropdown.
+- The `Customers Data` tab is the permanent customer-record sheet in the same Google spreadsheet. New customers, edits, deletions, and full syncs write to that tab; it is kept as the first tab.
+
 v73 - ONE SHARED GOOGLE SHEET + CUSTOMER SEARCH + LIVE ORDERS VIEW + GRAPHS
  - The order form index and Customers Data index use ONE Google spreadsheet and ONE Apps Script deployment. Customers Data is the first tab.
  - Orders View is restored as a combined view of every month, with Ethiopian calendar dates and newest order/time at the top. It refreshes after each save and full sync.
