@@ -1,3 +1,5 @@
+v72 - SHEET CONNECTION PANEL: new buttons "Check script version" (shows which version your saved /exec link really runs vs the latest) and "Copy latest script" (copies google-sheet-script.gs so you can paste it in Apps Script). The expected version in the error message now follows the script file automatically.
+
 v71 - NEWEST CUSTOMER ON TOP in the Customers Data tab (new customers are inserted right under the header; "Send all to Google Sheet" writes newest first). The script version is now "v71": open your Web app /exec link in a browser, it must show v71. If it shows an older version, the Google link saved in the app still runs the old script (paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> Edit -> New version -> Deploy). The "Unknown action" message in the app now tells you which version the link answers with.
 
 v70 - CUSTOMERS DATA + CUSTOMER-ID ORDER ID
