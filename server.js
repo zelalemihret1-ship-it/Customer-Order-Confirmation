@@ -1199,10 +1199,10 @@ function callersCall(payload) {
     .catch(async e => {
       if (!/unknown action/i.test(String(e && e.message || e))) return { ok: false, error: String(e && e.message || e).slice(0, 300) };
       const v = await scriptVersionNow();
-      return { ok: false, error: `The Google link saved in this app still runs an OLD script${v ? ` (it answers: "${v}")` : ""}; the new one must say "${expectedScriptVersion().short}". Fix: paste the new google-sheet-script.gs in Extensions → Apps Script → Save → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then open the /exec link in a browser: it must show "${expectedScriptVersion().short}". If it does not, you are editing a different script or deployment than the link saved on the Connections page.` };
+      return { ok: false, error: `The Google link saved in this app still runs an OLD script${v ? ` (it answers: "${v}")` : ""}; the new one must say "${expectedScriptVersion().short}". FIX (2 minutes): tap "📋 Copy latest script" in ⚙ Sheet connection → in Google: Extensions → Apps Script → select ALL, paste, Save → run "authorize" once (Allow) → Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then tap "🔍 Check script version" (it must say ${expectedScriptVersion().short}) and "Sync ALL". NO SHEET OR SCRIPT TO FIX? Create a NEW one: script.google.com → New project → paste the script → Save → run "authorize" → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link in ⚙ Sheet connection → Connect. The script creates a new Google Sheet by itself (orders + Customers Data tab), then tap "Sync ALL".` };
     });
 }
-const SCRIPT_VERSION_FALLBACK = "v73"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_VERSION_FALLBACK = "v74"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
 const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
   try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
@@ -2591,7 +2591,7 @@ const sheetsAccess = (req, res, next) => {
 app.use("/api/sheets", requireAccess, sheetsAccess);
 app.get("/api/sheets/status", (req, res) => {
   const st = sheets.status();
-  // What the Connections page shows next to the sheet: how much data is in the app (and will be sent by "Sync All").
+  // How much data is in the app (what "Sync ALL" sends).
   const counts = { orderCount: Array.isArray(orders) ? orders.length : 0, customerCount: callersDb.list.length };
   if (req.actor?.role === "owner") return res.json({ ok: true, role: "owner", ...st, ...counts });
   res.json({ ok: true, role: req.actor?.role || "admin", configured: st.configured, url: st.url, summaryUrl: st.summaryUrl, graphsUrl: st.graphsUrl, lastOkAt: st.lastOkAt, lastSyncAt: st.lastSyncAt, ...counts });
@@ -2605,7 +2605,7 @@ app.post("/api/sheets/check-version", async (req, res) => { // which script vers
   const ok = !!live && !!want.short && live.includes(want.short);
   res.json({ ok, expected: want.short, live,
     message: ok ? `✅ The saved Google link runs the latest script (${live}).`
-      : !live ? "❌ Could not reach the saved Google link (it did not answer). Check the /exec link on the Connections page."
+      : !live ? "❌ Could not reach the saved Google link (it did not answer). Check the /exec link in ⚙ Sheet connection."
       : `❌ The saved Google link runs an OLD script: it answers "${live}", but it must say "${want.short}".\n\n1) Tap "📋 Copy latest script" below.\n2) Open the sheet → Extensions → Apps Script. Select ALL the code, paste, Save.\n3) Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.\n4) Tap "🔍 Check script version" again.\n\nThe link answered: ${raw || "(nothing)"}\n\nStill old? You are editing a different script/deployment than the link saved here — open that exact /exec link in a browser and use the Apps Script project it belongs to, or create a New deployment and paste its new /exec link in "Connect".` });
 });
 app.post("/api/sheets/connect", async (req, res) => { // main admin only: connect once, saved for all time
