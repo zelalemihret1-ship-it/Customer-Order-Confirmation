@@ -984,7 +984,7 @@ function orderRow(o, created, updated) {
   set("Card Image", abs(o, o.cardImage)); set("Product Photo", abs(o, o.photo));
   const base = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "");
   set("Answer Link", base && o.token ? `${base}/o/${o.token}` : "");
-  set("Delivery Note", o.sent ? "" : o.deliveryNote);
+  set("Delivery Note", o.sent ? "" : ("Sent from: " + (o.adminLabel || o.sender || "—") + " — ❌ NOT delivered" + (o.deliveryNote ? " (" + clean(o.deliveryNote).slice(0, 500) + ")" : " (Delivery was not completed)")));
   set("Completion Date", ethDate(o.completionDate)); set("Delivery Service", o.deliveryService);
   return row;
 }
@@ -1203,7 +1203,7 @@ function callersCall(payload) {
       return { ok: false, needsScript: true, error: `${seen}, but the Customers Data tab needs ${want}. Fix (2 minutes, once): tap "Copy new script" below → script.google.com → New project → paste → Save → run "authorize" once → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link here and press Connect & sync. The script creates the Google Sheet and the Customers Data tab by itself. (If you pasted it into your OLD project, use Deploy → Manage deployments → Edit → Version: New version → Deploy.)` };
     });
 }
-const SCRIPT_VERSION_FALLBACK = "v74"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_VERSION_FALLBACK = "v75"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
 const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
   try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
@@ -1298,8 +1298,33 @@ async function uploadToSupabase(file, folder, contentType) {
 async function sheetWarning() {
   try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : " ✅ Saved to the Google Sheet."; } catch { return ""; }
 }
+async function syncCustomerOrderStatus(order) {
+  try {
+    const customerId = String(order?.customerId || "");
+    if (!customerId || !Array.isArray(callersDb?.list)) return;
+    const customer = callersDb.list.find(c => String(c.id) === customerId);
+    if (!customer) return;
+    const codes = String(customer.orderId || "").split(/\s*,\s*/).filter(Boolean);
+    if (order.orderId && !codes.includes(String(order.orderId))) codes.push(String(order.orderId));
+    customer.orderId = codes.join(", ").slice(0, 300);
+    // A real order promotes the lead to Customer; the separate order-status field
+    // follows the latest saved order decision (Pending / Confirmed / Rejected).
+    customer.customerStatus = "Customer";
+    customer.orderStatus = ["Pending", "Confirmed", "Rejected"].includes(String(order.status)) ? String(order.status) : "Pending";
+    const stampNow = callerNow();
+    customer.date = stampNow.date;
+    customer.time = stampNow.time;
+    customer.lastConversation = order.status === "Confirmed" ? `Order ${order.orderId || ""} confirmed` : order.status === "Rejected" ? `Order ${order.orderId || ""} rejected` : `Order ${order.orderId || ""} placed`;
+    customer.updatedAt = cH.stamp();
+    await saveCallers();
+    const sheet = await sheets.callerSave(callerSheetRow(customer));
+    const result = sheetNote(sheet);
+    if (!result.ok) console.warn("Customer order status sheet sync failed:", result.error);
+  } catch (e) { console.warn("Customer order status sync failed:", e.message); }
+}
 async function saveOrderRecord(order) {
   const saved = await saveOrderRecordCore(order);
+  await syncCustomerOrderStatus(order);
   try { sheets.track(order); } catch (e) { console.warn("Sheet track error:", e.message); }
   return saved;
 }
@@ -2455,7 +2480,6 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.strictAdmin = !isOwner; order.onlyConnection = true;
     order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
     await saveOrderRecord(order); // delivery failures must never discard an order
-    linkOrderToCustomer(order).catch(() => {}); // add this Order ID to the customer's row in Customers Data
 
     let sentFrom = "", failure = "", pollNote = "", directFailure = "";
     // Best route first: the bot sends the card photo WITH the 3 buttons as ONE message (visible immediately).
@@ -2653,10 +2677,9 @@ async function syncEverything(by, which = "all") { // which: "orders" | "custome
   if (which !== "customers") parts.orders = await syncOrdersPart(by);
   if (which !== "orders") parts.customers = await syncCustomersPart();
   const ok = Object.values(parts).every(p => p.ok);
-  const onlyOldScript = !ok && Object.entries(parts).every(([k, p]) => p.ok || (k === "customers" && p.needsScript));
   const sid = u => (String(u || "").match(/\/d\/([\w-]+)/) || [])[1] || "", oId = sid(sheets.status().url), cId = sid(callersSheetUrl);
   const sameLine = parts.orders?.ok && parts.customers?.ok && oId && cId ? (oId === cId ? "✅ Orders and Customers Data are in the SAME Google Sheet." : "⚠ Orders and Customers went to DIFFERENT Google Sheets — press Connect & sync EVERYTHING again.") : "";
-  return { ok, parts, needsScript: !!(parts.customers && parts.customers.needsScript), message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers), sameLine].filter(Boolean).join("\n"), error: ok ? "" : onlyOldScript ? "Orders are synced. Customers are safe in the app and will be written automatically as soon as the NEW Google script link is connected (steps above)." : "Sync finished with a problem." };
+  return { ok, parts, needsScript: !!(parts.customers && parts.customers.needsScript), message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers), sameLine].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
 }
 const syncRoute = which => async (req, res) => {
   const r = await syncEverything(req.actor?.name || "Owner", which);
@@ -2970,10 +2993,7 @@ function callerError(f) {
 const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow))); // newest customer first
 const callerSheetRow = c => [c.id, c.phone, c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
 let callersSheetUrl = "";
-let customersWaiting = false; // true while customers could not reach the sheet because the Google script is old
-const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; if (r && r.ok) customersWaiting = false; else if (r && r.needsScript) customersWaiting = true; return r && r.ok ? { ok: true } : { ok: false, needsScript: !!(r && r.needsScript), error: (r && r.error) || "Google Sheet not updated." }; };
-// Auto-retry: as soon as the saved link runs the new script, all waiting customers are written without pressing anything.
-setInterval(async () => { if (!customersWaiting) return; try { const v = await sheets.scriptVersionNow(); if (v && v === sheets.expectedScriptVersion().short) { const r = await pushAllCallers(); if (r.ok) console.log("Customers Data synced automatically."); } } catch {} }, 120000).unref?.();
+const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, needsScript: !!(r && r.needsScript), error: (r && r.error) || "Google Sheet not updated." }; };
 // ── ORDER ID = Customer ID + Ethiopian month (+ letter when the same customer orders again that month) ──
 // 0007-03 (first order), 0007-03A (second), 0007-03B (third) …  Change ORDER_ID_SEP to "" for 000703 / 000703A.
 const ORDER_ID_SEP = "-";
