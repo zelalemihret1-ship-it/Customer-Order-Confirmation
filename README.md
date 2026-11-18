@@ -1,9 +1,3 @@
-## v80c - CUSTOMERS WAIT FOR THE NEW SCRIPT, THEN SYNC BY THEMSELVES
-
-- If the saved Google link still runs an old script, orders sync normally and the result no longer says "Sync finished with a problem"; it says the customers are safe in the app.
-- The server remembers the waiting customers and, every 2 minutes, checks the saved link. When it reports the new script version it writes ALL customers to the Customers Data tab automatically.
-- Still needed once: paste google-sheet-script.gs in a NEW project -> authorize -> Deploy -> New deployment -> Web app (Me / Anyone) -> paste the new /exec link -> Connect.
-
 ## Latest update (v80b - sync result now confirms orders + customers share ONE Google Sheet)
 
 ## v80 - GUIDED FIX FOR "Customers: old Google script"
@@ -19,7 +13,7 @@
 ## Previous update (v78) - ONE-CLICK CONNECT (⚙ Settings)
 
 - ⚙ Settings -> "⚡ Connect Google Sheet (one click · all data)" uses the same original Apps Script link method on the main page. One button saves the link, checks the script version, creates every tab (incl. "Customers Data" in the SAME spreadsheet as the orders) and sends ALL data: orders + customers. Result lines are shown per part.
-- Needs google-sheet-script.gs v74 (included). If the saved link runs an older script, the button says so and shows the fix steps.
+- Needs google-sheet-script.gs v75 (included). If the saved link runs an older script, the button says so and shows the fix steps.
 
 ## Previous update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
 
@@ -319,3 +313,10 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 ## v62 – removed the 🔢 Summary (numbers) and 📈 Graphs page buttons from the settings panel (nothing else changed).
 
 ## v63 – fixed 'api is not defined' on 🗑 Start from ZERO (settings panel). Nothing else changed.
+
+
+## v75 – DELIVERY FAILURES IN RED + COMPLETE LIVE SYNC
+- Failed order-card deliveries now appear in the Delivery Note column as `Sent from: <admin> — ❌ NOT delivered (<reason>)` and the full order row is highlighted pale red in the month tab and Orders View.
+- When an order is placed for a selected customer, Customers Data updates the customer status to `Customer`, the order status to `Pending`, and adds the order code. When the customer confirms or rejects, the order status in Customers Data follows that decision.
+- Every order save and full sync rebuilds all derived tabs: Dashboard, Find Customer, Analysis, Orders View, Graphs and the hidden data source.
+- Apps Script reports version `v75`. After updating, paste the included `google-sheet-script.gs` into Apps Script, Save, Deploy → Manage deployments → Edit → Version: New version → Deploy, then press Connect & sync EVERYTHING / Sync ALL in the app.
