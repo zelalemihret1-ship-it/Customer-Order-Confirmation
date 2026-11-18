@@ -1,3 +1,9 @@
+## v80c - CUSTOMERS WAIT FOR THE NEW SCRIPT, THEN SYNC BY THEMSELVES
+
+- If the saved Google link still runs an old script, orders sync normally and the result no longer says "Sync finished with a problem"; it says the customers are safe in the app.
+- The server remembers the waiting customers and, every 2 minutes, checks the saved link. When it reports the new script version it writes ALL customers to the Customers Data tab automatically.
+- Still needed once: paste google-sheet-script.gs in a NEW project -> authorize -> Deploy -> New deployment -> Web app (Me / Anyone) -> paste the new /exec link -> Connect.
+
 ## Latest update (v80b - sync result now confirms orders + customers share ONE Google Sheet)
 
 ## v80 - GUIDED FIX FOR "Customers: old Google script"
