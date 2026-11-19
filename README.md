@@ -13,7 +13,7 @@
 ## Previous update (v78) - ONE-CLICK CONNECT (⚙ Settings)
 
 - ⚙ Settings -> "⚡ Connect Google Sheet (one click · all data)" uses the same original Apps Script link method on the main page. One button saves the link, checks the script version, creates every tab (incl. "Customers Data" in the SAME spreadsheet as the orders) and sends ALL data: orders + customers. Result lines are shown per part.
-- Needs google-sheet-script.gs v75 (included). If the saved link runs an older script, the button says so and shows the fix steps.
+- Needs google-sheet-script.gs v77 (included). If the saved link runs an older script, the button says so and shows the fix steps.
 
 ## Previous update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
 
@@ -319,4 +319,14 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Failed order-card deliveries now appear in the Delivery Note column as `Sent from: <admin> — ❌ NOT delivered (<reason>)` and the full order row is highlighted pale red in the month tab and Orders View.
 - When an order is placed for a selected customer, Customers Data updates the customer status to `Customer`, the order status to `Pending`, and adds the order code. When the customer confirms or rejects, the order status in Customers Data follows that decision.
 - Every order save and full sync rebuilds all derived tabs: Dashboard, Find Customer, Analysis, Orders View, Graphs and the hidden data source.
-- Apps Script reports version `v75`. After updating, paste the included `google-sheet-script.gs` into Apps Script, Save, Deploy → Manage deployments → Edit → Version: New version → Deploy, then press Connect & sync EVERYTHING / Sync ALL in the app.
+- Apps Script reports version `v77`. After updating, paste the included `google-sheet-script.gs` into Apps Script, Save, Deploy → Manage deployments → Edit → Version: New version → Deploy, then press Connect & sync EVERYTHING / Sync ALL in the app.
+
+
+## v77 – MODERN SHEET + SAFE ORDER ARCHIVING
+
+- Adds a dedicated **Archived Orders** tab. Archiving removes an order from active month tabs but preserves its complete row and archive timestamp/source.
+- Adds the **AMBAR Orders** Google Sheets menu: Archive selected order, Restore selected archived order, and Refresh all sections.
+- Select an order row in a month tab or Orders View, then choose **AMBAR Orders → Archive selected order…**. To bring it back, select its row in Archived Orders and choose **Restore selected archived order**.
+- Full app syncs update an archived record in place rather than silently restoring it to active orders.
+- Dashboard displays an Archived Orders count; active order totals remain separate from archived records.
+- Connector version is `v77`.
