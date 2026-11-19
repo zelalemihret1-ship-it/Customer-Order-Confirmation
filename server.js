@@ -1192,7 +1192,7 @@ function startFresh(by = "Admin") {
   });
 }
 /** Callers Data tab ("Callers"): needs the Apps Script Web app link (GOOGLE_SCRIPT_URL). Never throws; returns { ok, error }. */
-const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
+const CALLER_HEAD = ["Customer ID", "Phone Number", "Additional Phone Number", "Name", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
 function callersCall(payload) {
   if (!SCRIPT_URL) return Promise.resolve({ ok: false, error: "Google Sheet is not connected (main admin: open Settings → Connections and paste the Web app /exec URL)." });
   return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
@@ -1203,7 +1203,7 @@ function callersCall(payload) {
       return { ok: false, needsScript: true, error: `${seen}, but the Customers Data tab needs ${want}. Fix (2 minutes, once): tap "Copy new script" below → script.google.com → New project → paste → Save → run "authorize" once → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link here and press Connect & sync. The script creates the Google Sheet and the Customers Data tab by itself. (If you pasted it into your OLD project, use Deploy → Manage deployments → Edit → Version: New version → Deploy.)` };
     });
 }
-const SCRIPT_VERSION_FALLBACK = "v77"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_VERSION_FALLBACK = "v78"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
 const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
   try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
@@ -2689,7 +2689,7 @@ const syncRoute = which => async (req, res) => {
 app.get("/api/sheets/script", (req, res) => { try { res.type("text/plain; charset=utf-8").send(fs.readFileSync(sheets.SCRIPT_FILE, "utf8")); } catch (e) { res.status(404).type("text/plain").send("google-sheet-script.gs was not found on the server."); } });
 // Backup: every customer as CSV (opens in Google Sheets / Excel) — works even while the Google script is old.
 app.get("/api/sheets/customers.csv", (req, res) => {
-  const esc = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`, head = ["Customer ID", "Phone Number", "Name", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
+  const esc = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`, head = ["Customer ID", "Phone Number", "Additional Phone Number", "Name", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
   const rows = [...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow);
   res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": "attachment; filename=customers-data.csv" }).send("\ufeff" + [head, ...rows].map(r => r.map(esc).join(",")).join("\r\n"));
 });
@@ -2968,10 +2968,11 @@ function callerFields(b, actor, prev) {
   const username = String(b.username || "").trim().replace(/^@+/, "");
   const orderStatus = callerPick(b.orderStatus, CALL_ORDER_STATUS, prev?.orderStatus || "Pending");
   const spend = Number(String(b.totalSpend ?? "").replace(/,/g, ""));
-  const d = /^\d{4}\/\d{2}\/\d{2}$/.test(String(b.date || "").trim()) ? String(b.date).trim() : (prev?.date || now.date);
+  const rawDate=String(b.date||"").trim(); const d=/^\d{4}\/\d{2}\/\d{2}$/.test(rawDate)?rawDate:(/^\d{2}\/\d{2}\/\d{4}$/.test(rawDate)?rawDate.slice(6)+"/"+rawDate.slice(3,5)+"/"+rawDate.slice(0,2):(prev?.date||now.date));
   const t = /^\d{2}:\d{2}$/.test(String(b.time || "").trim()) ? String(b.time).trim() : (prev?.time || now.time);
   return {
     phone: cH.clean(b.phone).trim().slice(0, 30),
+    additionalPhone: cH.clean(b.additionalPhone).trim().slice(0, 30),
     name: cH.clean(b.name).trim().slice(0, 120),
     username: username ? "@" + username.slice(0, 60) : "",
     location: cH.clean(b.location).trim().slice(0, 160),
@@ -2991,7 +2992,7 @@ function callerError(f) {
   return "";
 }
 const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow))); // newest customer first
-const callerSheetRow = c => [c.id, c.phone, c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
+const callerSheetRow = c => [c.id, c.phone, c.additionalPhone || "", c.name, c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
 let callersSheetUrl = "";
 const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, needsScript: !!(r && r.needsScript), error: (r && r.error) || "Google Sheet not updated." }; };
 // ── ORDER ID = Customer ID + Ethiopian month (+ letter when the same customer orders again that month) ──
@@ -3022,7 +3023,7 @@ app.use("/api/callers", requireAccess);
 app.get("/api/callers/order-id", (req, res) => {
   const cust = callersDb.list.find(c => c.id === String(req.query.customerId || "").trim());
   if (!cust) return res.status(404).json({ ok: false, error: "Customer ID not found." });
-  res.json({ ok: true, orderId: nextOrderId(cust.id, req.query.date), customer: { id: cust.id, name: cust.name, phone: cust.phone, username: cust.username, location: cust.location } });
+  res.json({ ok: true, orderId: nextOrderId(cust.id, req.query.date), customer: { id: cust.id, name: cust.name, phone: cust.phone, additionalPhone: cust.additionalPhone || "", username: cust.username, location: cust.location } });
 });
 app.get("/api/callers", (req, res) => {
   const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
@@ -3031,12 +3032,12 @@ app.get("/api/callers", (req, res) => {
 });
 app.get("/api/callers/lookup", (req, res) => {
   const k = phoneKey(req.query.phone);
-  res.json({ ok: true, customer: k.length >= 7 ? (callersDb.list.find(c => phoneKey(c.phone) === k) || null) : null });
+  res.json({ ok: true, customer: k.length >= 7 ? (callersDb.list.find(c => phoneKey(c.phone) === k || phoneKey(c.additionalPhone) === k) || null) : null });
 });
 app.post("/api/callers", async (req, res) => {
   const f = callerFields(req.body || {}, req.actor);
   const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
-  const dup = callersDb.list.find(c => phoneKey(c.phone) === phoneKey(f.phone));
+  const dup = callersDb.list.find(c => phoneKey(c.phone) === phoneKey(f.phone) || (f.additionalPhone && phoneKey(c.additionalPhone) === phoneKey(f.additionalPhone)));
   if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
   // Sales Name = the logged-in admin's name. Only the owner may type another sales name.
   const sales = req.actor.role === "owner" && String(req.body?.salesName || "").trim() ? String(req.body.salesName).trim().slice(0, 80) : (req.actor.name || "");
@@ -3051,7 +3052,7 @@ app.put("/api/callers/:id", async (req, res) => {
   if (!rec) return res.status(404).json({ ok: false, error: "Customer not found." });
   const f = callerFields(req.body || {}, req.actor, rec);
   const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
-  const dup = callersDb.list.find(c => c.id !== rec.id && phoneKey(c.phone) === phoneKey(f.phone));
+  const dup = callersDb.list.find(c => c.id !== rec.id && (phoneKey(c.phone) === phoneKey(f.phone) || (f.additionalPhone && phoneKey(c.additionalPhone) === phoneKey(f.additionalPhone))));
   if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
   const watch = ["lastConversation", "date", "time", "orderStatus", "rejectionReason", "totalSpend", "orderId"];
   if (watch.some(k => String(rec[k] ?? "") !== String(f[k] ?? ""))) {
