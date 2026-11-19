@@ -1,3 +1,11 @@
+## v99 — Weekly Story: ✏️ Edit plan
+- Every plan you made now has a **✏️ Edit** (pencil) button next to Pause / Delete, in **My plans**.
+- In the edit window you can change: plan name, first story day (only before the first story is posted — it moves the whole week), post time, how long the story stays visible, who can see it, the posting account (main admin), the caption for all stories, "keep on profile", and the **own caption of each day**.
+- Each day that is **not posted yet** also has **🔄 Replace photo / video** (photo ↔ video both work; the same file can't be used on two days).
+- Stories already posted are never changed or posted again. Only the admin who made the plan can edit it (the main admin can still pause / resume / delete any plan).
+- **File size limit raised to 60 MB** per photo or video (was 20 MB). Videos are still up to 60 seconds.
+- Redeploy `stories.js` and `public/stories.html` (`server.js` unchanged).
+
 ## v98 — First Greeting: no customer list · Weekly Story: photos AND videos
 - **First Greeting page:** the "Choose customers" section (search, checkboxes, Send greeting button) is removed. The greeting is now automatic only: write your text, switch the 🤖 Automatic first greeting ON/OFF. The Sent log stays.
 - **Weekly Story:** each of the 7 days can now be a **photo or a video** — the admin picks whatever they want for every day (all photos, all videos, or a mix). Use **🖼 Add photos** / **🎬 Add videos**; ◀ ▶ reorders, captions work for both. Videos: MP4/MOV, up to 60 seconds and 20 MB each (Telegram story limits). A small preview picture is made on the phone for each video. Each item is still posted once, on its own day, from the admin's own account (or the Business connection for the main admin). Existing photo plans keep working unchanged.
