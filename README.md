@@ -1,3 +1,9 @@
+## v88 — Admin "Connect my Telegram account": login-code fix
+- The code request now reads Telegram's REAL delivery route (app / SMS / call) and tells the admin exactly where to look.
+- New **Resend code (SMS / call)** button (uses Telegram's own ResendCode, so a code that never showed up in the app can be re-sent by SMS or call).
+- New **Login without a code (QR / link)**: no code is delivered at all. The admin opens the link (or scans the QR from another device) in a Telegram app that is already logged in and confirms. 2-step passwords are supported.
+- Endpoints added: `/api/my-account/resend`, `/api/my-account/qr-start`, `/api/my-account/qr-poll`, `/api/my-account/qr-password`.
+
 # v87 — Main admin and assigned-admin access / account isolation
 
 - Kept the app restricted to the main admin and Telegram IDs explicitly assigned by the main admin. Unassigned Telegram accounts remain blocked.
