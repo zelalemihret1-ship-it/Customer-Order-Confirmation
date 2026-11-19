@@ -1889,6 +1889,7 @@ async function startAdmin(record) {
       try {
         const msg = event.message;
         if (!msg || msg.out || !msg.isPrivate) return;
+        try { greetingModule.autoPersonal(admin, msg).catch(e => console.warn("Auto greeting:", e.message)); } catch {}
         const senderId = String(msg.senderId);
         const text = String(msg.message || "").trim();
         if (!text) return;
@@ -3080,7 +3081,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
     // This is what lets the bot deliver order cards without Telegram Business.
     const botMessage = update.message;
     if (botMessage?.chat?.id && botMessage.chat.type === "private") {
+      const botNewChat = !customers.has(String(botMessage.chat.id));
       rememberCustomer(botMessage.chat, botMessage.from || botMessage.chat, "");
+      greetingModule.autoBot(botMessage, botNewChat).catch(e => console.warn("Auto greeting:", e.message));
       await deliverPendingCards(botMessage.chat, botMessage.from || botMessage.chat, botMessage.text || "").catch(e => console.warn("deliverPendingCards:", e.message));
     }
 
@@ -3221,7 +3224,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
     if (businessMessage) {
       const connectionId = businessMessage.business_connection_id;
       const chatId = businessMessage.chat?.id;
+      const isNewChat = !customers.has(String(chatId));
       rememberCustomer(businessMessage.chat, businessMessage.from, connectionId);
+      greetingModule.autoBusiness(businessMessage, isNewChat).catch(e => console.warn("Auto greeting:", e.message));
 
       // A business message is a reliable way to learn the connection ID after a redeploy,
       // even when Telegram did not resend the original business_connection update.
