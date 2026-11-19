@@ -2132,10 +2132,33 @@ function setupAuth(req, res) {
 }
 // Public: the order form uses this to list admins (labels only, no secrets).
 app.get("/api/admins", (req, res) => {
-  const mine = req.actor?.role === "admin" && req.actor.accountId ? [...admins.values()].filter(a => a.id === req.actor.accountId) : [...admins.values()];
-  res.json({ ok: true, admins: mine.map(a => ({ id: a.id, label: a.label, ready: a.ready })) });
+  // Owners may choose any connected sender account. Assigned admins can see/use only their own.
+  const mine = req.actor?.role === "owner"
+    ? [...admins.values()]
+    : [...admins.values()].filter(a => a.id === (req.actor?.accountId || (req.actor?.telegramId ? "u" + req.actor.telegramId : "")));
+  res.json({ ok: true, admins: mine.map(a => ({ id: a.id, label: a.label, ready: !!a.ready, error: a.ready ? "" : (a.error || "Not connected") })) });
 });
 let pendingLogin = null;
+function telegramLoginError(error) {
+  const raw = String(error?.errorMessage || error?.message || error || "Telegram login failed.");
+  const code = String(error?.errorMessage || raw).toUpperCase();
+  if (/API_ID_INVALID|API_ID_PUBLISHED_FLOOD|API_HASH_INVALID/.test(code)) return "Telegram rejected TG_API_ID / TG_API_HASH. Recheck both values from my.telegram.org → API development tools, save them in Render, and redeploy.";
+  if (/PHONE_NUMBER_INVALID/.test(code)) return "Phone number is invalid. Enter the Telegram account number with country code, for example +2519XXXXXXXX.";
+  if (/PHONE_NUMBER_BANNED/.test(code)) return "Telegram has restricted this phone number from logging in. Contact Telegram support or use another permitted account.";
+  if (/PHONE_CODE_INVALID|PHONE_CODE_EMPTY/.test(code)) return "That login code is incorrect or expired. Request a fresh code and enter the newest one.";
+  if (/PHONE_CODE_EXPIRED/.test(code)) return "That login code expired. Press Send code again and use the newest code.";
+  if (/PHONE_CODE_FLOOD|PHONE_NUMBER_FLOOD|FLOOD_WAIT/.test(code)) return "Telegram is limiting login attempts. Wait before requesting another code. Do not keep pressing Send code.";
+  if (/AUTH_RESTART|SESSION_PASSWORD_NEEDED/.test(code)) return raw;
+  if (/NETWORK|TIMEOUT|CONNECTION/.test(code)) return "Could not reach Telegram. Check the server's internet connection and try Send code again.";
+  return raw;
+}
+function codeDeliveryHint(result) {
+  const kind = String(result?.type?.className || result?.type?.constructor?.name || result?.type?._ || "").toLowerCase();
+  if (kind.includes("app")) return "Telegram sent the login code inside the Telegram app on a device where this account is already logged in. It is NOT sent by the AMBAR bot.";
+  if (kind.includes("sms")) return "Telegram sent the login code by SMS to the phone number. It is NOT sent by the AMBAR bot.";
+  if (kind.includes("call")) return "Telegram will deliver the login code by phone call. It is NOT sent by the AMBAR bot.";
+  return "Check the Telegram app on another device where this account is logged in, and check SMS if Telegram offers it. The AMBAR bot cannot deliver Telegram login codes.";
+}
 app.get("/api/setup/status", async (req, res) => {
   if (!setupAuth(req, res)) return;
   let webhook = null; try { webhook = await telegram("getWebhookInfo", {}); } catch (e) { webhook = { error: e.message }; }
@@ -2149,20 +2172,25 @@ app.get("/api/setup/status", async (req, res) => {
 });
 app.post("/api/setup/send-code", async (req, res) => {
   if (!setupAuth(req, res)) return;
+  let client;
   try {
     const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
     if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "Add TG_API_ID and TG_API_HASH in Render first (from my.telegram.org → API development tools)." });
     const raw = String(req.body?.phone || "").replace(/[^\d+]/g, "");
-    if (!raw) return res.status(400).json({ ok: false, error: "Enter the admin phone number with country code, e.g. +2519..." });
+    if (!raw) return res.status(400).json({ ok: false, error: "Enter the admin phone number with country code, e.g. +2519XXXXXXXX." });
     const phone = raw.startsWith("+") ? raw : "+" + raw;
     const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
     if (pendingLogin?.client) { try { await pendingLogin.client.disconnect(); } catch {} }
-    const client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5 });
+    client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
     const r = await client.sendCode({ apiId, apiHash }, phone);
+    if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
     pendingLogin = { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false, label: String(req.body?.label || "").trim().slice(0, 40) || phone };
-    res.json({ ok: true, message: `Code sent to ${phone}. Check that Telegram account (or SMS) and enter it below.` });
-  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+    res.json({ ok: true, message: `Telegram accepted the login request for ${phone}. ${codeDeliveryHint(r)}`, delivery: codeDeliveryHint(r) });
+  } catch (error) {
+    if (client && client !== pendingLogin?.client) { try { await client.disconnect(); } catch {} }
+    res.status(400).json({ ok: false, error: telegramLoginError(error) });
+  }
 });
 app.post("/api/setup/verify", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2188,7 +2216,7 @@ app.post("/api/setup/verify", async (req, res) => {
     const admin = await startAdmin({ id: existing?.id || "a" + Date.now().toString(36), label: p.label, session });
     await saveAdminRecords();
     res.json({ ok: admin.ready, message: admin.ready ? `Admin "${admin.label}" connected ✅` : `Logged in, but could not start: ${admin.error}` });
-  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+  } catch (error) { res.status(400).json({ ok: false, error: telegramLoginError(error) }); }
 });
 app.post("/api/setup/remove", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2213,7 +2241,14 @@ app.post("/api/setup/test", async (req, res) => {
   } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
 });
 
-app.get("/api/setup/app-admins", (req, res) => { if (!setupAuth(req, res)) return; res.json({ ok: true, enforced: accessEnforced(), owners: OWNER_IDS, appAdmins, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label })) }); });
+app.get("/api/setup/app-admins", (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const people = appAdmins.map(person => {
+    const account = admins.get(String(person.accountId || ""));
+    return { ...person, connected: !!account?.ready, accountLabel: account?.label || "", connectionError: account && !account.ready ? (account.error || "Not connected") : "" };
+  });
+  res.json({ ok: true, enforced: accessEnforced(), owners: OWNER_IDS, appAdmins: people, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: !!a.ready, ownerTelegramId: a.ownerTelegramId || "", error: a.ready ? "" : (a.error || "Not connected") })) });
+});
 app.post("/api/setup/app-admins/add", async (req, res) => {
   if (!setupAuth(req, res)) return;
   // One or many people: one per line as "telegramId name" (unlimited).
@@ -2258,20 +2293,26 @@ app.get("/api/my-account", (req, res) => {
 });
 app.post("/api/my-account/send-code", async (req, res) => {
   const a = myActor(req, res); if (!a) return;
+  let client;
   try {
     const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
-    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "The owner must add TG_API_ID and TG_API_HASH in Render first." });
+    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "The owner must add TG_API_ID and TG_API_HASH in Render first (from my.telegram.org → API development tools)." });
     const raw = String(req.body?.phone || "").replace(/[^\d+]/g, "");
-    if (!raw) return res.status(400).json({ ok: false, error: "Enter YOUR phone number with country code, e.g. +2519..." });
+    if (!raw) return res.status(400).json({ ok: false, error: "Enter YOUR Telegram phone number with country code, e.g. +2519XXXXXXXX." });
     const phone = raw.startsWith("+") ? raw : "+" + raw;
     const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
     const old = pendingMy.get(a.telegramId); if (old?.client) { try { await old.client.disconnect(); } catch {} }
-    const client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5 });
+    pendingMy.delete(a.telegramId);
+    client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
     const r = await client.sendCode({ apiId, apiHash }, phone);
+    if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
     pendingMy.set(a.telegramId, { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false });
-    res.json({ ok: true, message: `Code sent to ${phone}. Check your Telegram app (or SMS) and enter it below.` });
-  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+    res.json({ ok: true, message: `Telegram accepted the login request for ${phone}. ${codeDeliveryHint(r)}`, delivery: codeDeliveryHint(r) });
+  } catch (error) {
+    if (client && client !== pendingMy.get(a.telegramId)?.client) { try { await client.disconnect(); } catch {} }
+    res.status(400).json({ ok: false, error: telegramLoginError(error) });
+  }
 });
 app.post("/api/my-account/verify", async (req, res) => {
   const a = myActor(req, res); if (!a) return;
@@ -2297,7 +2338,7 @@ app.post("/api/my-account/verify", async (req, res) => {
     const rec = appAdmins.find(x => String(x.telegramId) === a.telegramId); if (rec) rec.accountId = id;
     await saveAdminRecords(); await saveAppAdmins();
     res.json({ ok: acc.ready, message: acc.ready ? "Your Telegram account is connected ✅. Orders you create are now sent from YOUR account." : "Logged in, but could not start: " + acc.error });
-  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+  } catch (error) { res.status(400).json({ ok: false, error: telegramLoginError(error) }); }
 });
 app.post("/api/my-account/disconnect", async (req, res) => {
   const a = myActor(req, res); if (!a) return;
@@ -2450,7 +2491,12 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     //    then the main admin's own connected account if there is one;
     //  • assigned admin: ONLY their own connected account.
     const isOwner = req.actor?.role === "owner";
-    const account = accountFor(req.actor);
+    const requestedSenderId = String(req.body?.senderAdminId || "").trim();
+    const account = isOwner && requestedSenderId
+      ? admins.get(requestedSenderId)
+      : accountFor(req.actor);
+    if (isOwner && requestedSenderId && !account) return res.status(400).json({ ok: false, error: "The selected sending admin account is no longer available. Refresh the app and choose a connected admin." });
+    if (isOwner && requestedSenderId && !account.ready) return res.status(400).json({ ok: false, error: `The selected account (${account.label}) is not connected. Ask that admin to connect their Telegram account first.` });
     if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who pressed Start in the AMBAR bot), or connect your Telegram account to send by @username / phone." });
     const allConns = [...businessConnections.values()];
     const myConn = order.telegramChatId
