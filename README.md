@@ -1,3 +1,10 @@
+## v86 – Telegram login delivery error and pending-session repair
+
+- Added a specific explanation for Telegram's `SEND_CODE_UNAVAILABLE` response: it means Telegram has no further SMS/phone delivery option for that login attempt; it is not a code that AMBAR can send.
+- Clarified that an in-app route is only Telegram's reported delivery route; AMBAR cannot verify that a service notification appeared or force Telegram to send it.
+- Fixed both owner and assigned-admin code-request flows so a failed SMS attempt does not disconnect and discard a previously pending login session. A new pending session replaces the old one only after Telegram successfully returns a new code hash.
+- Kept the normal Telegram code flow and the optional SMS request. Telegram still controls availability; do not repeatedly request codes while rate-limited.
+
 ## v85 – ADMIN TELEGRAM LOGIN DELIVERY FIX
 - Corrected the delivery-route detection to use GramJS's actual `isCodeViaApp` result (the previous code looked for a raw `type` object that GramJS does not return).
 - Added an optional “Request SMS instead” choice in the admin's Connect my Telegram account panel. Telegram may still decline SMS or choose another route; the app now reports that accurately.
