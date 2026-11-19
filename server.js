@@ -2116,8 +2116,16 @@ async function sendCardViaUserAccount(order, filePath) {
 }
 
 function accountFor(actor) {
-  if (actor?.telegramId) { const own = admins.get("u" + actor.telegramId); if (own) return own; }
-  if (actor?.role === "owner") return [...admins.values()].find(x => !x.ownerTelegramId) || null; // main admin account logged in via Admin Control
+  // Every Telegram Mini App user may use only the personal account linked to their
+  // own Telegram ID. This includes the main admin; never fall back to another
+  // person's connected session.
+  if (actor?.telegramId) {
+    const own = admins.get("u" + String(actor.telegramId));
+    if (own && (!own.ownerTelegramId || String(own.ownerTelegramId) === String(actor.telegramId))) return own;
+  }
+  // Backward compatibility for an older main-admin session created before
+  // per-user account IDs were introduced. Assigned admins never use this fallback.
+  if (actor?.role === "owner") return [...admins.values()].find(x => !x.ownerTelegramId) || null;
   return null;
 }
 
