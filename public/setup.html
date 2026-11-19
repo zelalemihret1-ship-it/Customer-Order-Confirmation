@@ -3,7 +3,7 @@
 <h1>Setup &amp; checks</h1>
 <input id="key" type="password" placeholder="Setup key (ADMIN_SETUP_KEY from Render)">
 <button onclick="status()">1. Check status</button><pre id="status">—</pre>
-<h2>2. Telegram bot delivery</h2><p>AMBAR sends all order cards using BOT_TOKEN only. No Telegram Business connection, TG_API_ID, TG_API_HASH, or personal Telegram login is required. The customer receives the order card (with the Confirm / Reject / Comment buttons) from the AMBAR bot. If the customer has not pressed Start yet, the card is kept and sent AUTOMATICALLY the moment they open the bot. After you mark an order as paid in full, the customer gets a thank-you message. Admins also get a private copy: each admin must press Start in the AMBAR bot. No personal-account connection is required.</p>
+<h2>2. Telegram delivery</h2><p>The AMBAR bot sends order cards to customers who have pressed Start. To send orders from an admin personal Telegram account, that admin must connect from Settings → Connect my Telegram account. Telegram sends the login code to the admin's Telegram app on an already logged-in device (or SMS if Telegram offers it); the AMBAR bot cannot send Telegram login codes. This personal-account connection requires TG_API_ID and TG_API_HASH from my.telegram.org → API development tools.</p>
 <h2>5. Assign people who can USE the app</h2>
 <div style="font-size:14px">Each person opens the app from Telegram; if they are not assigned they see their Telegram ID to send you.</div>
 <input id="aid" placeholder="Person's numeric Telegram ID"><input id="aname" placeholder="Their name">
