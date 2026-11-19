@@ -605,7 +605,7 @@ function options(){
     const phone=digits(c.phone);
     return text.includes(q)||(qd.length>=3&&phone.includes(qd));
   });
-  pick.innerHTML='<option value="">'+(q?'— Select a matching customer —':'— Type an ID, name or phone to search —')+'</option>'+rows.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" — "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("")+'<option value="__manual">✍️ No Customer ID — type the order code myself</option>';
+  pick.innerHTML='<option value="">'+(q?'— Select a matching customer —':'— Type an ID, name or phone to search —')+'</option>'+rows.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" — "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("");
   pick.size=1; // Keep the original compact, single-line customer selector; search results appear in its dropdown.
   pick.value=keep&&[...pick.options].some(o=>o.value===keep)?keep:"";
   if(q)help.textContent=rows.length?rows.length+" matching customer(s) — open the customer list and choose one.":"No matching customer. Check the ID, name or phone, or add the customer in Customers Data.";
@@ -618,8 +618,8 @@ async function newOrderId(){
 }
 pick.addEventListener("change",async()=>{
   const v=pick.value;
-  if(v==="__manual"){cid.value="";oid.readOnly=false;oid.value="";oid.placeholder="Type the order code";oid.focus();return;}
-  oid.readOnly=true;oid.placeholder="Choose the Customer ID first";
+  // Orders can only be created for an existing Customers Data record.
+  oid.readOnly=true;oid.placeholder="Select a customer from Customers Data";
   if(!v){cid.value="";oid.value="";oid.dispatchEvent(new Event("input",{bubbles:true}));return;}
   const c=list.find(x=>x.id===v);if(!c)return;
   cid.value=c.id;setVal("customerName",c.name);setVal("phone",c.phone);setVal("location",c.location);setVal("telegramUsername",c.username);
@@ -629,7 +629,7 @@ search.addEventListener("input",options);
 form.addEventListener("reset",()=>setTimeout(()=>{cid.value="";oid.readOnly=true;oid.value="";search.value="";options();},0));
 // the Ethiopian month of the Order Date is used when an Order Date is chosen (today's month otherwise)
 let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.orderDate.value:"";if(d!==lastDate){lastDate=d;if(cid.value)newOrderId();}},1200);
-(async()=>{try{const r=await fetch("/api/callers"),d=await r.json();if(d.ok){list=[...d.customers].sort((a,b)=>String(b.updatedAt||b.createdAt||b.seq||b.id).localeCompare(String(a.updatedAt||a.createdAt||a.seq||a.id),undefined,{numeric:true}));options();if(!list.length)help.innerHTML='No customers yet. <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the first customer in Customers Data</a>, or choose "No Customer ID" in the list.';}}catch{help.textContent="Could not load customers. Check your connection and refresh.";}})();
+(async()=>{try{const r=await fetch("/api/callers"),d=await r.json();if(d.ok){list=[...d.customers].sort((a,b)=>String(b.updatedAt||b.createdAt||b.seq||b.id).localeCompare(String(a.updatedAt||a.createdAt||a.seq||a.id),undefined,{numeric:true}));options();if(!list.length)help.innerHTML='No customers yet. <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the customer in Customers Data</a> before creating an order.';}}catch{help.textContent="Could not load customers. Check your connection and refresh.";}})();
 })();
 </script>
 </body>
