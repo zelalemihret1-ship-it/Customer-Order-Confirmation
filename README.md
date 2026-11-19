@@ -1,3 +1,12 @@
+# v84 update (2026-11-19)
+
+- Fixed admin sender selection: the main admin can choose which connected admin Telegram account sends a new order. Assigned admins can only send from their own connected account; the server ignores any attempt to select another admin.
+- The Admin Control list now shows whether each assigned admin has connected their Telegram account.
+- Improved Telegram account connection: login requests now report Telegram's actual delivery channel where available, return clearer errors for invalid API credentials, invalid phone numbers, expired codes and Telegram rate limits, and clean up failed login sessions.
+- Clarified that Telegram login codes are delivered by Telegram to an already logged-in Telegram app session or by SMS if Telegram offers it. They are never sent by the AMBAR bot.
+- Required server variables for personal-account connection: `TG_API_ID` and `TG_API_HASH` from https://my.telegram.org → API development tools. `BOT_TOKEN` alone cannot authorize a personal Telegram account.
+- Deploy the updated app files (especially `server.js` and `public/index.html`) and restart the hosting service. No Google Apps Script update is needed for this release.
+
 # v83 update (2026-11-19)
 
 - Rebuilt the Dashboard with a self-contained renderer so a refresh cannot stop after the title and reporting-period rows. It writes all six KPI cards, archived count, product/delivery breakdowns, latest orders, and a visible source-count diagnostic in Dashboard cell A40.
