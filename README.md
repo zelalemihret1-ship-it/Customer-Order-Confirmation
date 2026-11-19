@@ -1,3 +1,10 @@
+# v83 update (2026-11-19)
+
+- Rebuilt the Dashboard with a self-contained renderer so a refresh cannot stop after the title and reporting-period rows. It writes all six KPI cards, archived count, product/delivery breakdowns, latest orders, and a visible source-count diagnostic in Dashboard cell A40.
+- Dashboard order discovery now scans every plausible order-data tab by its own row-1 headers, rather than relying only on Ethiopian-month tab names. It excludes Customers Data, Dashboard, helper tabs, Orders View, and Archived Orders to avoid mixing customers or double-counting archived orders.
+- Apps Script version: v83. Replace `google-sheet-script.gs`, save, deploy a **new web-app version**, then run `refreshDashboardNow` once from the Apps Script editor. Confirm the execution log says how many active order records were read; the Dashboard A40 line shows the same source count.
+- This update changes only the Dashboard builder/reader in the Google Sheet script; the v82 customer-only order selection changes remain in the app files.
+
 # v82 update (2026-11-19)
 
 - Fixed the Dashboard data reader: it now reads each Ethiopian-month tab using that tab's own header row, so different/older column orders cannot make the Dashboard appear empty. The dashboard also has a manual `refreshDashboardNow` function that rebuilds ONLY the Dashboard tab from the existing month tabs.
