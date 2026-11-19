@@ -85,6 +85,9 @@ button:disabled{opacity:.5;cursor:default}
           <label>Phone Number
             <input id="phone" inputmode="tel" placeholder="0911… or +251911…" required>
           </label>
+          <label>Additional Phone Number
+            <input id="additionalPhone" inputmode="tel" placeholder="Optional second number">
+          </label>
           <label>Name
             <input id="name" required>
           </label>
@@ -103,7 +106,7 @@ button:disabled{opacity:.5;cursor:default}
           <label class="full">Last Conversation
             <textarea id="lastConversation" placeholder="What was said in the last call / chat / message…"></textarea>
           </label>
-          <label>Date <input id="date" placeholder="yyyy/mm/dd" inputmode="numeric" maxlength="10"></label>
+          <label>Date (Ethiopian) <input id="date" placeholder="DD/MM/YYYY" inputmode="numeric" maxlength="10"></label>
           <label>Time <input id="time" type="time"></label>
           <label>Order Status
             <select id="orderStatus"></select>
@@ -159,7 +162,8 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const say=(t,k)=>{const n=$("notice");n.className="notice "+(k||"info");n.textContent=t;};
 const clearSay=()=>{$("notice").className="notice";$("notice").textContent="";};
 const fill=(sel,arr)=>{$(sel).innerHTML=arr.map(v=>`<option>${esc(v)}</option>`).join("");};
-const ethSlash=v=>{const d=String(v||"").replace(/\D/g,"").slice(0,8);return d.length>6?d.slice(0,4)+"/"+d.slice(4,6)+"/"+d.slice(6):d.length>4?d.slice(0,4)+"/"+d.slice(4):d;};
+const ethSlash=v=>{const d=String(v||"").replace(/\D/g,"").slice(0,8);return d.length>4?d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4):d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
+const ethDateUI=v=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(String(v||""));return m?m[3]+"/"+m[2]+"/"+m[1]:String(v||"");};
 async function api(path,method,body){const r=await fetch(path,{method:method||"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});let d={},parsed=true;try{d=await r.json();}catch{parsed=false;}d.status=r.status;d.parsed=parsed;return d;}
 
 function blank(){
@@ -167,7 +171,7 @@ function blank(){
   $("f").reset();
   $("cidShow").textContent=NEXT;$("cidHint").textContent="New customer";
   $("customerStatus").value="New Lead";$("source").value="Telegram";$("orderStatus").value="Pending";
-  $("date").value=NOW.date;$("time").value=NOW.time;
+  $("date").value=ethDateUI(NOW.date);$("time").value=NOW.time;
   $("salesName").value=ME.name||"";$("salesName").readOnly=ME.role!=="owner";
   $("rejWrap").style.display="none";$("delBtn").style.display="none";$("histCard").style.display="none";
   $("saveBtn").textContent="💾 Save Customer";clearSay();
@@ -175,10 +179,10 @@ function blank(){
 function load(c){
   CUR=c;
   $("cidShow").textContent=c.id;$("cidHint").textContent="Existing customer — saving updates this ID";
-  for(const k of ["phone","name","username","location","customerStatus","source","lastConversation","orderStatus","orderId","rejectionReason"])$(k).value=c[k]||"";
+  for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","orderStatus","orderId","rejectionReason"])$(k).value=c[k]||"";
   $("totalSpend").value=c.totalSpend||"";
   // a new conversation: keep the old text visible, but set date / time to now so the update is dated correctly
-  $("date").value=NOW.date;$("time").value=NOW.time;
+  $("date").value=ethDateUI(NOW.date);$("time").value=NOW.time;
   $("salesName").value=c.salesName||ME.name||"";$("salesName").readOnly=ME.role!=="owner";
   $("rejWrap").style.display=c.orderStatus==="Rejected"?"block":"none";
   $("delBtn").style.display=ME.role==="owner"?"inline-block":"none";
@@ -209,7 +213,7 @@ function renderList(){
   $("listCount").textContent=rows.length+" of "+ALL.length+" customers";
   $("list").innerHTML=rows.length?rows.map(c=>`<div class="cust" data-id="${esc(c.id)}"><div class="top"><span class="cid">${esc(c.id)}</span><span><span class="pill ${esc(c.customerStatus)}">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></span></div>
   <div class="nm">${esc(c.name)}</div>
-  <div class="meta">📞 ${esc(c.phone)}${c.username?" · "+esc(c.username):""}${c.location?" · 📍 "+esc(c.location):""}<br>🗓 ${esc(c.date)} ${esc(c.time)} · ${esc(c.source)} · 👤 ${esc(c.salesName||"—")}${c.orderId?" · 🧾 "+esc(c.orderId):""}${c.totalSpend?" · 💰 "+Number(c.totalSpend).toLocaleString()+" Birr":""}</div>
+  <div class="meta">📞 ${esc(c.phone)}${c.additionalPhone?" · "+esc(c.additionalPhone):""}${c.username?" · "+esc(c.username):""}${c.location?" · 📍 "+esc(c.location):""}<br>🗓 ${esc(c.date)} ${esc(c.time)} · ${esc(c.source)} · 👤 ${esc(c.salesName||"—")}${c.orderId?" · 🧾 "+esc(c.orderId):""}${c.totalSpend?" · 💰 "+Number(c.totalSpend).toLocaleString()+" Birr":""}</div>
   ${c.lastConversation?`<div class="conv">${esc(c.lastConversation.length>160?c.lastConversation.slice(0,160)+"…":c.lastConversation)}</div>`:""}
   ${c.rejectionReason?`<div class="meta" style="color:#b3261e">❌ ${esc(c.rejectionReason)}</div>`:""}</div>`).join(""):`<div class="empty">No customers found.</div>`;
   const sales=[...new Set(ALL.map(c=>c.salesName).filter(Boolean))];
@@ -234,7 +238,7 @@ $("phone").addEventListener("input",()=>{clearTimeout(lookT);lookT=setTimeout(as
 
 $("f").addEventListener("submit",async e=>{
   e.preventDefault();$("saveBtn").disabled=true;
-  const body={};for(const k of ["phone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName"])body[k]=$(k).value;
+  const body={};for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName"])body[k]=$(k).value;
   const d=CUR?await api("/api/callers/"+CUR.id,"PUT",body):await api("/api/callers","POST",body);
   $("saveBtn").disabled=false;
   if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);if(c)load(c);say(d.message,d.sheet&&!d.sheet.ok?"info":"ok");}
@@ -260,9 +264,9 @@ $("syncBtn").onclick=async()=>{
   if(d.ok)await refresh();
 };
 $("copyBtn").onclick=async()=>{
-  const H=["Customer ID","Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
+  const H=["Customer ID","Phone Number","Additional Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
   const cell=v=>String(v==null?"":v).replace(/[\t\r\n]+/g," ");
-  const rows=[...ALL].sort((a,b)=>b.seq-a.seq).map(c=>[c.id,c.phone,c.name,c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
+  const rows=[...ALL].sort((a,b)=>b.seq-a.seq).map(c=>[c.id,c.phone,c.additionalPhone||"",c.name,c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
   const text=[H.join("\t"),...rows].join("\n");
   try{await navigator.clipboard.writeText(text);$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}
   catch{const t=document.createElement("textarea");t.value=text;document.body.appendChild(t);t.select();try{document.execCommand("copy");$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}catch{$("copyBtn").textContent="Copy failed";}t.remove();}
