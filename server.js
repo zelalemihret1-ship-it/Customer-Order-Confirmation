@@ -2320,6 +2320,34 @@ app.post("/api/setup/app-admins/remove", async (req, res) => {
   if (own && own.ownerTelegramId === telegramId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
   res.json({ ok: true, message: "Admin removed." });
 });
+// v92: ✏️ edit an assigned admin (name, Telegram ID, phone, note). Owner / setup key only.
+app.post("/api/setup/app-admins/update", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const oldId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === oldId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  const newId = String(req.body?.newTelegramId || oldId).replace(/\D/g, "");
+  if (newId.length < 5) return res.status(400).json({ ok: false, error: "Enter a valid numeric Telegram ID (5+ digits)." });
+  if (newId !== oldId) {
+    if (appAdmins.some(a => String(a.telegramId) === newId)) return res.status(409).json({ ok: false, error: `Telegram ID ${newId} is already assigned to another admin.` });
+    if (OWNER_IDS.includes(newId)) return res.status(409).json({ ok: false, error: `Telegram ID ${newId} belongs to the main admin.` });
+  }
+  const clean = (v, n) => String(v == null ? "" : v).replace(/[\r\n]+/g, " ").trim().slice(0, n);
+  const before = rec.name || rec.telegramId;
+  if (req.body?.name !== undefined) rec.name = clean(req.body.name, 60);
+  if (req.body?.phone !== undefined) rec.phone = clean(req.body.phone, 30);
+  if (req.body?.note !== undefined) rec.note = clean(req.body.note, 200);
+  let extra = "";
+  if (newId !== oldId) { // the personal Telegram login belongs to the OLD ID, so it is disconnected; the new person connects their own
+    const own = admins.get(String(rec.accountId || ""));
+    if (own && own.ownerTelegramId === oldId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
+    rec.telegramId = newId; rec.accountId = "";
+    extra = " Telegram ID changed — the new person must open the app and tap Connect my Telegram account.";
+  }
+  await saveAppAdmins();
+  sheets.log("Admin edited", before + " → " + (rec.name || rec.telegramId), identify(req).name || "Owner");
+  res.json({ ok: true, message: `Saved: ${rec.name || rec.telegramId}.${extra}`, admin: rec });
+});
 // ── Assigned admins connect THEIR OWN Telegram account ───────────────────────────
 const pendingMy = new Map();
 // ── Login-code helpers: read Telegram's REAL delivery route (app / SMS / call), support resend, and a code-free QR login ──
