@@ -1,3 +1,9 @@
+## v96 — 🤖 Automatic first greeting (ON / OFF switch on the First Greeting page)
+- New switch at the top of **⚙ Settings → 👋 First Greeting**. **ON:** the first time a NEW person writes to you in a private chat, your saved greeting text is sent back automatically (plain text, 2-4 s delay, once). **OFF:** nothing is sent automatically (manual sending still works).
+- Works per admin: an assigned admin's switch covers messages to their own connected Telegram account. The main admin's switch also covers the shared Business connection and the AMBAR bot's private chat.
+- "First text only": people you already had a conversation with get nothing, and nobody is ever greeted twice (also not if you or another admin already greeted them manually; matched to Customers Data by @username). Automatic greetings appear in the Sent log marked "automatic".
+- The automatic text is your saved text (switching ON also saves what is in the text box). Redeploy `server.js`, `greetings.js`, `public/`.
+
 ## v95 — 👋 First Greeting (separate page, opened from the ⚙ Settings icon)
 - **⚙ Settings → 👋 First Greeting (text only)** opens `public/greeting.html` (logic in `greetings.js`). It sends a customer their **first message: one plain text, nothing else** (no photo, no card, no buttons).
 - Pick customers from Customers Data (search, "Not greeted yet" filter, up to 30 at a time). The text can use `{name}` (first name), `{fullname}` and `{admin}` (the sender's name), with a live preview.
