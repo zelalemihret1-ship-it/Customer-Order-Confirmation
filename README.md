@@ -3,7 +3,7 @@
 - In the edit window you can change: plan name, first story day (only before the first story is posted — it moves the whole week), post time, how long the story stays visible, who can see it, the posting account (main admin), the caption for all stories, "keep on profile", and the **own caption of each day**.
 - Each day that is **not posted yet** also has **🔄 Replace photo / video** (photo ↔ video both work; the same file can't be used on two days).
 - Stories already posted are never changed or posted again. Only the admin who made the plan can edit it (the main admin can still pause / resume / delete any plan).
-- **File size limit raised to 60 MB** per photo or video (was 20 MB). Videos are still up to 60 seconds.
+- **File size limit raised to 200 MB** per photo or video (was 20 MB). Videos are still up to 60 seconds.
 - Redeploy `stories.js` and `public/stories.html` (`server.js` unchanged).
 
 ## v98 — First Greeting: no customer list · Weekly Story: photos AND videos
