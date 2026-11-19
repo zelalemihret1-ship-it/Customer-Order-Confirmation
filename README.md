@@ -1,3 +1,9 @@
+## v98 — First Greeting: no customer list · Weekly Story: photos AND videos
+- **First Greeting page:** the "Choose customers" section (search, checkboxes, Send greeting button) is removed. The greeting is now automatic only: write your text, switch the 🤖 Automatic first greeting ON/OFF. The Sent log stays.
+- **Weekly Story:** each of the 7 days can now be a **photo or a video** — the admin picks whatever they want for every day (all photos, all videos, or a mix). Use **🖼 Add photos** / **🎬 Add videos**; ◀ ▶ reorders, captions work for both. Videos: MP4/MOV, up to 60 seconds and 20 MB each (Telegram story limits). A small preview picture is made on the phone for each video. Each item is still posted once, on its own day, from the admin's own account (or the Business connection for the main admin). Existing photo plans keep working unchanged.
+- Video backups use Supabase Storage (same bucket as order images) when Supabase is connected.
+- Redeploy `server.js` (unchanged), `stories.js`, `greetings.js` (unchanged), `public/`.
+
 ## v97 — Automatic greeting confirmed for ALL private chats
 - The automatic first greeting goes to every person who messages privately for the first time — saved in Customers Data or not, saved in the phone contacts or not. The log marks people who are not in Customers Data. Same rules: once only, nothing for people you already chatted with.
 
