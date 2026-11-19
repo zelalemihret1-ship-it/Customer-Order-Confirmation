@@ -43,6 +43,8 @@ button:disabled{opacity:.5;cursor:default}
 .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px}
 .slot{border:1.5px dashed #cfc6b3;border-radius:14px;padding:8px;background:#faf8f3;text-align:center}
 .slot.filled{border-style:solid;border-color:#b89552;background:#fff}
+.kind{position:absolute;left:6px;top:6px;background:#000a;color:#fff;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
+.ph{position:relative}
 .slot .dn{font-size:12px;font-weight:800;color:#153a2e}
 .slot .dd{font-size:11px;color:#6d675d;margin-bottom:6px}
 .ph{aspect-ratio:9/16;background:#e9e5da center/cover no-repeat;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#a39b88;font-size:26px}
@@ -77,7 +79,7 @@ button:disabled{opacity:.5;cursor:default}
 <header>
   <a class="back" href="/">← Order Cards</a>
   <h1>📸 Weekly Story</h1>
-  <div class="sub">7 photos once · one story per day · no photo repeats</div>
+  <div class="sub">7 photos or videos once · one story per day · nothing repeats</div>
 </header>
 <main>
   <div class="tabs">
@@ -89,9 +91,12 @@ button:disabled{opacity:.5;cursor:default}
 
   <section id="vNew">
     <div class="card">
-      <h2>1. Add your 7 photos <span class="counter" id="cnt">0 / 7</span></h2>
-      <p class="hint" style="margin:0 0 8px">Choose all 7 at once (or add them in several steps). Photo 1 becomes Day 1, photo 2 Day 2 … Each photo is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.</p>
-      <input id="files" type="file" accept="image/*" multiple>
+      <h2>1. Add your 7 photos or videos <span class="counter" id="cnt">0 / 7</span></h2>
+      <p class="hint" style="margin:0 0 8px">Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.</p>
+      <div class="row" style="margin-bottom:8px"><button class="ghost" id="addPhoto" type="button">🖼 Add photos</button><button class="ghost" id="addVideo" type="button">🎬 Add videos</button></div>
+      <input id="filesPhoto" type="file" accept="image/*" multiple style="display:none">
+      <input id="filesVideo" type="file" accept="video/mp4,video/quicktime,video/*" multiple style="display:none">
+      <p class="hint" style="margin:0">Videos: up to 60 seconds and 20 MB each, MP4 recommended, vertical (9:16) looks best.</p>
       <div class="slots" id="slots"></div>
     </div>
     <div class="card">
@@ -113,7 +118,7 @@ button:disabled{opacity:.5;cursor:default}
       <div id="acctWarn" class="notice" style="margin-top:12px"></div>
       <div class="row" style="margin-top:14px">
         <button class="primary" id="create" disabled>✅ Create weekly story plan</button>
-        <button class="ghost" id="clear">Clear photos</button>
+        <button class="ghost" id="clear">Clear all</button>
       </div>
       <p class="hint" id="createHint" style="margin-top:10px"></p>
     </div>
@@ -157,29 +162,61 @@ function toStory(file){return new Promise((resolve,reject)=>{
   }catch(e){reject(e);}};
   img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("This file is not a readable photo: "+file.name));};
   img.src=url;});}
-$("files").addEventListener("change",async e=>{
-  const list=[...e.target.files];e.target.value="";let skipped=0,over=0;
+// A video keeps its own file; only a small preview picture is made on the phone (and its length/size read).
+function readVideo(file){return new Promise((resolve,reject)=>{
+  const v=document.createElement("video"),url=URL.createObjectURL(file);
+  v.preload="metadata";v.muted=true;v.playsInline=true;
+  const fail=m=>{URL.revokeObjectURL(url);reject(new Error(m));};
+  v.onerror=()=>fail("This video can't be read: "+file.name+" (use MP4).");
+  v.onloadedmetadata=()=>{const dur=v.duration;if(!isFinite(dur)||dur<=0)return fail("This video can't be read: "+file.name);v.currentTime=Math.min(1,dur/2);};
+  v.onseeked=()=>{try{
+    const W_=270,H_=480,c=document.createElement("canvas");c.width=W_;c.height=H_;const x=c.getContext("2d");
+    x.fillStyle="#153a2e";x.fillRect(0,0,W_,H_);
+    const fit=Math.min(W_/v.videoWidth,H_/v.videoHeight),w=v.videoWidth*fit,h=v.videoHeight*fit;
+    x.drawImage(v,(W_-w)/2,(H_-h)/2,w,h);
+    c.toBlob(p=>{const meta={duration:v.duration,w:v.videoWidth,h:v.videoHeight};URL.revokeObjectURL(url);p?resolve({poster:p,meta}):reject(new Error("Could not read this video."));},"image/jpeg",0.8);
+  }catch(e){fail("Could not read this video: "+file.name);}};
+  v.src=url;});}
+async function addFiles(list){
+  let skipped=0,over=0,big=0,long_=0;
+  const maxMb=(S&&S.limits&&S.limits.videoMb)||20,maxSec=(S&&S.limits&&S.limits.videoSeconds)||60;
   for(const f of list){
     if(photos.length>=MAX){over++;continue;}
     const key=f.name+"|"+f.size+"|"+f.lastModified;
     if(photos.some(p=>p.key===key)){skipped++;continue;}
-    try{const blob=await toStory(f);photos.push({key,blob,url:URL.createObjectURL(blob),caption:""});}catch(err){say("❌ "+err.message,"bad");}
+    try{
+      if(/^video\//i.test(f.type)||/\.(mp4|mov|m4v)$/i.test(f.name)){
+        if(f.size>maxMb*1048576){big++;continue;}
+        const {poster,meta}=await readVideo(f);
+        if(meta.duration>maxSec+0.5){long_++;continue;}
+        photos.push({key,kind:"video",blob:f,poster,meta:{type:"video",...meta},url:URL.createObjectURL(poster),caption:""});
+      }else{
+        const blob=await toStory(f);photos.push({key,kind:"photo",blob,url:URL.createObjectURL(blob),caption:""});
+      }
+    }catch(err){say("❌ "+err.message,"bad");}
     drawSlots();
   }
-  if(skipped)say("ℹ️ "+skipped+" photo(s) skipped — the same photo can't be used twice.","info");
-  else if(over)say("ℹ️ Only 7 photos are used. "+over+" extra photo(s) were ignored.","info");
-});
+  const msg=[];
+  if(skipped)msg.push(skipped+" skipped — the same file can't be used twice.");
+  if(big)msg.push(big+" video(s) skipped — over "+maxMb+" MB.");
+  if(long_)msg.push(long_+" video(s) skipped — longer than "+maxSec+" seconds.");
+  if(over)msg.push("Only 7 items are used. "+over+" extra file(s) were ignored.");
+  if(msg.length)say("ℹ️ "+msg.join(" "),"info");
+}
+$("addPhoto").onclick=()=>$("filesPhoto").click();
+$("addVideo").onclick=()=>$("filesVideo").click();
+["filesPhoto","filesVideo"].forEach(id=>$(id).addEventListener("change",e=>{const list=[...e.target.files];e.target.value="";addFiles(list);}));
 function drawSlots(){
   const start=$("startDate").value;
   $("slots").innerHTML=Array.from({length:MAX},(_,i)=>{
     const p=photos[i],lab=start?dayLabel(addDays(start,i)):"";
-    return p?`<div class="slot filled"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph" style="background-image:url(${p.url})"></div>
+    return p?`<div class="slot filled"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph" style="background-image:url(${p.url})"><span class="kind">${p.kind==="video"?"🎬 "+Math.round(p.meta.duration)+"s":"🖼 Photo"}</span></div>
       <div class="ctl"><button data-a="l" data-i="${i}" ${i===0?"disabled":""}>◀</button><button data-a="r" data-i="${i}" ${i===photos.length-1?"disabled":""}>▶</button><button data-a="x" data-i="${i}">✕</button></div>
       <input data-cap="${i}" maxlength="200" placeholder="Own caption (optional)" value="${esc(p.caption)}"></div>`
     :`<div class="slot"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph">＋</div></div>`;}).join("");
   $("cnt").textContent=photos.length+" / "+MAX;
   $("create").disabled=busy||photos.length!==MAX;
-  $("createHint").textContent=photos.length===MAX?"Everything is ready. Each photo will go out on its own day, once.":"Add "+(MAX-photos.length)+" more photo(s) to continue.";
+  $("createHint").textContent=photos.length===MAX?"Everything is ready. Each item will go out on its own day, once.":"Add "+(MAX-photos.length)+" more photo(s) or video(s) to continue.";
 }
 $("slots").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const i=+b.dataset.i,a=b.dataset.a;
   if(a==="x"){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}
@@ -193,7 +230,9 @@ $("create").onclick=async()=>{
   if(photos.length!==MAX||busy)return;busy=true;$("create").disabled=true;$("create").textContent="Saving…";
   try{
     const fd=new FormData();
-    photos.forEach((p,i)=>fd.append("photos",p.blob,"day"+(i+1)+".jpg"));
+    photos.forEach((p,i)=>fd.append("photos",p.blob,p.kind==="video"?"day"+(i+1)+".mp4":"day"+(i+1)+".jpg"));
+    photos.filter(p=>p.kind==="video").forEach((p,i)=>fd.append("posters",p.poster,"poster"+(i+1)+".jpg"));
+    fd.append("dayMeta",JSON.stringify(photos.map(p=>p.kind==="video"?p.meta:{type:"photo"})));
     ["title","caption","startDate","postTime","period","privacy"].forEach(k=>fd.append(k,$(k).value));
     fd.append("pinned",$("pinned").checked?"1":"0");
     fd.append("via",$("viaWrap").style.display==="none"?"account":$("via").value);
@@ -216,7 +255,7 @@ function planCard(p,opts){
     <div class="meta">${who}<span class="pill ${p.status}">${p.status==="active"?"Running":p.status==="paused"?"Paused":"Finished"}</span>
     · ${posted}/7 posted · ${esc(p.startDate)} → ${esc(p.days[6].date)} at ${esc(p.postTime)} · ${p.via==="business"?"Shared Business account":"Own account"} · ${Math.round(p.period/3600)}h</div></div>
     <div class="row">${p.status==="paused"?`<button class="ghost" data-a="resume">▶ Resume</button>`:(p.status==="active"?`<button class="ghost" data-a="pause">⏸ Pause</button>`:"")}<button class="danger" data-a="del">🗑 Delete</button></div></div>
-    <div class="days">${p.days.map(d=>`<div class="day"><div class="th" data-th="${d.n}"></div><b>Day ${d.n}</b> · ${esc(dayLabel(d.date))}<br><span class="pill ${d.status}">${STAT[d.status]||d.status}</span>${d.postedAt?`<div>${esc(d.postedAt.slice(11))}</div>`:""}${d.error?`<div class="err">${esc(d.error)}</div>`:""}
+    <div class="days">${p.days.map(d=>`<div class="day"><div class="th" data-th="${d.n}" style="position:relative">${d.type==="video"?`<span class="kind">🎬 Video</span>`:""}</div><b>Day ${d.n}</b> · ${esc(dayLabel(d.date))}<br><span class="pill ${d.status}">${STAT[d.status]||d.status}</span>${d.postedAt?`<div>${esc(d.postedAt.slice(11))}</div>`:""}${d.error?`<div class="err">${esc(d.error)}</div>`:""}
       ${mine&&d.status!=="posted"&&d.status!=="posting"?`<button class="ghost" data-a="now" data-day="${d.n}">Post now</button>`:""}</div>`).join("")}</div></div>`;
 }
 function paint(el,list,opts,emptyMsg){
@@ -229,7 +268,7 @@ async function act(e){
   if(a==="pause")return call("POST","/api/stories/"+id+"/pause");
   if(a==="resume")return call("POST","/api/stories/"+id+"/resume");
   if(a==="del")return ask("Delete this weekly plan? Photos not yet posted will not be posted. Stories already on Telegram stay until they expire.",()=>call("DELETE","/api/stories/"+id));
-  if(a==="now")return ask("Post photo "+b.dataset.day+" as a story right now?",()=>call("POST","/api/stories/"+id+"/post-now",{day:+b.dataset.day}));
+  if(a==="now")return ask("Post item "+b.dataset.day+" as a story right now?",()=>call("POST","/api/stories/"+id+"/post-now",{day:+b.dataset.day}));
 }
 $("vMine").addEventListener("click",act);$("vTeam").addEventListener("click",act);
 
@@ -248,7 +287,7 @@ async function load(){
   if(!d.accountReady&&!(owner&&d.canBusiness)){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected, so stories can't be posted yet. Open <b>⚙ Settings → 🔗 Connect my Telegram account</b> in the main page. You can still create the plan now.";}
   else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected. Choose “Shared Telegram Business account” above, or connect your account in ⚙ Settings.";}
   else{w.className="notice";w.textContent="";}
-  paint($("vMine"),d.mine,{},"No weekly plans yet. Go to “New week”, add 7 photos and press Create.");
+  paint($("vMine"),d.mine,{},"No weekly plans yet. Go to “New week”, add 7 photos or videos and press Create.");
   if(owner){
     $("tabTeam").style.display="";$("cTeam").textContent=d.team.length;
     const people=`<div class="card"><h2>👑 Admin overview</h2>${d.people.length?`<div class="people">${d.people.map(x=>`<div class="person"><b>${esc(x.name)}</b><br><span class="pill ${x.connected?"on":"off"}">${x.connected?"Telegram connected":"Not connected"}</span><br>Running plans: ${x.activePlans}<br>Posted today: ${x.postedToday}<br>${x.failed?`<span style="color:#b3261e">Failed stories: ${x.failed}</span>`:"No failures"}</div>`).join("")}</div>`:`<div class="empty">No assigned admins yet.</div>`}
