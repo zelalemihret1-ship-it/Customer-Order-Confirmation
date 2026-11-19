@@ -342,3 +342,12 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Connector version is `v78`. After deploying the updated app files, paste the included `google-sheet-script.gs` into Apps Script, save, deploy a **New version**, then use **AMBAR Orders → Refresh all sections** or press the app's full sync.
 
 NOTE: Archiving is performed on the next full rebuild/sync after this script is activated. The source order record is retained in `Archived Orders`; it is not permanently deleted.
+
+
+## v79 – PROFESSIONAL DASHBOARD + CUSTOMER DIRECTORY SUMMARY
+- Dashboard KPI cards are clearer and more readable, with a reporting-period selector, active order totals, status totals, payment, advance, and a separate archived-order count. Archived orders remain excluded from active totals.
+- Customers Data now has a professional title band and five live KPI cards: Total Leads, Orders Placed, Rejections, Sold Readymade, and Total Revenue (Birr).
+- Customer table headers and records move below the summary, with filters, frozen headings, readable widths, status colors and Ethiopian day/month/year dates retained. Existing v78 customer records are migrated safely by inserting summary rows above the old table.
+- The customer summary refreshes when customer records are added, edited, deleted, fully synchronized, or when order data changes. Orders/rejections/readymade counts include archived order records so moving a failed delivery to the archive does not erase the business history.
+- `Sold Readymade` counts order rows whose Product value contains the word “readymade”; `Total Revenue` sums the Customers Data `Total Spend` values.
+- Apps Script connector version is `v79`. Paste the updated `google-sheet-script.gs`, save, deploy a New version, and refresh all sections.
