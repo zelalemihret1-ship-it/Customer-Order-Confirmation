@@ -104,7 +104,7 @@ button:disabled{opacity:.5;cursor:default}
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="addPhoto" type="button">🖼 Add photos</button><button class="ghost" id="addVideo" type="button">🎬 Add videos</button></div>
       <input id="filesPhoto" type="file" accept="image/*" multiple style="display:none">
       <input id="filesVideo" type="file" accept="video/mp4,video/quicktime,video/*" multiple style="display:none">
-      <p class="hint" style="margin:0">Videos: up to 60 seconds and 60 MB each, MP4 recommended, vertical (9:16) looks best.</p>
+      <p class="hint" style="margin:0">Videos: up to 60 seconds and 200 MB each, MP4 recommended, vertical (9:16) looks best.</p>
       <div class="slots" id="slots"></div>
     </div>
     <div class="card">
@@ -210,7 +210,7 @@ function readVideo(file){return new Promise((resolve,reject)=>{
   v.src=url;});}
 async function addFiles(list){
   let skipped=0,over=0,big=0,long_=0;
-  const maxMb=(S&&S.limits&&S.limits.videoMb)||60,maxSec=(S&&S.limits&&S.limits.videoSeconds)||60;
+  const maxMb=(S&&S.limits&&S.limits.videoMb)||200,maxSec=(S&&S.limits&&S.limits.videoSeconds)||60;
   for(const f of list){
     if(photos.length>=MAX){over++;continue;}
     const key=f.name+"|"+f.size+"|"+f.lastModified;
@@ -333,7 +333,7 @@ function drawEdit(){
 $("eDays").addEventListener("click",e=>{const b=e.target.closest("button[data-rep]");if(!b||eBusy)return;syncCaps();$("eFile").dataset.day=b.dataset.rep;$("eFile").click();});
 $("eFile").addEventListener("change",async e=>{
   const f=e.target.files[0],n=+e.target.dataset.day;e.target.value="";if(!f||!E||!n)return;
-  const maxMb=(S.limits&&S.limits.videoMb)||60,maxSec=(S.limits&&S.limits.videoSeconds)||60;
+  const maxMb=(S.limits&&S.limits.videoMb)||200,maxSec=(S.limits&&S.limits.videoSeconds)||60;
   eBusy=true;esay("⏳ Uploading the new file for Day "+n+"…","info");
   try{
     const fd=new FormData();
