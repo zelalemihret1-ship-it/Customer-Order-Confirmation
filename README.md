@@ -1,3 +1,11 @@
+## v80 - Dashboard and verified failed-delivery archive
+
+- Dashboard redesigned with clearer KPI cards, explanatory labels, readable product/delivery breakdowns, and a latest active-orders table. All metrics are calculated from actual active order rows for the selected reporting period.
+- Archived Orders now receives only records whose Delivery Note contains BOTH the exact Mule failure marker (`Sent from: mule — ❌ NOT delivered`) and the entity error (`Could not find the input entity for`). It requires a real order ID, prevents duplicate IDs, copies the full original row plus archive timestamp/source, and removes the active row only after the archive append succeeds.
+- Archived count uses unique non-empty order IDs, not the raw sheet row count. Archived orders stay excluded from active Dashboard totals.
+- Customers Data directory remains at the top with live counts and revenue based on actual customer/order records.
+- Apps Script version: v80. Paste `google-sheet-script.gs` into the bound Apps Script project, save, deploy a new version, then run `fixNow` / Refresh all sections.
+
 ## Latest update (v80b - sync result now confirms orders + customers share ONE Google Sheet)
 
 ## v80 - GUIDED FIX FOR "Customers: old Google script"
