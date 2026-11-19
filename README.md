@@ -1,3 +1,6 @@
+## v97 — Automatic greeting confirmed for ALL private chats
+- The automatic first greeting goes to every person who messages privately for the first time — saved in Customers Data or not, saved in the phone contacts or not. The log marks people who are not in Customers Data. Same rules: once only, nothing for people you already chatted with.
+
 ## v96 — 🤖 Automatic first greeting (ON / OFF switch on the First Greeting page)
 - New switch at the top of **⚙ Settings → 👋 First Greeting**. **ON:** the first time a NEW person writes to you in a private chat, your saved greeting text is sent back automatically (plain text, 2-4 s delay, once). **OFF:** nothing is sent automatically (manual sending still works).
 - Works per admin: an assigned admin's switch covers messages to their own connected Telegram account. The main admin's switch also covers the shared Business connection and the AMBAR bot's private chat.
