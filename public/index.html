@@ -512,14 +512,19 @@ async function refresh(){
   const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
 }
 async function render(){
-  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>Order cards you create are sent from <b>your own</b> Telegram account. Only you can use it.</p><div style="background:#fff7e8;border:1px solid #e8cf9e;border-radius:9px;padding:10px;font-size:13px;line-height:1.45;margin:10px 0"><b>Important:</b> The login code is sent by <b>Telegram</b> to your Telegram app on a device where you are already logged in (or by SMS if Telegram offers SMS). It is <b>not sent by the AMBAR bot</b>. Keep Telegram open and check the official Telegram service chat.</div>'
-  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><button style="'+btn+'" data-a="send">Send Telegram login code</button><input id="myCode" style="'+st+'" placeholder="Latest code from Telegram"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
+  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>Order cards you create are sent from <b>your own</b> Telegram account. Only you can use it.</p><div style="background:#fff7e8;border:1px solid #e8cf9e;border-radius:9px;padding:10px;font-size:13px;line-height:1.45;margin:10px 0"><b>Delivery:</b> Telegram chooses where to send its login code. It may appear in Telegram on another device already logged into this account, or by SMS if Telegram allows it. The AMBAR bot cannot receive or forward Telegram login codes.</div>'
+  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 2px"><input id="myForceSMS" type="checkbox" style="width:auto;margin:0"> Request SMS instead (only if Telegram permits)</label><button style="'+btn+'" data-a="send">Request Telegram login code</button><input id="myCode" style="'+st+'" inputmode="numeric" autocomplete="one-time-code" placeholder="Latest code from Telegram or SMS"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
   +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
 }
 ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   try{const a=b.dataset.a;
   if(a==="close"){ov.style.display="none";return;}
-  if(a==="send"){say(await api("/api/my-account/send-code",{phone:val("myPhone")}));return;}
+  if(a==="send"){
+    const sendButton=b;sendButton.disabled=true;sendButton.textContent="Contacting Telegram…";
+    try{const d=await api("/api/my-account/send-code",{phone:val("myPhone"),forceSMS:!!document.getElementById("myForceSMS")?.checked});say(d);}
+    finally{sendButton.disabled=false;sendButton.textContent="Request Telegram login code";}
+    return;
+  }
   if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
   }catch(err){say({ok:false,error:err.message});}});
 openBtn.onclick=()=>{ov.style.display="block";render();};
