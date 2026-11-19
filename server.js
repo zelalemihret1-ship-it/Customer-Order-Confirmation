@@ -830,7 +830,8 @@ const ORDER_HEAD = [ // customer information comes first
   "Product", "Length (cm)", "Width (cm)", "Height (cm)", "Material", "Color", "Style", "Design", "Handle", "Door", "Partition", "Drawer", "Additional Features",
   "Payment", "Advance", "Paid In Full", "Delivered To Customer", "Answer Closed", "Comments", "Latest Comment",
   "Created At", "Last Updated", "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note",
-  "ID"
+  "ID",
+  "Telegram Name", "Customer ID" // v91: the customer's Telegram name + Customer ID are always the LAST two columns (for every admin's orders)
 ];
 const LOG_HEAD = ["Time", "Event", "Order Code", "Product", "Customer", "Details", "By"];
 const COL = Object.fromEntries(ORDER_HEAD.map((h, i) => [h, i]));
@@ -986,8 +987,13 @@ function orderRow(o, created, updated) {
   set("Answer Link", base && o.token ? `${base}/o/${o.token}` : "");
   set("Delivery Note", o.sent ? "" : ("Sent from: " + (o.adminLabel || o.sender || "—") + " — ❌ NOT delivered" + (o.deliveryNote ? " (" + clean(o.deliveryNote).slice(0, 500) + ")" : " (Delivery was not completed)")));
   set("Completion Date", ethDate(o.completionDate)); set("Delivery Service", o.deliveryService);
+  // v91: Telegram name + Customer ID (last two columns). Filled from the order itself, else looked up in the customer lists.
+  let who = {}; try { who = (nameResolver && nameResolver(o)) || {}; } catch { who = {}; }
+  set("Telegram Name", o.telegramName || who.name || o.telegramUsername || o.customerName || "");
+  set("Customer ID", o.customerId || who.customerId || "");
   return row;
 }
+let nameResolver = null; // set by the app once the customer lists are loaded: order -> { name, customerId }
 
 // ── one-time setup: create tabs, headers, formatting, dashboard ────────────────
 let readyP = null, lastError = "", lastOkAt = "", lastSyncAt = "";
@@ -1203,7 +1209,7 @@ function callersCall(payload) {
       return { ok: false, needsScript: true, error: `${seen}, but the Customers Data tab needs ${want}. Fix (2 minutes, once): tap "Copy new script" below → script.google.com → New project → paste → Save → run "authorize" once → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link here and press Connect & sync. The script creates the Google Sheet and the Customers Data tab by itself. (If you pasted it into your OLD project, use Deploy → Manage deployments → Edit → Version: New version → Deploy.)` };
     });
 }
-const SCRIPT_VERSION_FALLBACK = "v81"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_VERSION_FALLBACK = "v91"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
 const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
   try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
@@ -1245,7 +1251,7 @@ function status() {
     url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl, saved: !!(SCRIPT_URL || FORM_RAW)
   };
 }
-module.exports = { scriptVersionNow, expectedScriptVersion, SCRIPT_FILE, helpers: { TZ, ethDate, stamp, clean }, callerSave, callersSyncAll, callerRemove, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
+module.exports = { scriptVersionNow, expectedScriptVersion, SCRIPT_FILE, helpers: { TZ, ethDate, stamp, clean }, callerSave, callersSyncAll, callerRemove, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, setNameResolver: f => { nameResolver = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
 
 return module.exports;
 })();
@@ -1413,6 +1419,22 @@ function rememberCustomer(chat = {}, from = {}, businessConnectionId = "") {
   });
   persistCustomers();
 }
+
+// v91: the customer's Telegram NAME (profile name seen by the bot) for an order, plus the Customer ID from Customers Data.
+function telegramNameFor(o) {
+  const tg = customers.get(String(o.telegramChatId || ""));
+  if (tg?.name) return tg.name;
+  const rec = (callersDb.list || []).find(c => c.id === String(o.customerId || ""));
+  return (rec?.name) || o.telegramName || o.customerName || String(o.telegramUsername || "");
+}
+function customerIdFor(o) {
+  if (o.customerId) return String(o.customerId);
+  const list = callersDb.list || [], pk = typeof phoneKey === "function" ? phoneKey(o.phone || o.telegramPhone) : "";
+  const un = String(o.telegramUsername || "").replace(/^@/, "").toLowerCase();
+  const hit = list.find(c => (pk.length >= 7 && (phoneKey(c.phone) === pk || phoneKey(c.additionalPhone) === pk)) || (un && String(c.username || "").replace(/^@/, "").toLowerCase() === un));
+  return hit ? hit.id : "";
+}
+sheets.setNameResolver(o => ({ name: telegramNameFor(o), customerId: customerIdFor(o) }));
 
 async function businessConnectionForCustomer(chatId) {
   const customer = customers.get(String(chatId));
@@ -2682,6 +2704,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.phone = cust.phone || order.phone;
     order.location = cust.location || order.location;
     order.telegramUsername = cust.username || order.telegramUsername;
+    order.telegramName = telegramNameFor(order); // saved with the order so every admin's row carries it
     order.orderId = nextOrderId(cust.id, order.orderDate, "");
     reservedOrderIds.add(order.orderId.toLowerCase());
     order.status = "Pending";
