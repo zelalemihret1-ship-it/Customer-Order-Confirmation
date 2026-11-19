@@ -511,9 +511,30 @@ async function refresh(){
   else ss.innerHTML='<span style="color:#9a3c26;font-weight:700">Your personal Telegram account is not connected.</span> <span class="small">The main admin manages the shared Telegram Business bot connection separately.</span>';
   const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
 }
+let qrMode=false,qrTimer=null,qrLastLink="";
+function showQr(link){
+  const w=document.getElementById("myQr"),img=document.getElementById("myQrImg"),a=document.getElementById("myQrLink");
+  if(!w||!link)return;w.style.display="block";a.href=link;
+  if(link===qrLastLink)return;qrLastLink=link;img.innerHTML="";
+  const draw=()=>{try{new QRCode(img,{text:link,width:190,height:190,correctLevel:QRCode.CorrectLevel.L});}catch(e){img.textContent="";}};
+  if(window.QRCode){draw();return;}
+  const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";sc.onload=draw;sc.onerror=()=>{img.style.display="none";};document.head.appendChild(sc);
+}
+function startQrPoll(){
+  clearInterval(qrTimer);
+  qrTimer=setInterval(async()=>{
+    if(ov.style.display==="none"){clearInterval(qrTimer);return;}
+    let d;try{d=await api("/api/my-account/qr-poll",{});}catch{return;}
+    if(d.status==="waiting"){if(d.link)showQr(d.link);return;}
+    if(d.status==="password"){say({ok:true,message:d.message});return;}
+    clearInterval(qrTimer);qrMode=false;
+    say(d);
+    if(d.status==="done"){setTimeout(()=>{ov.style.display="none";refresh();},900);}
+  },3000);
+}
 async function render(){
   box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>This connects <b>only your own Telegram account</b>. The main admin manages the shared AMBAR bot connection. Assigned admins cannot connect or use another admin’s personal account.</p><div style="background:#fff7e8;border:1px solid #e8cf9e;border-radius:9px;padding:10px;font-size:13px;line-height:1.45;margin:10px 0"><b>Delivery:</b> Telegram controls login-code delivery. If Telegram reports in-app delivery, check the official Telegram service chat on another device logged into this exact account. SMS can be refused with SEND_CODE_UNAVAILABLE when no SMS route remains. AMBAR cannot force Telegram to send or forward a login code.</div>'
-  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 2px"><input id="myForceSMS" type="checkbox" style="width:auto;margin:0"> Ask Telegram to try SMS (Telegram may return SEND_CODE_UNAVAILABLE)</label><button style="'+btn+'" data-a="send">Request Telegram login code</button><input id="myCode" style="'+st+'" inputmode="numeric" autocomplete="one-time-code" placeholder="Latest code from Telegram or SMS"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
+  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 2px"><input id="myForceSMS" type="checkbox" style="width:auto;margin:0"> Ask Telegram to try SMS (Telegram may return SEND_CODE_UNAVAILABLE)</label><button style="'+btn+'" data-a="send">Request Telegram login code</button><button style="'+btn+';background:#e8710a;display:none" id="myResend" data-a="resend">Resend code (SMS / call)</button><button style="'+btn+';background:#0a7d2c" data-a="qr">Login without a code (QR / link)</button><div id="myQr" style="display:none;text-align:center;margin:8px 0;padding:10px;border:1px dashed #9db8e8;border-radius:10px"><div id="myQrImg" style="display:inline-block;background:#fff;padding:6px"></div><div style="margin:8px 0;font-size:13px;line-height:1.4">On a phone/desktop where this Telegram account is already logged in, scan this QR (Telegram → Settings → Devices → Link Desktop Device), <b>or</b> tap the button:</div><a id="myQrLink" href="#" style="display:block;padding:10px;border-radius:8px;background:#229ed9;color:#fff;text-decoration:none;font:600 15px system-ui">Open in Telegram &amp; confirm</a></div><input id="myCode" style="'+st+'" inputmode="numeric" autocomplete="one-time-code" placeholder="Latest code from Telegram or SMS"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
   +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
 }
 ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
@@ -521,10 +542,26 @@ ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]")
   if(a==="close"){ov.style.display="none";return;}
   if(a==="send"){
     const sendButton=b;sendButton.disabled=true;sendButton.textContent="Contacting Telegram…";
-    try{const d=await api("/api/my-account/send-code",{phone:val("myPhone"),forceSMS:!!document.getElementById("myForceSMS")?.checked});say(d);}
+    try{const d=await api("/api/my-account/send-code",{phone:val("myPhone"),forceSMS:!!document.getElementById("myForceSMS")?.checked});say(d);const rb=document.getElementById("myResend");if(rb)rb.style.display=(d.ok&&d.canResend)?"block":"none";}
     finally{sendButton.disabled=false;sendButton.textContent="Request Telegram login code";}
     return;
   }
+  if(a==="resend"){
+    b.disabled=true;
+    try{const d=await api("/api/my-account/resend",{});say(d);if(d.ok&&!d.canResend)b.style.display="none";}
+    finally{b.disabled=false;}
+    return;
+  }
+  if(a==="qr"){
+    b.disabled=true;
+    try{
+      const d=await api("/api/my-account/qr-start",{});
+      if(!d.ok){say(d);return;}
+      qrMode=true;showQr(d.link);say({ok:true,message:d.message});startQrPoll();
+    }finally{b.disabled=false;}
+    return;
+  }
+  if(a==="verify"&&qrMode){const d=await api("/api/my-account/qr-password",{password:val("myPw")});say(d);return;}
   if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
   }catch(err){say({ok:false,error:err.message});}});
 openBtn.onclick=()=>{ov.style.display="block";render();};
