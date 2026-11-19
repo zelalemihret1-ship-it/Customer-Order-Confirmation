@@ -18,14 +18,14 @@ const DEFAULT_TEXT = "Hello {name} 👋\nWelcome to Ambar Furniture! Thank you f
 function register(app, ctx) {
   const { requireAccess, accountFor, resolveUser, getCallers, businessConnections, isUsable, ownerIds, telegram, resolveChatId, supabase, helpers, baseDir } = ctx;
   const DB_FILE = path.join(baseDir, "greetings.json");
-  let db = { templates: {}, log: [] };
+  let db = { templates: {}, log: [], auto: {} };
   const busy = new Set(); // customer ids being greeted right now
 
   async function load() {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "greetings").maybeSingle(); if (data?.value && Array.isArray(data.value.log)) d = data.value; } catch {} }
     if (!d) { try { const f = JSON.parse(fs.readFileSync(DB_FILE, "utf8")); if (f && Array.isArray(f.log)) d = f; } catch {} }
-    if (d) db = { templates: d.templates || {}, log: d.log };
+    if (d) db = { templates: d.templates || {}, log: d.log, auto: d.auto || {} };
   }
   async function save() {
     db.log = db.log.slice(-3000);
@@ -37,7 +37,7 @@ function register(app, ctx) {
   const actorKey = a => a?.telegramId ? String(a.telegramId) : (a?.role === "owner" ? "owner" : "");
   const isOwner = a => a?.role === "owner";
   const clean = s => String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim();
-  const sentRec = id => db.log.find(l => l.customerId === id && l.status === "sent");
+  const sentRec = id => db.log.find(l => (l.customerId === id || (l.tgId && l.tgId === id)) && l.status === "sent");
   const ownerConn = () => [...businessConnections.values()].find(c => isUsable(c) && ownerIds.includes(String(c.user?.id || ""))) || null;
   const firstName = n => clean(n).split(/\s+/)[0] || "there";
   const render = (text, cust, actor) => text.replace(/\{name\}/gi, firstName(cust.name)).replace(/\{fullname\}/gi, clean(cust.name) || "there").replace(/\{admin\}/gi, clean(actor.name) || "Ambar Furniture");
@@ -75,6 +75,69 @@ function register(app, ctx) {
     throw new Error("Your Telegram account is not connected. Open ⚙ Settings → Connect my Telegram account.");
   }
 
+
+  // ── AUTOMATIC first greeting (the ON/OFF switch) ─────────────────────────────────
+  // When an admin switches it ON, the first time a NEW person writes to that admin in a private chat,
+  // a single plain-text greeting is sent back automatically. Nobody is ever greeted twice.
+  const autoOn = key => !!db.auto[String(key || "")];
+  const matchCustomer = (username, phone) => {
+    const u = String(username || "").replace(/^@/, "").toLowerCase(), p = String(phone || "").replace(/\D/g, "").replace(/^0+/, "").replace(/^251/, "");
+    return getCallers().list.find(c => (u && String(c.username || "").replace(/^@/, "").toLowerCase() === u) || (p.length >= 7 && [c.phone, c.additionalPhone].some(x => String(x || "").replace(/\D/g, "").replace(/^0+/, "").replace(/^251/, "") === p))) || null;
+  };
+  const humanDelay = () => new Promise(r => setTimeout(r, 2000 + Math.random() * 2500));
+  async function autoSend({ key, adminName, tgId, name, username, via, send }) {
+    const lockKey = "tg:" + tgId;
+    if (busy.has(lockKey)) return;
+    const cust = matchCustomer(username, "");
+    const custId = cust ? cust.id : lockKey;
+    if (sentRec(custId) || sentRec(lockKey)) return; // already greeted: only the FIRST text, once
+    busy.add(lockKey);
+    try {
+      const text = render(db.templates[key] || DEFAULT_TEXT, { name: name || (cust && cust.name) || "" }, { name: adminName });
+      await humanDelay();
+      await send(text);
+      db.log.push({ customerId: custId, tgId: lockKey, name: name || (cust && cust.name) || username || String(tgId), by: adminName || "Admin", byKey: key, at: stamp(), status: "sent", via: via + " · automatic", auto: true, text });
+      await save();
+    } catch (e) {
+      db.log.push({ customerId: custId, tgId: lockKey, name: name || username || String(tgId), by: adminName || "Admin", byKey: key, at: stamp(), status: "failed", error: "Automatic: " + friendly(e), auto: true });
+      await save();
+    } finally { busy.delete(lockKey); }
+  }
+  // 1) someone writes to an admin's own connected Telegram account
+  async function autoPersonal(admin, msg) {
+    const key = String(admin.ownerTelegramId || ownerIds[0] || "");
+    if (!autoOn(key) || !msg || msg.out || !msg.isPrivate) return;
+    const sender = await msg.getSender();
+    if (!sender || sender.bot || sender.self || sender.deleted) return;
+    const peer = await msg.getInputChat();
+    const hist = await admin.client.getMessages(peer, { limit: 3 });
+    if (hist.length > 1) return; // there was a conversation before: this is not a first message
+    const name = [sender.firstName, sender.lastName].filter(Boolean).join(" ");
+    await autoSend({ key, adminName: admin.label, tgId: String(sender.id), name, username: sender.username ? "@" + sender.username : "", via: "own account",
+      send: text => admin.client.sendMessage(peer, { message: text }) });
+  }
+  // 2) someone writes to the main admin through the shared Telegram Business connection
+  async function autoBusiness(bm, isNewChat) {
+    const conn = businessConnections.get(String(bm?.business_connection_id || ""));
+    const key = String(conn?.user?.id || "");
+    if (!isNewChat || !autoOn(key) || !bm?.chat || bm.chat.type !== "private" || bm.from?.is_bot) return;
+    if (bm.from?.id !== undefined && String(bm.from.id) !== String(bm.chat.id)) return; // the admin's own message
+    const name = [bm.chat.first_name, bm.chat.last_name].filter(Boolean).join(" ");
+    await autoSend({ key, adminName: ownerName(key), tgId: String(bm.chat.id), name, username: bm.chat.username ? "@" + bm.chat.username : "", via: "business account",
+      send: text => telegram("sendMessage", { business_connection_id: String(conn.id), chat_id: String(bm.chat.id), text }, { retry: false }) });
+  }
+  // 3) someone writes to the AMBAR bot itself (covered by the main admin's switch)
+  async function autoBot(m, isNewChat) {
+    const key = ownerIds.find(autoOn);
+    if (!key || !isNewChat || !m?.chat || m.chat.type !== "private" || m.from?.is_bot) return;
+    const id = String(m.chat.id);
+    if (ownerIds.includes(id) || (ctx.getAppAdmins() || []).some(a => String(a.telegramId) === id)) return; // never greet the admins themselves
+    const name = [m.chat.first_name, m.chat.last_name].filter(Boolean).join(" ");
+    await autoSend({ key, adminName: ownerName(key), tgId: id, name, username: m.chat.username ? "@" + m.chat.username : "", via: "AMBAR bot",
+      send: text => telegram("sendMessage", { chat_id: id, text }, { retry: false }) });
+  }
+  const ownerName = key => { const a = (ctx.getAppAdmins() || []).find(x => String(x.telegramId) === String(key)); return a?.name || "Ambar Furniture"; };
+
   const router = express.Router();
   router.use(requireAccess);
 
@@ -86,7 +149,7 @@ function register(app, ctx) {
     });
     const log = (owner ? db.log : db.log.filter(l => l.byKey === key)).slice(-200).reverse();
     const out = { ok: true, me: { role: a.role, name: a.name || "" }, template: myTemplate(a), defaultTemplate: DEFAULT_TEXT, limits: { text: MAX_TEXT, batch: MAX_BATCH },
-      canSend: !!accountFor(a)?.ready || (owner && !!ownerConn()), accountReady: !!accountFor(a)?.ready, customers, log };
+      auto: autoOn(key), canSend: !!accountFor(a)?.ready || (owner && !!ownerConn()), accountReady: !!accountFor(a)?.ready, customers, log };
     if (owner) {
       const by = {};
       for (const l of db.log) { const k = l.byKey || "?"; by[k] = by[k] || { name: l.by, sent: 0, failed: 0 }; by[k][l.status === "sent" ? "sent" : "failed"]++; by[k].name = l.by || by[k].name; }
@@ -100,6 +163,18 @@ function register(app, ctx) {
     if (!t) return res.status(400).json({ ok: false, error: "Write the greeting text." });
     db.templates[actorKey(req.actor)] = t; await save();
     res.json({ ok: true, message: "Greeting text saved." });
+  });
+
+  router.post("/auto", async (req, res) => {
+    const a = req.actor, key = actorKey(a);
+    if (!key) return res.status(400).json({ ok: false, error: "Open the app from Telegram so your admin identity is known." });
+    const on = req.body?.on === true || req.body?.on === "true";
+    const t = clean(req.body?.text).slice(0, MAX_TEXT);
+    if (t) db.templates[key] = t;
+    if (on && !db.templates[key]) db.templates[key] = DEFAULT_TEXT;
+    if (on && !(accountFor(a)?.ready || (isOwner(a) && ownerConn()))) return res.status(400).json({ ok: false, error: "Connect your Telegram account first (⚙ Settings → Connect my Telegram account), then switch this on." });
+    db.auto[key] = on; await save();
+    res.json({ ok: true, on, message: on ? "🟢 Automatic greeting is ON. New people who message you get your greeting once." : "⚪ Automatic greeting is OFF." });
   });
 
   router.post("/send", async (req, res) => {
@@ -137,6 +212,6 @@ function register(app, ctx) {
   });
 
   app.use("/api/greetings", router);
-  return { load };
+  return { load, autoPersonal, autoBusiness, autoBot };
 }
 module.exports = { register };
