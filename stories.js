@@ -17,7 +17,7 @@ const multer = require("multer");
 
 const DAYS = 7;
 const MAX_CAPTION = 200;
-const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // per video
+const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // per video or photo file
 const MAX_VIDEO_SECONDS = 60;             // Telegram story video limit
 const PERIODS = [6 * 3600, 12 * 3600, 86400, 2 * 86400];
 const TICK_MS = 60 * 1000;
@@ -63,6 +63,25 @@ function register(app, ctx) {
     fs.copyFileSync(tmpPath, videoFile(id, n));
     if (supabase) { try { const { error } = await supabase.storage.from(BUCKET).upload(videoKey(id, n), fs.readFileSync(tmpPath), { contentType: "video/mp4", upsert: true }); if (error) throw error; } catch (e) { console.warn("Story video backup failed:", e.message); } }
   }
+  // Replace ONE day's picture (used by Edit): disk copy + backup copy, without touching the other days.
+  async function savePhotoOne(id, n, buf) {
+    fs.mkdirSync(DIR, { recursive: true });
+    fs.writeFileSync(photoFile(id, n), buf);
+    if (supabase) {
+      try {
+        const { data } = await supabase.from("app_settings").select("value").eq("key", "story_photos_" + id).maybeSingle();
+        let arr = Array.isArray(data?.value?.photos) ? data.value.photos.slice() : null;
+        if (!arr) { arr = []; for (let i = 1; i <= DAYS; i++) { try { arr.push(fs.readFileSync(photoFile(id, i)).toString("base64")); } catch { arr.push(""); } } }
+        while (arr.length < DAYS) arr.push("");
+        arr[n - 1] = buf.toString("base64");
+        await supabase.from("app_settings").upsert({ key: "story_photos_" + id, value: { photos: arr }, updated_at: new Date().toISOString() });
+      } catch (e) { console.warn("Story photo backup failed:", e.message); }
+    }
+  }
+  async function dropVideoOne(id, n) {
+    try { fs.unlinkSync(videoFile(id, n)); } catch {}
+    if (supabase) { try { await supabase.storage.from(BUCKET).remove([videoKey(id, n)]); } catch {} }
+  }
   async function getVideo(id, n) { // Buffer or null
     try { return fs.readFileSync(videoFile(id, n)); } catch {}
     if (supabase) {
@@ -79,7 +98,7 @@ function register(app, ctx) {
       try {
         const { data } = await supabase.from("app_settings").select("value").eq("key", "story_photos_" + id).maybeSingle();
         const arr = data?.value?.photos;
-        if (Array.isArray(arr)) { fs.mkdirSync(DIR, { recursive: true }); arr.forEach((b, i) => { try { fs.writeFileSync(photoFile(id, i + 1), Buffer.from(b, "base64")); } catch {} }); if (arr[n - 1]) return Buffer.from(arr[n - 1], "base64"); }
+        if (Array.isArray(arr)) { fs.mkdirSync(DIR, { recursive: true }); arr.forEach((b, i) => { if (!b) return; try { fs.writeFileSync(photoFile(id, i + 1), Buffer.from(b, "base64")); } catch {} }); if (arr[n - 1]) return Buffer.from(arr[n - 1], "base64"); }
       } catch {}
     }
     return null;
@@ -235,7 +254,7 @@ function register(app, ctx) {
     id: p.id, title: p.title, status: p.status, via: p.via, period: p.period, privacy: p.privacy, pinned: !!p.pinned,
     caption: p.caption, startDate: p.startDate, postTime: p.postTime, createdAt: p.createdAt,
     ownerName: p.ownerName, ownerRole: p.ownerRole, mine: p.ownerKey === actorKey(a),
-    days: p.days.map(d => ({ n: d.n, type: isVideo(d) ? "video" : "photo", date: d.date, eth: eth(d.date), caption: d.caption || "", status: d.status, postedAt: d.postedAt || "", error: d.error || "", attempts: d.attempts || 0 }))
+    days: p.days.map(d => ({ n: d.n, v: d.v || 0, type: isVideo(d) ? "video" : "photo", date: d.date, eth: eth(d.date), caption: d.caption || "", status: d.status, postedAt: d.postedAt || "", error: d.error || "", attempts: d.attempts || 0 }))
   });
 
   router.get("/", (req, res) => {
@@ -329,6 +348,81 @@ function register(app, ctx) {
     if (!p || !canSee(req.actor, p)) { res.status(404).json({ ok: false, error: "Plan not found." }); return null; }
     return p;
   };
+  // ── EDIT a plan (✏️): settings, captions, dates, and replacing a day's photo / video. Only the plan's own admin. ──
+  const cleanText = s => String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, MAX_CAPTION);
+  const ownPlan = (req, res) => {
+    const p = find(req, res); if (!p) return null;
+    if (p.ownerKey !== actorKey(req.actor)) { res.status(403).json({ ok: false, error: "Only the admin who made this plan can edit it." }); return null; }
+    if (p.days.some(d => d.status === "posting")) { res.status(409).json({ ok: false, error: "A story of this plan is being posted right now. Try again in a moment." }); return null; }
+    return p;
+  };
+  router.patch("/:id", async (req, res) => {
+    try {
+      const p = ownPlan(req, res); if (!p) return;
+      const b = req.body || {}, today = todayLocal(), owner = isOwner(req.actor);
+      const anyPosted = p.days.some(d => d.status === "posted");
+      let startDate = p.startDate;
+      if (b.startDate != null && String(b.startDate) !== p.startDate) {
+        startDate = String(b.startDate);
+        if (anyPosted) return res.status(400).json({ ok: false, error: "The start date can't be changed after the first story was posted." });
+        if (!validDate(startDate)) return res.status(400).json({ ok: false, error: "Start date is not valid." });
+        if (startDate < today) return res.status(400).json({ ok: false, error: "The start date is in the past. Choose today or a later day." });
+      }
+      const postTime = b.postTime != null ? String(b.postTime) : p.postTime;
+      if (!validTime(postTime)) return res.status(400).json({ ok: false, error: "Post time is not valid (use HH:MM)." });
+      const period = b.period != null ? Number(b.period) : p.period;
+      if (!PERIODS.includes(period)) return res.status(400).json({ ok: false, error: "Story duration is not valid." });
+      let via = b.via != null ? (b.via === "business" ? "business" : "account") : p.via;
+      if (via === "business" && via !== p.via) {
+        if (!owner) return res.status(403).json({ ok: false, error: "Only the main admin can post through the shared Business connection." });
+        if (!ownerConnection()) return res.status(400).json({ ok: false, error: "No active Telegram Business connection with the \"Manage stories\" permission was found." });
+      }
+      // everything is valid — apply
+      if (b.title != null) p.title = cleanText(b.title).slice(0, 80) || `Week of ${startDate}`;
+      if (b.caption != null) p.caption = cleanText(b.caption);
+      if (b.privacy != null) p.privacy = b.privacy === "contacts" ? "contacts" : "all";
+      if (b.pinned != null) p.pinned = b.pinned === true || b.pinned === "1" || b.pinned === "true";
+      p.postTime = postTime; p.period = period; p.via = via;
+      if (startDate !== p.startDate) { // nothing posted yet: move the whole week, every day starts fresh
+        p.startDate = startDate;
+        p.days.forEach((d, i) => { d.date = addDays(startDate, i); d.status = "pending"; d.error = ""; d.attempts = 0; delete d.nextTry; });
+      }
+      if (Array.isArray(b.dayCaptions)) p.days.forEach((d, i) => { if (d.status !== "posted") d.caption = cleanText(b.dayCaptions[i]); });
+      refreshStatus(p); await save();
+      res.json({ ok: true, plan: view(p, req.actor), message: "✅ Plan updated. Stories already posted are not changed." });
+    } catch (e) { console.error("Story plan edit failed:", e); res.status(500).json({ ok: false, error: e.message || "Could not save the changes." }); }
+  });
+  // Replace the photo / video of ONE day that was not posted yet.
+  router.post("/:id/day/:n/media", memUpload.fields([{ name: "file", maxCount: 1 }, { name: "poster", maxCount: 1 }]), async (req, res) => {
+    const f = req.files && req.files.file && req.files.file[0], po = req.files && req.files.poster && req.files.poster[0];
+    try {
+      const p = ownPlan(req, res); if (!p) return;
+      const n = Number(req.params.n), d = p.days.find(x => x.n === n);
+      if (!d) return res.status(400).json({ ok: false, error: "Choose a day." });
+      if (d.status === "posted") return res.status(400).json({ ok: false, error: "That story was already posted, so it can't be replaced." });
+      if (!f) return res.status(400).json({ ok: false, error: "No file received." });
+      let meta = {}; try { meta = JSON.parse(req.body?.meta || "{}"); } catch {}
+      const kind = /^image\/(jpeg|png|webp)$/i.test(f.mimetype) ? "photo" : (/^video\/(mp4|quicktime)$/i.test(f.mimetype) && meta.type === "video" ? "video" : "");
+      if (!kind) return res.status(400).json({ ok: false, error: "Only JPG, PNG, WebP photos or MP4 / MOV videos are accepted." });
+      if (kind === "video") {
+        if (!po) return res.status(400).json({ ok: false, error: "A video preview picture is missing. Please choose the video again." });
+        if ((Number(meta.duration) || 0) > MAX_VIDEO_SECONDS + 0.5) return res.status(400).json({ ok: false, error: `The video is longer than ${MAX_VIDEO_SECONDS} seconds. Telegram stories allow up to ${MAX_VIDEO_SECONDS} seconds.` });
+      }
+      const hash = crypto.createHash("sha1").update(fs.readFileSync(f.path)).digest("hex");
+      const same = p.days.find(x => x.n !== n && x.hash === hash);
+      if (same) return res.status(400).json({ ok: false, error: `This is the same file as Day ${same.n}. Each day needs a different photo or video, so none repeats.` });
+      await savePhotoOne(p.id, n, fs.readFileSync(kind === "video" ? po.path : f.path));
+      if (kind === "video") await saveVideo(p.id, n, f.path); else await dropVideoOne(p.id, n);
+      d.type = kind; d.hash = hash; d.v = (d.v || 0) + 1;
+      if (kind === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta.duration) || 1)); d.vw = Math.min(4096, Number(meta.w) || 720); d.vh = Math.min(4096, Number(meta.h) || 1280); }
+      else { delete d.duration; delete d.vw; delete d.vh; }
+      d.attempts = 0; delete d.nextTry;
+      if (d.date >= todayLocal()) { d.status = "pending"; d.error = ""; }
+      refreshStatus(p); await save();
+      res.json({ ok: true, plan: view(p, req.actor), message: `✅ Day ${n} now uses the new ${kind}.` });
+    } catch (e) { console.error("Story media replace failed:", e); res.status(500).json({ ok: false, error: e.message || "Could not replace the file." }); }
+    finally { for (const x of [f, po]) if (x) { try { fs.unlinkSync(x.path); } catch {} } }
+  });
   router.post("/:id/pause", async (req, res) => { const p = find(req, res); if (!p) return; if (p.status === "active") p.status = "paused"; await save(); res.json({ ok: true, message: "Paused. Nothing will be posted until you resume." }); });
   router.post("/:id/resume", async (req, res) => {
     const p = find(req, res); if (!p) return;
