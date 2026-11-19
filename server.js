@@ -1209,7 +1209,7 @@ function callersCall(payload) {
       return { ok: false, needsScript: true, error: `${seen}, but the Customers Data tab needs ${want}. Fix (2 minutes, once): tap "Copy new script" below → script.google.com → New project → paste → Save → run "authorize" once → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link here and press Connect & sync. The script creates the Google Sheet and the Customers Data tab by itself. (If you pasted it into your OLD project, use Deploy → Manage deployments → Edit → Version: New version → Deploy.)` };
     });
 }
-const SCRIPT_VERSION_FALLBACK = "v91"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_VERSION_FALLBACK = "v93"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
 const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
 function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
   try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
@@ -1304,29 +1304,49 @@ async function uploadToSupabase(file, folder, contentType) {
 async function sheetWarning() {
   try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : " ✅ Saved to the Google Sheet."; } catch { return ""; }
 }
+// v93: a customer who makes an order becomes "Customer"; the order-status column always follows that customer's LATEST order
+// (an older order being updated can never overwrite it). Legacy orders without a Customer ID are matched by phone / @username.
+function applyCustomerStatus(customer, mine, now) {
+  const latest = [...mine].sort((x, y) => String(y.createdAt || "").localeCompare(String(x.createdAt || "")) || (Number(y.id) || 0) - (Number(x.id) || 0))[0];
+  if (!latest) return false;
+  const before = JSON.stringify([customer.customerStatus, customer.orderStatus, customer.orderId, customer.rejectionReason, customer.lastConversation]);
+  const codes = String(customer.orderId || "").split(/\s*,\s*/).filter(Boolean);
+  mine.forEach(o => { if (o.orderId && !codes.includes(String(o.orderId))) codes.push(String(o.orderId)); });
+  customer.orderId = codes.join(", ").slice(0, 300);
+  customer.customerStatus = "Customer";
+  const st = ["Pending", "Confirmed", "Rejected"].includes(String(latest.status)) ? String(latest.status) : "Pending";
+  customer.orderStatus = st;
+  const lastComment = [...(latest.comments || [])].reverse().find(c => c.comment);
+  customer.rejectionReason = st === "Rejected" ? String(lastComment?.comment || customer.rejectionReason || "Rejected by the customer").slice(0, 300) : "";
+  customer.lastConversation = st === "Confirmed" ? `Order ${latest.orderId || ""} confirmed` : st === "Rejected" ? `Order ${latest.orderId || ""} rejected` : `Order ${latest.orderId || ""} placed`;
+  const changed = before !== JSON.stringify([customer.customerStatus, customer.orderStatus, customer.orderId, customer.rejectionReason, customer.lastConversation]);
+  if (changed && now) { const t = callerNow(); customer.date = t.date; customer.time = t.time; customer.updatedAt = cH.stamp(); }
+  return changed;
+}
 async function syncCustomerOrderStatus(order) {
   try {
-    const customerId = String(order?.customerId || "");
+    const customerId = String(order?.customerId || "") || customerIdFor(order || {});
     if (!customerId || !Array.isArray(callersDb?.list)) return;
     const customer = callersDb.list.find(c => String(c.id) === customerId);
     if (!customer) return;
-    const codes = String(customer.orderId || "").split(/\s*,\s*/).filter(Boolean);
-    if (order.orderId && !codes.includes(String(order.orderId))) codes.push(String(order.orderId));
-    customer.orderId = codes.join(", ").slice(0, 300);
-    // A real order promotes the lead to Customer; the separate order-status field
-    // follows the latest saved order decision (Pending / Confirmed / Rejected).
-    customer.customerStatus = "Customer";
-    customer.orderStatus = ["Pending", "Confirmed", "Rejected"].includes(String(order.status)) ? String(order.status) : "Pending";
-    const stampNow = callerNow();
-    customer.date = stampNow.date;
-    customer.time = stampNow.time;
-    customer.lastConversation = order.status === "Confirmed" ? `Order ${order.orderId || ""} confirmed` : order.status === "Rejected" ? `Order ${order.orderId || ""} rejected` : `Order ${order.orderId || ""} placed`;
-    customer.updatedAt = cH.stamp();
+    const mine = (orders || []).filter(o => String(o.id) !== String(order.id) && (String(o.customerId || "") || customerIdFor(o)) === customerId).concat(order);
+    applyCustomerStatus(customer, mine, true);
     await saveCallers();
-    const sheet = await sheets.callerSave(callerSheetRow(customer));
-    const result = sheetNote(sheet);
+    const result = sheetNote(await sheets.callerSave(callerSheetRow(customer)));
     if (!result.ok) console.warn("Customer order status sheet sync failed:", result.error);
   } catch (e) { console.warn("Customer order status sync failed:", e.message); }
+}
+// Backfill: make every customer who has orders a "Customer" with the right order status (runs at start and before each customer sync).
+async function refreshCustomerStatuses() {
+  try {
+    if (!Array.isArray(callersDb?.list) || !Array.isArray(orders)) return 0;
+    const by = new Map();
+    for (const o of orders) { const id = String(o.customerId || "") || customerIdFor(o); if (id) { if (!by.has(id)) by.set(id, []); by.get(id).push(o); } }
+    let n = 0;
+    for (const c of callersDb.list) { const mine = by.get(String(c.id)); if (mine && applyCustomerStatus(c, mine, true)) n++; }
+    if (n) await saveCallers();
+    return n;
+  } catch (e) { console.warn("Customer status refresh failed:", e.message); return 0; }
 }
 async function saveOrderRecord(order) {
   const saved = await saveOrderRecordCore(order);
@@ -2320,6 +2340,35 @@ app.post("/api/setup/app-admins/remove", async (req, res) => {
   if (own && own.ownerTelegramId === telegramId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
   res.json({ ok: true, message: "Admin removed." });
 });
+// v93: after a rename, EVERYTHING that carried the old name now carries the new one: orders (Created By, sending-account label),
+// the connected Telegram account label, Customers Data (Sales Name / created by) and the Google Sheet (re-synced).
+async function propagateAdminRename({ telegramId, accountId, oldName, newName }) {
+  let nOrders = 0, nCust = 0;
+  try {
+    const acc = accountId ? admins.get(String(accountId)) : null;
+    if (acc) { acc.label = newName; await saveAdminRecords(); }
+    try { await supabaseReady; if (supabase) await loadOrders(); } catch {}
+    const mineO = o => String(o.createdByTelegramId || "") === String(telegramId) || (oldName && o.createdByName === oldName && o.createdByRole !== "owner");
+    for (const o of orders) {
+      let ch = false;
+      if (mineO(o) && o.createdByName !== newName) { o.createdByName = newName; ch = true; }
+      if (accountId && String(o.adminId || "") === String(accountId) && o.adminLabel !== newName) { o.adminLabel = newName; ch = true; }
+      if (ch) { nOrders++; try { await saveOrderRecordCore(o); } catch (e) { console.warn("Rename: order save failed:", e.message); } }
+    }
+    for (const c of callersDb.list) {
+      let ch = false;
+      if (oldName && c.salesName === oldName) { c.salesName = newName; ch = true; }
+      if (oldName && c.createdBy === oldName) { c.createdBy = newName; ch = true; }
+      if (ch) { nCust++; c.updatedAt = cH.stamp(); }
+    }
+    if (nCust) await saveCallers();
+    if (sheets.configured()) {
+      if (nOrders) sheets.syncAll(orders, "Admin renamed").catch(e => console.warn("Rename: sheet order sync failed:", e.message));
+      if (nCust) pushAllCallers().catch(e => console.warn("Rename: sheet customer sync failed:", e.message));
+    }
+  } catch (e) { console.warn("Admin rename propagation failed:", e.message); return " (Some old records could not be renamed: " + e.message + ")"; }
+  return ` Updated ${nOrders} order(s) and ${nCust} customer record(s) to the new name${sheets.configured() ? "; the Google Sheet is refreshing" : ""}.`;
+}
 // v92: ✏️ edit an assigned admin (name, Telegram ID, phone, note). Owner / setup key only.
 app.post("/api/setup/app-admins/update", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2334,6 +2383,7 @@ app.post("/api/setup/app-admins/update", async (req, res) => {
   }
   const clean = (v, n) => String(v == null ? "" : v).replace(/[\r\n]+/g, " ").trim().slice(0, n);
   const before = rec.name || rec.telegramId;
+  const oldName = String(rec.name || ""), oldAccountId = String(rec.accountId || "");
   if (req.body?.name !== undefined) rec.name = clean(req.body.name, 60);
   if (req.body?.phone !== undefined) rec.phone = clean(req.body.phone, 30);
   if (req.body?.note !== undefined) rec.note = clean(req.body.note, 200);
@@ -2346,7 +2396,9 @@ app.post("/api/setup/app-admins/update", async (req, res) => {
   }
   await saveAppAdmins();
   sheets.log("Admin edited", before + " → " + (rec.name || rec.telegramId), identify(req).name || "Owner");
-  res.json({ ok: true, message: `Saved: ${rec.name || rec.telegramId}.${extra}`, admin: rec });
+  let synced = "";
+  if (String(rec.name || "") !== oldName && rec.name) synced = await propagateAdminRename({ telegramId: oldId, accountId: oldAccountId, oldName, newName: rec.name });
+  res.json({ ok: true, message: `Saved: ${rec.name || rec.telegramId}.${extra}${synced}`, admin: rec });
 });
 // ── Assigned admins connect THEIR OWN Telegram account ───────────────────────────
 const pendingMy = new Map();
@@ -2931,6 +2983,7 @@ async function syncOrdersPart(by) {
 }
 async function syncCustomersPart() {
   try {
+    await refreshCustomerStatuses();
     const c = await pushAllCallers(); // newest customer first, written to the "Customers Data" tab of the same sheet
     return c.ok ? { ok: true, total: callersDb.list.length } : { ok: false, needsScript: !!c.needsScript, error: c.error || "Customers were not written." };
   } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 400) }; }
@@ -3362,7 +3415,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadCallers(); // callers data (Customer IDs 0001, 0002 …)
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await tgApi.configureWebhook();
-    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); return pushAllCallers(); }).then(c => { if (c && !c.ok) console.warn("Callers tab:", c.error); }, e => console.warn("Google Sheet not ready:", e.message));
+    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); return refreshCustomerStatuses().then(() => pushAllCallers()); }).then(c => { if (c && !c.ok) console.warn("Callers tab:", c.error); }, e => console.warn("Google Sheet not ready:", e.message));
   })().catch(error => console.error("AMBAR startup initialization failed:", error));
 });
 module.exports = app;
