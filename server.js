@@ -2462,15 +2462,18 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     if (supabase) await loadOrders();
     order.id = nextId++;
     order.token = order.token || require("crypto").randomBytes(12).toString("hex"); // answer-page link token
-    if (String(order.customerId || "").trim()) { // Order ID = Customer ID + Ethiopian month (+ A, B, C … for the next orders of that customer)
-      const cust = callersDb.list.find(c => c.id === String(order.customerId).trim());
-      if (!cust) { nextId--; return res.status(400).json({ ok: false, error: "Customer ID " + order.customerId + " was not found in Customers Data." }); }
-      order.customerId = cust.id;
-      order.orderId = nextOrderId(cust.id, order.orderDate, order.orderId);
-      reservedOrderIds.add(order.orderId.toLowerCase());
-    } else order.customerId = "";
-    order.orderId = String(order.orderId || "").trim().slice(0, 40); // Order ID (made from the Customer ID, or typed when "no customer ID" was chosen)
-    if (!order.orderId) { nextId--; return res.status(400).json({ ok: false, error: "Please type the Order code (e.g. Z-001)." }); }
+    // Every order must belong to a customer already saved in Customers Data.
+    const selectedCustomerId = String(order.customerId || "").trim();
+    if (!selectedCustomerId) { nextId--; return res.status(400).json({ ok: false, error: "Please select an existing customer from Customers Data before creating an order." }); }
+    const cust = callersDb.list.find(c => c.id === selectedCustomerId);
+    if (!cust) { nextId--; return res.status(400).json({ ok: false, error: "Customer ID " + selectedCustomerId + " was not found in Customers Data. Add the customer there first." }); }
+    order.customerId = cust.id;
+    order.customerName = cust.name || order.customerName;
+    order.phone = cust.phone || order.phone;
+    order.location = cust.location || order.location;
+    order.telegramUsername = cust.username || order.telegramUsername;
+    order.orderId = nextOrderId(cust.id, order.orderDate, "");
+    reservedOrderIds.add(order.orderId.toLowerCase());
     order.status = "Pending";
     order.createdAt = order.createdAt || new Date().toISOString();
     order.comments = [];
