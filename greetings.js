@@ -96,7 +96,7 @@ function register(app, ctx) {
       const text = render(db.templates[key] || DEFAULT_TEXT, { name: name || (cust && cust.name) || "" }, { name: adminName });
       await humanDelay();
       await send(text);
-      db.log.push({ customerId: custId, tgId: lockKey, name: name || (cust && cust.name) || username || String(tgId), by: adminName || "Admin", byKey: key, at: stamp(), status: "sent", via: via + " · automatic", auto: true, text });
+      db.log.push({ customerId: custId, tgId: lockKey, name: name || (cust && cust.name) || username || String(tgId), by: adminName || "Admin", byKey: key, at: stamp(), status: "sent", via: via + " · automatic", auto: true, saved: !!cust, text });
       await save();
     } catch (e) {
       db.log.push({ customerId: custId, tgId: lockKey, name: name || username || String(tgId), by: adminName || "Admin", byKey: key, at: stamp(), status: "failed", error: "Automatic: " + friendly(e), auto: true });
