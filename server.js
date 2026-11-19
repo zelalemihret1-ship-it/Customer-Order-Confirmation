@@ -2152,12 +2152,18 @@ function telegramLoginError(error) {
   if (/NETWORK|TIMEOUT|CONNECTION/.test(code)) return "Could not reach Telegram. Check the server's internet connection and try Send code again.";
   return raw;
 }
-function codeDeliveryHint(result) {
-  const kind = String(result?.type?.className || result?.type?.constructor?.name || result?.type?._ || "").toLowerCase();
-  if (kind.includes("app")) return "Telegram sent the login code inside the Telegram app on a device where this account is already logged in. It is NOT sent by the AMBAR bot.";
-  if (kind.includes("sms")) return "Telegram sent the login code by SMS to the phone number. It is NOT sent by the AMBAR bot.";
-  if (kind.includes("call")) return "Telegram will deliver the login code by phone call. It is NOT sent by the AMBAR bot.";
-  return "Check the Telegram app on another device where this account is logged in, and check SMS if Telegram offers it. The AMBAR bot cannot deliver Telegram login codes.";
+// GramJS TelegramClient.sendCode() returns { phoneCodeHash, isCodeViaApp } —
+// it does NOT return the raw auth.SentCode.type object. Read the documented field.
+function codeDeliveryHint(result, forceSMS = false) {
+  if (result?.isCodeViaApp === true) {
+    return "Telegram selected in-app delivery. Check the Telegram service notifications on another device where this phone number is already logged in. Telegram has accepted the request, but AMBAR cannot confirm that the notification appeared.";
+  }
+  if (result?.isCodeViaApp === false) {
+    return forceSMS
+      ? "Telegram selected a non-app route after the SMS request. Check SMS for this phone number. If no SMS arrives, Telegram may not offer SMS for this login attempt."
+      : "Telegram selected a non-app delivery route (commonly SMS). Check SMS and any delivery instructions shown by Telegram.";
+  }
+  return "Telegram accepted the request but did not identify the delivery route. Check the Telegram app on another logged-in device and SMS if available.";
 }
 app.get("/api/setup/status", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2183,10 +2189,12 @@ app.post("/api/setup/send-code", async (req, res) => {
     if (pendingLogin?.client) { try { await pendingLogin.client.disconnect(); } catch {} }
     client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
-    const r = await client.sendCode({ apiId, apiHash }, phone);
+    const forceSMS = req.body?.forceSMS === true;
+    const r = await client.sendCode({ apiId, apiHash }, phone, forceSMS);
     if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
     pendingLogin = { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false, label: String(req.body?.label || "").trim().slice(0, 40) || phone };
-    res.json({ ok: true, message: `Telegram accepted the login request for ${phone}. ${codeDeliveryHint(r)}`, delivery: codeDeliveryHint(r) });
+    const delivery = codeDeliveryHint(r, forceSMS);
+    res.json({ ok: true, delivery, message: `Telegram accepted the login request for ${phone}. ${delivery}` });
   } catch (error) {
     if (client && client !== pendingLogin?.client) { try { await client.disconnect(); } catch {} }
     res.status(400).json({ ok: false, error: telegramLoginError(error) });
@@ -2305,10 +2313,12 @@ app.post("/api/my-account/send-code", async (req, res) => {
     pendingMy.delete(a.telegramId);
     client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
-    const r = await client.sendCode({ apiId, apiHash }, phone);
+    const forceSMS = req.body?.forceSMS === true;
+    const r = await client.sendCode({ apiId, apiHash }, phone, forceSMS);
     if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
     pendingMy.set(a.telegramId, { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false });
-    res.json({ ok: true, message: `Telegram accepted the login request for ${phone}. ${codeDeliveryHint(r)}`, delivery: codeDeliveryHint(r) });
+    const delivery = codeDeliveryHint(r, forceSMS);
+    res.json({ ok: true, delivery, message: `Telegram accepted the login request for ${phone}. ${delivery}` });
   } catch (error) {
     if (client && client !== pendingMy.get(a.telegramId)?.client) { try { await client.disconnect(); } catch {} }
     res.status(400).json({ ok: false, error: telegramLoginError(error) });
