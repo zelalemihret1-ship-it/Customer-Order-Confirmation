@@ -379,7 +379,7 @@ document.addEventListener("submit",async e=>{
 </script>
 <button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #c18b3a;color:#f3c77c;font:600 14px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(14px)">👥 Manage Assigned Admins</button>
 <div id="acOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="acBox" style="background:#fff;max-width:560px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
+<style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.edit{background:#f3c77c;color:#222;width:auto;padding:6px 11px;margin:0;font-size:17px}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
 <script>
 (function(){
 const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -387,6 +387,7 @@ const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-
 const ov=document.getElementById("acOverlay"),box=document.getElementById("acBox");
 const say=(d)=>{const m=document.getElementById("acMsg");if(m){m.className="msg "+(d.ok?"ok":"bad");m.textContent=d.message||d.error||"";}};
 const val=id=>(document.getElementById(id)||{}).value||"";
+let editingId="";
 async function render(keepMsg){
   const me=await api("/api/me");
   if(me.role!=="owner"){
@@ -394,7 +395,16 @@ async function render(keepMsg){
   const a=await api("/api/setup/app-admins");
   if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
 
-  const people=(a.appAdmins||[]).map(p=>'<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+'</small><br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — admin must tap Connect my Telegram account')+'</small></div><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div>').join("")||'<p><small>No admins assigned yet.</small></p>';
+  const people=(a.appAdmins||[]).map(p=>{
+    if(editingId===String(p.telegramId))return '<div class="row" style="display:block;background:#fff8e8;border-radius:10px;padding:10px;margin:6px 0"><b>✏️ Edit admin</b>'
+      +'<label><small>Name</small><input id="eName" value="'+esc(p.name||"")+'" placeholder="Name"></label>'
+      +'<label><small>Telegram ID (numbers only)</small><input id="eId" inputmode="numeric" value="'+esc(p.telegramId)+'"></label>'
+      +'<label><small>Phone (optional)</small><input id="ePhone" value="'+esc(p.phone||"")+'" placeholder="09…"></label>'
+      +'<label><small>Note (optional)</small><input id="eNote" value="'+esc(p.note||"")+'" placeholder="e.g. Sales, Addis branch"></label>'
+      +'<small style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</small>'
+      +'<div style="display:flex;gap:8px;margin-top:6px"><button data-a="saveedit" data-id="'+esc(p.telegramId)+'">Save</button><button class="grey" data-a="canceledit">Cancel</button></div></div>';
+    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — admin must tap Connect my Telegram account')+'</small></div><div style="display:flex;gap:6px"><button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
+  }).join("")||'<p><small>No admins assigned yet.</small></p>';
   box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
   +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
   +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
@@ -409,6 +419,9 @@ ov.addEventListener("click",async e=>{
   if(act==="close"){ov.style.display="none";return;}
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
   if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId")});await render();say(d);return;}
+  if(act==="editperson"){editingId=String(b.dataset.id);await render();return;}
+  if(act==="canceledit"){editingId="";await render();return;}
+  if(act==="saveedit"){const d=await api("/api/setup/app-admins/update",{telegramId:b.dataset.id,newTelegramId:val("eId"),name:val("eName"),phone:val("ePhone"),note:val("eNote")});if(d.ok)editingId="";await render();say(d);return;}
   if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
   }catch(err){say({ok:false,error:err.message});}
 });
