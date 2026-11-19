@@ -1,3 +1,17 @@
+## v90 — Find Customer searches ALL customers
+- Before: Find Customer only looked inside the monthly order tabs, so a customer with no order could never be found.
+- Now it searches the whole **Customers Data** tab (name, phone, additional phone, @username, Customer ID, Order id) AND every order tab (name, username, Chat ID, order code, phone). Partial phone numbers (5+ digits) and short Customer IDs (e.g. `2` = 0002) work.
+- A customer with no orders shows their profile with "No orders yet for this customer."
+- If several customers match (e.g. "abel"), the best match is shown in full and the others are listed under "OTHER MATCHING CUSTOMERS".
+- Older orders whose customer is not in Customers Data are still found.
+- The search box now works even before any order tab exists. **Re-paste `google-sheet-script.gs` into Apps Script and save** (new Web-app version if deployed as one), then press Sync ALL once.
+
+## v89 — Google Sheet Dashboard fix
+- **Root cause:** in `google-sheet-script.gs` (`buildDashboard`) each KPI tile first merged its whole 3×2 block into one cell and then tried to merge rows inside it. Google Sheets rejects that ("You must select all cells in a merged range…"), so the build stopped right after the title and period rows and the Dashboard stayed empty.
+- **Fix:** the tile block now only gets its colour/border; the three rows inside are merged separately.
+- The period drop-down (B3, merged B3:C3) is now detected by row/column, so changing it always refreshes the Dashboard.
+- **You must re-paste `google-sheet-script.gs` into the sheet's Apps Script and save** (then, if it is deployed as a Web app: Deploy → Manage deployments → Edit → New version → Deploy). Then run `refreshDashboardNow` once, or press Sync ALL in the app.
+
 ## v88 — Admin "Connect my Telegram account": login-code fix
 - The code request now reads Telegram's REAL delivery route (app / SMS / call) and tells the admin exactly where to look.
 - New **Resend code (SMS / call)** button (uses Telegram's own ResendCode, so a code that never showed up in the app can be re-sent by SMS or call).
