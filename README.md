@@ -1,3 +1,18 @@
+# v87 — Main admin and assigned-admin access / account isolation
+
+- Kept the app restricted to the main admin and Telegram IDs explicitly assigned by the main admin. Unassigned Telegram accounts remain blocked.
+- Clarified the roles: the main admin controls the shared Telegram Business bot connection and assigns/removes users; assigned admins can use AMBAR and connect only their own Telegram account.
+- Fixed main-admin account lookup: a main admin who connects their own Telegram account is now correctly recognized as their own sender account. Previously, the lookup could miss that account because it was stored with the main admin Telegram ID.
+- Prevented personal-account fallback across users: an assigned admin cannot accidentally send from another admin’s connected Telegram session.
+- Telegram personal-account login codes are still delivered only through Telegram’s own login flow (Telegram app / supported delivery option). AMBAR cannot force a code into the bot chat or forward it. The shared bot is connected separately through the main admin’s Telegram Business → Chatbots settings.
+
+## v87 activation
+1. Replace the existing application files with this ZIP’s files, preserving Render environment variables and persistent data.
+2. Confirm `MAIN_ADMIN_TELEGRAM_ID` (or `OWNER_TELEGRAM_IDS`) is set to the main admin’s numeric Telegram ID in Render.
+3. Keep `BOT_TOKEN` configured. For personal Telegram account connections, also keep `TG_API_ID` and `TG_API_HASH`.
+4. Redeploy on Render.
+5. The main admin opens AMBAR from the bot, assigns users in Admin Control, and connects the shared bot through Telegram Settings → Telegram Business → Chatbots. Assigned users then open the same Mini App from their own Telegram accounts.
+
 ## v86 – Telegram login delivery error and pending-session repair
 
 - Added a specific explanation for Telegram's `SEND_CODE_UNAVAILABLE` response: it means Telegram has no further SMS/phone delivery option for that login attempt; it is not a code that AMBAR can send.
