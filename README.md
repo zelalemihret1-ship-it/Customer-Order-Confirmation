@@ -13,7 +13,7 @@
 ## Previous update (v78) - ONE-CLICK CONNECT (⚙ Settings)
 
 - ⚙ Settings -> "⚡ Connect Google Sheet (one click · all data)" uses the same original Apps Script link method on the main page. One button saves the link, checks the script version, creates every tab (incl. "Customers Data" in the SAME spreadsheet as the orders) and sends ALL data: orders + customers. Result lines are shown per part.
-- Needs google-sheet-script.gs v77 (included). If the saved link runs an older script, the button says so and shows the fix steps.
+- Needs google-sheet-script.gs v78 (included). If the saved link runs an older script, the button says so and shows the fix steps.
 
 ## Previous update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
 
@@ -319,7 +319,7 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Failed order-card deliveries now appear in the Delivery Note column as `Sent from: <admin> — ❌ NOT delivered (<reason>)` and the full order row is highlighted pale red in the month tab and Orders View.
 - When an order is placed for a selected customer, Customers Data updates the customer status to `Customer`, the order status to `Pending`, and adds the order code. When the customer confirms or rejects, the order status in Customers Data follows that decision.
 - Every order save and full sync rebuilds all derived tabs: Dashboard, Find Customer, Analysis, Orders View, Graphs and the hidden data source.
-- Apps Script reports version `v77`. After updating, paste the included `google-sheet-script.gs` into Apps Script, Save, Deploy → Manage deployments → Edit → Version: New version → Deploy, then press Connect & sync EVERYTHING / Sync ALL in the app.
+- Apps Script reports version `v78`. After updating, paste the included `google-sheet-script.gs` into Apps Script, Save, Deploy → Manage deployments → Edit → Version: New version → Deploy, then press Connect & sync EVERYTHING / Sync ALL in the app.
 
 
 ## v77 – MODERN SHEET + SAFE ORDER ARCHIVING
@@ -330,3 +330,15 @@ After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments
 - Full app syncs update an archived record in place rather than silently restoring it to active orders.
 - Dashboard displays an Archived Orders count; active order totals remain separate from archived records.
 - Connector version is `v77`.
+
+
+## v78 – MODERN VIEWS, FAILED-DELIVERY ARCHIVE, SECOND PHONE & ETHIOPIAN DATES
+
+- Updated the spreadsheet palette across generated views to a cleaner charcoal, orange and cream visual system, with clearer table headers and spacing.
+- During every full rebuild/sync, orders whose row contains `Sent from: mule — ❌ NOT delivered` or the `Could not find the input entity for` delivery failure are moved out of active month tabs into `Archived Orders`, with archive timestamp and source tab retained. The archive table highlights delivery failures in pale red.
+- Added `Additional Phone Number` to Customers Data and the customer form. Existing v77 customer-sheet data is migrated by inserting the new column after the primary phone, preserving the original values.
+- Customer dates display as Ethiopian `DD/MM/YYYY`; the customer form accepts that format and keeps the internal Ethiopian date canonical.
+- Added an `AMBAR Orders → Ethiopian date picker…` sidebar. Select a cell, choose Ethiopian day/month/year, and insert the date as `DD/MM/YYYY`. Dashboard date calculations accept both the existing `YYYY/MM/DD` values and the day-first format.
+- Connector version is `v78`. After deploying the updated app files, paste the included `google-sheet-script.gs` into Apps Script, save, deploy a **New version**, then use **AMBAR Orders → Refresh all sections** or press the app's full sync.
+
+NOTE: Archiving is performed on the next full rebuild/sync after this script is activated. The source order record is retained in `Archived Orders`; it is not permanently deleted.
