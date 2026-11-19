@@ -2147,7 +2147,9 @@ function telegramLoginError(error) {
   if (/PHONE_NUMBER_BANNED/.test(code)) return "Telegram has restricted this phone number from logging in. Contact Telegram support or use another permitted account.";
   if (/PHONE_CODE_INVALID|PHONE_CODE_EMPTY/.test(code)) return "That login code is incorrect or expired. Request a fresh code and enter the newest one.";
   if (/PHONE_CODE_EXPIRED/.test(code)) return "That login code expired. Press Send code again and use the newest code.";
-  if (/PHONE_CODE_FLOOD|PHONE_NUMBER_FLOOD|FLOOD_WAIT/.test(code)) return "Telegram is limiting login attempts. Wait before requesting another code. Do not keep pressing Send code.";
+  if (/SEND_CODE_UNAVAILABLE/.test(code)) return "Telegram refused the SMS resend: SEND_CODE_UNAVAILABLE means Telegram has no further SMS/phone delivery option available for this login attempt. It is not an AMBAR delivery failure. Do not keep retrying SMS. Return to the normal code request and check Telegram on another device already logged into this exact phone number. If Telegram reports in-app delivery but no service notification appears, AMBAR cannot force Telegram to create or forward that notification; wait and try again later or use Telegram's official QR login from a logged-in device if available.";
+  if (/SMS_CODE_CREATE_FAILED/.test(code)) return "Telegram could not create an SMS code for this number. SMS delivery is currently unavailable for this login attempt. Use Telegram's normal in-app delivery if offered, or try later.";
+  if (/PHONE_CODE_FLOOD|PHONE_NUMBER_FLOOD|FLOOD_WAIT/.test(code)) return "Telegram is limiting login attempts. Wait for the restriction to expire before requesting another code. Repeated attempts can extend the restriction.";
   if (/AUTH_RESTART|SESSION_PASSWORD_NEEDED/.test(code)) return raw;
   if (/NETWORK|TIMEOUT|CONNECTION/.test(code)) return "Could not reach Telegram. Check the server's internet connection and try Send code again.";
   return raw;
@@ -2156,14 +2158,14 @@ function telegramLoginError(error) {
 // it does NOT return the raw auth.SentCode.type object. Read the documented field.
 function codeDeliveryHint(result, forceSMS = false) {
   if (result?.isCodeViaApp === true) {
-    return "Telegram selected in-app delivery. Check the Telegram service notifications on another device where this phone number is already logged in. Telegram has accepted the request, but AMBAR cannot confirm that the notification appeared.";
+    return "Telegram reports that this login code is for in-app delivery. Check the official Telegram service chat on another device already logged into this exact account. This is Telegram's reported route, not proof that the notification appeared; AMBAR cannot force or forward the code.";
   }
   if (result?.isCodeViaApp === false) {
     return forceSMS
-      ? "Telegram selected a non-app route after the SMS request. Check SMS for this phone number. If no SMS arrives, Telegram may not offer SMS for this login attempt."
-      : "Telegram selected a non-app delivery route (commonly SMS). Check SMS and any delivery instructions shown by Telegram.";
+      ? "Telegram returned a non-app delivery route after the SMS request. Check SMS for this number. Telegram may still restrict or delay the message."
+      : "Telegram returned a non-app delivery route (often SMS). Check SMS and any Telegram delivery instructions.";
   }
-  return "Telegram accepted the request but did not identify the delivery route. Check the Telegram app on another logged-in device and SMS if available.";
+  return "Telegram returned a login request but did not identify its delivery route. AMBAR cannot verify or force delivery. Check Telegram on a logged-in device and SMS if Telegram offers it.";
 }
 app.get("/api/setup/status", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2186,12 +2188,13 @@ app.post("/api/setup/send-code", async (req, res) => {
     if (!raw) return res.status(400).json({ ok: false, error: "Enter the admin phone number with country code, e.g. +2519XXXXXXXX." });
     const phone = raw.startsWith("+") ? raw : "+" + raw;
     const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
-    if (pendingLogin?.client) { try { await pendingLogin.client.disconnect(); } catch {} }
+    const previousPending = pendingLogin;
     client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
     const forceSMS = req.body?.forceSMS === true;
     const r = await client.sendCode({ apiId, apiHash }, phone, forceSMS);
     if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
+    if (previousPending?.client) { try { await previousPending.client.disconnect(); } catch {} }
     pendingLogin = { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false, label: String(req.body?.label || "").trim().slice(0, 40) || phone };
     const delivery = codeDeliveryHint(r, forceSMS);
     res.json({ ok: true, delivery, message: `Telegram accepted the login request for ${phone}. ${delivery}` });
@@ -2309,13 +2312,13 @@ app.post("/api/my-account/send-code", async (req, res) => {
     if (!raw) return res.status(400).json({ ok: false, error: "Enter YOUR Telegram phone number with country code, e.g. +2519XXXXXXXX." });
     const phone = raw.startsWith("+") ? raw : "+" + raw;
     const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
-    const old = pendingMy.get(a.telegramId); if (old?.client) { try { await old.client.disconnect(); } catch {} }
-    pendingMy.delete(a.telegramId);
+    const old = pendingMy.get(a.telegramId);
     client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
     const forceSMS = req.body?.forceSMS === true;
     const r = await client.sendCode({ apiId, apiHash }, phone, forceSMS);
     if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
+    if (old?.client) { try { await old.client.disconnect(); } catch {} }
     pendingMy.set(a.telegramId, { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false });
     const delivery = codeDeliveryHint(r, forceSMS);
     res.json({ ok: true, delivery, message: `Telegram accepted the login request for ${phone}. ${delivery}` });
