@@ -1,3 +1,10 @@
+## v85 – ADMIN TELEGRAM LOGIN DELIVERY FIX
+- Corrected the delivery-route detection to use GramJS's actual `isCodeViaApp` result (the previous code looked for a raw `type` object that GramJS does not return).
+- Added an optional “Request SMS instead” choice in the admin's Connect my Telegram account panel. Telegram may still decline SMS or choose another route; the app now reports that accurately.
+- Added a busy state while requesting a code and clarified that AMBAR cannot confirm delivery or forward Telegram's private login code.
+- Both the assigned-admin connection and setup/admin connection endpoints accept the SMS preference.
+- This does not bypass Telegram delivery restrictions. The host must still have valid `TG_API_ID` and `TG_API_HASH`; Telegram controls whether app, SMS, or another route is available.
+
 # v84 update (2026-11-19)
 
 - Fixed admin sender selection: the main admin can choose which connected admin Telegram account sends a new order. Assigned admins can only send from their own connected account; the server ignores any attempt to select another admin.
