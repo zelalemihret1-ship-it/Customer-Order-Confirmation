@@ -8,6 +8,8 @@
 <div style="font-size:14px">Only the main admin and Telegram IDs assigned here can use AMBAR. Everyone else is blocked. Each assigned person must open the Mini App from their own Telegram account.</div>
 <input id="aid" placeholder="Person's numeric Telegram ID"><input id="aname" placeholder="Their name">
 <button onclick="addApp()">Assign as admin</button><button onclick="listApp()" style="background:#555">Show assigned admins</button><input id="arm" placeholder="Telegram ID to remove"><button onclick="rmApp()" style="background:#c62828">Remove assigned admin</button>
+<h3>✏️ Edit an assigned admin</h3><input id="eid" placeholder="Current Telegram ID"><input id="enid" placeholder="New Telegram ID (leave empty to keep)"><input id="ename" placeholder="New name"><input id="ephone" placeholder="Phone (optional)"><input id="enote" placeholder="Note (optional)">
+<button onclick="editApp()" style="background:#b8860b">✏️ Save changes</button>
 
 <pre id="out"></pre>
 <script>
@@ -24,6 +26,7 @@ async function status(){
 }
 async function addApp(){show(await call("/api/setup/app-admins/add",{telegramId:$("aid").value,name:$("aname").value}))}
 async function listApp(){const d=await call("/api/setup/app-admins?key="+encodeURIComponent($("key").value));$("out").className=d.ok?"ok":"bad";$("out").textContent=d.ok?("Access control: "+(d.enforced?"ON":"OFF (open to everyone until you assign someone)")+"\n"+(d.appAdmins.map(a=>a.telegramId+" — "+(a.name||"")).join("\n")||"No assigned admins yet")):d.error}
+async function editApp(){const b={telegramId:$("eid").value,newTelegramId:$("enid").value||$("eid").value,key:$("key").value};if($("ename").value)b.name=$("ename").value;if($("ephone").value)b.phone=$("ephone").value;if($("enote").value)b.note=$("enote").value;show(await call("/api/setup/app-admins/update",b))}
 async function rmApp(){show(await call("/api/setup/app-admins/remove",{telegramId:$("arm").value}))}
 async function test(){show(await call("/api/setup/test",{target:$("target").value}))}
 </script></body></html>
