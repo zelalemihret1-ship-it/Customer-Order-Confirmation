@@ -1,6 +1,7 @@
 // ── WEEKLY STORY PLANNER (separate page: /stories.html, opened from the ⚙ Settings icon) ─────────────
-// An admin uploads 7 photos ONCE. Day 1 = photo 1, Day 2 = photo 2 … Day 7 = photo 7: every photo is
-// posted as a Telegram story exactly once, on its own day, and never again.
+// An admin uploads 7 items ONCE — each one a PHOTO or a VIDEO, whatever the admin wants (mixed is fine).
+// Day 1 = item 1, Day 2 = item 2 … Day 7 = item 7: every item is posted as a Telegram story exactly once,
+// on its own day, and never again. (For a video day the saved "photo" file is its small preview picture.)
 //
 // Every person works separately:
 //  • assigned admin  → own plans only, posted ONLY from their own connected Telegram account;
@@ -10,11 +11,14 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
 const express = require("express");
 const multer = require("multer");
 
 const DAYS = 7;
 const MAX_CAPTION = 200;
+const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // per video
+const MAX_VIDEO_SECONDS = 60;             // Telegram story video limit
 const PERIODS = [6 * 3600, 12 * 3600, 86400, 2 * 86400];
 const TICK_MS = 60 * 1000;
 const MAX_ATTEMPTS = 3;
@@ -44,10 +48,30 @@ function register(app, ctx) {
     if (supabase) { try { await supabase.from("app_settings").upsert({ key: "story_plans", value: plans, updated_at: new Date().toISOString() }); } catch {} }
   }
   const photoFile = (id, n) => path.join(DIR, `${id}-${n}.jpg`);
+  // photos[i] = the photo itself, or (for a video day) the small preview picture of that video.
   async function savePhotos(id, buffers) {
     fs.mkdirSync(DIR, { recursive: true });
     buffers.forEach((b, i) => fs.writeFileSync(photoFile(id, i + 1), b));
     if (supabase) { try { await supabase.from("app_settings").upsert({ key: "story_photos_" + id, value: { photos: buffers.map(b => b.toString("base64")) }, updated_at: new Date().toISOString() }); } catch (e) { console.warn("Story photos backup failed:", e.message); } }
+  }
+  // ── videos: file on disk + backup copy in Supabase Storage (too big for a settings row) ──
+  const videoFile = (id, n) => path.join(DIR, `${id}-${n}.mp4`);
+  const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "order-images";
+  const videoKey = (id, n) => `stories/${id}-${n}.mp4`;
+  async function saveVideo(id, n, tmpPath) {
+    fs.mkdirSync(DIR, { recursive: true });
+    fs.copyFileSync(tmpPath, videoFile(id, n));
+    if (supabase) { try { const { error } = await supabase.storage.from(BUCKET).upload(videoKey(id, n), fs.readFileSync(tmpPath), { contentType: "video/mp4", upsert: true }); if (error) throw error; } catch (e) { console.warn("Story video backup failed:", e.message); } }
+  }
+  async function getVideo(id, n) { // Buffer or null
+    try { return fs.readFileSync(videoFile(id, n)); } catch {}
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.storage.from(BUCKET).download(videoKey(id, n));
+        if (!error && data) { const buf = Buffer.from(await data.arrayBuffer()); fs.mkdirSync(DIR, { recursive: true }); try { fs.writeFileSync(videoFile(id, n), buf); } catch {} return buf; }
+      } catch {}
+    }
+    return null;
   }
   async function getPhoto(id, n) {
     try { return fs.readFileSync(photoFile(id, n)); } catch {}
@@ -61,8 +85,11 @@ function register(app, ctx) {
     return null;
   }
   async function dropPhotos(id) {
-    for (let n = 1; n <= DAYS; n++) { try { fs.unlinkSync(photoFile(id, n)); } catch {} }
-    if (supabase) { try { await supabase.from("app_settings").delete().eq("key", "story_photos_" + id); } catch {} }
+    for (let n = 1; n <= DAYS; n++) { try { fs.unlinkSync(photoFile(id, n)); } catch {} try { fs.unlinkSync(videoFile(id, n)); } catch {} }
+    if (supabase) {
+      try { await supabase.from("app_settings").delete().eq("key", "story_photos_" + id); } catch {}
+      try { await supabase.storage.from(BUCKET).remove(Array.from({ length: DAYS }, (_, i) => videoKey(id, i + 1))); } catch {}
+    }
   }
 
   // ── time helpers (the shop's own time zone) ─────────────────────────────────────
@@ -93,14 +120,19 @@ function register(app, ctx) {
     if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The Telegram account login expired. Connect your Telegram account again.";
     return m.slice(0, 240) || "Telegram refused the story.";
   }
+  const isVideo = d => d.type === "video";
   async function sendViaAccount(account, p, day, buf, caption) {
     const { Api } = require("telegram");
     const { CustomFile } = require("telegram/client/uploads");
     const { generateRandomBigInt } = require("telegram/Helpers");
-    const file = await account.client.uploadFile({ file: new CustomFile(`story-${day.n}.jpg`, buf.length, "", buf), workers: 1 });
+    const video = isVideo(day);
+    const file = await account.client.uploadFile({ file: new CustomFile(video ? `story-${day.n}.mp4` : `story-${day.n}.jpg`, buf.length, "", buf), workers: 1 });
+    const media = video
+      ? new Api.InputMediaUploadedDocument({ file, mimeType: "video/mp4", attributes: [new Api.DocumentAttributeVideo({ duration: Math.max(1, Math.round(day.duration || 1)), w: day.vw || 720, h: day.vh || 1280, supportsStreaming: true })] })
+      : new Api.InputMediaUploadedPhoto({ file });
     const params = {
       peer: new Api.InputPeerSelf(),
-      media: new Api.InputMediaUploadedPhoto({ file }),
+      media,
       privacyRules: [p.privacy === "contacts" ? new Api.InputPrivacyValueAllowContacts() : new Api.InputPrivacyValueAllowAll()],
       randomId: generateRandomBigInt(),
       period: p.period,
@@ -116,8 +148,13 @@ function register(app, ctx) {
     const r = await tgApi.sendForm("postStory", () => {
       const f = new FormData();
       f.append("business_connection_id", String(conn.id));
-      f.append("content", JSON.stringify({ type: "photo", photo: "attach://story" }));
-      f.append("story", new Blob([buf], { type: "image/jpeg" }), "story.jpg");
+      if (isVideo(day)) {
+        f.append("content", JSON.stringify({ type: "video", video: "attach://story", duration: Math.min(MAX_VIDEO_SECONDS, Math.max(1, day.duration || 1)) }));
+        f.append("story", new Blob([buf], { type: "video/mp4" }), "story.mp4");
+      } else {
+        f.append("content", JSON.stringify({ type: "photo", photo: "attach://story" }));
+        f.append("story", new Blob([buf], { type: "image/jpeg" }), "story.jpg");
+      }
       f.append("active_period", String(p.period));
       if (caption) f.append("caption", caption);
       if (p.pinned) f.append("post_to_chat_page", "true");
@@ -139,8 +176,8 @@ function register(app, ctx) {
       let account = null, conn = null;
       if (p.via === "business") { conn = ownerConnection(); if (!conn) return { ok: false, waiting: true, error: "No active Telegram Business connection with the \"Manage stories\" permission." }; }
       else { account = pickAccount(p); if (!account) return { ok: false, waiting: true, error: "Your Telegram account is not connected. Open ⚙ Settings → Connect my Telegram account." }; }
-      const buf = await getPhoto(p.id, day.n);
-      if (!buf) { day.status = "failed"; day.error = "The saved photo could not be found."; day.attempts = MAX_ATTEMPTS; await save(); return { ok: false, error: day.error }; }
+      const buf = isVideo(day) ? await getVideo(p.id, day.n) : await getPhoto(p.id, day.n);
+      if (!buf) { day.status = "failed"; day.error = isVideo(day) ? "The saved video could not be found." : "The saved photo could not be found."; day.attempts = MAX_ATTEMPTS; await save(); return { ok: false, error: day.error }; }
       day.status = "posting"; day.error = ""; await save(); // saved BEFORE sending: a crash can never cause a second copy
       const caption = String(day.caption || p.caption || "").slice(0, MAX_CAPTION);
       try {
@@ -151,7 +188,7 @@ function register(app, ctx) {
         day.attempts = (day.attempts || 0) + 1; day.error = friendly(e);
         day.status = "failed"; day.nextTry = addMinutes(RETRY_MIN);
         await save();
-        if (day.attempts >= MAX_ATTEMPTS && !manual) notify(p, `⚠️ Story ${day.n}/${DAYS} of "${p.title}" could not be posted: ${day.error}\nOpen ⚙ Settings → Weekly Story and press Post now.`);
+        if (day.attempts >= MAX_ATTEMPTS && !manual) notify(p, `⚠️ Story ${day.n}/${DAYS} (${isVideo(day) ? "video" : "photo"}) of "${p.title}" could not be posted: ${day.error}\nOpen ⚙ Settings → Weekly Story and press Post now.`);
         return { ok: false, error: day.error };
       }
     } finally { posting.delete(key); }
@@ -189,7 +226,8 @@ function register(app, ctx) {
   async function start() { await load(); if (!timer) { timer = setInterval(tick, TICK_MS); setTimeout(tick, 15000); } }
 
   // ── API ─────────────────────────────────────────────────────────────────────────
-  const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: DAYS } });
+  // Files go to a temporary folder (videos are big), never all into memory at once.
+  const memUpload = multer({ storage: multer.diskStorage({ destination: os.tmpdir() }), limits: { fileSize: MAX_VIDEO_BYTES, files: DAYS * 2 } });
   const router = express.Router();
   router.use(requireAccess);
 
@@ -197,12 +235,12 @@ function register(app, ctx) {
     id: p.id, title: p.title, status: p.status, via: p.via, period: p.period, privacy: p.privacy, pinned: !!p.pinned,
     caption: p.caption, startDate: p.startDate, postTime: p.postTime, createdAt: p.createdAt,
     ownerName: p.ownerName, ownerRole: p.ownerRole, mine: p.ownerKey === actorKey(a),
-    days: p.days.map(d => ({ n: d.n, date: d.date, eth: eth(d.date), caption: d.caption || "", status: d.status, postedAt: d.postedAt || "", error: d.error || "", attempts: d.attempts || 0 }))
+    days: p.days.map(d => ({ n: d.n, type: isVideo(d) ? "video" : "photo", date: d.date, eth: eth(d.date), caption: d.caption || "", status: d.status, postedAt: d.postedAt || "", error: d.error || "", attempts: d.attempts || 0 }))
   });
 
   router.get("/", (req, res) => {
     const a = req.actor, mine = plans.filter(p => p.ownerKey === actorKey(a));
-    const out = { ok: true, now: nowLocal(), tz: TZ, me: { role: a.role, name: a.name || "", telegramId: a.telegramId || "" }, limits: { days: DAYS, caption: MAX_CAPTION },
+    const out = { ok: true, now: nowLocal(), tz: TZ, me: { role: a.role, name: a.name || "", telegramId: a.telegramId || "" }, limits: { days: DAYS, caption: MAX_CAPTION, videoMb: MAX_VIDEO_BYTES / 1048576, videoSeconds: MAX_VIDEO_SECONDS },
       accountReady: !!(accountFor(a) || {}).ready, canBusiness: isOwner(a) && !!ownerConnection(),
       mine: mine.map(p => view(p, a)).sort((x, y) => y.createdAt.localeCompare(x.createdAt)) };
     if (isOwner(a)) {
@@ -230,14 +268,28 @@ function register(app, ctx) {
     res.set("Cache-Control", "private, max-age=3600").type("image/jpeg").send(buf);
   });
 
-  router.post("/", memUpload.array("photos", DAYS), async (req, res) => {
+  // "photos" = the 7 chosen files in day order (each a photo OR a video); "posters" = one preview picture per video, in order.
+  router.post("/", memUpload.fields([{ name: "photos", maxCount: DAYS }, { name: "posters", maxCount: DAYS }]), async (req, res) => {
+    const files = (req.files && req.files.photos) || [], posters = (req.files && req.files.posters) || [];
+    const cleanup = () => { for (const f of [...files, ...posters]) { try { fs.unlinkSync(f.path); } catch {} } };
     try {
-      const a = req.actor, b = req.body || {}, files = req.files || [];
+      const a = req.actor, b = req.body || {};
       if (!actorKey(a)) return res.status(400).json({ ok: false, error: "Open the app from Telegram so your admin identity is known." });
-      if (files.length !== DAYS) return res.status(400).json({ ok: false, error: `Please add exactly ${DAYS} photos (one for each day). You added ${files.length}.` });
-      for (const f of files) if (!/^image\/(jpeg|png|webp)$/i.test(f.mimetype)) return res.status(400).json({ ok: false, error: "Only JPG, PNG or WebP photos are accepted." });
-      const hashes = files.map(f => crypto.createHash("sha1").update(f.buffer).digest("hex"));
-      for (let i = 0; i < hashes.length; i++) { const j = hashes.indexOf(hashes[i]); if (j !== i) return res.status(400).json({ ok: false, error: `Photo ${j + 1} and photo ${i + 1} are the same picture. Each day needs a different photo, so none repeats.` }); }
+      if (files.length !== DAYS) return res.status(400).json({ ok: false, error: `Please add exactly ${DAYS} items (photos or videos, one for each day). You added ${files.length}.` });
+      let meta = []; try { meta = JSON.parse(b.dayMeta || "[]"); } catch {}
+      const kinds = files.map((f, i) => {
+        if (/^image\/(jpeg|png|webp)$/i.test(f.mimetype)) return "photo";
+        if (/^video\/(mp4|quicktime)$/i.test(f.mimetype) && meta[i]?.type === "video") return "video";
+        return "";
+      });
+      if (kinds.some(k => !k)) return res.status(400).json({ ok: false, error: "Only JPG, PNG, WebP photos or MP4 / MOV videos are accepted." });
+      if (posters.length !== kinds.filter(k => k === "video").length) return res.status(400).json({ ok: false, error: "A video preview picture is missing. Please add the video again." });
+      for (let i = 0; i < DAYS; i++) if (kinds[i] === "video") {
+        const dur = Number(meta[i]?.duration) || 0;
+        if (dur > MAX_VIDEO_SECONDS + 0.5) return res.status(400).json({ ok: false, error: `Video ${i + 1} is longer than ${MAX_VIDEO_SECONDS} seconds. Telegram stories allow up to ${MAX_VIDEO_SECONDS} seconds.` });
+      }
+      const hashes = files.map(f => crypto.createHash("sha1").update(fs.readFileSync(f.path)).digest("hex"));
+      for (let i = 0; i < hashes.length; i++) { const j = hashes.indexOf(hashes[i]); if (j !== i) return res.status(400).json({ ok: false, error: `Item ${j + 1} and item ${i + 1} are the same file. Each day needs a different photo or video, so none repeats.` }); }
       const today = todayLocal();
       const startDate = String(b.startDate || today); if (!validDate(startDate)) return res.status(400).json({ ok: false, error: "Start date is not valid." });
       const postTime = String(b.postTime || "09:00"); if (!validTime(postTime)) return res.status(400).json({ ok: false, error: "Post time is not valid (use HH:MM)." });
@@ -254,12 +306,22 @@ function register(app, ctx) {
         title: clean(b.title).slice(0, 80) || `Week of ${startDate}`, caption: clean(b.caption), via, period,
         privacy: b.privacy === "contacts" ? "contacts" : "all", pinned: b.pinned === "1" || b.pinned === "true",
         startDate, postTime, status: "active", createdAt: new Date().toISOString(),
-        days: Array.from({ length: DAYS }, (_, i) => ({ n: i + 1, date: addDays(startDate, i), caption: clean(dayCaps[i]), hash: hashes[i], status: "pending", attempts: 0, error: "" }))
+        days: Array.from({ length: DAYS }, (_, i) => {
+          const d = { n: i + 1, type: kinds[i], date: addDays(startDate, i), caption: clean(dayCaps[i]), hash: hashes[i], status: "pending", attempts: 0, error: "" };
+          if (kinds[i] === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta[i]?.duration) || 1)); d.vw = Math.min(4096, Number(meta[i]?.w) || 720); d.vh = Math.min(4096, Number(meta[i]?.h) || 1280); }
+          return d;
+        })
       };
-      await savePhotos(id, files.map(f => f.buffer));
+      // the picture saved for each day: the photo itself, or the preview picture of the video
+      let pi = 0;
+      const images = files.map((f, i) => kinds[i] === "photo" ? fs.readFileSync(f.path) : fs.readFileSync(posters[pi++].path));
+      await savePhotos(id, images);
+      for (let i = 0; i < DAYS; i++) if (kinds[i] === "video") await saveVideo(id, i + 1, files[i].path);
       plans.push(p); await save();
-      res.json({ ok: true, plan: view(p, a), message: `✅ Saved. Photo 1 will be posted on ${p.days[0].date} at ${postTime}, then one new photo each day until ${p.days[DAYS - 1].date}.` });
+      const first = p.days[0].type === "video" ? "Video" : "Photo";
+      res.json({ ok: true, plan: view(p, a), message: `✅ Saved. ${first} 1 will be posted on ${p.days[0].date} at ${postTime}, then one new item each day until ${p.days[DAYS - 1].date}.` });
     } catch (e) { console.error("Story plan failed:", e); res.status(500).json({ ok: false, error: e.message || "Could not save the plan." }); }
+    finally { cleanup(); }
   });
 
   const find = (req, res) => {
@@ -284,9 +346,13 @@ function register(app, ctx) {
     if (p.ownerKey !== actorKey(req.actor)) return res.status(403).json({ ok: false, error: "Only the admin who made this plan can post it (from their own Telegram account)." });
     const n = Number(req.body?.day), day = p.days.find(d => d.n === n);
     if (!day) return res.status(400).json({ ok: false, error: "Choose a day." });
-    if (day.status === "posted") return res.status(400).json({ ok: false, error: "That photo was already posted. It is never posted twice." });
+    if (day.status === "posted") return res.status(400).json({ ok: false, error: "That story was already posted. It is never posted twice." });
     const r = await postDay(p, day, true); refreshStatus(p); await save();
-    res.json(r.ok ? { ok: true, message: `✅ Photo ${n} posted as a story.` } : { ok: false, error: r.error });
+    res.json(r.ok ? { ok: true, message: `✅ ${isVideo(day) ? "Video" : "Photo"} ${n} posted as a story.` } : { ok: false, error: r.error });
+  });
+  router.use((err, req, res, next) => { // e.g. a video over the size limit
+    const big = err && err.code === "LIMIT_FILE_SIZE";
+    res.status(400).json({ ok: false, error: big ? `A file is too big. Videos can be up to ${MAX_VIDEO_BYTES / 1048576} MB each.` : (err && err.message) || "Upload failed." });
   });
   app.use("/api/stories", router);
   return { start, tick };
