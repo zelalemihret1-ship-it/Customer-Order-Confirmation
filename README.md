@@ -1,3 +1,10 @@
+## v95 — 👋 First Greeting (separate page, opened from the ⚙ Settings icon)
+- **⚙ Settings → 👋 First Greeting (text only)** opens `public/greeting.html` (logic in `greetings.js`). It sends a customer their **first message: one plain text, nothing else** (no photo, no card, no buttons).
+- Pick customers from Customers Data (search, "Not greeted yet" filter, up to 30 at a time). The text can use `{name}` (first name), `{fullname}` and `{admin}` (the sender's name), with a live preview.
+- **A customer is greeted only once** — by any admin. Already-greeted customers are greyed out with who/when, and the server refuses a second greeting.
+- **Separate per admin:** each admin has their own saved greeting text, sends only from their own connected Telegram account, and sees their own log. **Main admin:** also sees every admin's log and a sent/failed count per admin; with no personal account connected the main admin can greet through the shared Business connection (customers who opened the AMBAR bot only).
+- Messages go out one by one (1.5 s apart) so Telegram does not rate-limit the account. Redeploy `server.js`, `greetings.js`, `public/`.
+
 ## v94 — 📸 Weekly Story (separate page, opened from the ⚙ Settings icon)
 - **⚙ Settings → 📸 Weekly Story** opens its own page (`public/stories.html`, logic in `stories.js`). Add **7 photos once**: Day 1 = photo 1 … Day 7 = photo 7. Each photo is posted as a Telegram story **once, on its own day** and is never posted again (same picture twice is refused, a posted day cannot be re-posted, a day that passed is marked Missed instead of being posted late).
 - Choose first day, daily post time, duration (24h recommended), who can see it, optional caption (for all days or per day). Photos are fitted to 1080x1920 on the phone.
