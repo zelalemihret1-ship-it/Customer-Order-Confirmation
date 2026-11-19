@@ -1,3 +1,10 @@
+## v94 — 📸 Weekly Story (separate page, opened from the ⚙ Settings icon)
+- **⚙ Settings → 📸 Weekly Story** opens its own page (`public/stories.html`, logic in `stories.js`). Add **7 photos once**: Day 1 = photo 1 … Day 7 = photo 7. Each photo is posted as a Telegram story **once, on its own day** and is never posted again (same picture twice is refused, a posted day cannot be re-posted, a day that passed is marked Missed instead of being posted late).
+- Choose first day, daily post time, duration (24h recommended), who can see it, optional caption (for all days or per day). Photos are fitted to 1080x1920 on the phone.
+- **Everyone works separately:** an assigned admin sees and posts only their own plans, only from their own connected Telegram account. **Main admin extras:** an "All admins" tab (who is connected, running plans, posted today, failures), pause / resume / delete any admin's plan, and the option to post from the shared Telegram Business connection (needs the "Manage stories" permission). Only a plan's own admin can press Post now.
+- Failed posts retry 3 times (10 min apart), then the admin and main admin get a bot message.
+- Needs the admin's Telegram account connected (TG_API_ID / TG_API_HASH as before). Redeploy `server.js`, `stories.js` and `public/`. No Google script change.
+
 ## v93 — Admin rename everywhere · Archived Orders without repeats · customer status follows orders
 - **Renaming an admin (✏️) now updates everything:** their orders (Created By), the label of their connected Telegram account / sending account, Customers Data (Sales Name, created by) and the Google Sheet (re-synced automatically).
 - **Archived Orders: one row per order, never repeated.** Cause: the script read the order ID from column 1 (Customer Name) instead of the real `ID` column, so an archived order was never recognised; every deploy's auto-sync brought it back and archived it again. Now the `ID` column is found by name, old repeated rows are removed once (first copy kept), columns are re-mapped safely after the new Telegram Name / Customer ID columns, and the highlight rules no longer pile up.
