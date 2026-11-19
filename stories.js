@@ -17,7 +17,7 @@ const multer = require("multer");
 
 const DAYS = 7;
 const MAX_CAPTION = 200;
-const MAX_VIDEO_BYTES = 60 * 1024 * 1024; // per video or photo file
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // per video or photo file
 const MAX_VIDEO_SECONDS = 60;             // Telegram story video limit
 const PERIODS = [6 * 3600, 12 * 3600, 86400, 2 * 86400];
 const TICK_MS = 60 * 1000;
