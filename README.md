@@ -1,3 +1,9 @@
+## v91 — New modern Dashboard + Telegram name & Customer ID in the last columns
+- **Dashboard completely redesigned** (Google Sheet → `Dashboard` tab): dark header, one blue **Reporting period** box (Today · This week · This month · This year · All time), 4 order cards (Total / Pending / Confirmed / Rejected with %), 4 money cards (Total payment / Advance received / Balance still due / Average order), 4 colour-bar boxes (Payment status, Top products, Delivery type, Delivery service) and the **Latest 10 orders** table (now also shows Telegram name + Customer ID). Plain words, big numbers, no clutter.
+- "This week" on the Dashboard now starts on **Monday**, the same as the other tabs.
+- **Every order row now ends with two new columns: `Telegram Name` and `Customer ID`** (last two columns of every month tab, Orders View and the Latest-orders table). It is filled for **every admin's orders**: the Customer ID comes from Customers Data, the Telegram name from the customer's Telegram profile (falls back to the Customers Data name / @username). Customer ID is stored as text, so `0007` stays `0007`.
+- **To apply:** re-paste `google-sheet-script.gs` into Apps Script and save (Deploy → Manage deployments → Edit → New version → Deploy), redeploy `server.js`, then press **Sync ALL** once so older orders get their Telegram name and Customer ID too.
+
 ## v90 — Find Customer searches ALL customers
 - Before: Find Customer only looked inside the monthly order tabs, so a customer with no order could never be found.
 - Now it searches the whole **Customers Data** tab (name, phone, additional phone, @username, Customer ID, Order id) AND every order tab (name, username, Chat ID, order code, phone). Partial phone numbers (5+ digits) and short Customer IDs (e.g. `2` = 0002) work.
