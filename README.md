@@ -1,3 +1,9 @@
+# v82 update (2026-11-19)
+
+- Fixed the Dashboard data reader: it now reads each Ethiopian-month tab using that tab's own header row, so different/older column orders cannot make the Dashboard appear empty. The dashboard also has a manual `refreshDashboardNow` function that rebuilds ONLY the Dashboard tab from the existing month tabs.
+- Main order index now permits order creation only after selecting an existing customer from the Customers Data list. Removed the “No Customer ID / type order code” option; Order ID stays automatic and the server rejects orders without a valid Customers Data customer.
+- Apps Script version: v82. Replace `google-sheet-script.gs`, deploy a new web-app version, then run `refreshDashboardNow` once from Apps Script to rebuild the Dashboard only. Redeploy the app files so the customer-only selection rule is active.
+
 # v81 update (2026-11-19)
 
 - Fixed the Customers Data merge/freeze conflict by splitting the top directory banner and section labels at the frozen-column boundary; summary cards no longer merge frozen and scrollable columns.
