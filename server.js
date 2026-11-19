@@ -2300,6 +2300,46 @@ app.post("/api/setup/app-admins/remove", async (req, res) => {
 });
 // ── Assigned admins connect THEIR OWN Telegram account ───────────────────────────
 const pendingMy = new Map();
+// ── Login-code helpers: read Telegram's REAL delivery route (app / SMS / call), support resend, and a code-free QR login ──
+const SENT_ROUTE = {
+  SentCodeTypeApp: "the Telegram app (open the “Telegram” service chat on a phone/desktop that is already logged in to this number)",
+  SentCodeTypeSms: "SMS", SentCodeTypeFragmentSms: "SMS (Fragment)", SentCodeTypeFirebaseSms: "SMS",
+  SentCodeTypeCall: "a voice call (Telegram will read the code out)", SentCodeTypeFlashCall: "a flash call",
+  SentCodeTypeMissedCall: "a missed call (the code is the LAST digits of the calling number)",
+  SentCodeTypeEmailCode: "email", SentCodeTypeSetUpEmailRequired: "email (Telegram needs an email set up first)"
+};
+function routeOf(t) { const key = String(t?.className || "").replace(/^auth\./, ""); return { key, text: SENT_ROUTE[key] || key || "an unknown route" }; }
+function sentCodeInfo(r, phone, note = "") {
+  const now = routeOf(r?.type), next = r?.nextType ? routeOf(r.nextType) : null;
+  let m = `Code requested for ${phone}. Telegram says it sent the code by ${now.text}.`;
+  if (note) m += " " + note;
+  if (next) m += ` If it does not arrive within ${Number(r?.timeout) || 60} seconds, press “Resend code” to get it by ${next.text}.`;
+  m += " Still nothing? Use “Login without a code (QR / link)” below — it needs no code at all.";
+  return { route: now.key, nextRoute: next?.key || "", canResend: !!next, message: m };
+}
+async function rawSendCode(client, apiId, apiHash, phone, forceSMS) {
+  const { Api } = require("telegram");
+  const send = () => client.invoke(new Api.auth.SendCode({ phoneNumber: phone, apiId, apiHash, settings: new Api.CodeSettings({}) }));
+  let r;
+  try { r = await send(); } catch (e) { if (e?.errorMessage === "AUTH_RESTART") r = await send(); else throw e; }
+  if (String(r?.className) === "auth.SentCodeSuccess") throw new Error("Telegram logged this session in without a code. Press “Login without a code” instead.");
+  let note = "";
+  if (forceSMS && String(r?.type?.className) === "auth.SentCodeTypeApp" && r?.nextType) {
+    r = await client.invoke(new Api.auth.ResendCode({ phoneNumber: phone, phoneCodeHash: r.phoneCodeHash }));
+    note = "(SMS was requested.)";
+  }
+  return { r, note };
+}
+async function finishMyLogin(actor, client) {
+  const session = client.session.save();
+  try { await client.disconnect(); } catch {}
+  const id = "u" + actor.telegramId;
+  const prev = admins.get(id); if (prev) { try { await prev.client?.disconnect(); } catch {} admins.delete(id); }
+  const acc = await startAdmin({ id, label: actor.name || "Admin " + actor.telegramId, session, ownerTelegramId: actor.telegramId });
+  const rec = appAdmins.find(x => String(x.telegramId) === actor.telegramId); if (rec) rec.accountId = id;
+  await saveAdminRecords(); await saveAppAdmins();
+  return acc;
+}
 function myActor(req, res) {
   if (!["owner", "admin"].includes(req.actor?.role)) { res.status(403).json({ ok: false, error: "Only the main admin or an assigned admin can connect an account." }); return null; }
   if (!req.actor.telegramId) { res.status(400).json({ ok: false, error: "Open this app from Telegram (not a browser) to connect your own account." }); return null; }
@@ -2324,12 +2364,12 @@ app.post("/api/my-account/send-code", async (req, res) => {
     client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
     await client.connect();
     const forceSMS = req.body?.forceSMS === true;
-    const r = await client.sendCode({ apiId, apiHash }, phone, forceSMS);
+    const { r, note } = await rawSendCode(client, apiId, apiHash, phone, forceSMS);
     if (!r?.phoneCodeHash) throw new Error("Telegram did not return a login-code request. Check TG_API_ID, TG_API_HASH and the phone number.");
     if (old?.client) { try { await old.client.disconnect(); } catch {} }
     pendingMy.set(a.telegramId, { client, phone, phoneCodeHash: r.phoneCodeHash, needPassword: false });
-    const delivery = codeDeliveryHint(r, forceSMS);
-    res.json({ ok: true, delivery, message: `Telegram accepted the login request for ${phone}. ${delivery}` });
+    const info = sentCodeInfo(r, phone, note);
+    res.json({ ok: true, delivery: info.message, message: info.message, route: info.route, nextRoute: info.nextRoute, canResend: info.canResend });
   } catch (error) {
     if (client && client !== pendingMy.get(a.telegramId)?.client) { try { await client.disconnect(); } catch {} }
     res.status(400).json({ ok: false, error: telegramLoginError(error) });
@@ -2360,6 +2400,109 @@ app.post("/api/my-account/verify", async (req, res) => {
     await saveAdminRecords(); await saveAppAdmins();
     res.json({ ok: acc.ready, message: acc.ready ? "Your Telegram account is connected ✅. Orders you create are now sent from YOUR account." : "Logged in, but could not start: " + acc.error });
   } catch (error) { res.status(400).json({ ok: false, error: telegramLoginError(error) }); }
+});
+app.post("/api/my-account/resend", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  try {
+    const p = pendingMy.get(a.telegramId);
+    if (!p) return res.status(400).json({ ok: false, error: "Press “Request Telegram login code” first." });
+    const { Api } = require("telegram");
+    const r = await p.client.invoke(new Api.auth.ResendCode({ phoneNumber: p.phone, phoneCodeHash: p.phoneCodeHash }));
+    if (r?.phoneCodeHash) p.phoneCodeHash = r.phoneCodeHash;
+    const info = sentCodeInfo(r, p.phone, "(Resent.)");
+    res.json({ ok: true, delivery: info.message, message: info.message, route: info.route, nextRoute: info.nextRoute, canResend: info.canResend });
+  } catch (error) {
+    const code = String(error?.errorMessage || error?.message || "").toUpperCase();
+    if (/SEND_CODE_UNAVAILABLE/.test(code)) return res.status(400).json({ ok: false, error: "Telegram has no other way to send a code for this attempt (SMS/call already used or not available). Use “Login without a code (QR / link)” below." });
+    res.status(400).json({ ok: false, error: telegramLoginError(error) });
+  }
+});
+// QR / link login: no code is delivered at all. The admin approves the login from a Telegram app that is already signed in.
+const pendingQr = new Map();
+const QR_LIMIT_MS = 4 * 60 * 1000;
+const qrLink = token => "tg://login?token=" + Buffer.from(token).toString("base64url");
+async function qrStop(id) { const p = pendingQr.get(id); if (!p) return; p.stop = true; try { p.pwResolve?.(null); } catch {} pendingQr.delete(id); try { await p.client.disconnect(); } catch {} }
+async function qrExport(p, apiId, apiHash) {
+  const { Api } = require("telegram");
+  let r = await p.client.invoke(new Api.auth.ExportLoginToken({ apiId, apiHash, exceptIds: [] }));
+  if (String(r?.className) === "auth.LoginTokenMigrateTo") {
+    await p.client._switchDC(r.dcId);
+    r = await p.client.invoke(new Api.auth.ImportLoginToken({ token: r.token }));
+  }
+  const cn = String(r?.className);
+  if (cn === "auth.LoginTokenSuccess") return { done: true };
+  if (cn === "auth.LoginToken") return { done: false, token: r.token, expires: Number(r.expires) };
+  throw new Error("Unexpected Telegram QR response (" + cn + ").");
+}
+async function qrRun(p, apiId, apiHash, actor, first) {
+  try {
+    const started = Date.now(); let r = first;
+    while (!p.stop && Date.now() - started < QR_LIMIT_MS) {
+      if (r?.done) {
+        const acc = await finishMyLogin(actor, p.client);
+        p.status = acc.ready ? "done" : "error";
+        p.message = acc.ready ? "Your Telegram account is connected ✅. Orders you create are now sent from YOUR account." : "";
+        if (!acc.ready) p.error = "Logged in, but could not start: " + acc.error;
+        return;
+      }
+      if (r?.token) { p.token = r.token; p.expires = r.expires; }
+      await new Promise(x => setTimeout(x, 3000));
+      if (p.stop) return;
+      try { r = await qrExport(p, apiId, apiHash); }
+      catch (e) {
+        if (e?.errorMessage !== "SESSION_PASSWORD_NEEDED") throw e;
+        // Account has 2-step verification: wait for the password (retry on a wrong one).
+        while (!p.stop) {
+          p.status = "password";
+          const pw = await new Promise(resolve => { p.pwResolve = resolve; });
+          if (p.stop || pw == null) return;
+          try { await p.client.signInWithPassword({ apiId, apiHash }, { password: async () => String(pw), onError: async err => { throw err; } }); r = { done: true }; break; }
+          catch (err) { p.pwError = telegramLoginError(err); }
+        }
+      }
+    }
+    if (!p.stop) { p.status = "error"; p.error = "The QR login expired. Press “Login without a code” to start again."; }
+  } catch (e) { p.status = "error"; p.error = telegramLoginError(e); }
+}
+app.post("/api/my-account/qr-start", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  let client;
+  try {
+    const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "The owner must add TG_API_ID and TG_API_HASH in Render first (from my.telegram.org → API development tools)." });
+    await qrStop(a.telegramId);
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
+    client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
+    await client.connect();
+    const p = { client, token: null, expires: 0, status: "waiting", message: "", error: "", pwError: "", pwResolve: null, stop: false };
+    const first = await qrExport(p, apiId, apiHash);
+    if (first.done) return res.status(400).json({ ok: false, error: "Unexpected: Telegram reported an instant login. Try again." });
+    p.token = first.token; p.expires = first.expires;
+    pendingQr.set(a.telegramId, p);
+    qrRun(p, apiId, apiHash, a, first); // runs in the background; the page polls /qr-poll
+    res.json({ ok: true, status: "waiting", link: qrLink(p.token), expires: p.expires, message: "Open the link on a phone/desktop where this Telegram account is already logged in and confirm the login." });
+  } catch (error) {
+    if (client) { try { await client.disconnect(); } catch {} }
+    res.status(400).json({ ok: false, error: telegramLoginError(error) });
+  }
+});
+app.post("/api/my-account/qr-poll", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  const p = pendingQr.get(a.telegramId);
+  if (!p) return res.json({ ok: false, status: "none", error: "No QR login in progress. Press “Login without a code” to start." });
+  if (p.status === "done") { pendingQr.delete(a.telegramId); return res.json({ ok: true, status: "done", message: p.message }); }
+  if (p.status === "error") { const error = p.error || "QR login failed."; pendingQr.delete(a.telegramId); try { await p.client.disconnect(); } catch {} return res.json({ ok: false, status: "error", error }); }
+  if (p.status === "password") return res.json({ ok: true, status: "password", message: p.pwError ? "Wrong 2-step password: " + p.pwError : "Telegram approved the login. This account has 2-step verification — enter the password above and press Verify & connect." });
+  res.json({ ok: true, status: "waiting", link: p.token ? qrLink(p.token) : "", expires: p.expires });
+});
+app.post("/api/my-account/qr-password", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  const p = pendingQr.get(a.telegramId);
+  if (!p || p.status !== "password" || !p.pwResolve) return res.status(400).json({ ok: false, error: "Telegram is not waiting for a 2-step password right now." });
+  const pw = String(req.body?.password || "");
+  if (!pw) return res.status(400).json({ ok: false, error: "Enter your 2-step password." });
+  p.pwError = ""; p.status = "waiting"; const f = p.pwResolve; p.pwResolve = null; f(pw);
+  res.json({ ok: true, message: "Checking the password…" });
 });
 app.post("/api/my-account/disconnect", async (req, res) => {
   const a = myActor(req, res); if (!a) return;
