@@ -1,3 +1,9 @@
+## v93 — Admin rename everywhere · Archived Orders without repeats · customer status follows orders
+- **Renaming an admin (✏️) now updates everything:** their orders (Created By), the label of their connected Telegram account / sending account, Customers Data (Sales Name, created by) and the Google Sheet (re-synced automatically).
+- **Archived Orders: one row per order, never repeated.** Cause: the script read the order ID from column 1 (Customer Name) instead of the real `ID` column, so an archived order was never recognised; every deploy's auto-sync brought it back and archived it again. Now the `ID` column is found by name, old repeated rows are removed once (first copy kept), columns are re-mapped safely after the new Telegram Name / Customer ID columns, and the highlight rules no longer pile up.
+- **Customer status:** when a customer makes an order they become **Customer**, and the order status (Pending / Confirmed / Rejected) always follows that customer's **latest** order (an older order can no longer overwrite it). Customers with older orders (even without a saved Customer ID, matched by phone / @username) are fixed automatically at start and on every Sync.
+- **To apply:** re-paste `google-sheet-script.gs` (Deploy → Manage deployments → Edit → New version → Deploy), redeploy `server.js`, then press Sync ALL once.
+
 ## v92 — ✏️ Edit button for assigned admins
 - In **👥 Manage Assigned Admins** every admin row now has a yellow **✏️ pencil** next to Delete. Tap it to edit the **name, Telegram ID, phone and a note**, then Save (or Cancel). The setup page has the same under "Edit an assigned admin".
 - Name changes apply to everything the admin does from then on (Sales Name, Created By). Old records keep the old name.
