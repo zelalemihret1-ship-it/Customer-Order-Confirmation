@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Ambar Furniture — First Greeting</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+</script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:18px 16px;text-align:center;border-bottom:4px solid #b89552;position:relative}
+header h1{margin:0;font-size:22px;letter-spacing:.5px}
+header .sub{opacity:.82;margin-top:5px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase}
+header a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#f4efe3;text-decoration:none;font-size:12px;font-weight:700;border:1px solid #ffffff55;border-radius:999px;padding:7px 11px}
+main{max-width:920px;margin:auto;padding:14px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;border-radius:12px;padding:13px 8px;font-weight:700;font-size:14px;background:#fff;color:#153a2e;border:1.5px solid #ddd4c4;cursor:pointer}
+.tabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
+.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+h2{margin:0 0 12px;color:#153a2e;font-size:17px}
+label{font-weight:700;font-size:13px;display:block}
+input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px;font-family:inherit;background:#fff;color:#18382e}
+textarea{min-height:110px;resize:vertical}
+.hint{color:#6d675d;font-size:12px}
+.notice{border-radius:12px;padding:11px 13px;font-size:13px;font-weight:700;margin-bottom:12px;display:none;white-space:pre-wrap}
+.notice.info{display:block;background:#fff6e0;border:1px solid #e9c46a;color:#7a5600}
+.notice.ok{display:block;background:#eaf6ee;border:1px solid #2e9e4f;color:#176b3a}
+.notice.bad{display:block;background:#fdecea;border:1px solid #e3b4b0;color:#b3261e}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button.primary,button.ghost{border:0;border-radius:11px;padding:12px 16px;font-weight:700;cursor:pointer;font-size:14px}
+.primary{background:#153a2e;color:#fff}
+.ghost{background:#fff;color:#153a2e;border:1.5px solid #cfd8d3!important}
+button:disabled{opacity:.5;cursor:default}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chips button{border:1px solid #d6d1c7;background:#faf8f3;border-radius:999px;padding:6px 11px;font-size:12px;cursor:pointer;color:#153a2e}
+.preview{background:#e7f3dc;border-radius:14px 14px 14px 4px;padding:11px 13px;font-size:14px;white-space:pre-wrap;margin-top:10px;border:1px solid #cfe3bd}
+.tools{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.tools input,.tools select{margin:0;flex:1;min-width:140px}
+.cust{display:flex;gap:10px;align-items:center;border:1px solid #e4ded2;border-radius:14px;padding:10px 12px;margin-bottom:8px;background:#fff}
+.cust input{width:22px;height:22px;margin:0;flex:none}
+.cust.done{background:#f5f2ea;opacity:.8}
+.cid{background:#153a2e;color:#ffa939;border-radius:8px;padding:3px 9px;font-weight:800;font-size:13px;letter-spacing:1px}
+.cust .nm{font-weight:800;font-size:15px}
+.cust .meta{font-size:12px;color:#6d675d;margin-top:2px}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;background:#f1ede2;color:#5b574c}
+.pill.sent{background:#e1f4e8;color:#176b3a}.pill.failed{background:#fdeceb;color:#b3261e}
+.empty{text-align:center;color:#8a8478;padding:24px 10px;font-size:14px}
+.logrow{border-left:3px solid #b89552;background:#faf8f3;border-radius:0 10px 10px 0;padding:8px 10px;margin:8px 0;font-size:12px;line-height:1.5}
+.logrow.failed{border-color:#b3261e}
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.person{border:1px solid #e4ded2;border-radius:14px;padding:12px;background:#faf8f3;font-size:12px;line-height:1.7}
+.person b{font-size:14px}
+#gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
+#gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
+@media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
+</style>
+</head>
+<body>
+<div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
+<header>
+  <a class="back" href="/">← Order Cards</a>
+  <h1>👋 First Greeting</h1>
+  <div class="sub">The customer's first message · text only · sent once</div>
+</header>
+<main>
+  <div class="tabs"><button id="tabSend" class="on">✉️ Send greeting</button><button id="tabLog">📜 Sent log</button></div>
+  <div id="note" class="notice"></div>
+
+  <section id="vSend">
+    <div class="card">
+      <h2>1. Your greeting text</h2>
+      <label>Text <span class="hint">(plain text only — no photo, no buttons)</span>
+        <textarea id="text" maxlength="1000"></textarea></label>
+      <div class="chips"><button data-ins="{name}">{name} first name</button><button data-ins="{fullname}">{fullname}</button><button data-ins="{admin}">{admin} your name</button></div>
+      <div class="preview" id="preview"></div>
+      <div class="row" style="margin-top:12px"><button class="ghost" id="save">💾 Save my text</button><button class="ghost" id="reset">Use standard text</button></div>
+      <p class="hint">This text belongs to you only; every admin keeps their own.</p>
+    </div>
+    <div class="card">
+      <h2>2. Choose customers <span class="pill" id="sel">0 selected</span></h2>
+      <div id="warn" class="notice"></div>
+      <div class="tools"><input id="q" placeholder="Search name, phone, ID or @username"><select id="flt"><option value="new">Not greeted yet</option><option value="all">All customers</option></select></div>
+      <div class="row" style="margin-bottom:10px"><button class="ghost" id="all">Select all shown</button><button class="ghost" id="none">Clear</button></div>
+      <div id="list"></div>
+      <button class="primary" id="send" style="width:100%;margin-top:6px" disabled>👋 Send greeting</button>
+      <p class="hint" id="sendHint" style="margin-top:8px">Up to 30 customers at a time. Messages go out one by one, a few seconds apart.</p>
+    </div>
+  </section>
+
+  <section id="vLog" style="display:none"></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const say=(m,k)=>{const n=$("note");n.className="notice "+(k||"info");n.textContent=m;n.scrollIntoView({behavior:"smooth",block:"nearest"});};
+const ask=(m,cb)=>{const w=window.Telegram&&Telegram.WebApp;if(w&&w.showConfirm){try{w.showConfirm(m,ok=>{if(ok)cb();});return;}catch{}}if(confirm(m))cb();};
+let D=null,picked=new Set(),sending=false;
+function tab(t){$("vSend").style.display=t==="Send"?"block":"none";$("vLog").style.display=t==="Log"?"block":"none";$("tabSend").classList.toggle("on",t==="Send");$("tabLog").classList.toggle("on",t==="Log");}
+$("tabSend").onclick=()=>tab("Send");$("tabLog").onclick=()=>tab("Log");
+
+const first=n=>String(n||"").trim().split(/\s+/)[0]||"there";
+function preview(){
+  const c=D&&D.customers.find(x=>picked.has(x.id))||{name:"Abel Tesfaye"};
+  $("preview").textContent=$("text").value.replace(/\{name\}/gi,first(c.name)).replace(/\{fullname\}/gi,c.name||"there").replace(/\{admin\}/gi,D?D.me.name||"Ambar Furniture":"Ambar Furniture")||"…";
+}
+$("text").addEventListener("input",preview);
+document.querySelector(".chips").addEventListener("click",e=>{const b=e.target.closest("button[data-ins]");if(!b)return;const t=$("text"),s=t.selectionStart,e2=t.selectionEnd;t.value=t.value.slice(0,s)+b.dataset.ins+t.value.slice(e2);t.focus();t.selectionStart=t.selectionEnd=s+b.dataset.ins.length;preview();});
+$("reset").onclick=()=>{$("text").value=D.defaultTemplate;preview();};
+$("save").onclick=async()=>{const d=await (await fetch("/api/greetings/template",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("text").value})})).json();say(d.ok?"✅ "+d.message:"❌ "+d.error,d.ok?"ok":"bad");};
+
+function shown(){
+  const q=$("q").value.trim().toLowerCase(),qd=q.replace(/\D/g,"");
+  return D.customers.filter(c=>{
+    if($("flt").value==="new"&&c.greeted)return false;
+    if(!q)return true;
+    return [c.id,c.name,c.phone,c.username].join(" ").toLowerCase().includes(q)||(qd.length>=3&&String(c.phone||"").replace(/\D/g,"").includes(qd));
+  });
+}
+function drawList(){
+  const list=shown();
+  $("list").innerHTML=list.length?list.slice(0,200).map(c=>`<label class="cust ${c.greeted?"done":""}"><input type="checkbox" data-id="${esc(c.id)}" ${picked.has(c.id)?"checked":""} ${c.greeted?"disabled":""}>
+    <div style="flex:1"><div><span class="cid">${esc(c.id)}</span> <span class="nm">${esc(c.name)}</span></div><div class="meta">${esc(c.phone||"")} ${esc(c.username||"")}</div></div>
+    ${c.greeted?`<span class="pill sent">✅ Greeted ${esc(c.greeted.at.slice(0,10))}<br>by ${esc(c.greeted.by)}</span>`:""}</label>`).join(""):`<div class="empty">${D.customers.length?"No customer matches.":"No customers yet. Add them in Customers Data first."}</div>`;
+  count();
+}
+function count(){$("sel").textContent=picked.size+" selected";$("send").disabled=sending||!picked.size||!D.canSend;$("send").textContent=sending?"Sending… please wait":"👋 Send greeting"+(picked.size?" to "+picked.size:"");preview();}
+$("list").addEventListener("change",e=>{const id=e.target.dataset.id;if(!id)return;if(e.target.checked){if(picked.size>=D.limits.batch){e.target.checked=false;say("Up to "+D.limits.batch+" customers at a time.","info");return;}picked.add(id);}else picked.delete(id);count();});
+$("q").addEventListener("input",drawList);$("flt").addEventListener("change",drawList);
+$("all").onclick=()=>{shown().filter(c=>!c.greeted).slice(0,D.limits.batch).forEach(c=>picked.add(c.id));drawList();};
+$("none").onclick=()=>{picked.clear();drawList();};
+
+$("send").onclick=()=>{
+  if(!picked.size||sending)return;
+  ask("Send this greeting text to "+picked.size+" customer(s)? Each customer gets it only once.",async()=>{
+    sending=true;count();say("Sending… keep this page open.","info");
+    try{
+      const d=await (await fetch("/api/greetings/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:[...picked],text:$("text").value})})).json();
+      if(!d.ok)say("❌ "+d.error,"bad");
+      else{const bad=d.results.filter(r=>!r.ok).map(r=>"• "+(r.name||r.id)+": "+r.error).join("\n");say(d.message+(bad?"\n"+bad:""),bad?"info":"ok");picked.clear();}
+    }catch(e){say("❌ "+e.message,"bad");}
+    sending=false;await load();
+  });
+};
+
+async function load(){
+  let d;
+  try{d=await (await fetch("/api/greetings")).json();if(!d.ok){$("gate").style.display="flex";$("gateMsg").textContent=d.error||"No access.";return;}}
+  catch(e){$("gate").style.display="flex";$("gateMsg").textContent="Could not load. Check your connection.";return;}
+  $("gate").style.display="none";
+  const firstLoad=!D;D=d;
+  if(firstLoad)$("text").value=d.template;
+  const w=$("warn");
+  if(!d.canSend){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected. Open <b>⚙ Settings → 🔗 Connect my Telegram account</b> on the main page, then come back.";}
+  else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected, so only customers who opened the AMBAR bot can be greeted (through the Business account).";}
+  else{w.className="notice";w.textContent="";}
+  picked=new Set([...picked].filter(id=>d.customers.some(c=>c.id===id&&!c.greeted)));
+  drawList();
+  let h="";
+  if(d.people)h+=`<div class="card"><h2>👑 All admins</h2>${d.people.length?`<div class="people">${d.people.map(p=>`<div class="person"><b>${esc(p.name)}</b><br>✅ Sent: ${p.sent}<br>${p.failed?`<span style="color:#b3261e">Not sent: ${p.failed}</span>`:"No failures"}</div>`).join("")}</div>`:`<div class="empty">Nobody has sent a greeting yet.</div>`}</div>`;
+  h+=`<div class="card"><h2>${d.people?"All greetings":"My greetings"}</h2>${d.log.length?d.log.map(l=>`<div class="logrow ${l.status}"><b>${esc(l.name)}</b> <span class="pill ${l.status}">${l.status==="sent"?"Sent":"Failed"}</span> · ${esc(l.at)}${d.people?" · by "+esc(l.by):""}${l.via?" · "+esc(l.via):""}${l.error?`<br><span style="color:#b3261e">${esc(l.error)}</span>`:""}</div>`).join(""):`<div class="empty">No greetings sent yet.</div>`}</div>`;
+  $("vLog").innerHTML=h;
+}
+load();
+</script>
+</body>
+</html>
