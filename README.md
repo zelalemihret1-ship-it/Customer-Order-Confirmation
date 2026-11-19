@@ -1,692 +1,452 @@
-<!doctype html>
-<html>
-<head>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
-(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();</script>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"><style>html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}</style><script>(function(){var p=function(e){e.preventDefault()};["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,p,{passive:false})});document.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1&&e.cancelable)e.preventDefault()},{passive:false});var l=0;document.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.cancelable)e.preventDefault();l=n},{passive:false});document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault()},{passive:false});document.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&["+","-","=","0"].indexOf(e.key)>-1)e.preventDefault()});})();</script>
-<title>Ambar Furniture — Telegram Mini App</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
-header{background:#153a2e;color:#f4efe3;padding:24px 18px;text-align:center;border-bottom:4px solid #b89552}
-h1{margin:0;font-size:26px;letter-spacing:.5px}.sub{opacity:.82;margin-top:6px;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
-main{max-width:920px;margin:auto;padding:20px}.card{background:white;border-radius:18px;padding:20px;margin-bottom:18px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
-h2{margin-top:0;color:#153a2e}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-label{font-weight:700;font-size:13px}input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px}
-textarea{min-height:80px}.full{grid-column:1/-1}
-button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:pointer}
-.primary{background:#153a2e;color:white}.gold{background:#b89552;color:white}.danger{background:#4a1926;color:white}
-.desktop-photo-button{display:none}.photo-picker{padding:12px;border:1px dashed #c8b98f;border-radius:12px;background:#fcfaf6}.photo-picker input{background:#fff}.preview{border:0;border-radius:18px;padding:0;background:#f6f2ea}.row{display:flex;gap:10px;flex-wrap:wrap}.small{font-size:12px;color:#666}
-.order-card{background:#fff;border:1px solid #e6e1d6;border-radius:22px;overflow:hidden;box-shadow:0 18px 48px #0f2a2133,0 2px 6px #0000000d;max-width:650px;margin:auto}
-.order-head{background:linear-gradient(135deg,#0f2f25 0%,#1b4d3d 100%);color:#f4efe3;padding:24px 26px;display:flex;justify-content:space-between;align-items:center;gap:15px;border-bottom:4px solid #ffa939}
-.brand{font-size:24px;font-weight:800;letter-spacing:1.2px;color:#ffa939;line-height:1.15}.tag{font-size:11px;letter-spacing:1.6px;opacity:.8;text-transform:uppercase;margin-top:6px}
-.order-id{background:#ffffff1f;color:#fff;border:1px solid #ffffff40;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:800;white-space:nowrap;letter-spacing:.5px}
-.status-pill{display:inline-block;margin-top:8px;background:#ffa93922;color:#ffd08a;border:1px solid #ffa93966;border-radius:999px;padding:3px 10px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
-.status-pill.ok{background:#2ecc7122;color:#8ff0b6;border-color:#2ecc7166}.status-pill.no{background:#e74c3c22;color:#ffb3aa;border-color:#e74c3c66}
-.photo-wrap{background:#f4f1ea;padding:18px;text-align:center;color:#8a8478;font-size:13px}.order-photo{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:14px;display:block;background:#fff;box-shadow:0 6px 18px #0000001a}
-.order-body{padding:22px 26px 8px}.section-title{display:flex;align-items:center;gap:10px;font-size:12px;text-transform:uppercase;letter-spacing:1.6px;color:#153a2e;font-weight:800;margin:20px 0 12px}
-.section-title:before{content:"";width:5px;height:18px;border-radius:3px;background:#ffa939}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.info{font-size:14px;line-height:1.4;background:#f8f6f1;border:1px solid #eee9de;border-radius:12px;padding:10px 12px;color:#1c2b25;font-weight:600}.info br{display:none}.info b{display:block;color:#8a7f69;font-size:10px;text-transform:uppercase;letter-spacing:1.1px;font-weight:800;margin-bottom:3px}.divider{height:1px;background:#ebe5da;margin:20px 0 0}
-.thanks{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:14px;border-radius:12px;text-align:center;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#f4efe3;font-weight:800;margin:20px 0 6px}
-.action-row{display:flex;gap:10px;padding:16px 22px 22px;background:#fff}
-.delivery-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
-.delivery-option{position:relative;display:block}
-.delivery-option input{position:absolute;opacity:0;pointer-events:none}
-.delivery-option-card{display:block;border:1.5px solid #ddd4c4;border-radius:12px;padding:16px;background:#fff;cursor:pointer;transition:.15s}
-.delivery-option input:checked + .delivery-option-card{border-color:#b89552;box-shadow:0 0 0 2px #b8955226;background:#fbf7ef}
-.delivery-title{font-weight:800;color:#153a2e;font-size:15px}
-.delivery-desc{display:block;margin-top:5px;font-size:12px;color:#6d675d}
-.photo-box{border:1.5px dashed #b9af9d;border-radius:14px;padding:16px;background:#fbf9f4}
-.photo-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.photo-button{display:inline-block;background:#153a2e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800;cursor:pointer}
-.photo-name{font-size:12px;color:#6d675d}
-.photo-preview{display:block;width:100%;max-height:330px;object-fit:contain;margin-top:12px;border-radius:12px;background:#f6f2ea;padding:8px}.action{flex:1;text-align:center;padding:13px 10px;border-radius:12px;font-size:12px;font-weight:800;letter-spacing:.6px;border:1.5px solid transparent;cursor:pointer;transition:transform .12s,box-shadow .12s,filter .12s}.action:hover{transform:translateY(-1px);box-shadow:0 6px 14px #00000026}.action:active{transform:translateY(0)}.action:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}.confirm{background:#1f8a4c;color:#fff}.reject{background:#fff;color:#b3261e;border-color:#e3b4b0}.comment{background:#fff;color:#153a2e;border-color:#cfd8d3}.demo-note{padding:0 22px 18px;font-size:11px;color:#8a8478;text-align:center}.demo-msg{margin:0 22px 14px;padding:10px 12px;border-radius:10px;background:#f4f1ea;font-size:13px;color:#153a2e;text-align:center}
-@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.info-grid{grid-template-columns:1fr}.order-head{align-items:flex-start}.action-row{flex-direction:column}}
-@media (max-width:640px){main{padding:12px}.card{padding:14px;border-radius:14px}.photo-actions{display:grid;grid-template-columns:1fr;gap:8px}.photo-button{width:100%;text-align:center;box-sizing:border-box}.desktop-photo-button{display:none}.order-card{max-width:100%;border-radius:14px}.order-head{padding:16px}.brand{font-size:20px}.order-id{font-size:12px}.photo-wrap{padding:10px}.order-photo{max-height:300px}.order-body{padding:14px}.info-grid{grid-template-columns:1fr!important}.action-row{grid-template-columns:1fr!important}.delivery-options{grid-template-columns:1fr}.grid{grid-template-columns:1fr!important}.photo-preview{max-height:280px}}@media(min-width:641px){.photo-actions{display:flex;align-items:center;gap:10px}.desktop-photo-button{display:none}}</style>
-<style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#stOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
-<style>
-</style>
-</head>
-<body>
-<div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
-<script>
-(async()=>{const gate=document.getElementById("ambarAccessGate"),msg=document.getElementById("ambarAccessMessage");gate.style.display="flex";try{const r=await fetch("/api/me");const m=await r.json();if(r.ok&&(m.role==="owner"||m.role==="admin")){document.body.classList.add("ambar-authorized");gate.style.display="none";window.AMBAR_ROLE=m.role;window.AMBAR_TELEGRAM_ID=m.telegramId||"";}else{msg.textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}}catch(e){msg.textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}})();
-</script>
-<header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
-<main>
-<div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Sending account:</b> <span id="senderState">checking…</span><div id="senderPickWrap" style="display:none;margin-top:10px"><label style="font-weight:700">Choose which connected admin sends this order<select id="senderAdminPick" name="senderAdminId" style="display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #cfc5b4;border-radius:9px;background:#fff"><option value="">Use my own account / Telegram Business</option></select></label><div class="small" style="margin-top:5px">Only connected accounts can be selected. Assigned admins can send only from their own account.</div></div></div>
-<form id="orderForm">
-<div class="card" id="custIdCard"><h2>1 · Customer ID</h2><div class="grid">
-<label class="full" id="custPickWrap">Choose the customer first — the Customer ID fills the customer information and makes the Order ID
-<input id="custSearch" placeholder="Search ID, name or phone…" autocomplete="off">
-<select id="custIdPick" size="1" aria-label="Matching customers"><option value="">— Choose Customer ID —</option></select>
-<div class="small" id="custIdHelp">Customer not in the list? <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the customer in Customers Data</a> first.</div></label>
-<input type="hidden" name="customerId" id="customerIdField">
-</div></div>
+## v92 — ✏️ Edit button for assigned admins
+- In **👥 Manage Assigned Admins** every admin row now has a yellow **✏️ pencil** next to Delete. Tap it to edit the **name, Telegram ID, phone and a note**, then Save (or Cancel). The setup page has the same under "Edit an assigned admin".
+- Name changes apply to everything the admin does from then on (Sales Name, Created By). Old records keep the old name.
+- Changing the **Telegram ID** disconnects the old personal Telegram connection; the new person opens the app and taps Connect my Telegram account. A duplicate ID or the main admin's ID is refused.
+- Redeploy `server.js` + `public/` (no Google script change needed).
 
-<div class="card"><h2>Product Information</h2><div class="grid">
-<label>Order ID (automatic: Customer ID + Ethiopian month)<input name="orderId" id="orderIdField" placeholder="Choose the Customer ID first" required readonly maxlength="40" autocomplete="off"></label>
-<label>Product<select id="productSelect" required><option value="">— Choose a product —</option><option value="Shoe Shelf">Shoe Shelf</option><option value="Console Table">Console Table</option><option value="Chest Drawer">Chest Drawer</option><option value="Center Table">Center Table</option><option value="TV Stand">TV Stand</option><option value="Dining Table">Dining Table</option><option value="Mirror">Mirror</option><option value="__other">Other</option></select><input type="hidden" name="product" id="productValue"></label><label id="productOtherWrap" style="display:none">Type the product name<input id="productOther" placeholder="e.g. Bookshelf" maxlength="60" autocomplete="off"></label>
-<label class="full" id="sizeWrap" style="display:none">Shoe Shelf size (choose one, or Other to type it yourself)<select id="sizeSelect"><option value="">— Choose size —</option><option value="120|35|125">L 120 cm × W 35 cm × H 125 cm</option><option value="160|35|125">L 160 cm × W 35 cm × H 125 cm</option><option value="90|35|125">L 90 cm × W 35 cm × H 125 cm</option><option value="80|35|125">L 80 cm × W 35 cm × H 125 cm</option><option value="__other">Other (type the size)</option></select></label>
-<label>Length (cm)<input name="length" value="120"></label>
-<label>Width (cm)<input name="width" value="35"></label>
-<label>Height (cm)<input name="height" value="124"></label>
-<label>Material<input name="material"></label>
-<label>Color<input name="color"></label>
-<label>Style<input name="style"></label>
-<label>Design<input name="design"></label>
-<label>Handle<input name="handle"></label>
-<label>Door<input name="door"></label>
-<label>Partition<input name="partition"></label>
-<label>Drawer<input name="drawer"></label>
-<label class="full">Additional features<textarea name="additionalFeatures" id="additionalFeatures" maxlength="1000" rows="3" placeholder="Type any additional features of this product (optional)…"></textarea></label>
-<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📷 Choose Product Photo</label><input id="productPhoto" name="productPhoto" type="file" accept="image/*" required hidden><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Choose one photo from your phone or PC. All image formats supported by your browser. You can also drag and drop on PC.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
-</div></div>
+## v91 — New modern Dashboard + Telegram name & Customer ID in the last columns
+- **Dashboard completely redesigned** (Google Sheet → `Dashboard` tab): dark header, one blue **Reporting period** box (Today · This week · This month · This year · All time), 4 order cards (Total / Pending / Confirmed / Rejected with %), 4 money cards (Total payment / Advance received / Balance still due / Average order), 4 colour-bar boxes (Payment status, Top products, Delivery type, Delivery service) and the **Latest 10 orders** table (now also shows Telegram name + Customer ID). Plain words, big numbers, no clutter.
+- "This week" on the Dashboard now starts on **Monday**, the same as the other tabs.
+- **Every order row now ends with two new columns: `Telegram Name` and `Customer ID`** (last two columns of every month tab, Orders View and the Latest-orders table). It is filled for **every admin's orders**: the Customer ID comes from Customers Data, the Telegram name from the customer's Telegram profile (falls back to the Customers Data name / @username). Customer ID is stored as text, so `0007` stays `0007`.
+- **To apply:** re-paste `google-sheet-script.gs` into Apps Script and save (Deploy → Manage deployments → Edit → New version → Deploy), redeploy `server.js`, then press **Sync ALL** once so older orders get their Telegram name and Customer ID too.
 
-<div class="card"><h2>Customer Information</h2><div class="grid">
-<label>Name<input name="customerName" required></label>
-<label>Phone<input name="phone"></label>
-<label>Location<input name="location"></label>
+## v90 — Find Customer searches ALL customers
+- Before: Find Customer only looked inside the monthly order tabs, so a customer with no order could never be found.
+- Now it searches the whole **Customers Data** tab (name, phone, additional phone, @username, Customer ID, Order id) AND every order tab (name, username, Chat ID, order code, phone). Partial phone numbers (5+ digits) and short Customer IDs (e.g. `2` = 0002) work.
+- A customer with no orders shows their profile with "No orders yet for this customer."
+- If several customers match (e.g. "abel"), the best match is shown in full and the others are listed under "OTHER MATCHING CUSTOMERS".
+- Older orders whose customer is not in Customers Data are still found.
+- The search box now works even before any order tab exists. **Re-paste `google-sheet-script.gs` into Apps Script and save** (new Web-app version if deployed as one), then press Sync ALL once.
 
-<label class="full" id="pickWrap" style="display:none">Select customer (people who pressed Start in the AMBAR bot) — the card goes straight to them<select id="customerPick"><option value="">— Choose a customer —</option></select></label>
-<label>Customer Telegram Username<input name="telegramUsername" placeholder="@customer_username"></label>
-<label>Customer Telegram Phone<input name="telegramPhone" placeholder="+251..."></label>
+## v89 — Google Sheet Dashboard fix
+- **Root cause:** in `google-sheet-script.gs` (`buildDashboard`) each KPI tile first merged its whole 3×2 block into one cell and then tried to merge rows inside it. Google Sheets rejects that ("You must select all cells in a merged range…"), so the build stopped right after the title and period rows and the Dashboard stayed empty.
+- **Fix:** the tile block now only gets its colour/border; the three rows inside are merged separately.
+- The period drop-down (B3, merged B3:C3) is now detected by row/column, so changing it always refreshes the Dashboard.
+- **You must re-paste `google-sheet-script.gs` into the sheet's Apps Script and save** (then, if it is deployed as a Web app: Deploy → Manage deployments → Edit → New version → Deploy). Then run `refreshDashboardNow` once, or press Sync ALL in the app.
 
-<label class="full">Customer Telegram Chat ID (optional)<input name="telegramChatId" placeholder="Enter numeric chat ID if available"><div class="small">For direct delivery, the customer must have pressed Start in the AMBAR bot. A numeric chat ID is best; a known username can be matched after the customer starts the bot. A phone number alone cannot identify a Telegram chat.</div></label>
-</div></div>
+## v88 — Admin "Connect my Telegram account": login-code fix
+- The code request now reads Telegram's REAL delivery route (app / SMS / call) and tells the admin exactly where to look.
+- New **Resend code (SMS / call)** button (uses Telegram's own ResendCode, so a code that never showed up in the app can be re-sent by SMS or call).
+- New **Login without a code (QR / link)**: no code is delivered at all. The admin opens the link (or scans the QR from another device) in a Telegram app that is already logged in and confirms. 2-step passwords are supported.
+- Endpoints added: `/api/my-account/resend`, `/api/my-account/qr-start`, `/api/my-account/qr-poll`, `/api/my-account/qr-password`.
 
-<div class="card"><h2>Service Information</h2><div class="grid">
-<label>Payment (Birr)<input name="payment" type="number"></label>
-<label>Advance (Birr)<input name="advance" type="number"></label>
+# v87 — Main admin and assigned-admin access / account isolation
 
-<label>Order Date<input name="orderDate" type="date"></label>
-<label>Completion Date<input name="completionDate" type="date"></label>
-<label>Delivery Type<select name="deliveryType" id="deliveryType">
-<option value="Self Pick Up" selected>🏠 Self Pick Up</option>
-<option value="By Ambar Delivery">🚚 By Ambar Delivery</option>
-</select></label>
-<label id="deliveryServiceField">Ambar Delivery Service<select name="deliveryService" id="deliveryService">
-<option value="Economy" selected>Economy</option>
-<option value="Express">Express</option>
-</select></label>
-<label id="deliveryFeeField">Delivery fee (Birr)<input name="deliveryFee" type="number" min="0" step="0.01" placeholder="Type delivery fee"></label>
-<label>Delivery Date<input name="deliveryDate" type="date"></label>
-</div></div>
+- Kept the app restricted to the main admin and Telegram IDs explicitly assigned by the main admin. Unassigned Telegram accounts remain blocked.
+- Clarified the roles: the main admin controls the shared Telegram Business bot connection and assigns/removes users; assigned admins can use AMBAR and connect only their own Telegram account.
+- Fixed main-admin account lookup: a main admin who connects their own Telegram account is now correctly recognized as their own sender account. Previously, the lookup could miss that account because it was stored with the main admin Telegram ID.
+- Prevented personal-account fallback across users: an assigned admin cannot accidentally send from another admin’s connected Telegram session.
+- Telegram personal-account login codes are still delivered only through Telegram’s own login flow (Telegram app / supported delivery option). AMBAR cannot force a code into the bot chat or forward it. The shared bot is connected separately through the main admin’s Telegram Business → Chatbots settings.
 
-<div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
-<div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
-<p id="result"></p>
-</form>
-</main>
-<script>
-// 🇪🇹 Ethiopian calendar date pickers (Order Date · Completion Date · Delivery Date).
-// The form value is the Ethiopian date as text "yyyy/mm/dd" (e.g. 2019/03/05). Old Gregorian "yyyy-mm-dd" values are converted automatically.
-(function(){
-const MONTHS=["Meskerem","Tikimt","Hidar","Tahsas","Tir","Yekatit","Megabit","Miazia","Ginbot","Sene","Hamle","Nehase","Pagume"];
-const pad=n=>String(n).padStart(2,"0");
-function gregToEth(y,m,d){
-  const a=Math.floor((14-m)/12),yy=y+4800-a,mm=m+12*a-3;
-  const jdn=d+Math.floor((153*mm+2)/5)+365*yy+Math.floor(yy/4)-Math.floor(yy/100)+Math.floor(yy/400)-32045;
-  const r=(jdn-1723856)%1461,n=(r%365)+365*Math.floor(r/1460);
-  return{y:4*Math.floor((jdn-1723856)/1461)+Math.floor(r/365)-Math.floor(r/1460),m:Math.floor(n/30)+1,d:(n%30)+1};
-}
-window.ethDate=function(v){
-  const s=String(v==null?"":v).trim();
-  if(/^\d{4}\/\d{2}\/\d{2}/.test(s))return s.slice(0,10);
-  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-  if(!m)return s;
-  const e=gregToEth(+m[1],+m[2],+m[3]);return e.y+"/"+pad(e.m)+"/"+pad(e.d);
-};
-const days=(y,m)=>m<13?30:(y%4===3?6:5);
-// Ethiopian date -> weekday (0=Sunday) through the Julian Day Number
-const wday=(y,m,d)=>{const jdn=1723856+365*y+Math.floor(y/4)+30*m+d-31;return (jdn+1)%7;};
-const DOW=["Su","Mo","Tu","We","Th","Fr","Sa"];
-const t=new Date(),today=gregToEth(t.getFullYear(),t.getMonth()+1,t.getDate());
-const nativeVal=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
-const css=document.createElement("style");css.textContent=
-".ethbtn{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:5px;padding:11px;border:1px solid #d6d1c7;border-radius:10px;background:#fff;color:#18382e;font-size:15px;font-weight:400;text-align:left}.ethbtn.empty{color:#8a8478}.ethbtn span.ic{font-size:16px}"+
-".ethov{position:fixed;inset:0;z-index:100000;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px}.ethcal{background:#fff;border-radius:16px;width:100%;max-width:340px;padding:14px;box-shadow:0 12px 40px #0006;color:#18382e}"+
-".ethhd{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px}.ethhd b{flex:1;text-align:center;font-size:15px}.ethhd button{padding:8px 12px;background:#153a2e;color:#fff;border-radius:9px;font-size:16px;line-height:1}"+
-".ethgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.ethgrid .dw{text-align:center;font-size:11px;font-weight:700;color:#8a8478;padding:4px 0}"+
-".ethgrid button.dy{padding:0;height:38px;border-radius:9px;background:#f8f6f1;color:#18382e;font-size:14px;font-weight:600}.ethgrid button.dy.td{border:1.5px solid #b89552}.ethgrid button.dy.sel{background:#153a2e;color:#fff}"+
-".ethft{display:flex;gap:8px;margin-top:12px}.ethft button{flex:1;padding:10px;border-radius:10px;font-size:13px}";
-document.head.appendChild(css);
-function make(input){
-  const form=input.form;input.type="hidden";
-  const btn=document.createElement("button");btn.type="button";btn.className="ethbtn empty";
-  const txt=document.createElement("span"),ic=document.createElement("span");ic.className="ic";ic.textContent="📅";btn.append(txt,ic);
-  function show(){
-    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
-    if(m){txt.textContent=MONTHS[+m[2]-1]+" "+(+m[3])+", "+m[1]+"  ("+m[1]+"/"+m[2]+"/"+m[3]+")";btn.classList.remove("empty");}
-    else{txt.textContent="Select date (Ethiopian calendar)";btn.classList.add("empty");}
-  }
-  function setVal(v){nativeVal.set.call(input,v);show();}
-  function open(){
-    const m=/^(\d{4})\/(\d{2})\/(\d{2})/.exec(nativeVal.get.call(input)||"");
-    const sel=m?{y:+m[1],m:+m[2],d:+m[3]}:null;
-    let vy=sel?sel.y:today.y,vm=sel?sel.m:today.m;
-    const ov=document.createElement("div");ov.className="ethov";
-    const cal=document.createElement("div");cal.className="ethcal";ov.appendChild(cal);
-    const close=()=>ov.remove();
-    ov.addEventListener("click",e=>{if(e.target===ov)close();});
-    function render(){
-      cal.innerHTML="";
-      const hd=document.createElement("div");hd.className="ethhd";
-      const prev=document.createElement("button"),next=document.createElement("button"),title=document.createElement("b");
-      prev.type=next.type="button";prev.textContent="‹";next.textContent="›";title.textContent=MONTHS[vm-1]+" "+vy;
-      prev.onclick=()=>{vm--;if(vm<1){vm=13;vy--;}render();};
-      next.onclick=()=>{vm++;if(vm>13){vm=1;vy++;}render();};
-      hd.append(prev,title,next);cal.appendChild(hd);
-      const g=document.createElement("div");g.className="ethgrid";
-      DOW.forEach(n=>{const c=document.createElement("div");c.className="dw";c.textContent=n;g.appendChild(c);});
-      const first=wday(vy,vm,1);
-      for(let i=0;i<first;i++)g.appendChild(document.createElement("div"));
-      const max=days(vy,vm);
-      for(let d=1;d<=max;d++){
-        const b=document.createElement("button");b.type="button";b.className="dy";b.textContent=d;
-        if(vy===today.y&&vm===today.m&&d===today.d)b.classList.add("td");
-        if(sel&&vy===sel.y&&vm===sel.m&&d===sel.d)b.classList.add("sel");
-        b.onclick=()=>{setVal(vy+"/"+pad(vm)+"/"+pad(d));input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
-        g.appendChild(b);
-      }
-      cal.appendChild(g);
-      const ft=document.createElement("div");ft.className="ethft";
-      const bt=document.createElement("button"),bc=document.createElement("button"),bx=document.createElement("button");
-      bt.type=bc.type=bx.type="button";bt.className="gold";bc.className="danger";bx.className="primary";
-      bt.textContent="Today";bc.textContent="Clear";bx.textContent="Close";
-      bt.onclick=()=>{setVal(today.y+"/"+pad(today.m)+"/"+pad(today.d));input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
-      bc.onclick=()=>{setVal("");input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));close();};
-      bx.onclick=close;
-      ft.append(bt,bc,bx);cal.appendChild(ft);
-    }
-    render();document.body.appendChild(ov);
-  }
-  btn.addEventListener("click",open);
-  // setting form.elements.orderDate.value = "..." in code (edit mode, reset) keeps working and also accepts old Gregorian dates
-  Object.defineProperty(input,"value",{configurable:true,get(){return nativeVal.get.call(input);},set(v){setVal(window.ethDate(v));}});
-  if(form)form.addEventListener("reset",()=>setTimeout(()=>{input.value="";},0));
-  show();
-  input.parentNode.appendChild(btn);
-}
-["orderDate","completionDate","deliveryDate"].forEach(n=>{const el=document.querySelector('#orderForm [name="'+n+'"]');if(el&&el.type==="date")make(el);});
-})();
-</script>
-<script>
-const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
-// Authenticate every API request with Telegram's signed Mini App initData. Keep FormData headers untouched.
-(()=>{const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{const h=new Headers(init.headers||{});const data=window.Telegram?.WebApp?.initData||"";if(data)h.set("x-telegram-init-data",data);try{const k=localStorage.getItem("ownerKey");if(k)h.set("x-setup-key",k);}catch{}return nativeFetch(input,{...init,headers:h});};})();
-// Bot-only delivery: no Telegram Business status check or personal-account connection is needed.
-const form=document.getElementById("orderForm"),preview=document.getElementById("preview"),result=document.getElementById("result");
-const photoInput=document.getElementById("productPhoto"),photoStatus=document.getElementById("photoStatus"),photoPreview=document.getElementById("selectedPhotoPreview");
-let photoUrl=null;
-function vals(){
- const v=Object.fromEntries(new FormData(form).entries());
- if(v.deliveryType!=="By Ambar Delivery"){v.deliveryFee="";v.deliveryService="";}
- return v;
-}
-const productSelect=document.getElementById("productSelect"),productOther=document.getElementById("productOther"),productOtherWrap=document.getElementById("productOtherWrap"),productValue=document.getElementById("productValue");
-const CUSTOM_KEY="customProducts";
-function loadCustomProducts(){try{return JSON.parse(localStorage.getItem(CUSTOM_KEY)||"[]");}catch{return [];}}
-function saveCustomProduct(name){try{const l=loadCustomProducts();if(!l.some(x=>x.toLowerCase()===name.toLowerCase())){l.push(name);localStorage.setItem(CUSTOM_KEY,JSON.stringify(l));}}catch{}}
-function addProductOption(name){if(!name)return;if([...productSelect.options].some(o=>o.value.toLowerCase()===name.toLowerCase()))return;const o=document.createElement("option");o.value=name;o.textContent=name;productSelect.insertBefore(o,productSelect.querySelector('option[value="__other"]'));}
-loadCustomProducts().forEach(addProductOption);
-const sizeSelect=document.getElementById("sizeSelect"),sizeWrap=document.getElementById("sizeWrap");
-const dimInputs=["length","width","height"].map(n=>form.querySelector('[name="'+n+'"]'));
-let fillingSize=false;
-function isShoeShelf(){return String(productValue.value||"").trim().toLowerCase()==="shoe shelf";}
-function syncSize(){const show=isShoeShelf();sizeWrap.style.display=show?"":"none";if(!show)sizeSelect.value="";}
-function applySize(){
-  const v=sizeSelect.value;
-  if(!v)return;
-  if(v==="__other"){dimInputs.forEach(i=>{i.value="";});dimInputs[0].focus();previewCard();return;} // type the size yourself
-  const [l,w,h]=v.split("|");fillingSize=true;
-  [l,w,h].forEach((x,i)=>{dimInputs[i].value=x;});
-  fillingSize=false;previewCard();
-}
-sizeSelect.addEventListener("change",applySize);
-// if the size is typed/edited by hand after choosing a preset, show it as "Other"
-dimInputs.forEach(i=>i.addEventListener("input",()=>{if(fillingSize||!isShoeShelf())return;const cur=dimInputs.map(x=>x.value.trim()).join("|");const match=[...sizeSelect.options].find(o=>o.value&&o.value!=="__other"&&o.value===cur);sizeSelect.value=match?match.value:"__other";}));
-function syncProduct(){const other=productSelect.value==="__other";productOtherWrap.style.display=other?"":"none";productOther.required=other;productValue.value=other?productOther.value.trim():productSelect.value;syncSize();}
-productSelect.addEventListener("change",()=>{syncProduct();if(productSelect.value==="__other")productOther.focus();});
-productOther.addEventListener("input",syncProduct);
-// when the typed name is finished, add it to the selection list and select it
-productOther.addEventListener("change",()=>{const n=productOther.value.trim();if(!n)return;addProductOption(n);saveCustomProduct(n);const match=[...productSelect.options].find(o=>o.value.toLowerCase()===n.toLowerCase());if(match)productSelect.value=match.value;syncProduct();previewCard();});
-form.addEventListener("reset",()=>setTimeout(()=>{productOther.value="";syncProduct();},0));
-syncProduct();
-function esc(v){return String(v??"").replace(/[&<>\"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-function field(k,v){return v?`<div class="info"><b>${esc(k)}</b><br>${esc(v)}</div>`:"";}
-function setPhoto(file){
- if(photoUrl){URL.revokeObjectURL(photoUrl);photoUrl=null;}
- photoPreview.hidden=true; photoPreview.removeAttribute("src"); photoName.textContent="No photo selected";
- if(!file){photoStatus.textContent="Choose any photo format supported by your browser (image/*).";previewCard();return;}
- const isImage=(file.type||"").toLowerCase().startsWith("image/");
- if(!isImage){photoInput.value="";photoStatus.textContent="❌ Please choose a photo/image file supported by your browser.";return;}
- if(file.size>15*1024*1024){photoInput.value="";photoStatus.textContent="❌ Image must be 15 MB or smaller.";return;}
- photoUrl=URL.createObjectURL(file);
- photoPreview.src=photoUrl; photoPreview.hidden=false;
- photoName.textContent=file.name;
- photoStatus.textContent=`Selected: ${file.name} (${(file.size/1048576).toFixed(2)} MB)`;
- previewCard();
-}
-photoInput.addEventListener("change",()=>setPhoto(photoInput.files?.[0]||null));
-const photoDropZone=document.getElementById("photoDropZone"), photoName=document.getElementById("photoName");
-["dragenter","dragover"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="#b89552";}));
-["dragleave","drop"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="";}));
-photoDropZone.addEventListener("drop",e=>{const f=e.dataTransfer.files?.[0];if(!f)return;try{const dt=new DataTransfer();dt.items.add(f);photoInput.files=dt.files;}catch(_){}setPhoto(f);});
-function previewCard(){
- const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
- const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k]))),field("Additional features",v.additionalFeatures)].filter(Boolean).join("");
- const customer=[field("Name",v.customerName),field("Phone",v.phone),field("Location",v.location),field("Telegram",v.telegramUsername)].filter(Boolean).join("");
- const service=[field("Payment",v.payment?`${v.payment} Birr`:""),field("Advance",v.advance?`${v.advance} Birr`:""),field("Order Date",v.orderDate),field("Completion Date",v.completionDate),field("Delivery Type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType),field("Delivery Fee",v.deliveryFee?`${v.deliveryFee} Birr`:""),field("Delivery Date",v.deliveryDate)].filter(Boolean).join("");
- preview.innerHTML=`<div class="order-card"><div class="order-head"><div><div class="brand">AMBAR FURNITURE</div><div class="tag">Customer · Telegram Order Card</div></div><div class="order-id">${esc(v.orderId||"Order code")}</div></div>${f&&photoUrl?`<div class="photo-wrap"><img class="order-photo" src="${photoUrl}" alt="Product"></div>`:"<div class='photo-wrap'>Select a product photo to display it here.</div>"}<div class="order-body"><div class="section-title">Product Information</div><div class="info-grid">${product}</div><div class="divider"></div><div class="section-title">Customer Information</div><div class="info-grid">${customer}</div><div class="section-title">Service Information</div><div class="info-grid">${service}</div><div class="divider"></div><div class="thanks">Thank you for choosing Ambar Furniture!</div></div></div>`;
-}
-function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fill();}
-function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=()=>{URL.revokeObjectURL(u);no(Error("Unable to read selected photo."))};i.src=u;});}
-function drawWrap(ctx,text,x,y,max){const words=String(text).split(/\s+/);let line="";for(const word of words){const t=line?line+" "+word:word;if(ctx.measureText(t).width>max&&line){ctx.fillText(line,x,y);line=word;y+=32;}else line=t;}if(line){ctx.fillText(line,x,y);y+=40;}return y;}
-async function makeCard(v,file){
- const img=await loadImg(file),c=document.createElement("canvas");c.width=1080;c.height=1920;const x=c.getContext("2d");if(!x)throw Error("Canvas image generation is not supported in this browser.");
- const W=1080,pad=64; x.fillStyle="#e9e5da";x.fillRect(0,0,W,1920);
- // card body with soft shadow
- x.save();x.shadowColor="rgba(15,42,33,.28)";x.shadowBlur=36;x.shadowOffsetY=10;x.fillStyle="#fff";rounded(x,24,24,W-48,1872,34);x.restore();
- // header (clipped to the rounded card)
- x.save();x.beginPath();x.roundRect(24,24,W-48,1872,34);x.clip();
- const g=x.createLinearGradient(24,24,W-24,204);g.addColorStop(0,"#0f2f25");g.addColorStop(1,"#1b4d3d");x.fillStyle=g;x.fillRect(24,24,W-48,180);
- x.fillStyle="#ffa939";x.fillRect(24,200,W-48,5);
- x.fillStyle="#f6f3ec";x.fillRect(24,205,W-48,1691);x.restore();
- x.fillStyle="#ffa939";x.font="800 50px Arial";x.fillText("AMBAR FURNITURE",pad,98);
- x.fillStyle="rgba(244,239,227,.82)";x.font="600 22px Arial";x.fillText("CUSTOMER ORDER CARD",pad,142);
- x.fillStyle="rgba(255,255,255,.14)";rounded(x,786,66,230,72,36);x.strokeStyle="rgba(255,255,255,.35)";x.lineWidth=2;x.beginPath();x.roundRect(786,66,230,72,36);x.stroke();
- x.fillStyle="#fff";x.font="800 28px Arial";x.textAlign="center";x.fillText(v.orderId||"",901,113);x.textAlign="left";
- // Product image panel
- x.save();x.shadowColor="rgba(0,0,0,.14)";x.shadowBlur=20;x.shadowOffsetY=6;x.fillStyle="#fff";rounded(x,pad,226,W-pad*2,580,24);x.restore();
- const maxW=W-pad*2-36,maxH=540,scale=Math.min(maxW/img.width,maxH/img.height),iw=img.width*scale,ih=img.height*scale;
- x.save();x.beginPath();x.roundRect(pad+18,246,maxW,maxH,16);x.clip();x.drawImage(img,pad+18+(maxW-iw)/2,246+(maxH-ih)/2,iw,ih);x.restore();
- let y=852;
- const section=t=>{x.fillStyle="#ffa939";rounded(x,pad,y-22,7,28,3);x.fillStyle="#153a2e";x.font="800 22px Arial";x.fillText(t.toUpperCase(),pad+22,y);y+=42;};
- const line=(k,val)=>{if(!String(val??"").trim())return;const text=String(val);x.fillStyle="#8a7f69";x.font="800 19px Arial";x.fillText(k.toUpperCase(),pad,y);x.fillStyle="#14211b";x.font="600 22px Arial";let yy=y;const max=850;const words=text.split(/\s+/);let line="";for(const w of words){const t=line?line+" "+w:w;if(x.measureText(t).width>max&&line){x.fillText(line,pad+190,yy);yy+=29;line=w}else line=t}if(line)x.fillText(line,pad+190,yy);y=Math.max(y+32,yy+38)};
- const divider=()=>{x.strokeStyle="#e0dacd";x.lineWidth=2;x.beginPath();x.moveTo(pad,y);x.lineTo(W-pad,y);x.stroke();y+=30};
- section("Product information");line("Product",v.product);const size=(v.length||v.width||v.height)?`L ${v.length||"—"} × W ${v.width||"—"} × H ${v.height||"—"} cm`:"";line("Size",size);["Material","Color","Style","Design","Handle","Door","Partition","Drawer"].forEach(k=>line(k,v[k.toLowerCase()]));line("Extra features",v.additionalFeatures);
- divider();section("Customer information");line("Name",v.customerName);line("Phone",v.phone);line("Location",v.location);line("Telegram",v.telegramUsername);
- divider();section("Delivery & payment");line("Payment",v.payment?`${v.payment} Birr`:"");line("Advance",v.advance?`${v.advance} Birr`:"");line("Order date",v.orderDate);line("Completion date",v.completionDate);line("Delivery type",v.deliveryType==="By Ambar Delivery"&&v.deliveryService?`${v.deliveryType} – ${v.deliveryService}`:v.deliveryType);if(v.deliveryType==="By Ambar Delivery")line("Delivery fee",v.deliveryFee?`${v.deliveryFee} Birr`:"");line("Delivery date",v.deliveryDate);
- const tg=x.createLinearGradient(pad,1790,W-pad,1864);tg.addColorStop(0,"#0f2f25");tg.addColorStop(1,"#1b4d3d");x.fillStyle=tg;rounded(x,pad,1790,W-pad*2,74,18);x.fillStyle="#ffa939";x.font="800 22px Arial";x.textAlign="center";x.fillText("THANK YOU FOR CHOOSING AMBAR FURNITURE",W/2,1837);x.textAlign="left";
- return new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(Error("Could not generate card image.")),"image/jpeg",0.95));
-}
-const deliveryFeeField=document.getElementById("deliveryFeeField"),deliveryServiceField=document.getElementById("deliveryServiceField");
-function syncDelivery(){
- const isDelivery=form.elements.deliveryType.value==="By Ambar Delivery";
- deliveryFeeField.style.display=isDelivery?"":"none";
- deliveryServiceField.style.display=isDelivery?"":"none";
- if(!isDelivery) form.elements.deliveryFee.value="";
-}
-form.elements.deliveryType.addEventListener("change",()=>{syncDelivery();previewCard();});
-form.addEventListener("reset",()=>setTimeout(syncDelivery));
-syncDelivery();
-form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
-form.addEventListener("submit",async e=>{
- e.preventDefault();if(productSelect.value==="__other"){const n=productOther.value.trim();if(n){addProductOption(n);saveCustomProduct(n);}}syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product (or type it if you chose Other).";(productSelect.value==="__other"?productOther:productSelect).focus();return;}const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Choose the Customer ID first (the Order ID is made automatically).";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
- const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
- try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.jpg`);btn.textContent="Sending order card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||("Order card sent to the customer from "+(d.sentFrom||"your Telegram account")+"."))+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but the card was not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
-});
-previewCard();
-</script>
-<script>
-// ✏️ Edit mode: opened from the "✏️ Edit order" button in the admin bot  (…/?edit=<order id>).
-// The form is pre-filled; saving updates the SAME order (and the same Google Sheet row) instead of creating a new one.
-(function(){
-const editId=new URLSearchParams(location.search).get("edit");if(!editId)return;
-const FIELDS=["orderId","length","width","height","material","color","style","design","handle","door","partition","drawer","additionalFeatures","customerName","phone","location","telegramUsername","telegramPhone","payment","advance","orderDate","completionDate","deliveryType","deliveryService","deliveryFee","deliveryDate"];
-const submitBtn=form.querySelector('button[type="submit"]');let order=null,saving=false;
-document.querySelector("header .sub").textContent="✏️ Edit order";
-submitBtn.textContent="💾 Save changes";photoInput.required=false;
-document.getElementById("photoStatus").textContent="Keep the current product photo, or choose a new one to replace it.";
-const pick=document.getElementById("pickWrap");if(pick)pick.style.display="none";
-(async()=>{
-  try{
-    const r=await fetch("/api/orders/"+encodeURIComponent(editId)),d=await r.json();
-    if(!r.ok||!d.ok)throw Error(d.error||"Could not load the order.");
-    order=d.order;
-    if(order.paidFull){result.textContent="🔒 This order is closed (paid in full). It can no longer be edited.";submitBtn.disabled=true;form.querySelectorAll("input,select,textarea,button").forEach(el=>{el.disabled=true;});}
-    FIELDS.forEach(k=>{const el=form.elements[k];if(el)el.value=order[k]??"";});
-    const p=String(order.product||"");addProductOption(p);
-    const opt=[...productSelect.options].find(o=>o.value.toLowerCase()===p.toLowerCase());
-    if(opt)productSelect.value=opt.value;else{productSelect.value="__other";productOther.value=p;}
-    syncProduct();syncDelivery();
-    if(order.photo){photoPreview.src=order.photo;photoPreview.hidden=false;}
-    previewCard();result.textContent="";
-  }catch(e){result.textContent="❌ "+e.message;submitBtn.disabled=true;}
-})();
-document.addEventListener("submit",async e=>{
-  if(e.target!==form)return;
-  e.preventDefault();e.stopImmediatePropagation();
-  if(!order||saving)return;
-  syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product.";return;}
-  saving=true;submitBtn.disabled=true;result.textContent="Saving changes…";
-  try{
-    let file=photoInput.files?.[0];
-    if(!file){const pr=await fetch(order.photo),blob=await pr.blob();file=new File([blob],"photo.jpg",{type:blob.type||"image/jpeg"});}
-    const png=await makeCard(vals(),file),fd=new FormData(form);
-    fd.append("cardImage",png,"ambar-order-"+(vals().orderId||"card")+".jpg");
-    const r=await fetch("/api/orders/"+encodeURIComponent(editId),{method:"PUT",body:fd}),d=await r.json();
-    if(!r.ok||!d.ok)throw Error(d.error||"Could not save the changes.");
-    if(d.order)order=Object.assign(order,d.order);
-    result.textContent="✅ "+(d.warning||"Order updated.");
-  }catch(err){result.textContent="❌ "+err.message;}
-  finally{saving=false;submitBtn.disabled=false;}
-},true);
-})();
-</script>
-<button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #c18b3a;color:#f3c77c;font:600 14px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(14px)">👥 Manage Assigned Admins</button>
-<div id="acOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="acBox" style="background:#fff;max-width:560px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.edit{background:#f3c77c;color:#222;width:auto;padding:6px 11px;margin:0;font-size:17px}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
-<script>
-(function(){
-const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
-const ov=document.getElementById("acOverlay"),box=document.getElementById("acBox");
-const say=(d)=>{const m=document.getElementById("acMsg");if(m){m.className="msg "+(d.ok?"ok":"bad");m.textContent=d.message||d.error||"";}};
-const val=id=>(document.getElementById(id)||{}).value||"";
-let editingId="";
-async function render(keepMsg){
-  const me=await api("/api/me");
-  if(me.role!=="owner"){
-    box.innerHTML='<h2>⚙️ Admin Control</h2><p>Only the owner can manage admins. Enter the owner key (ADMIN_SETUP_KEY):</p><input id="acKey" type="password" placeholder="Owner key"><button data-a="key">Enter</button><button class="grey" data-a="close">Close</button><div id="acMsg" class="msg"></div>';return;}
-  const a=await api("/api/setup/app-admins");
-  if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
+## v87 activation
+1. Replace the existing application files with this ZIP’s files, preserving Render environment variables and persistent data.
+2. Confirm `MAIN_ADMIN_TELEGRAM_ID` (or `OWNER_TELEGRAM_IDS`) is set to the main admin’s numeric Telegram ID in Render.
+3. Keep `BOT_TOKEN` configured. For personal Telegram account connections, also keep `TG_API_ID` and `TG_API_HASH`.
+4. Redeploy on Render.
+5. The main admin opens AMBAR from the bot, assigns users in Admin Control, and connects the shared bot through Telegram Settings → Telegram Business → Chatbots. Assigned users then open the same Mini App from their own Telegram accounts.
 
-  const people=(a.appAdmins||[]).map(p=>{
-    if(editingId===String(p.telegramId))return '<div class="row" style="display:block;background:#fff8e8;border-radius:10px;padding:10px;margin:6px 0"><b>✏️ Edit admin</b>'
-      +'<label><small>Name</small><input id="eName" value="'+esc(p.name||"")+'" placeholder="Name"></label>'
-      +'<label><small>Telegram ID (numbers only)</small><input id="eId" inputmode="numeric" value="'+esc(p.telegramId)+'"></label>'
-      +'<label><small>Phone (optional)</small><input id="ePhone" value="'+esc(p.phone||"")+'" placeholder="09…"></label>'
-      +'<label><small>Note (optional)</small><input id="eNote" value="'+esc(p.note||"")+'" placeholder="e.g. Sales, Addis branch"></label>'
-      +'<small style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</small>'
-      +'<div style="display:flex;gap:8px;margin-top:6px"><button data-a="saveedit" data-id="'+esc(p.telegramId)+'">Save</button><button class="grey" data-a="canceledit">Cancel</button></div></div>';
-    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — admin must tap Connect my Telegram account')+'</small></div><div style="display:flex;gap:6px"><button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
-  }).join("")||'<p><small>No admins assigned yet.</small></p>';
-  box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
-  +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
-  +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
-  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><button data-a="addperson">Assign admin</button>'
-  +'<h3>🔐 Access and bot connection</h3><p><small><b>Main admin:</b> assigns/removes users and connects the shared AMBAR bot in Telegram Settings → Telegram Business → Chatbots. Enable Business Mode for the bot in @BotFather first, then grant it access and Reply to messages. This shared bot connection does not use a personal login code. <b>Assigned admins:</b> can access AMBAR only after assignment; they may optionally connect their own Telegram account, and cannot use another admin’s account.</small></p>'
-  +'<div id="acMsg" class="msg"></div>';
-}
-ov.addEventListener("click",async e=>{
-  const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  const act=b.dataset.a;
-  try{
-  if(act==="close"){ov.style.display="none";return;}
-  if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
-  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId")});await render();say(d);return;}
-  if(act==="editperson"){editingId=String(b.dataset.id);await render();return;}
-  if(act==="canceledit"){editingId="";await render();return;}
-  if(act==="saveedit"){const d=await api("/api/setup/app-admins/update",{telegramId:b.dataset.id,newTelegramId:val("eId"),name:val("eName"),phone:val("ePhone"),note:val("eNote")});if(d.ok)editingId="";await render();say(d);return;}
-  if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
-  }catch(err){say({ok:false,error:err.message});}
-});
-(async()=>{try{const m=await api("/api/me");if(m.role==="owner")document.getElementById("acOpen").style.display="block";}catch{}})();
-document.getElementById("acOpen").onclick=()=>{ov.style.display="block";box.innerHTML="Loading…";render();};
-})();
-</script>
-<div id="shBar" style="display:none;position:fixed;right:10px;bottom:58px;z-index:9998;gap:6px"><button id="shOpen" style="padding:10px 14px;border:0;border-radius:24px;background:#188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">📊 Google Sheet</button><button id="shCfg" title="Sheet settings / sync" style="padding:10px 12px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #188038;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">⚙</button><button id="shNew" title="Start a new Ethiopian-month sheet" style="display:none;padding:10px 14px;border:0;border-radius:24px;background:#b89552;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">♻ Archive old list &amp; Start New</button></div>
-<div id="shOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="shBox" style="background:#fff;max-width:540px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<script>
-// Google Sheet button — every admin can open the sheet; settings (⚙ test/sync) are main admin only (server enforces it).
-(function(){
-const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const api=async(p,post)=>{const r=await fetch(p,post?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:{});return r.json();};
-const bar=document.getElementById("shBar"),ov=document.getElementById("shOverlay"),box=document.getElementById("shBox");
-const bs='font-size:15px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box;border:0;border-radius:8px;color:#fff;background:#1a73e8;cursor:pointer';
-let st=null;
-function openExternal(u){try{if(window.Telegram?.WebApp?.openLink){Telegram.WebApp.openLink(u);return;}}catch{}window.open(u,"_blank","noopener");}
-async function status(){try{st=await api("/api/sheets/status");}catch{st={ok:false,error:"Could not reach the server."};}return st;}
-function render(msg,good){
-  const s=st||{};
-  const ok=s.configured&&!s.lastError;
-  box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 Google Sheet</h2><button data-a="close" style="'+bs+';width:auto;background:#666;padding:6px 12px">Close</button></div>'
-  +'<p style="margin:10px 0">Status: '+(!s.configured?'<b style="color:#c62828">not connected yet</b>':ok?'<b style="color:#188038">✓ connected</b>':'<b style="color:#c62828">problem</b>')+'</p>'
-  +(s.configured?'<button data-a="open" style="'+bs+';background:#188038">📊 Open Google Sheet ↗</button><button data-a="test" style="'+bs+'">🔌 Test connection</button><button data-a="sync-orders" style="'+bs+';background:#b06f00">🔄 1 · Sync main order index (orders)</button><button data-a="sync-customers" style="'+bs+';background:#8a5a00">👥 2 · Sync Customers Data</button><button data-a="sync" style="'+bs+';background:#7a4a00">⚡ 3 · Sync ALL (orders + customers)</button>'
-    +'<p style="font-size:13px;color:#555">Every new order, delivery, customer answer (Confirm / Reject / Comment) and admin change is written to the sheet automatically. <b>1</b> sends the orders, <b>2</b> sends the customer information (Customers Data tab), <b>3</b> sends both. Tabs: <b>Dashboard</b>, <b>Find Customer</b>, <b>Orders View</b>, <b>Graphs</b> and one tab per month.'+(s.lastOkAt?'<br>Last successful write: '+esc(s.lastOkAt):'')+'</p>'
-    :'<div style="font-size:14px;line-height:1.5"><b>Set it up (once):</b><ol style="padding-left:20px;margin:6px 0"><li>Create a Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Paste the file <code>google-sheet-script.gs</code> and <b>Save</b>.</li><li><b>Deploy → New deployment → Web app</b> (Execute as: Me, Access: Anyone).</li><li>Copy the Web app URL (ends with /exec) and add it on the server as <code>GOOGLE_SCRIPT_URL</code>, then restart.</li><li>If the Web app gives <b>HTTP 401</b>, use <b>Google Form mode</b> instead (see README): set <code>GOOGLE_FORM_URL</code> and <code>GOOGLE_SHEET_URL</code>.</li><li>Share the Google Sheet with your other admins so they can open it.</li></ol>'
-      +(s.hasSheetId&&!s.hasCredentials?'<p style="color:#c62828">GOOGLE_SHEET_ID is set but the service-account key is missing.</p>':'')+(!s.hasSheetId&&s.hasCredentials?'<p style="color:#c62828">The key is set but GOOGLE_SHEET_ID is missing.</p>':'')+'</div>')
-  +((!s.configured||s.lastError||s.needsScript||(s.scriptVersion&&s.scriptVersion!==s.scriptWanted))?'<div style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><b>🔗 Connect once — saved for all time</b><div style="font-size:13px;color:#555;margin:4px 0">Paste the Web app URL (ends with /exec). After it connects, the app remembers it permanently, even after restarts.</div><input id="shUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shKey" placeholder="Password (only if you set SECRET in the script)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><input id="shLink" placeholder="Sheet address (optional, so the button can open it)" style="width:100%;box-sizing:border-box;padding:10px;margin:4px 0;font-size:16px"><button data-a="all" style="'+bs+';background:#188038">⚡ Connect &amp; sync EVERYTHING (one click)</button></div>':'')
-  +(s.configured&&s.saved?'<p style="font-size:12px;color:#188038">🔒 Connection saved permanently — it reconnects by itself after any restart or Google hiccup.</p>':'')
-  +(s.serviceAccount?'<p style="font-size:12px;color:#555">Share the sheet with: <b>'+esc(s.serviceAccount)+'</b></p>':'')
-  +(s.configured&&s.scriptVersion?'<p style="font-size:13px;margin:6px 0">Saved Google link runs script: <b style="color:'+(s.scriptVersion===s.scriptWanted?'#188038':'#c62828')+'">'+esc(s.scriptVersion)+'</b> (needed: '+esc(s.scriptWanted||'')+')'+(s.scriptVersion===s.scriptWanted?' ✓':' — paste the NEW /exec link below')+'</p>':'')
-  +(s.needsScript?'<div style="margin-top:10px;padding:10px;border:2px solid #b06f00;border-radius:10px;background:#fff8e6"><b>🆕 Customers need the new Google script</b><div style="font-size:13px;color:#555;margin:4px 0">Orders keep working. For the Customers Data tab: 1) tap Copy · 2) script.google.com → New project → paste → Save → run <code>authorize</code> · 3) Deploy → New deployment → Web app (Me / Anyone) · 4) paste the new /exec link in the box above and press Connect &amp; sync.</div><button data-a="copyscript" style="'+bs+';background:#b06f00">📋 Copy new script</button><button data-a="openscript" style="'+bs+';background:#555">🌐 Open script.google.com</button><button data-a="csv" style="'+bs+';background:#188038">⬇ Download customers (CSV backup)</button></div>':'')
-  +(s.lastError?'<p style="color:#c62828;font-size:13px;white-space:pre-wrap">⚠ '+esc(s.lastError)+'</p>':'')
-  +'<div id="shMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap;color:'+(good===false?'#c62828':'#188038')+'">'+esc(msg||"")+'</div>';
-}
-async function openPanel(){ov.style.display="block";box.textContent="Loading…";await status();render();}
-ov.addEventListener("click",async e=>{
-  const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  const a=b.dataset.a;
-  if(a==="close"){ov.style.display="none";return;}
-  if(a==="open"){if(st?.url)openExternal(st.url);return;}
-  if(a==="openscript"){openExternal("https://script.google.com/home/projects/create");return;}
-  if(a==="csv"){openExternal(location.origin+"/api/sheets/customers.csv");return;}
-  if(a==="copyscript"){
-    try{const t=await (await fetch("/api/sheets/script")).text();
-      try{await navigator.clipboard.writeText(t);render("✅ Script copied. Paste it in a NEW project at script.google.com.",true);}
-      catch{render("",true);const m=document.getElementById("shMsg");m.innerHTML='Select all and copy:<textarea style="width:100%;height:160px;font-size:12px">'+esc(t)+'</textarea>';}}
-    catch(err){render("❌ "+err.message,false);}
-    return;
-  }
-  if(a==="connect"||a==="all"){
-    const v=i=>((document.getElementById(i)||{}).value||"").trim();
-    const old=b.innerHTML;b.disabled=true;b.textContent="Connecting & syncing everything…";
-    try{const r=await fetch("/api/sheets/connect-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scriptUrl:v("shUrl"),scriptKey:v("shKey"),sheetUrl:v("shLink")})});const d=await r.json();st={...st,...d};render((d.message?d.message+(d.ok||!d.error?"":"\n\n"):"")+(d.ok?"":(d.error||"")),!!d.ok);}
-    catch(err){render("❌ "+err.message,false);}
-    return;
-  }
-  if(a==="test"||a==="sync"||a==="sync-orders"||a==="sync-customers"){
-    const label=b.textContent;b.disabled=true;b.textContent="Working…";
-    try{const d=await api("/api/sheets/"+a,true);st={...st,...d};render((d.message||"")+(d.ok||!d.error?"":((d.message?"\n\n":"")+d.error)),!!d.ok);}
-    catch(err){render("❌ "+err.message,false);}
-  }
-});
-// Main button: opens the sheet directly when connected; otherwise shows the setup panel.
-let shOwner=false;
-document.getElementById("shOpen").onclick=async()=>{await status();if(st&&st.configured&&st.url&&!st.lastError){openExternal(st.url);}else if(!shOwner){alert("The Google Sheet is not connected yet. Please ask the main admin.");}else{openPanel();}};
-document.getElementById("shCfg").onclick=openPanel;
-// "Archive old list & Start New" — main admin only (the server refuses everyone else).
-function sayMsg(m){const w=window.Telegram?.WebApp;if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);}
-document.getElementById("shNew").onclick=()=>{
-  const b=document.getElementById("shNew"),msg="Archive the OLD list and start the Google Sheet as NEW?\n\nAll current month tabs are kept as 'Backup …' tabs (nothing is deleted). A clean new month tab is created and only NEW orders go into it.";
-  const go=async()=>{const old=b.textContent;b.disabled=true;b.textContent="Starting…";try{const d=await api("/api/sheets/start-new",true);sayMsg(d.message||d.error||"Done");if(d.ok&&d.url)openExternal(d.url);}catch(e){sayMsg("❌ "+e.message);}b.disabled=false;b.textContent=old;};
-  const w=window.Telegram?.WebApp;if(w&&w.showConfirm){w.showConfirm(msg,ok=>{if(ok)go();});}else if(confirm(msg))go();
-};
-window.AMBAR_openSheetTab=async(which)=>{await status();const u=which==="graphs"?st.graphsUrl:which==="summary"?st.summaryUrl:st.url;if(u)openExternal(u);else alert("The Google Sheet is not connected yet.");};
-(async()=>{try{const m=await api("/api/me");if(m.role==="owner"||m.role==="admin"){bar.style.display="flex";shOwner=m.role==="owner";if(!shOwner)document.getElementById("shCfg").style.display="none";else document.getElementById("shNew").style.display="inline-block";}}catch{}})();
-})();
-</script>
-<button id="myOpen" style="display:none;position:fixed;left:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:#0a7d2c;color:#fff;font:600 14px system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔗 Connect my Telegram account</button>
-<div id="myOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="myBox" style="background:#fff;max-width:520px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<script>
-(function(){
-const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});return r.json();};
-const ov=document.getElementById("myOverlay"),box=document.getElementById("myBox"),openBtn=document.getElementById("myOpen");
-const st='font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc';
-const btn='font-size:15px;padding:10px;margin:3px 0;width:100%;border:0;border-radius:8px;color:#fff;background:#1a73e8';
-const val=id=>(document.getElementById(id)||{}).value||"";
-const say=d=>{const m=document.getElementById("myMsg");if(m){m.style.color=d.ok?"#0a7d2c":"#c62828";m.textContent=d.message||d.error||"";}};
-let role="";
-// Once connected the Connect button disappears; the status box shows the account and a small Disconnect link.
-async function refresh(){
-  const ss=document.getElementById("senderState");
-  const s=await api("/api/my-account").catch(()=>({ok:false}));
-  const connected=!!(s.ok&&s.connected);
-  openBtn.style.display=(role&&!connected)?"block":"none";
-  if(!ss)return;
-  if(connected)ss.innerHTML='<span style="color:#176b3a;font-weight:700">✓ Connected: '+esc(s.label||"your account")+'</span> <a href="#" id="myDisc" style="font-size:12px">Disconnect</a>';
-  else ss.innerHTML='<span style="color:#9a3c26;font-weight:700">Your personal Telegram account is not connected.</span> <span class="small">The main admin manages the shared Telegram Business bot connection separately.</span>';
-  const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
-}
-let qrMode=false,qrTimer=null,qrLastLink="";
-function showQr(link){
-  const w=document.getElementById("myQr"),img=document.getElementById("myQrImg"),a=document.getElementById("myQrLink");
-  if(!w||!link)return;w.style.display="block";a.href=link;
-  if(link===qrLastLink)return;qrLastLink=link;img.innerHTML="";
-  const draw=()=>{try{new QRCode(img,{text:link,width:190,height:190,correctLevel:QRCode.CorrectLevel.L});}catch(e){img.textContent="";}};
-  if(window.QRCode){draw();return;}
-  const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";sc.onload=draw;sc.onerror=()=>{img.style.display="none";};document.head.appendChild(sc);
-}
-function startQrPoll(){
-  clearInterval(qrTimer);
-  qrTimer=setInterval(async()=>{
-    if(ov.style.display==="none"){clearInterval(qrTimer);return;}
-    let d;try{d=await api("/api/my-account/qr-poll",{});}catch{return;}
-    if(d.status==="waiting"){if(d.link)showQr(d.link);return;}
-    if(d.status==="password"){say({ok:true,message:d.message});return;}
-    clearInterval(qrTimer);qrMode=false;
-    say(d);
-    if(d.status==="done"){setTimeout(()=>{ov.style.display="none";refresh();},900);}
-  },3000);
-}
-async function render(){
-  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>This connects <b>only your own Telegram account</b>. The main admin manages the shared AMBAR bot connection. Assigned admins cannot connect or use another admin’s personal account.</p><div style="background:#fff7e8;border:1px solid #e8cf9e;border-radius:9px;padding:10px;font-size:13px;line-height:1.45;margin:10px 0"><b>Delivery:</b> Telegram controls login-code delivery. If Telegram reports in-app delivery, check the official Telegram service chat on another device logged into this exact account. SMS can be refused with SEND_CODE_UNAVAILABLE when no SMS route remains. AMBAR cannot force Telegram to send or forward a login code.</div>'
-  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 2px"><input id="myForceSMS" type="checkbox" style="width:auto;margin:0"> Ask Telegram to try SMS (Telegram may return SEND_CODE_UNAVAILABLE)</label><button style="'+btn+'" data-a="send">Request Telegram login code</button><button style="'+btn+';background:#e8710a;display:none" id="myResend" data-a="resend">Resend code (SMS / call)</button><button style="'+btn+';background:#0a7d2c" data-a="qr">Login without a code (QR / link)</button><div id="myQr" style="display:none;text-align:center;margin:8px 0;padding:10px;border:1px dashed #9db8e8;border-radius:10px"><div id="myQrImg" style="display:inline-block;background:#fff;padding:6px"></div><div style="margin:8px 0;font-size:13px;line-height:1.4">On a phone/desktop where this Telegram account is already logged in, scan this QR (Telegram → Settings → Devices → Link Desktop Device), <b>or</b> tap the button:</div><a id="myQrLink" href="#" style="display:block;padding:10px;border-radius:8px;background:#229ed9;color:#fff;text-decoration:none;font:600 15px system-ui">Open in Telegram &amp; confirm</a></div><input id="myCode" style="'+st+'" inputmode="numeric" autocomplete="one-time-code" placeholder="Latest code from Telegram or SMS"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
-  +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
-}
-ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  try{const a=b.dataset.a;
-  if(a==="close"){ov.style.display="none";return;}
-  if(a==="send"){
-    const sendButton=b;sendButton.disabled=true;sendButton.textContent="Contacting Telegram…";
-    try{const d=await api("/api/my-account/send-code",{phone:val("myPhone"),forceSMS:!!document.getElementById("myForceSMS")?.checked});say(d);const rb=document.getElementById("myResend");if(rb)rb.style.display=(d.ok&&d.canResend)?"block":"none";}
-    finally{sendButton.disabled=false;sendButton.textContent="Request Telegram login code";}
-    return;
-  }
-  if(a==="resend"){
-    b.disabled=true;
-    try{const d=await api("/api/my-account/resend",{});say(d);if(d.ok&&!d.canResend)b.style.display="none";}
-    finally{b.disabled=false;}
-    return;
-  }
-  if(a==="qr"){
-    b.disabled=true;
-    try{
-      const d=await api("/api/my-account/qr-start",{});
-      if(!d.ok){say(d);return;}
-      qrMode=true;showQr(d.link);say({ok:true,message:d.message});startQrPoll();
-    }finally{b.disabled=false;}
-    return;
-  }
-  if(a==="verify"&&qrMode){const d=await api("/api/my-account/qr-password",{password:val("myPw")});say(d);return;}
-  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
-  }catch(err){say({ok:false,error:err.message});}});
-openBtn.onclick=()=>{ov.style.display="block";render();};
-(async()=>{try{const m=await api("/api/me");if(m.role==="admin"||m.role==="owner"){role=m.role;await refresh();
-  try{const a=await api("/api/admins");const wrap=document.getElementById("senderPickWrap"),sel=document.getElementById("senderAdminPick");if(role==="owner"&&wrap&&sel){wrap.style.display="block";const available=(a.admins||[]);sel.innerHTML='<option value="">Use my own account / Telegram Business</option>'+available.map(x=>'<option value="'+esc(x.id)+'" '+(!x.ready?'disabled':'')+'>'+esc(x.label)+(x.ready?' — connected':' — not connected')+'</option>').join("");const mine=available.find(x=>x.id==="u"+String(m.telegramId||""));if(mine&&mine.ready)sel.value=mine.id;}}catch(e){console.warn("Could not load sending admin choices",e);}
-  {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;if(form.elements.customerName&&!form.elements.customerName.value){const t=o.textContent.replace(/\s*\(@.*\)$/,"").trim();if(t&&!/^\d+$/.test(t))form.elements.customerName.value=t;}};}}catch{}}}
-}catch{}})();
-})();
-</script>
-<style>
-#acOpen,#shBar,#myOpen{display:none!important}
-#stOpen{position:fixed;right:14px;bottom:14px;z-index:9998;width:40px;height:40px;padding:0;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(24,22,19,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:#f3d9a4;display:none;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.28);cursor:pointer;transition:transform .2s,background .2s}#stOpen:hover,#stOpen:active{transform:rotate(60deg);background:rgba(24,22,19,.9)}#stOpen svg{width:20px;height:20px}
-#stBox button{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;text-align:left;font:500 14px system-ui,sans-serif;padding:11px 12px;margin:5px 0;border:1px solid #ece6d8;border-radius:12px;background:#faf8f3;color:#222;cursor:pointer;transition:background .15s}#stBox button:hover{background:#f1ebdd}
-#stBox button.main{background:#153a2e;color:#fff;border-color:#153a2e}
-#stBox button.warn{background:#fff6e5;color:#8a5a00;border-color:#e6c47a}
-#stBox h4{margin:14px 0 2px;font:700 12px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#777}
-</style>
-<button id="stOpen" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
-<div id="stOverlay" style="display:none;position:fixed;inset:0;z-index:99997;background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow:auto;flex-direction:column;justify-content:flex-end"><div id="stBox" style="background:#fff;max-width:400px;margin:auto 12px 12px auto;border-radius:20px;padding:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);font-family:system-ui,sans-serif;color:#222"></div></div>
-<script>
-// ONE settings icon holds every control button. The old floating buttons stay hidden and are triggered from here.
-(function(){
-const gear=document.getElementById("stOpen"),ov=document.getElementById("stOverlay"),box=document.getElementById("stBox");
-let role="";
-const items=()=>{
-  const L=[];
-  L.push('<h4>Customers</h4>');
-  L.push('<button class="main" data-c="callers">👥 Customers Data (Customer IDs)</button>');
-  L.push('<h4>Google Sheet</h4>');
-  L.push('<button class="main" data-c="sheet">📊 Open Google Sheet</button>');
-  if(role==="owner"){
-    L.push('<button data-c="cfg">⚡ Connect Google Sheet (one click · all data)</button>');
-    L.push('<button class="warn" data-c="zero">🗑 Start from ZERO (backup + clear all)</button>');
-    L.push('<h4>Admins</h4>');
-    L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
-  }
-  L.push('<h4>My account</h4>');
-  L.push('<button data-c="connect">🔗 Connect my Telegram account</button>');
-  return L.join("");
-};
-function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="flex";}
-const go=id=>{ov.style.display="none";const e=document.getElementById(id);if(e)e.click();};
-gear.onclick=show;
-ov.addEventListener("click",e=>{
-  const b=e.target.closest("button[data-c]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  const c=b.dataset.c;
-  if(c==="close"){ov.style.display="none";return;}
-  if(c==="callers"){window.location.href="/callers.html"+(window.location.hash||"");return;}
-  if(c==="sheet"){go("shOpen");return;}
-  if(c==="summary"||c==="graphs"){ov.style.display="none";window.AMBAR_openSheetTab&&window.AMBAR_openSheetTab(c);return;}
-  if(c==="cfg"){go("shCfg");return;}
-  if(c==="zero"){
-    const w=window.Telegram?.WebApp,say=m=>{if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);};
-    const ask=(m,cb)=>{if(w&&w.showConfirm){w.showConfirm(m,ok=>{if(ok)cb();});}else if(confirm(m))cb();};
-    ask("START FROM ZERO?\n\n1) Every order is saved in the Google Sheet as a BACKUP.\n2) ALL orders are then DELETED from the app and the Google Sheet starts new.\n\nThis cannot be undone in the app.",()=>{
-      ask("Are you really sure? All orders will be removed and numbering starts again from the beginning.",async()=>{
-        b.disabled=true;b.textContent="Working…";
-        try{const d=await (await fetch("/api/sheets/reset-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:"ZERO"})})).json();say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
-        b.disabled=false;b.textContent="🗑 Start from ZERO (backup + clear all)";
-      });
-    });
-    return;
-  }
-  if(c==="admins"){go("acOpen");return;}
-  if(c==="connect"){go("myOpen");return;}
-});
-(async()=>{try{const r=await fetch("/api/me");const m=await r.json();if(m.role==="owner"||m.role==="admin"){role=m.role;gear.style.display="flex";}}catch{}})();
-})();
-</script>
-<script>
-// Customer ID first -> customer info + automatic Order ID (Customer ID + Ethiopian month, then A, B, C … for the same customer's next orders).
-(function(){
-const form=document.getElementById("orderForm"),pick=document.getElementById("custIdPick"),search=document.getElementById("custSearch"),oid=document.getElementById("orderIdField"),cid=document.getElementById("customerIdField"),help=document.getElementById("custIdHelp");
-if(!form||!pick)return;
-if(new URLSearchParams(location.search).get("edit")){document.getElementById("custPickWrap").style.display="none";return;} // edit mode keeps the existing Order ID
-let list=[];const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const setVal=(n,v)=>{const el=form.elements[n];if(el){el.value=v||"";el.dispatchEvent(new Event("input",{bubbles:true}));}};
-function digits(v){return String(v||"").replace(/\D/g,"");}
-function options(){
-  const raw=search.value.trim(),q=raw.toLowerCase(),qd=digits(raw),keep=pick.value;
-  const rows=list.filter(c=>{
-    if(!q)return true;
-    const text=[c.id,c.name,c.phone,c.username].join(" ").toLowerCase();
-    const phone=digits(c.phone);
-    return text.includes(q)||(qd.length>=3&&phone.includes(qd));
-  });
-  pick.innerHTML='<option value="">'+(q?'— Select a matching customer —':'— Type an ID, name or phone to search —')+'</option>'+rows.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" — "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("");
-  pick.size=1; // Keep the original compact, single-line customer selector; search results appear in its dropdown.
-  pick.value=keep&&[...pick.options].some(o=>o.value===keep)?keep:"";
-  if(q)help.textContent=rows.length?rows.length+" matching customer(s) — open the customer list and choose one.":"No matching customer. Check the ID, name or phone, or add the customer in Customers Data.";
-}
-async function newOrderId(){
-  if(!cid.value)return;
-  try{const d=await (await fetch("/api/callers/order-id?customerId="+encodeURIComponent(cid.value)+"&date="+encodeURIComponent(form.elements.orderDate?form.elements.orderDate.value:""))).json();
-    if(d.ok){oid.value=d.orderId;oid.dispatchEvent(new Event("input",{bubbles:true}));}else help.textContent="❌ "+(d.error||"Could not make the Order ID.");
-  }catch{help.textContent="❌ Could not make the Order ID. Check your connection.";}
-}
-pick.addEventListener("change",async()=>{
-  const v=pick.value;
-  // Orders can only be created for an existing Customers Data record.
-  oid.readOnly=true;oid.placeholder="Select a customer from Customers Data";
-  if(!v){cid.value="";oid.value="";oid.dispatchEvent(new Event("input",{bubbles:true}));return;}
-  const c=list.find(x=>x.id===v);if(!c)return;
-  cid.value=c.id;setVal("customerName",c.name);setVal("phone",c.phone);setVal("location",c.location);setVal("telegramUsername",c.username);
-  await newOrderId();
-});
-search.addEventListener("input",options);
-form.addEventListener("reset",()=>setTimeout(()=>{cid.value="";oid.readOnly=true;oid.value="";search.value="";options();},0));
-// the Ethiopian month of the Order Date is used when an Order Date is chosen (today's month otherwise)
-let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.orderDate.value:"";if(d!==lastDate){lastDate=d;if(cid.value)newOrderId();}},1200);
-(async()=>{try{const r=await fetch("/api/callers"),d=await r.json();if(d.ok){list=[...d.customers].sort((a,b)=>String(b.updatedAt||b.createdAt||b.seq||b.id).localeCompare(String(a.updatedAt||a.createdAt||a.seq||a.id),undefined,{numeric:true}));options();if(!list.length)help.innerHTML='No customers yet. <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the customer in Customers Data</a> before creating an order.';}}catch{help.textContent="Could not load customers. Check your connection and refresh.";}})();
-})();
-</script>
-</body>
-</html>
+## v86 – Telegram login delivery error and pending-session repair
+
+- Added a specific explanation for Telegram's `SEND_CODE_UNAVAILABLE` response: it means Telegram has no further SMS/phone delivery option for that login attempt; it is not a code that AMBAR can send.
+- Clarified that an in-app route is only Telegram's reported delivery route; AMBAR cannot verify that a service notification appeared or force Telegram to send it.
+- Fixed both owner and assigned-admin code-request flows so a failed SMS attempt does not disconnect and discard a previously pending login session. A new pending session replaces the old one only after Telegram successfully returns a new code hash.
+- Kept the normal Telegram code flow and the optional SMS request. Telegram still controls availability; do not repeatedly request codes while rate-limited.
+
+## v85 – ADMIN TELEGRAM LOGIN DELIVERY FIX
+- Corrected the delivery-route detection to use GramJS's actual `isCodeViaApp` result (the previous code looked for a raw `type` object that GramJS does not return).
+- Added an optional “Request SMS instead” choice in the admin's Connect my Telegram account panel. Telegram may still decline SMS or choose another route; the app now reports that accurately.
+- Added a busy state while requesting a code and clarified that AMBAR cannot confirm delivery or forward Telegram's private login code.
+- Both the assigned-admin connection and setup/admin connection endpoints accept the SMS preference.
+- This does not bypass Telegram delivery restrictions. The host must still have valid `TG_API_ID` and `TG_API_HASH`; Telegram controls whether app, SMS, or another route is available.
+
+# v84 update (2026-11-19)
+
+- Fixed admin sender selection: the main admin can choose which connected admin Telegram account sends a new order. Assigned admins can only send from their own connected account; the server ignores any attempt to select another admin.
+- The Admin Control list now shows whether each assigned admin has connected their Telegram account.
+- Improved Telegram account connection: login requests now report Telegram's actual delivery channel where available, return clearer errors for invalid API credentials, invalid phone numbers, expired codes and Telegram rate limits, and clean up failed login sessions.
+- Clarified that Telegram login codes are delivered by Telegram to an already logged-in Telegram app session or by SMS if Telegram offers it. They are never sent by the AMBAR bot.
+- Required server variables for personal-account connection: `TG_API_ID` and `TG_API_HASH` from https://my.telegram.org → API development tools. `BOT_TOKEN` alone cannot authorize a personal Telegram account.
+- Deploy the updated app files (especially `server.js` and `public/index.html`) and restart the hosting service. No Google Apps Script update is needed for this release.
+
+# v83 update (2026-11-19)
+
+- Rebuilt the Dashboard with a self-contained renderer so a refresh cannot stop after the title and reporting-period rows. It writes all six KPI cards, archived count, product/delivery breakdowns, latest orders, and a visible source-count diagnostic in Dashboard cell A40.
+- Dashboard order discovery now scans every plausible order-data tab by its own row-1 headers, rather than relying only on Ethiopian-month tab names. It excludes Customers Data, Dashboard, helper tabs, Orders View, and Archived Orders to avoid mixing customers or double-counting archived orders.
+- Apps Script version: v83. Replace `google-sheet-script.gs`, save, deploy a **new web-app version**, then run `refreshDashboardNow` once from the Apps Script editor. Confirm the execution log says how many active order records were read; the Dashboard A40 line shows the same source count.
+- This update changes only the Dashboard builder/reader in the Google Sheet script; the v82 customer-only order selection changes remain in the app files.
+
+# v82 update (2026-11-19)
+
+- Fixed the Dashboard data reader: it now reads each Ethiopian-month tab using that tab's own header row, so different/older column orders cannot make the Dashboard appear empty. The dashboard also has a manual `refreshDashboardNow` function that rebuilds ONLY the Dashboard tab from the existing month tabs.
+- Main order index now permits order creation only after selecting an existing customer from the Customers Data list. Removed the “No Customer ID / type order code” option; Order ID stays automatic and the server rejects orders without a valid Customers Data customer.
+- Apps Script version: v82. Replace `google-sheet-script.gs`, deploy a new web-app version, then run `refreshDashboardNow` once from Apps Script to rebuild the Dashboard only. Redeploy the app files so the customer-only selection rule is active.
+
+# v81 update (2026-11-19)
+
+- Fixed the Customers Data merge/freeze conflict by splitting the top directory banner and section labels at the frozen-column boundary; summary cards no longer merge frozen and scrollable columns.
+- Customer Name is now column C and stays frozen with Customer ID and primary Phone Number. Additional Phone Number is moved to column D and scrolls normally. Existing v80 customer rows are migrated by swapping the old C/D values once, preserving their data.
+- The customer overview remains at the top of Customers Data.
+- Dashboard KPI cards are larger and more prominent; product, delivery type and delivery service breakdowns are displayed as bordered mini-cards with emphasized counts.
+- Apps Script version: v81. Deploy the updated `google-sheet-script.gs` as a new web-app version and run `fixNow` once.
+
+## v80 - Dashboard and verified failed-delivery archive
+
+- Dashboard redesigned with clearer KPI cards, explanatory labels, readable product/delivery breakdowns, and a latest active-orders table. All metrics are calculated from actual active order rows for the selected reporting period.
+- Archived Orders now receives only records whose Delivery Note contains BOTH the exact Mule failure marker (`Sent from: mule — ❌ NOT delivered`) and the entity error (`Could not find the input entity for`). It requires a real order ID, prevents duplicate IDs, copies the full original row plus archive timestamp/source, and removes the active row only after the archive append succeeds.
+- Archived count uses unique non-empty order IDs, not the raw sheet row count. Archived orders stay excluded from active Dashboard totals.
+- Customers Data directory remains at the top with live counts and revenue based on actual customer/order records.
+- Apps Script version: v80. Paste `google-sheet-script.gs` into the bound Apps Script project, save, deploy a new version, then run `fixNow` / Refresh all sections.
+
+## Latest update (v80b - sync result now confirms orders + customers share ONE Google Sheet)
+
+## v80 - GUIDED FIX FOR "Customers: old Google script"
+
+- When the Customers sync finds an old Google script, the app now says exactly which script version your link runs and shows a box with: **Copy new script**, **Open script.google.com**, and **Download customers (CSV backup)**. Paste the new script in a NEW project -> Deploy -> New deployment -> Web app (Me / Anyone) -> paste the new /exec link -> Connect & sync. The script creates the Google Sheet + Customers Data tab itself.
+- New routes: GET /api/sheets/script, GET /api/sheets/customers.csv.
+
+## Latest update (v79) - THREE SYNC BUTTONS, NO VERSION CHECK
+
+- ⚙ Sheet connection now has three syncs: 1 = main order index (orders), 2 = Customers Data tab, 3 = ALL. Each one reports its own result.
+- Removed: "Check script version", "Copy latest script" and the script-version block in the one-click connect. Orders keep syncing even with an older Google script; the Customers Data tab needs google-sheet-script.gs (included) pasted in a NEW project -> Deploy -> New deployment -> Web app (Me / Anyone); paste the new /exec link in ⚙ Sheet connection -> Connect. The script creates the Google Sheet and the Customers Data tab by itself.
+
+## Previous update (v78) - ONE-CLICK CONNECT (⚙ Settings)
+
+- ⚙ Settings -> "⚡ Connect Google Sheet (one click · all data)" uses the same original Apps Script link method on the main page. One button saves the link, checks the script version, creates every tab (incl. "Customers Data" in the SAME spreadsheet as the orders) and sends ALL data: orders + customers. Result lines are shown per part.
+- Needs google-sheet-script.gs v78 (included). If the saved link runs an older script, the button says so and shows the fix steps.
+
+## Previous update (v76) - SYNC ALL NOW INCLUDES CUSTOMERS + AUTO-CREATE GOOGLE SHEET (script v74)
+
+- google-sheet-script.gs is now v74. If it is not linked to any sheet (or the sheet was deleted / cannot be opened) it CREATES a new Google Sheet in your Drive by itself and remembers it. Orders and the Customers Data tab always live in that ONE file. Run function `createNewSheet` in the editor to deliberately start with a fresh file.
+- You MUST paste the new script, run `authorize` once, and deploy a NEW VERSION (or a New deployment and paste the new /exec link in ⚙ Sheet connection). "no version (very old script)" means the saved link still runs old code.
+
+- The original Google Sheet panel is unchanged (📊 Google Sheet button / ⚙ Settings -> Sheet connection).
+- "Sync ALL (orders + customers) to the sheet now" sends every order AND all customer information (Customers Data tab) to the same sheet, and reports each part separately (one failing never hides the other).
+
+## Latest update
+
+- Restored the original compact customer selector: type an ID, name, or phone in the search box, then choose a match from the single-line dropdown.
+- The `Customers Data` tab is the permanent customer-record sheet in the same Google spreadsheet. New customers, edits, deletions, and full syncs write to that tab; it is kept as the first tab.
+
+v73 - ONE SHARED GOOGLE SHEET + CUSTOMER SEARCH + LIVE ORDERS VIEW + GRAPHS
+ - The order form index and Customers Data index use ONE Google spreadsheet and ONE Apps Script deployment. Customers Data is the first tab.
+ - Orders View is restored as a combined view of every month, with Ethiopian calendar dates and newest order/time at the top. It refreshes after each save and full sync.
+ - Graphs is restored and rebuilt from the live hidden _Data table; chart refresh runs after order changes.
+ - /exec reports the short version field "v73" for reliable version checking.
+ - Customer ID / name / phone search now displays matching choices immediately while typing, including normalized phone digits.
+ - Run AMBAR -> Fix now (newest order on top) after updating the Apps Script to rebuild the tabs and charts.
+
+v72 - SHEET CONNECTION PANEL: new buttons "Check script version" (shows which version your saved /exec link really runs vs the latest) and "Copy latest script" (copies google-sheet-script.gs so you can paste it in Apps Script). The expected version in the error message now follows the script file automatically.
+
+v71 - NEWEST CUSTOMER ON TOP in the Customers Data tab (new customers are inserted right under the header; "Send all to Google Sheet" writes newest first). The script version is now "v71": open your Web app /exec link in a browser, it must show v71. If it shows an older version, the Google link saved in the app still runs the old script (paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> Edit -> New version -> Deploy). The "Unknown action" message in the app now tells you which version the link answers with.
+
+v70 - CUSTOMERS DATA + CUSTOMER-ID ORDER ID
+ - "Callers Data" is renamed "Customers Data" (customers sometimes fill it themselves). Page: /customers.html (the old /callers.html still works). The Google Sheet tab is now "Customers Data" (an old "Callers" tab is renamed automatically, rows kept).
+ - ORDER FORM: step 1 is the Customer ID. Choose the customer (search by ID / name / phone) -> Name, Phone, Location and @username are filled and the Order ID is made automatically (it is used as the Order Code, card and sheet).
+   Order ID = Customer ID + Ethiopian month of the Order Date (today's month by default):  0007-03  (first order), 0007-03A (same customer orders again that month), 0007-03B, 0007-03C ...  A new month starts again at 0007-04.
+   Each new Order ID is also added to that customer's "Order id" column in Customers Data. "No Customer ID" in the list lets you still type an order code by hand. To drop the "-" use ORDER_ID_SEP in server.js.
+ - "Google Sheet NOT updated: Unknown action" = the Apps Script in Google is the OLD version. Paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> Edit (pencil) -> Version: New version -> Deploy. The message in the app now says this.
+
+v69 - CALLERS TAB IN THE MAIN GOOGLE SHEET: the "Callers" tab is a new section of the SAME spreadsheet as Dashboard / Find Customer / Analysis / month tabs (placed right after Analysis). It is now created automatically when the sheet connects (server start, Test, Sync ALL) and filled with every customer; later saves update their row. Paste the new google-sheet-script.gs -> Save -> Deploy -> New version, then restart.
+
+v68 - CALLERS GOOGLE SHEET: every save on the Callers Data page is also written to a "Callers" tab (columns exactly as your list, Customer ID 0001... in column A, one row per customer; saving the same customer updates the same row). Needs the Apps Script Web app link (GOOGLE_SCRIPT_URL / main admin's Sheet connection).
+ - You MUST paste the new google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> New version, then restart the server.
+ - Main admin: Customers tab -> "Send all to Google Sheet" back-fills / repairs the tab. Everyone: "Open Google Sheet (Callers tab)".
+ - Fixed: the Callers page now shows the real reason when it cannot open (old server without the update, or your Telegram ID is not assigned) instead of one generic message.
+
+CALLERS DATA (v67): new separate page /callers.html (open it from ⚙ Settings -> "📞 Callers Data"). Fields: Customer ID, Phone Number, Name, username, Location, Status, Last Conversation, Date, Time, Order Status, Rejection Reason, Sales Name, Total Spend, Order id, Source.
+ - Customer ID is automatic: 0001, 0002, 0003 ... and is never reused (even after a delete).
+ - One customer = one ID: the phone number is the key (0911..., +251911..., 251911... are the same customer). Typing a known phone opens that customer; saving updates the same ID and keeps the earlier conversation in "Earlier conversations".
+ - Sales Name is filled automatically with the logged-in admin's name. Only the main admin can change it; only the main admin can delete a customer.
+ - Stored in data/callers.json and in Supabase app_settings.callers_data (same as the admin list). Date is Ethiopian (yyyy/mm/dd). "Copy as table" pastes straight into Google Sheets.
+ - The order confirmation page (index.html) is unchanged apart from the new Settings button.
+
+FIND CUSTOMER (v66): phone search now accepts a leading 0 or + (0911..., +251911..., 251911... all find the same customer). Paste the new google-sheet-script.gs into Apps Script and deploy a new version.
+
+ETHIOPIAN CALENDAR PICKER (v65): Order / Completion / Delivery date now open a calendar grid (Ethiopian months, Pagume 5/6 days, Today / Clear). Orders View now shows the exact Order, Completion and Delivery dates (yyyy/mm/dd) - paste the new google-sheet-script.gs into Apps Script and deploy a new version.
+
+ETHIOPIAN CALENDAR UPDATE: every date is now Ethiopian.
+ - Order Date / Completion Date / Delivery Date: the order form has Day · Month (Meskerem … Pagume) · Year pickers; the card shows the date as yyyy/mm/dd (e.g. 2019/03/05).
+ - Google Sheet: those dates, plus Created At / Last Updated, are Ethiopian TEXT (yyyy/mm/dd). Google no longer turns them into Gregorian dates.
+   Old rows (Gregorian) are converted automatically the next time the server starts / "Test" runs. Dashboard, Graphs (Daily/Weekly labels like "Hidar 5") and Orders View work from the Ethiopian dates.
+ - To apply: paste the new google-sheet-script.gs into Apps Script, Save, Deploy -> New deployment (or "Manage deployments" -> New version), then restart the server.
+
+Ambar Furniture v54
+Customer answer page update:
+The Telegram card still has exactly ONE button: መልስ ለመስጠት ክፈት.
+On the answer page, customer can Confirm, Reject, or choose Comment.
+After choosing Comment, they type the comment and choose exactly one of:
+✅ Confirm & Send Comment
+❌ Reject & Send Comment
+The selected decision and comment are saved and sent to the admin together.
+
+FILES IN THIS PROJECT
+  package.json         – dependencies + start command (npm start)
+  server.js            – the whole server, including the Google Sheet code
+  public/index.html    – the order form page (product dropdown, Shoe Shelf sizes, main-admin 📊 Google Sheet button)
+  public/setup.html    – the admin setup page
+Deploy: keep this folder structure, run `npm install` then `npm start`.
+(server.js also holds a built-in backup copy of both pages, used only if the public files are missing.)
+
+Google Sheet control (main admin only)
+--------------------------------------
+Every order and every movement is written to a Google Sheet automatically:
+  • Orders        – one row per order, always current (status, product, customer, delivery, comments, links)
+  • Activity Log  – one new row per movement (created, delivered / not delivered, Confirmed, Rejected, comment, answer closed, admin assigned / removed, full sync)
+  • Dashboard     – live totals and orders-by-product built from the two tabs above
+The "📊 Google Sheet" button (and ⚙ settings: test / sync all) is shown ONLY to the main admin, and the server refuses everyone else.
+
+One-time setup:
+ 1. Google Cloud Console → create a project → enable "Google Sheets API".
+ 2. IAM & Admin → Service Accounts → create one → Keys → Add key → JSON (download).
+ 3. Create a Google Sheet, click Share, add the service account e-mail (client_email in the JSON) as Editor.
+ 4. In Render → Environment add:
+      GOOGLE_SHEET_ID               = the long id from the sheet URL (…/spreadsheets/d/<ID>/edit)
+      GOOGLE_SERVICE_ACCOUNT_JSON   = the whole JSON file content
+      SHEET_TIMEZONE                = optional, default Africa/Addis_Ababa
+      PUBLIC_BASE_URL               = your app URL (so card / answer links in the sheet are full links)
+ 5. Redeploy, open the app as main admin, tap ⚙ → "Test connection", then "Sync ALL orders" to back-fill old orders.
+The sheet is a one-way record (app → sheet). Editing cells in the sheet does not change orders in the app.
+
+
+EASY Google Sheet connection (no Google Cloud, no API)
+ 1. Create a Google Sheet. Open Extensions -> Apps Script.
+ 2. Delete the existing code, paste everything from google-sheet-script.gs, click Save.
+ 3. Deploy -> New deployment -> gear icon -> "Web app". Execute as: Me. Who has access: Anyone. Click Deploy and allow permissions.
+ 4. Copy the Web app URL and set it on the server:  GOOGLE_SCRIPT_URL = <that URL>
+    (optional password: set SECRET in the script and the same value in GOOGLE_SCRIPT_KEY)
+ 5. Restart the server, then use the Google Sheet button -> Test.
+
+If you see "Google Script did not answer correctly":
+ - Deploy -> Manage deployments -> pencil (Edit) -> Who has access = Anyone -> Version = New version -> Deploy.
+ - Use the Web app URL ending in /exec (not /dev, not the sheet link).
+ - Re-paste the latest google-sheet-script.gs, Save, then deploy a New version.
+ - Open the /exec URL in a browser: it should show {"ok":true,"message":"AMBAR sheet connector is running."}
+
+HTTP 401 / "asking to sign in" fix:
+ - Apps Script -> Deploy -> New deployment -> gear -> Web app -> Execute as: Me, Who has access: Anyone -> Deploy.
+ - Use the NEW /exec URL in GOOGLE_SCRIPT_URL (do not reuse the old deployment's URL) and restart the server.
+ - Open the /exec URL in an Incognito window. It must show {"ok":true,...} with NO sign-in page.
+ - If "Anyone" is not in the list, the Google account is a school/work account that blocks it. Use a personal @gmail.com account for the sheet and script.
+
+GOOGLE FORM MODE (use this if the Web app link keeps giving HTTP 401)
+ 1. Create a Google Sheet. Open Extensions -> Apps Script, paste google-sheet-script.gs, Save.
+ 2. forms.google.com -> new form with ONE question, type "Paragraph" (not required). Settings -> Responses: turn OFF "Collect email addresses",
+    "Limit to 1 response" and any "Restrict to users in ..." option.
+ 3. Form -> Responses tab -> "Link to Sheets" -> choose the sheet from step 1.
+ 4. Form -> three-dots menu -> "Get pre-filled link" -> type x in the box -> "Get link" -> copy the link.
+ 5. On the server set:  GOOGLE_FORM_URL = <that link>   and   GOOGLE_SHEET_URL = <your sheet's normal address, so the button can open it>
+    Do NOT set GOOGLE_SCRIPT_URL (remove it).
+ 6. In Apps Script pick function "setupFormMode" -> Run -> allow permissions (one time).
+ 7. Restart the server, press Test. Orders appear in the Orders tab within about a minute.
+
+"Cannot read properties of null (reading 'getSheetByName')":
+ The script is not attached to your sheet. Either open the SHEET -> Extensions -> Apps Script and paste google-sheet-script.gs there,
+ or put your sheet ID in SHEET_ID at the top of the script. Then Save, run function "authorize" once (allow), and
+ Deploy -> New deployment -> Web app (Execute as Me, Anyone) and use the NEW /exec URL.
+
+UPDATE: orders are saved to the Google Sheet in ONE step per order (new row, or the same row updated), with the Activity Log written by the script.
+ - If saving fails, the order screen now shows "Google Sheet NOT updated: <reason>".
+ - On every server start, all existing orders are synced into the sheet automatically; the main admin can also press Sync ALL.
+ - After you change google-sheet-script.gs: Save -> Deploy -> New deployment, and use the new /exec URL.
+
+GOOGLE SHEET LOOKS EMPTY? Your data is in the tab called "Orders" (bottom of the sheet). The new script puts Orders FIRST, removes the empty
+default tab and formats it as a table (dark header, banded rows, filter buttons, colored Status, Delivery Type / Service columns).
+After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> use the new /exec URL -> restart the server (or press Test)
+so the formatting is applied. Tabs: Orders (table), Activity Log (table), Dashboard (totals, by product, by delivery type, by service, latest movements).
+
+ETHIOPIAN MONTH TABS + START NEW MONTH
+ - Each Ethiopian month gets its own tab in the Google Sheet (e.g. "Hidar 2019"). An order goes to the month of its Order Date
+   (or its creation date if no Order Date). Later updates (confirm / reject / comments) stay in the same row.
+ - Columns START WITH THE CUSTOMER INFORMATION: Customer Name, Phone, Telegram Username, Telegram Chat ID, Location, then the order details.
+ - "▶ Start New Month" button (main admin only; the server refuses everyone else) creates / opens the tab of the current Ethiopian month.
+ - Your old single "Orders" tab is renamed "Old Orders (backup)". When the server restarts, all existing orders are filed into the month tabs automatically
+   (or press Sync ALL in the gear panel). You can delete the backup tab afterwards.
+ - Dashboard totals add up ALL month tabs.
+ - After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+v45 – SETTINGS MENU, ARCHIVE & START NEW, SUMMARY + GRAPHS
+ - All control buttons now live inside ONE ⚙ settings icon (bottom right): Open Google Sheet, Summary, Graphs, Sheet test/sync (main admin),
+   ♻ Archive old list & Start New (main admin), 👥 Manage Assigned Admins (main admin), 🔗 Connect my Telegram account.
+ - ♻ Archive old list & Start New (main admin only, server-enforced): every month tab + the Activity Log are KEPT as "Archive <date> · …" tabs,
+   a clean new month tab is created, and orders created before that moment are never written to the sheet again.
+ - Google Sheet tabs now start with "Dashboard" (summary in numbers) and "Graphs" (charts), then the month tabs.
+ - "Status" column now sits right after "Order Code" (existing tabs are re-mapped by column name automatically; no data is lost).
+ - After pasting the new google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+v47 – PROFESSIONAL SHEET DESIGN
+ - Order tabs: Roboto font, taller header with colour groups (gold = customer info, teal = Order Code + Status), frozen header + customer name,
+   no gridlines, soft row banding, centered status/date columns, money columns formatted (#,##0), colour "pill" Status / Delivered / Paid In Full.
+ - Dashboard: banner, 12 KPI tiles, breakdown tables (product / delivery type / service) and the latest 15 movements.
+ - Graphs: banner + 6 charts (status, per-month stacked, product, delivery, delivery type, service) with the data tables underneath.
+ - After pasting google-sheet-script.gs: Save -> Deploy -> New deployment -> new /exec URL -> restart the server (formatting is re-applied on start).
+
+## Google Sheet tabs (modern layout)
+- Dashboard, Graphs – totals and charts.
+- **Find Customer** – type an @username, Telegram Chat ID, Order Code or phone in the yellow box (B4); the customer card plus that customer's Orders, Payments, Delivery and Product tables appear.
+- Customers, Orders View, Payments (with Balance), Deliveries, Products – one filterable table per topic (live formulas over all month tabs).
+- Month tabs (e.g. "Hidar 2019") hold the raw data, header colours grouped by topic. Do not type in the formula tabs.
+After pasting the new google-sheet-script.gs: Save, Deploy -> Manage deployments -> New version, then restart the server (or press Test) so the tabs are built.
+
+## v48 – SIMPLER SHEET + NO ZOOM
+- Google Sheet tabs are now exactly: Dashboard · Find Customer · Orders View · Graphs · Activity Log · month (date) tabs (newest month first).
+  Customers, Payments, Deliveries and Products tabs are no longer built and are deleted automatically (they were only formula views; no order data is lost).
+  "Old Orders (backup)" is not touched – delete it by hand once you no longer need it.
+- NEW ORDERS ARE ON TOP: every new order is inserted at row 2 of its month tab (right under the header). Existing month tabs are sorted newest-first
+  on the next server start / Test, and "Sync ALL" files old orders oldest-first so the newest ends up on top. Orders View was already newest-first.
+- Mini app is not zoomable: viewport has user-scalable=no / maximum-scale=1, plus pinch, double-tap and Ctrl+wheel zoom are blocked
+  (index.html, setup.html and the customer answer page; server.js also injects it into the built-in fallback pages).
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server (or press Test).
+
+## v49 – ONE "Start from ZERO" BUTTON (main admin only)
+- ⚙ Settings → "🗑 Start from ZERO (backup + clear all)" replaces the old "Archive old list & Start New" button. Two confirmations are asked.
+- What it does, in order: (1) writes every order to the Google Sheet, (2) the sheet keeps ALL current month tabs + the Activity Log as "Backup <date> · …" tabs
+  and creates clean Dashboard / Orders / Log, (3) deletes all orders from the app database, (4) order numbering restarts at 1.
+- If the sheet backup fails, nothing is deleted from the app. If the Google Sheet is not connected, the app is cleared without a sheet backup (the message says so).
+- Server-enforced: only the main admin (owner) can call /api/sheets/reset-all. Uploaded photos already stored in Supabase Storage are not deleted.
+- Note: the built-in fallback copy of index.html inside server.js is old; keep public/index.html in the deploy so the new button is shown.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+## v50 – NO ACTIVITY LOG · NAME SEARCH · INTERACTIVE GRAPHS · AMBAR ASSISTANT
+- **Activity Log removed.** The sheet no longer has an "Activity Log" tab (an old one is deleted automatically on the next server start / Test). The Dashboard's
+  "Latest 15 movements" was replaced by "Latest 10 orders". Old "Backup … · Activity Log" tabs made by earlier "Start from ZERO" runs are NOT touched – delete them by hand if you wish.
+- **Find Customer – search by NAME too.** In the yellow box type a name (or just part of it), @username, Chat ID, Order Code or phone. Row 5 tells you which customers matched
+  (if a name matches several people the card shows the first one – type more of the name to narrow it down).
+- **Dashboard + Graphs views.** Every graph has a yellow drop-down directly above it (Google Sheets cannot switch a graph by clicking the graph itself):
+  * time graphs (Orders over time, Money over time, Dashboard "Trend"): **Daily · Weekly · Monthly · Yearly** (last 12 days / weeks / months / years;
+    months and years are ETHIOPIAN, matching the month tabs; weeks start on Monday);
+  * total graphs (status, product, delivery type, cards delivered, delivery service): **Today · This week · This month · This year · All time**;
+  * the Dashboard numbers, breakdown tables and trend graph each have their own yellow box. Your last choice is kept when the sheet is rebuilt.
+  * New look: one card header per graph, donut charts, stacked columns, softer grid, consistent colours (amber / green / red for Pending / Confirmed / Rejected).
+- **Hidden tab "_Data"** is the live helper table behind the Dashboard and Graphs. Do not delete it (it is rebuilt automatically on every server start / Test).
+- **🤖 Ambar Assistant** (index page, right after "Service Information"): an admin chooses *New feature* or *Correction*, writes it and presses Send.
+  It is saved (data/assistant-notes.json, and Supabase `app_settings.assistant_notes` when Supabase is used) and sent by the bot to the main admin in Telegram.
+  Assigned admins see their own notes; the main admin sees all of them and can press "Mark done".
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> Manage deployments -> New version (or New deployment, new /exec URL) -> restart the server (or press Test).
+
+## v51 – ONE FEATURES BOX · ONE GRAPH BUTTON · ✏️ EDIT ORDER
+- **Ambar Assistant removed** (card, server routes and notes storage). In Product Information there is now ONE box, "Additional features" (free text).
+  It is printed on the order card, saved with the order and written to a new Google Sheet column "Additional Features" (after Drawer).
+- **Graphs: ONE button.** The Graphs tab has a single yellow drop-down (cell B3): Daily · Weekly · Monthly · Yearly. It changes every graph together
+  (time graphs = last 12 days/weeks/months/years; total graphs = Today / This week / This month / This year). The per-graph drop-downs are gone.
+  The Dashboard tab is unchanged.
+- **✏️ Edit order** button in the admin bot, on the cross-check copy, next to "💰 Customer paid in full" (it is there from the start; the paid button
+  still appears after the customer confirms). It opens the order form pre-filled; "💾 Save changes" updates the SAME order:
+  the same Google Sheet row is changed (no new row), the card image/caption is refreshed in the admin bot (and in the customer's chat when the bot sent it).
+  Needs PUBLIC_BASE_URL set to your https address. The customer's Telegram chat ID is not editable.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server (the new column and graph button are built on start).
+
+## v52 – SEPARATE ANSWER BUTTON · PAY-FULL ALWAYS · EDIT RE-SENDS TO CUSTOMER · NO TREND · GRAPHS FIX
+- Customer card sent by the bot: the answer link is ONLY the button "🔗 መልስ ለመስጠት ክፈት" (the extra text link inside the caption is gone).
+- Admin bot: "💰 Customer paid in full" is always on the cross-check copy (no need to wait for the customer to confirm), next to "✏️ Edit order".
+- Saving an edit re-sends the order to the customer as a new card titled "✏️ EDITED ORDER" with the answer button. The answer is reopened (status back to Pending)
+  so the customer can confirm / reject / comment again. The same Google Sheet row is updated. Needs the customer's numeric Telegram chat ID (customer pressed Start).
+- Google Sheet Dashboard: the TREND section is removed; Breakdown and Latest 10 orders moved up.
+- Graphs tab: the total graphs now cover the same window as the time graphs (last 12 days / weeks / months / years), so they are no longer empty when "today" has no orders.
+  The sheet is now built part by part: if one tab fails, the others are still built and the reason is shown in red in cell A3 of the Graphs tab.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment -> new /exec URL -> restart the server.
+
+## v53 – GRAPHS ALWAYS VISIBLE · EDITED ORDER RE-SENT · SEPARATE ANSWER BUTTON
+- Graphs tab: the numbers behind the graphs are now calculated by the script and written as plain values (no formulas), so the charts cannot stay blank.
+  They refresh when you change the yellow drop-down (B3), whenever an order is saved, and when the sheet is rebuilt. Totals cover the same last 12 days / weeks / months / years as the time graphs.
+  The script also tries to install an "edit" trigger on setup (a permission prompt may appear when you deploy).
+- Edited order: saving an edit re-sends it to the customer the same way the order first went: bot card -> Telegram Business -> your connected Telegram account.
+  The message header says "✏️ EDITED ORDER". If it cannot be sent, the reason is shown on the edit screen.
+- Cards sent from your own Telegram account: when the customer has pressed Start in the AMBAR bot, the answer link now comes as a SEPARATE message with a real button
+  (a personal account cannot attach bot buttons). If the customer never pressed Start, the text link stays inside the card.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server.
+
+## v54 – GRAPHS FILLED · EDIT CLOSED AFTER PAID IN FULL
+- Graphs tab: the first column of every graph table (Nov 12, 2019 …) is now stored as plain TEXT. Before, Google Sheets turned it into dates / numbers, so the chart
+  treated it as data and the real bars looked empty. Old rows are cleared on every refresh, the charts are told to use the first column as labels, and a pie with
+  no orders shows a grey "(no orders)" slice instead of a blank circle.
+- Every graph is drawn on its own; if one fails, the others still show and the reason is written in cell E3 (red). If the charts are ever deleted, they are drawn again
+  automatically on the next order / drop-down change.
+- Paid in full = order closed: after "💰 Customer paid in full" the ✏️ Edit order button disappears from the admin bot, the edit page shows "closed", and the server
+  refuses any edit of that order. Everything else is unchanged.
+- After updating: paste google-sheet-script.gs -> Save -> Deploy -> New deployment (allow permissions) -> new /exec URL -> restart the server (the Graphs tab is rebuilt on start).
+- v54b: charts now send only basic options (colours, stacking, legend, donut, bar width, size); fonts / axis styling / chart-area options were removed because an unsupported option can leave an empty frame.
+
+## v55 – GOOGLE SHEET: CONNECT ONCE, CONNECTED FOR ALL TIME
+ - Main admin: ⚙ → 📊 Google Sheet → paste the Web app URL (…/exec) → "Connect & save permanently". The link is checked, then saved on disk AND in Supabase (`app_settings.google_sheet_connection`).
+ - On every server start the saved link is restored automatically (before anything else), so a restart / redeploy never disconnects the sheet.
+ - A wrong link never replaces a working saved one. Errors never erase the saved link.
+ - If Google fails for a moment, the server quietly reconnects every 2 minutes, and each new order retries on its own.
+ - Existing GOOGLE_SCRIPT_URL / GOOGLE_FORM_URL settings still work and are saved permanently on first start. Nothing else was changed.
+ - For best permanence keep Supabase configured (Render's disk can be wiped on redeploy; Supabase keeps the link).
+
+## v56 – CARD TO CUSTOMER + THANK-YOU AFTER FULL PAYMENT
+ - Thank-you bug fixed: the check for the customer's chat ID was written with a broken pattern, so the message was never sent (and line breaks showed as "\n"). Now the customer gets the thank-you right after the admin presses "Paid in full"; the admin sees whether it was delivered.
+ - Cards to customers: the bot sends the card to the customer when they have pressed Start. If not, the order is saved as "waiting" and the card is sent AUTOMATICALLY the moment the customer opens/starts the bot (matched by Telegram ID or @username). Admins get a note when it is delivered.
+ - Telegram rule: a bot cannot message someone who never opened it, so the customer must open the bot once (the order warning shows the bot link to send them).
+
+## v57 – CARD TO CUSTOMER: PERSONAL START LINK + FALLBACKS
+ - If the card cannot be delivered when the order is saved, the admin warning now shows a personal link: https://t.me/<bot>?start=o_<order token>. When the customer opens it and presses Start, the card is delivered immediately (matched by the link itself, so it works even if the server forgot the customer's @username or ID, e.g. after a Render restart without Supabase).
+ - Cards are also still auto-delivered when a known customer (by Telegram ID or @username) opens the bot.
+ - If the card photo itself cannot be sent, the bot now falls back to a text message with the answer button instead of failing.
+ - Telegram rule: a bot cannot message a person who never opened it, so a customer who never started the bot needs that one tap.
+ - Keep Supabase configured so customers are remembered between restarts.
+
+## v58 – CREATE & SEND ORDER CARD → SELECTED CUSTOMER
+ - The "Select customer" list now shows everyone who pressed Start in the AMBAR bot, for the main admin AND for every assigned admin (before, assigned admins saw an empty list). Names are shown properly, and choosing one fills the customer's chat ID, @username and name.
+ - "📨 Create & Send Order Card" sends the card with its button straight to the selected customer through the AMBAR bot. Assigned admins no longer need their own connected Telegram account for this.
+ - If the customer has not pressed Start, the order is still saved and the personal start link (see v57) is shown.
+
+## v59 – CARD REACHES THE SELECTED CUSTOMER (AND THE ADMIN BOT)
+ - The order result now names exactly who received the card (customer name / @username) and warns if the chosen chat belongs to an admin account.
+ - Admin accounts no longer appear in the "Select customer" list (they pressed Start too, but they are not customers).
+ - When the admin has Telegram Business connected, the customer ALSO receives the card in their normal chat with the admin, in addition to the AMBAR bot copy. Admin cross-check copies in the AMBAR bot are unchanged.
+
+## v60 – FOUR BUTTONS ON THE CUSTOMER'S ORDER CARD
+ The card the customer receives now has four clickable buttons right under it:
+ 1. 🔗 መልስ ለመስጠት ክፈት – opens the answer page (unchanged)
+ 2. ✅ Confirm Order – confirms the order from the message itself
+ 3. ❌ Reject Order – rejects it
+ 4. 💬 Comment – the bot asks the customer to type the comment, saves it and tells the admins
+ After an answer the buttons stay visible but locked, the card shows the final status, and the admin bot copies update as before. The order form and everything else are unchanged.
+
+## v61 – CARD ALWAYS GETS SENT (button fallback)
+ - The card is first sent with the 4 buttons. If Telegram refuses that keyboard for any reason, it is automatically re-sent with the 🔗 answer button only, and then with no buttons, so the customer always receives the card. Applies to the AMBAR bot send and the Telegram Business send.
+ - If the card photo itself cannot be sent, a text message with the buttons is sent instead.
+ - Real Telegram errors (blocked bot, customer never pressed Start, etc.) are shown in the order result.
+
+## v62 – removed the 🔢 Summary (numbers) and 📈 Graphs page buttons from the settings panel (nothing else changed).
+
+## v63 – fixed 'api is not defined' on 🗑 Start from ZERO (settings panel). Nothing else changed.
+
+
+## v75 – DELIVERY FAILURES IN RED + COMPLETE LIVE SYNC
+- Failed order-card deliveries now appear in the Delivery Note column as `Sent from: <admin> — ❌ NOT delivered (<reason>)` and the full order row is highlighted pale red in the month tab and Orders View.
+- When an order is placed for a selected customer, Customers Data updates the customer status to `Customer`, the order status to `Pending`, and adds the order code. When the customer confirms or rejects, the order status in Customers Data follows that decision.
+- Every order save and full sync rebuilds all derived tabs: Dashboard, Find Customer, Analysis, Orders View, Graphs and the hidden data source.
+- Apps Script reports version `v78`. After updating, paste the included `google-sheet-script.gs` into Apps Script, Save, Deploy → Manage deployments → Edit → Version: New version → Deploy, then press Connect & sync EVERYTHING / Sync ALL in the app.
+
+
+## v77 – MODERN SHEET + SAFE ORDER ARCHIVING
+
+- Adds a dedicated **Archived Orders** tab. Archiving removes an order from active month tabs but preserves its complete row and archive timestamp/source.
+- Adds the **AMBAR Orders** Google Sheets menu: Archive selected order, Restore selected archived order, and Refresh all sections.
+- Select an order row in a month tab or Orders View, then choose **AMBAR Orders → Archive selected order…**. To bring it back, select its row in Archived Orders and choose **Restore selected archived order**.
+- Full app syncs update an archived record in place rather than silently restoring it to active orders.
+- Dashboard displays an Archived Orders count; active order totals remain separate from archived records.
+- Connector version is `v77`.
+
+
+## v78 – MODERN VIEWS, FAILED-DELIVERY ARCHIVE, SECOND PHONE & ETHIOPIAN DATES
+
+- Updated the spreadsheet palette across generated views to a cleaner charcoal, orange and cream visual system, with clearer table headers and spacing.
+- During every full rebuild/sync, orders whose row contains `Sent from: mule — ❌ NOT delivered` or the `Could not find the input entity for` delivery failure are moved out of active month tabs into `Archived Orders`, with archive timestamp and source tab retained. The archive table highlights delivery failures in pale red.
+- Added `Additional Phone Number` to Customers Data and the customer form. Existing v77 customer-sheet data is migrated by inserting the new column after the primary phone, preserving the original values.
+- Customer dates display as Ethiopian `DD/MM/YYYY`; the customer form accepts that format and keeps the internal Ethiopian date canonical.
+- Added an `AMBAR Orders → Ethiopian date picker…` sidebar. Select a cell, choose Ethiopian day/month/year, and insert the date as `DD/MM/YYYY`. Dashboard date calculations accept both the existing `YYYY/MM/DD` values and the day-first format.
+- Connector version is `v78`. After deploying the updated app files, paste the included `google-sheet-script.gs` into Apps Script, save, deploy a **New version**, then use **AMBAR Orders → Refresh all sections** or press the app's full sync.
+
+NOTE: Archiving is performed on the next full rebuild/sync after this script is activated. The source order record is retained in `Archived Orders`; it is not permanently deleted.
+
+
+## v79 – PROFESSIONAL DASHBOARD + CUSTOMER DIRECTORY SUMMARY
+- Dashboard KPI cards are clearer and more readable, with a reporting-period selector, active order totals, status totals, payment, advance, and a separate archived-order count. Archived orders remain excluded from active totals.
+- Customers Data now has a professional title band and five live KPI cards: Total Leads, Orders Placed, Rejections, Sold Readymade, and Total Revenue (Birr).
+- Customer table headers and records move below the summary, with filters, frozen headings, readable widths, status colors and Ethiopian day/month/year dates retained. Existing v78 customer records are migrated safely by inserting summary rows above the old table.
+- The customer summary refreshes when customer records are added, edited, deleted, fully synchronized, or when order data changes. Orders/rejections/readymade counts include archived order records so moving a failed delivery to the archive does not erase the business history.
+- `Sold Readymade` counts order rows whose Product value contains the word “readymade”; `Total Revenue` sums the Customers Data `Total Spend` values.
+- Apps Script connector version is `v79`. Paste the updated `google-sheet-script.gs`, save, deploy a New version, and refresh all sections.
