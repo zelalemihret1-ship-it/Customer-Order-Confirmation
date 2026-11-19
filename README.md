@@ -1,3 +1,11 @@
+# v81 update (2026-11-19)
+
+- Fixed the Customers Data merge/freeze conflict by splitting the top directory banner and section labels at the frozen-column boundary; summary cards no longer merge frozen and scrollable columns.
+- Customer Name is now column C and stays frozen with Customer ID and primary Phone Number. Additional Phone Number is moved to column D and scrolls normally. Existing v80 customer rows are migrated by swapping the old C/D values once, preserving their data.
+- The customer overview remains at the top of Customers Data.
+- Dashboard KPI cards are larger and more prominent; product, delivery type and delivery service breakdowns are displayed as bordered mini-cards with emphasized counts.
+- Apps Script version: v81. Deploy the updated `google-sheet-script.gs` as a new web-app version and run `fixNow` once.
+
 ## v80 - Dashboard and verified failed-delivery archive
 
 - Dashboard redesigned with clearer KPI cards, explanatory labels, readable product/delivery breakdowns, and a latest active-orders table. All metrics are calculated from actual active order rows for the selected reporting period.
