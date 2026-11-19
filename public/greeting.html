@@ -67,10 +67,10 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
 <header>
   <a class="back" href="/">← Order Cards</a>
   <h1>👋 First Greeting</h1>
-  <div class="sub">The customer's first message · text only · sent once</div>
+  <div class="sub">The customer's first message · text only · sent automatically once</div>
 </header>
 <main>
-  <div class="tabs"><button id="tabSend" class="on">✉️ Send greeting</button><button id="tabLog">📜 Sent log</button></div>
+  <div class="tabs"><button id="tabSend" class="on">✉️ Greeting</button><button id="tabLog">📜 Sent log</button></div>
   <div id="note" class="notice"></div>
 
   <section id="vSend">
@@ -82,23 +82,15 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
       <p class="hint" style="margin:10px 0 0">When ON: the first time a new person writes to you in a private chat, your greeting text is sent to them automatically — plain text, once. This works for EVERYONE who messages you privately — saved in Customers Data or not, saved in your phone contacts or not. People you already chatted with, and anyone already greeted, get nothing.</p>
     </div>
     <div class="card">
-      <h2>1. Your greeting text</h2>
+      <h2>Your greeting text</h2>
       <label>Text <span class="hint">(plain text only — no photo, no buttons)</span>
         <textarea id="text" maxlength="1000"></textarea></label>
       <div class="chips"><button data-ins="{name}">{name} first name</button><button data-ins="{fullname}">{fullname}</button><button data-ins="{admin}">{admin} your name</button></div>
       <div class="preview" id="preview"></div>
       <div class="row" style="margin-top:12px"><button class="ghost" id="save">💾 Save my text</button><button class="ghost" id="reset">Use standard text</button></div>
-      <p class="hint">This text belongs to you only; every admin keeps their own.</p>
+      <p class="hint">This text belongs to you only; every admin keeps their own. It is sent automatically when the switch above is ON — there is nothing to select.</p>
     </div>
-    <div class="card">
-      <h2>2. Choose customers <span class="pill" id="sel">0 selected</span></h2>
-      <div id="warn" class="notice"></div>
-      <div class="tools"><input id="q" placeholder="Search name, phone, ID or @username"><select id="flt"><option value="new">Not greeted yet</option><option value="all">All customers</option></select></div>
-      <div class="row" style="margin-bottom:10px"><button class="ghost" id="all">Select all shown</button><button class="ghost" id="none">Clear</button></div>
-      <div id="list"></div>
-      <button class="primary" id="send" style="width:100%;margin-top:6px" disabled>👋 Send greeting</button>
-      <p class="hint" id="sendHint" style="margin-top:8px">Up to 30 customers at a time. Messages go out one by one, a few seconds apart.</p>
-    </div>
+    <div id="warn" class="notice"></div>
   </section>
 
   <section id="vLog" style="display:none"></section>
@@ -108,13 +100,13 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const say=(m,k)=>{const n=$("note");n.className="notice "+(k||"info");n.textContent=m;n.scrollIntoView({behavior:"smooth",block:"nearest"});};
 const ask=(m,cb)=>{const w=window.Telegram&&Telegram.WebApp;if(w&&w.showConfirm){try{w.showConfirm(m,ok=>{if(ok)cb();});return;}catch{}}if(confirm(m))cb();};
-let D=null,picked=new Set(),sending=false;
+let D=null;
 function tab(t){$("vSend").style.display=t==="Send"?"block":"none";$("vLog").style.display=t==="Log"?"block":"none";$("tabSend").classList.toggle("on",t==="Send");$("tabLog").classList.toggle("on",t==="Log");}
 $("tabSend").onclick=()=>tab("Send");$("tabLog").onclick=()=>tab("Log");
 
 const first=n=>String(n||"").trim().split(/\s+/)[0]||"there";
 function preview(){
-  const c=D&&D.customers.find(x=>picked.has(x.id))||{name:"Abel Tesfaye"};
+  const c={name:"Abel Tesfaye"};
   $("preview").textContent=$("text").value.replace(/\{name\}/gi,first(c.name)).replace(/\{fullname\}/gi,c.name||"there").replace(/\{admin\}/gi,D?D.me.name||"Ambar Furniture":"Ambar Furniture")||"…";
 }
 $("text").addEventListener("input",preview);
@@ -122,46 +114,12 @@ document.querySelector(".chips").addEventListener("click",e=>{const b=e.target.c
 $("reset").onclick=()=>{$("text").value=D.defaultTemplate;preview();};
 $("save").onclick=async()=>{const d=await (await fetch("/api/greetings/template",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("text").value})})).json();say(d.ok?"✅ "+d.message:"❌ "+d.error,d.ok?"ok":"bad");};
 
-function shown(){
-  const q=$("q").value.trim().toLowerCase(),qd=q.replace(/\D/g,"");
-  return D.customers.filter(c=>{
-    if($("flt").value==="new"&&c.greeted)return false;
-    if(!q)return true;
-    return [c.id,c.name,c.phone,c.username].join(" ").toLowerCase().includes(q)||(qd.length>=3&&String(c.phone||"").replace(/\D/g,"").includes(qd));
-  });
-}
 function drawAuto(){const on=!!D.auto;$("autoSw").classList.toggle("on",on);$("autoSw").setAttribute("aria-checked",on);$("autoState").textContent=on?"🟢 ON — greeting new private chats automatically":"⚪ OFF";}
 $("autoSw").onclick=async()=>{
   const want=!D.auto;$("autoSw").disabled=true;
   try{const d=await (await fetch("/api/greetings/auto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({on:want,text:$("text").value})})).json();
     say(d.ok?d.message:"❌ "+d.error,d.ok?"ok":"bad");if(d.ok)D.auto=d.on;}catch(e){say("❌ "+e.message,"bad");}
   $("autoSw").disabled=false;drawAuto();};
-function drawList(){
-  const list=shown();
-  $("list").innerHTML=list.length?list.slice(0,200).map(c=>`<label class="cust ${c.greeted?"done":""}"><input type="checkbox" data-id="${esc(c.id)}" ${picked.has(c.id)?"checked":""} ${c.greeted?"disabled":""}>
-    <div style="flex:1"><div><span class="cid">${esc(c.id)}</span> <span class="nm">${esc(c.name)}</span></div><div class="meta">${esc(c.phone||"")} ${esc(c.username||"")}</div></div>
-    ${c.greeted?`<span class="pill sent">✅ Greeted ${esc(c.greeted.at.slice(0,10))}<br>by ${esc(c.greeted.by)}</span>`:""}</label>`).join(""):`<div class="empty">${D.customers.length?"No customer matches.":"No customers yet. Add them in Customers Data first."}</div>`;
-  count();
-}
-function count(){$("sel").textContent=picked.size+" selected";$("send").disabled=sending||!picked.size||!D.canSend;$("send").textContent=sending?"Sending… please wait":"👋 Send greeting"+(picked.size?" to "+picked.size:"");preview();}
-$("list").addEventListener("change",e=>{const id=e.target.dataset.id;if(!id)return;if(e.target.checked){if(picked.size>=D.limits.batch){e.target.checked=false;say("Up to "+D.limits.batch+" customers at a time.","info");return;}picked.add(id);}else picked.delete(id);count();});
-$("q").addEventListener("input",drawList);$("flt").addEventListener("change",drawList);
-$("all").onclick=()=>{shown().filter(c=>!c.greeted).slice(0,D.limits.batch).forEach(c=>picked.add(c.id));drawList();};
-$("none").onclick=()=>{picked.clear();drawList();};
-
-$("send").onclick=()=>{
-  if(!picked.size||sending)return;
-  ask("Send this greeting text to "+picked.size+" customer(s)? Each customer gets it only once.",async()=>{
-    sending=true;count();say("Sending… keep this page open.","info");
-    try{
-      const d=await (await fetch("/api/greetings/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids:[...picked],text:$("text").value})})).json();
-      if(!d.ok)say("❌ "+d.error,"bad");
-      else{const bad=d.results.filter(r=>!r.ok).map(r=>"• "+(r.name||r.id)+": "+r.error).join("\n");say(d.message+(bad?"\n"+bad:""),bad?"info":"ok");picked.clear();}
-    }catch(e){say("❌ "+e.message,"bad");}
-    sending=false;await load();
-  });
-};
-
 async function load(){
   let d;
   try{d=await (await fetch("/api/greetings")).json();if(!d.ok){$("gate").style.display="flex";$("gateMsg").textContent=d.error||"No access.";return;}}
@@ -171,10 +129,9 @@ async function load(){
   if(firstLoad)$("text").value=d.template;
   const w=$("warn");
   if(!d.canSend){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected. Open <b>⚙ Settings → 🔗 Connect my Telegram account</b> on the main page, then come back.";}
-  else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected, so only customers who opened the AMBAR bot can be greeted (through the Business account).";}
+  else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected, so only people who opened the AMBAR bot can be greeted automatically (through the Business account).";}
   else{w.className="notice";w.textContent="";}
-  picked=new Set([...picked].filter(id=>d.customers.some(c=>c.id===id&&!c.greeted)));
-  drawAuto();drawList();
+  drawAuto();preview();
   let h="";
   if(d.people)h+=`<div class="card"><h2>👑 All admins</h2>${d.people.length?`<div class="people">${d.people.map(p=>`<div class="person"><b>${esc(p.name)}</b><br>✅ Sent: ${p.sent}<br>${p.failed?`<span style="color:#b3261e">Not sent: ${p.failed}</span>`:"No failures"}</div>`).join("")}</div>`:`<div class="empty">Nobody has sent a greeting yet.</div>`}</div>`;
   h+=`<div class="card"><h2>${d.people?"All greetings":"My greetings"}</h2>${d.log.length?d.log.map(l=>`<div class="logrow ${l.status}"><b>${esc(l.name)}</b> <span class="pill ${l.status}">${l.status==="sent"?"Sent":"Failed"}</span> · ${esc(l.at)}${d.people?" · by "+esc(l.by):""}${l.via?" · "+esc(l.via):""}${l.auto&&!l.saved?" · <i>not in Customers Data</i>":""}${l.error?`<br><span style="color:#b3261e">${esc(l.error)}</span>`:""}</div>`).join(""):`<div class="empty">No greetings sent yet.</div>`}</div>`;
