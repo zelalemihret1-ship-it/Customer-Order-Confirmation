@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -10,76 +10,143 @@ try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
 (function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
 </script>
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
-header{background:#153a2e;color:#f4efe3;padding:24px 18px;text-align:center;border-bottom:4px solid #b89552}
-header h1{margin:0;font-size:26px;letter-spacing:.5px}
-header .sub{opacity:.82;margin-top:6px;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
-main{max-width:920px;margin:auto;padding:18px 14px 30px}
-.hello{font-size:14px;color:#6d675d;margin:0 2px 14px}
-h2{font-size:12px;text-transform:uppercase;letter-spacing:1.6px;color:#8a7f69;margin:22px 2px 10px;display:flex;align-items:center;gap:10px}
-h2:before{content:"";width:5px;height:16px;border-radius:3px;background:#ffa939}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-a.tile{display:flex;gap:14px;align-items:center;background:#fff;border:1px solid #e4ded2;border-radius:18px;padding:16px;text-decoration:none;color:#18382e;box-shadow:0 6px 22px #00000012;transition:transform .12s,box-shadow .12s}
-a.tile:hover{transform:translateY(-2px);box-shadow:0 10px 26px #0000001f}
-a.tile:active{transform:none}
-.ic{flex:none;width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#0f2f25,#1b4d3d);display:flex;align-items:center;justify-content:center;font-size:27px;border-bottom:3px solid #ffa939}
-.tx b{display:block;font-size:16px;color:#153a2e}
-.tx span{display:block;font-size:12px;color:#6d675d;margin-top:3px;line-height:1.4}
-.go{margin-left:auto;color:#b89552;font-size:22px;font-weight:700}
-a.tile.main{grid-column:1/-1;background:linear-gradient(135deg,#0f2f25,#1b4d3d);border-color:#0f2f25}
-a.tile.main .tx b{color:#ffa939;font-size:18px}a.tile.main .tx span{color:#d9d3c3}a.tile.main .ic{background:#ffffff1f;border-bottom-color:#ffa939}
-a.tile.warn{border-color:#e6c47a;background:#fffaf0}a.tile.warn .ic{background:linear-gradient(135deg,#8a5a00,#b3761a)}
+:root{--bg:#f2f4f8;--card:#fff;--ink:#14231e;--muted:#6b7680;--line:#e8ebf0;--brand:#0f3d30;--brand2:#17604b;--gold:#e0b22e;
+--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 26px rgba(16,24,40,.08)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+svg.i{width:20px;height:20px}
+.d3{width:56px;height:56px;flex:none;filter:drop-shadow(0 6px 5px rgba(20,35,60,.28))}
+.d3.sm{width:44px;height:44px}.d3.xs{width:30px;height:30px;filter:drop-shadow(0 3px 3px rgba(0,0,0,.35))}
+
+header{background:radial-gradient(120% 140% at 85% -20%,#2a8a6c 0%,transparent 55%),linear-gradient(160deg,var(--brand),var(--brand2));color:#fff;padding:calc(20px + env(safe-area-inset-top,0px)) 20px 66px}
+.top{max-width:760px;margin:auto;display:flex;align-items:center;gap:14px}
+.logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(150deg,#ffe58f,#e0a21a);color:#5a3a00;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;box-shadow:0 8px 14px rgba(0,0,0,.3),inset 0 2px 2px rgba(255,255,255,.7),inset 0 -4px 6px rgba(120,70,0,.3)}
+.top h1{margin:0;font-size:20px;font-weight:700}.top .sub{font-size:13px;opacity:.78;margin-top:2px}
+main{max-width:760px;margin:-46px auto 0;padding:0 14px calc(100px + env(safe-area-inset-bottom,0px))}
+.hello{margin:0 4px 14px;font-size:15px;font-weight:600;color:#fff;min-height:20px}
+
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.big{display:flex;flex-direction:column;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--shadow);min-height:158px;transition:transform .12s}
+.big:active{transform:scale(.97)}
+.big b{display:block;font-size:15.5px;line-height:1.25}
+.big span.d{display:block;font-size:12px;color:var(--muted);margin-top:4px;line-height:1.35}
+.big.first{background:linear-gradient(150deg,#0f3d30,#1a6a52);border-color:#0f3d30;color:#fff}
+.big.first b{color:#ffe08a}.big.first span.d{color:#d3e4dd}
+
+.sec{display:flex;align-items:center;gap:8px;margin:26px 4px 10px;font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--muted)}
+.sec .badge{margin-left:auto;text-transform:none;letter-spacing:0;font-size:11px;font-weight:600;color:var(--brand);background:#e1f0ea;border-radius:999px;padding:3px 10px}
+.list{background:var(--card);border-radius:22px;border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden}
+.row{display:flex;align-items:center;gap:14px;padding:12px 16px}
+.row+.row{border-top:1px solid var(--line)}.row:active{background:#f3f5f8}
+.row b{display:block;font-size:15px}.row span.d{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+.chev{margin-left:auto;color:#b4bcc4}
+
+.admin{background:linear-gradient(160deg,#14291f,#0e1c17);border-radius:24px;padding:14px;box-shadow:var(--shadow)}
+.admin .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.at{display:flex;flex-direction:column;gap:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px;color:#fff;min-height:128px;transition:transform .12s}
+.at:active{transform:scale(.97);background:rgba(255,255,255,.11)}
+.at b{display:block;font-size:14.5px;line-height:1.25}.at span.d{display:block;font-size:11.5px;color:#aebdb7;margin-top:3px;line-height:1.35}
+.at.danger{background:rgba(224,58,58,.12);border-color:rgba(224,58,58,.4)}
+
+/* bottom bar */
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
+.bar .in{max-width:760px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{display:flex;align-items:center;justify-content:center;gap:9px;border-radius:15px;padding:9px 10px;color:#fff;font-weight:700;font-size:13.5px;line-height:1.2;box-shadow:0 8px 16px -8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .12s}
+.btn:active{transform:scale(.97)}
+.btn.tg{background:linear-gradient(150deg,#3db6f0,#1a82b8)}.btn.sh{background:linear-gradient(150deg,#2fc77d,#0e8a51)}
+.btn .d3{background:rgba(255,255,255,.95);border-radius:10px;padding:3px}
+
 .hide{display:none!important}
-#gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
-#gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
-@media(max-width:560px){.grid{grid-template-columns:1fr}}
+#gate{display:none;position:fixed;inset:0;z-index:99;background:#0d1714;color:#fff;align-items:center;justify-content:center;padding:24px;text-align:center}
+#gate .panel{max-width:380px;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:28px;background:#14231e}
+#gate h2{margin:0 0 10px;font-size:20px;color:var(--gold)}#gate p{margin:0;color:#c7d3ce;line-height:1.5}
+@media(min-width:620px){.admin .grid{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
 <body>
-<div id="gate"><div class="panel"><h2 style="color:#d7b36e;display:block;margin:0 0 10px;font-size:20px">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
-<header><h1>Ambar Furniture</h1><div class="sub">Choose an area</div></header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="wh-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8eef8"/></linearGradient><linearGradient id="wh-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8eef8"/><stop offset="1" stop-color="#9db0cc"/></linearGradient><radialGradient id="wh-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#e8eef8"/><stop offset="1" stop-color="#9db0cc"/></radialGradient><linearGradient id="blue-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8cc0ff"/><stop offset="1" stop-color="#3a74e8"/></linearGradient><linearGradient id="blue-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a74e8"/><stop offset="1" stop-color="#1c3f9e"/></linearGradient><radialGradient id="blue-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#8cc0ff"/><stop offset=".55" stop-color="#3a74e8"/><stop offset="1" stop-color="#1c3f9e"/></radialGradient><linearGradient id="gold-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe58f"/><stop offset="1" stop-color="#f0a81c"/></linearGradient><linearGradient id="gold-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0a81c"/><stop offset="1" stop-color="#a86a05"/></linearGradient><radialGradient id="gold-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ffe58f"/><stop offset=".55" stop-color="#f0a81c"/><stop offset="1" stop-color="#a86a05"/></radialGradient><linearGradient id="org-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc27f"/><stop offset="1" stop-color="#f27a1a"/></linearGradient><linearGradient id="org-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f27a1a"/><stop offset="1" stop-color="#a84608"/></linearGradient><radialGradient id="org-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ffc27f"/><stop offset=".55" stop-color="#f27a1a"/><stop offset="1" stop-color="#a84608"/></radialGradient><linearGradient id="yel-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff08a"/><stop offset="1" stop-color="#f5c400"/></linearGradient><linearGradient id="yel-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f5c400"/><stop offset="1" stop-color="#a37c00"/></linearGradient><radialGradient id="yel-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#fff08a"/><stop offset=".55" stop-color="#f5c400"/><stop offset="1" stop-color="#a37c00"/></radialGradient><linearGradient id="pink-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9cc6"/><stop offset="1" stop-color="#e0337b"/></linearGradient><linearGradient id="pink-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e0337b"/><stop offset="1" stop-color="#8f1450"/></linearGradient><radialGradient id="pink-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ff9cc6"/><stop offset=".55" stop-color="#e0337b"/><stop offset="1" stop-color="#8f1450"/></radialGradient><linearGradient id="grn-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86efb0"/><stop offset="1" stop-color="#1fa860"/></linearGradient><linearGradient id="grn-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1fa860"/><stop offset="1" stop-color="#0c6a3a"/></linearGradient><radialGradient id="grn-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#86efb0"/><stop offset=".55" stop-color="#1fa860"/><stop offset="1" stop-color="#0c6a3a"/></radialGradient><linearGradient id="sky-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#93deff"/><stop offset="1" stop-color="#2a9ae0"/></linearGradient><linearGradient id="sky-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a9ae0"/><stop offset="1" stop-color="#12609a"/></linearGradient><radialGradient id="sky-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#93deff"/><stop offset=".55" stop-color="#2a9ae0"/><stop offset="1" stop-color="#12609a"/></radialGradient><linearGradient id="vio-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bda6ff"/><stop offset="1" stop-color="#6d4de0"/></linearGradient><linearGradient id="vio-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d4de0"/><stop offset="1" stop-color="#3a24a0"/></linearGradient><radialGradient id="vio-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#bda6ff"/><stop offset=".55" stop-color="#6d4de0"/><stop offset="1" stop-color="#3a24a0"/></radialGradient><linearGradient id="red-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9f9f"/><stop offset="1" stop-color="#e03a3a"/></linearGradient><linearGradient id="red-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e03a3a"/><stop offset="1" stop-color="#8c1515"/></linearGradient><radialGradient id="red-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ff9f9f"/><stop offset=".55" stop-color="#e03a3a"/><stop offset="1" stop-color="#8c1515"/></radialGradient><linearGradient id="gry-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9d5df"/><stop offset="1" stop-color="#7c91a2"/></linearGradient><linearGradient id="gry-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c91a2"/><stop offset="1" stop-color="#41525f"/></linearGradient><radialGradient id="gry-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#c9d5df"/><stop offset=".55" stop-color="#7c91a2"/><stop offset="1" stop-color="#41525f"/></radialGradient><linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><symbol id="d-order" viewBox="0 0 64 64"><rect x="16" y="14" width="34" height="46" rx="7" fill="url(#blue-s)"/>
+<rect x="12" y="8" width="34" height="46" rx="7" fill="url(#wh-f)"/>
+<rect x="12" y="8" width="34" height="46" rx="7" fill="none" stroke="#c9d6ea" stroke-width="1"/>
+<rect x="18" y="19" width="22" height="3.5" rx="1.75" fill="#b3c3dc"/><rect x="18" y="27" width="22" height="3.5" rx="1.75" fill="#b3c3dc"/><rect x="18" y="35" width="14" height="3.5" rx="1.75" fill="#b3c3dc"/>
+<circle cx="46" cy="47" r="12" fill="url(#grn-r)"/><circle cx="46" cy="47" r="12" fill="none" stroke="#fff" stroke-width="2"/>
+<polyline points="40.5,47.5 44.5,51.5 52,43" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<ellipse cx="29" cy="14" rx="14" ry="3" fill="url(#gloss)" opacity=".7"/></symbol><symbol id="d-users" viewBox="0 0 64 64"><path d="M34 54 Q35 37 48 37 Q60 37 61 54 Z" fill="url(#blue-s)"/><circle cx="48" cy="25" r="8" fill="url(#blue-r)"/>
+<path d="M6 58 Q7 36 26 36 Q45 36 46 58 Z" fill="url(#sky-f)"/><path d="M6 58 Q7 36 26 36 Q45 36 46 58 Z" fill="none" stroke="#12609a" stroke-opacity=".25"/>
+<circle cx="26" cy="22" r="11" fill="url(#sky-r)"/><ellipse cx="22.5" cy="17.5" rx="4.5" ry="3" fill="#fff" opacity=".55"/>
+<path d="M12 46 Q20 40 30 40" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/></symbol><symbol id="d-plane" viewBox="0 0 64 64"><polygon points="8,30 58,8 46,56 31,40" fill="url(#sky-f)"/>
+<polygon points="58,8 46,56 31,40" fill="url(#sky-s)"/>
+<polygon points="31,40 33,56 42,46" fill="#0d4f82"/>
+<polygon points="8,30 58,8 31,40" fill="none"/><polygon points="8,30 40,16 31,40" fill="#fff" opacity=".28"/>
+<polygon points="8,30 58,8 31,40" fill="none" stroke="#fff" stroke-opacity=".4" stroke-width="1"/></symbol><symbol id="d-sheet" viewBox="0 0 64 64"><rect x="12" y="13" width="44" height="46" rx="9" fill="url(#grn-s)"/>
+<rect x="8" y="6" width="44" height="46" rx="9" fill="url(#grn-f)"/>
+<rect x="14" y="11" width="32" height="9" rx="3" fill="#fff" opacity=".28"/><rect x="17.0" y="24.0" width="9.5" height="8" rx="2" fill="#fff" opacity="0.75"/><rect x="28.5" y="24.0" width="9.5" height="8" rx="2" fill="#fff" opacity="0.75"/><rect x="40.0" y="24.0" width="9.5" height="8" rx="2" fill="#fff" opacity="0.75"/><rect x="17.0" y="34.5" width="9.5" height="8" rx="2" fill="#fff" opacity="0.95"/><rect x="28.5" y="34.5" width="9.5" height="8" rx="2" fill="#fff" opacity="0.95"/><rect x="40.0" y="34.5" width="9.5" height="8" rx="2" fill="#fff" opacity="0.95"/><rect x="17.0" y="45.0" width="9.5" height="8" rx="2" fill="#fff" opacity="0.95"/><rect x="28.5" y="45.0" width="9.5" height="8" rx="2" fill="#fff" opacity="0.95"/><rect x="40.0" y="45.0" width="9.5" height="8" rx="2" fill="#fff" opacity="0.95"/>
+<ellipse cx="30" cy="10" rx="18" ry="3" fill="url(#gloss)" opacity=".7"/></symbol><symbol id="d-chat" viewBox="0 0 64 64"><path d="M10 16 Q10 8 18 8 H46 Q54 8 54 16 V36 Q54 44 46 44 H30 L18 56 V44 Q10 44 10 36 Z" fill="url(#org-s)" transform="translate(3 5)"/>
+<path d="M10 16 Q10 8 18 8 H46 Q54 8 54 16 V36 Q54 44 46 44 H30 L18 56 V44 Q10 44 10 36 Z" fill="url(#org-f)"/>
+<circle cx="22" cy="26" r="3.6" fill="#fff"/><circle cx="32" cy="26" r="3.6" fill="#fff"/><circle cx="42" cy="26" r="3.6" fill="#fff"/>
+<path d="M14 14 Q14 11 18 11 H42" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="2.5" stroke-linecap="round"/></symbol><symbol id="d-star" viewBox="0 0 64 64"><polygon points="32.0,9.0 39.1,26.3 57.7,27.7 43.4,39.7 47.9,57.8 32.0,48.0 16.1,57.8 20.6,39.7 6.3,27.7 24.9,26.3" fill="url(#yel-s)" transform="translate(0 4)"/>
+<polygon points="32.0,7.0 39.1,24.3 57.7,25.7 43.4,37.7 47.9,55.8 32.0,46.0 16.1,55.8 20.6,37.7 6.3,25.7 24.9,24.3" fill="url(#yel-r)"/>
+<polygon points="32.0,16.0 36.7,27.5 49.1,28.4 39.6,36.5 42.6,48.6 32.0,42.0 21.4,48.6 24.4,36.5 14.9,28.4 27.3,27.5" fill="#fff" opacity=".28"/>
+<ellipse cx="25" cy="22" rx="5" ry="3" fill="#fff" opacity=".6" transform="rotate(-30 25 22)"/></symbol><symbol id="d-cam" viewBox="0 0 64 64"><rect x="6" y="22" width="52" height="34" rx="10" fill="url(#pink-s)" transform="translate(0 3)"/>
+<rect x="21" y="12" width="22" height="14" rx="5" fill="url(#pink-f)"/>
+<rect x="6" y="20" width="52" height="34" rx="10" fill="url(#pink-f)"/>
+<circle cx="32" cy="37" r="15" fill="#2a2f3d"/><circle cx="32" cy="37" r="11.5" fill="url(#sky-r)"/><circle cx="32" cy="37" r="5" fill="#0d2d52" opacity=".55"/>
+<ellipse cx="27.5" cy="32" rx="4" ry="2.6" fill="#fff" opacity=".8" transform="rotate(-35 27.5 32)"/>
+<circle cx="50" cy="28" r="2.6" fill="#fff" opacity=".9"/>
+<path d="M12 26 Q12 24 15 24 H25" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="2.5" stroke-linecap="round"/></symbol><symbol id="d-bolt" viewBox="0 0 64 64"><polygon points="36,4 12,36 28,36 22,60 52,24 36,24 46,4" fill="url(#vio-s)" transform="translate(3 4)"/>
+<polygon points="36,4 12,36 28,36 22,60 52,24 36,24 46,4" fill="url(#vio-f)"/>
+<polygon points="36,4 12,36 28,36 33,26 36,24" fill="#fff" opacity=".3"/></symbol><symbol id="d-admin" viewBox="0 0 64 64"><path d="M8 60 Q9 36 32 36 Q55 36 56 60 Z" fill="url(#gry-s)"/>
+<path d="M8 60 Q9 36 32 36 Q55 36 56 60 Z" fill="url(#gry-f)" transform="translate(0 -3)"/>
+<polygon points="25,36 32,47 39,36" fill="#fff"/><polygon points="30,43 34,43 35,56 29,56" fill="url(#gold-s)"/>
+<circle cx="32" cy="21" r="12" fill="url(#sky-r)"/><ellipse cx="27.5" cy="15.5" rx="5" ry="3" fill="#fff" opacity=".55"/>
+<path d="M50 6 l7 3 v7 q0 6 -7 9 q-7 -3 -7 -9 v-7 z" fill="url(#gold-r)" stroke="#fff" stroke-width="1.5"/></symbol><symbol id="d-gear" viewBox="0 0 64 64"><g fill="url(#gry-s)" transform="translate(0 4)"><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(0 32 32)"/><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(45 32 32)"/><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(90 32 32)"/><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="19"/></g>
+<g fill="url(#gry-f)"><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(0 32 32)"/><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(45 32 32)"/><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(90 32 32)"/><rect x="27" y="5" width="10" height="54" rx="3" transform="rotate(135 32 32)"/><circle cx="32" cy="32" r="19"/></g>
+<circle cx="32" cy="32" r="8" fill="#e7eef5"/><circle cx="32" cy="32" r="8" fill="none" stroke="#41525f" stroke-opacity=".35" stroke-width="2"/>
+<path d="M18 24 Q22 15 32 14" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="3" stroke-linecap="round"/></symbol><symbol id="d-trash" viewBox="0 0 64 64"><rect x="24" y="6" width="16" height="9" rx="4" fill="url(#red-s)"/>
+<path d="M14 24 H50 L47 56 Q47 59 44 59 H20 Q17 59 17 56 Z" fill="url(#red-s)" transform="translate(0 3)"/>
+<path d="M14 24 H50 L47 56 Q47 59 44 59 H20 Q17 59 17 56 Z" fill="url(#red-f)"/>
+<rect x="8" y="14" width="48" height="9" rx="4.5" fill="url(#red-f)"/><rect x="8" y="14" width="48" height="9" rx="4.5" fill="none" stroke="#8c1515" stroke-opacity=".3"/>
+<rect x="25" y="30" width="4" height="22" rx="2" fill="#fff" opacity=".55"/><rect x="35" y="30" width="4" height="22" rx="2" fill="#fff" opacity=".55"/>
+<path d="M12 18 H34" stroke="#fff" stroke-opacity=".65" stroke-width="2.5" stroke-linecap="round"/></symbol><symbol id="i-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol></svg>
+<div id="gate"><div class="panel"><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
+
+<header><div class="top"><div class="logo">A</div><div><h1>Ambar Furniture</h1><div class="sub">Admin Home</div></div></div></header>
+
 <main>
   <p class="hello" id="hello"></p>
 
-  <div class="grid">
-    <a class="tile main" href="/orders.html"><div class="ic">📨</div><div class="tx"><b>Customer Order Confirmation</b><span>Create an order card and send it to the customer</span></div><div class="go">›</div></a>
+  <div class="duo">
+    <a class="big first" href="/orders.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Customer Order Confirmation</b><span class="d">Create an order card and send it</span></div></a>
+    <a class="big" href="/callers.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-users"/></svg><div><b>Customer ID</b><span class="d">Add, edit and find customers</span></div></a>
   </div>
 
-  <h2>Customers</h2>
-  <div class="grid">
-    <a class="tile" href="/callers.html"><div class="ic">👥</div><div class="tx"><b>Customer ID</b><span>Customers Data — add, edit and find customers</span></div><div class="go">›</div></a>
-    <a class="tile" href="/greeting.html"><div class="ic">👋</div><div class="tx"><b>First Greeting</b><span>Automatic first message to new customers</span></div><div class="go">›</div></a>
-    <a class="tile" href="/rating.html"><div class="ic">⭐</div><div class="tx"><b>Customer Rating</b><span>Rating link sent after the order is delivered</span></div><div class="go">›</div></a>
+  <div class="sec">Customers &amp; Marketing</div>
+  <div class="list">
+    <a class="row" href="/greeting.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-chat"/></svg><div><b>First Greeting</b><span class="d">Automatic first message to new customers</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    <a class="row" href="/rating.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-star"/></svg><div><b>Customer Rating</b><span class="d">Rating link sent after delivery</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    <a class="row" href="/stories.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-cam"/></svg><div><b>Weekly Story</b><span class="d">7 photos or videos, one posted per day</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
   </div>
 
-  <h2>Marketing</h2>
-  <div class="grid">
-    <a class="tile" href="/stories.html"><div class="ic">📸</div><div class="tx"><b>Weekly Story</b><span>7 photos or videos, one posted per day</span></div><div class="go">›</div></a>
-  </div>
-
-  <h2>Google Sheet</h2>
-  <div class="grid">
-    <a class="tile" href="/orders.html?open=sheet"><div class="ic">📊</div><div class="tx"><b>Open Google Sheet</b><span>Orders, customers, dashboard and graphs</span></div><div class="go">›</div></a>
-  </div>
-
-  <h2>My account</h2>
-  <div class="grid">
-    <a class="tile" href="/orders.html?open=connect"><div class="ic">🔗</div><div class="tx"><b>Connect my Telegram account</b><span>Send cards and messages from your own Telegram</span></div><div class="go">›</div></a>
-  </div>
-
-  <h2 class="own hide">Administration</h2>
-  <div class="grid own hide">
-    <a class="tile" href="/orders.html?open=cfg"><div class="ic">⚡</div><div class="tx"><b>Connect Google Sheet</b><span>One click · all data (main admin only)</span></div><div class="go">›</div></a>
-    <a class="tile" href="/orders.html?open=admins"><div class="ic">👥</div><div class="tx"><b>Manage Assigned Admins</b><span>Add, edit or remove admins (main admin only)</span></div><div class="go">›</div></a>
-    <a class="tile warn" href="/orders.html?open=zero"><div class="ic">🗑</div><div class="tx"><b>Start from ZERO</b><span>Backup to the sheet, then clear all orders (main admin only)</span></div><div class="go">›</div></a>
-    <a class="tile" href="/setup.html"><div class="ic">⚙️</div><div class="tx"><b>Setup &amp; Checks</b><span>Status checks and setup key tools (main admin only)</span></div><div class="go">›</div></a>
+  <div class="own hide">
+    <div class="sec">Administration<span class="badge">Main admin only</span></div>
+    <div class="admin"><div class="grid">
+      <a class="at" href="/orders.html?open=cfg"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-bolt"/></svg><div><b>Connect Google Sheet</b><span class="d">One click · all data</span></div></a>
+      <a class="at" href="/orders.html?open=admins"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-admin"/></svg><div><b>Manage Admins</b><span class="d">Add, edit or remove admins</span></div></a>
+      <a class="at" href="/setup.html"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-gear"/></svg><div><b>Setup &amp; Checks</b><span class="d">Status and setup key tools</span></div></a>
+      <a class="at danger" href="/orders.html?open=zero"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-trash"/></svg><div><b>Start from ZERO</b><span class="d">Backup, then clear all orders</span></div></a>
+    </div></div>
   </div>
 </main>
+
+<div class="bar"><div class="in">
+  <a class="btn tg" href="/orders.html?open=connect"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-plane"/></svg>Connect Telegram</a>
+  <a class="btn sh" href="/orders.html?open=sheet"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-sheet"/></svg>Open Google Sheet</a>
+</div></div>
+
 <script>
 const $=id=>document.getElementById(id);
-// every tile keeps the Telegram #hash so the Mini App identity survives the page change
-document.querySelectorAll("a.tile").forEach(a=>a.addEventListener("click",e=>{if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}}));
+// every link keeps the Telegram #hash so the Mini App identity survives the page change
+document.querySelectorAll("a[href^='/']").forEach(a=>a.addEventListener("click",e=>{if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}}));
 (async()=>{
   // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
   try{
