@@ -277,7 +277,7 @@ function register(app, ctx) {
   router.use(requireAccess);
 
   const view = (p, a) => ({
-    id: p.id, single: !!p.single, title: p.title, status: p.status, via: p.via, period: p.period, privacy: p.privacy, pinned: !!p.pinned,
+    id: p.id, title: p.title, status: p.status, via: p.via, period: p.period, privacy: p.privacy, pinned: !!p.pinned,
     caption: p.caption, startDate: p.startDate, postTime: p.postTime, createdAt: p.createdAt,
     ownerName: p.ownerName, ownerRole: p.ownerRole, ownerTelegramId: p.ownerTelegramId || "", createdByName: p.createdByName || "",
     mine: p.ownerKey === actorKey(a), canEdit: canManage(a, p),
@@ -334,10 +334,8 @@ function register(app, ctx) {
     try {
       const a = req.actor, b = req.body || {};
       if (!actorKey(a)) return res.status(400).json({ ok: false, error: "Open the app from Telegram so your admin identity is known." });
-      const single = String(b.mode || "") === "single"; // one single story for one date: main admin only
-      if (single && !isOwner(a)) return res.status(403).json({ ok: false, error: "Only the main admin can plan a single story." });
-      const need = single ? 1 : DAYS;
-      if (files.length !== need) return res.status(400).json({ ok: false, error: single ? `Please add exactly 1 photo or video. You added ${files.length}.` : `Please add exactly ${DAYS} items (photos or videos, one for each day). You added ${files.length}.` });
+      const need = DAYS;
+      if (files.length !== need) return res.status(400).json({ ok: false, error: `Please add exactly ${DAYS} items (photos or videos, one for each day). You added ${files.length}.` });
       let meta = []; try { meta = JSON.parse(b.dayMeta || "[]"); } catch {}
       const kinds = files.map((f, i) => {
         if (/^image\/(jpeg|png|webp)$/i.test(f.mimetype)) return "photo";
@@ -353,17 +351,31 @@ function register(app, ctx) {
       if (startDate < today) return res.status(400).json({ ok: false, error: "The start date is in the past. Choose today or a later day." });
       const period = Number(b.period) || 86400; if (!PERIODS.includes(period)) return res.status(400).json({ ok: false, error: "Story duration is not valid." });
       const owner = isOwner(a);
-      // A main admin may set a plan up FOR another admin: it is then that admin's plan and goes out from THEIR account.
-      let target = null;
-      if (b.forAdmin && String(b.forAdmin) !== actorKey(a)) {
-        if (!owner) return res.status(403).json({ ok: false, error: "Only a main admin can create a plan for another admin." });
-        const rec = (ctx.getAppAdmins() || []).find(x => String(x.telegramId) === String(b.forAdmin));
-        if (!rec && !ownerIds.includes(String(b.forAdmin))) return res.status(400).json({ ok: false, error: "That admin was not found. Refresh the page and choose again." });
-        target = { telegramId: String(b.forAdmin), name: (rec && rec.name) || ("Admin " + b.forAdmin), role: ownerIds.includes(String(b.forAdmin)) ? "owner" : "admin" };
+      // ONE plan can be ASSIGNED to several admins at once (main admin only). Every chosen admin gets their OWN copy of the
+      // same plan — it is posted from THAT admin's own Telegram account. "me" = the person who is creating it.
+      let wanted = [];
+      try { const arr = JSON.parse(b.forAdmins || "null"); if (Array.isArray(arr)) wanted = arr; } catch {}
+      if (!wanted.length && b.forAdmin) wanted = [b.forAdmin];       // older single-admin field
+      if (!wanted.length) wanted = ["me"];
+      const targets = [], seen = new Set();
+      for (const raw of wanted) {
+        const w = String(raw || "").trim();
+        const isMe = !w || w === "me" || w === actorKey(a);
+        const key = isMe ? actorKey(a) : w;
+        if (seen.has(key)) continue; seen.add(key);
+        if (isMe) { targets.push({ telegramId: a.telegramId || "", key, name: a.name || "Admin", role: a.role, self: true }); continue; }
+        if (!owner) return res.status(403).json({ ok: false, error: "Only a main admin can assign a plan to other admins." });
+        const rec = (ctx.getAppAdmins() || []).find(x => String(x.telegramId) === w);
+        if (!rec && !ownerIds.includes(w)) return res.status(400).json({ ok: false, error: "One of the chosen admins was not found. Refresh the page and choose again." });
+        targets.push({ telegramId: w, key: w, name: (rec && rec.name) || ("Admin " + w), role: ownerIds.includes(w) ? "owner" : "admin", self: false });
       }
-      let via = b.via === "business" ? "business" : "account";
-      if (target && target.role !== "owner") via = "account";
-      if (via === "business") { if (!owner) return res.status(403).json({ ok: false, error: "Only the main admin can post through the shared Business connection." }); if (!ownerConnection()) return res.status(400).json({ ok: false, error: "No active Telegram Business connection with the \"Manage stories\" permission was found." }); }
+      if (!targets.length) return res.status(400).json({ ok: false, error: "Choose at least one admin for this plan." });
+      if (targets.length > 50) return res.status(400).json({ ok: false, error: "Too many admins chosen at once (maximum 50)." });
+      const wantsBusiness = b.via === "business";
+      if (wantsBusiness && targets.some(t => t.role === "owner")) {
+        if (!owner) return res.status(403).json({ ok: false, error: "Only the main admin can post through the shared Business connection." });
+        if (!ownerConnection()) return res.status(400).json({ ok: false, error: "No active Telegram Business connection with the \"Manage stories\" permission was found." });
+      }
       // Videos (any format): only a FAST check here (real video? how long? preview picture). The conversion to the
       // format every phone plays happens right after saving, in the background, so the upload never times out.
       const vpost = {}, vidx = kinds.map((k, i) => k === "video" ? i : -1).filter(i => i >= 0), useClientPosters = posters.length === vidx.length;
@@ -380,29 +392,39 @@ function register(app, ctx) {
       }
       let dayCaps = []; try { dayCaps = JSON.parse(b.dayCaptions || "[]"); } catch {}
       const clean = s => String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, MAX_CAPTION);
-      const id = crypto.randomBytes(6).toString("hex");
-      const p = {
-        id, ownerKey: target ? target.telegramId : actorKey(a), ownerTelegramId: target ? target.telegramId : (a.telegramId || ""), ownerRole: target ? target.role : a.role, ownerName: target ? target.name : (a.name || "Admin"),
-        createdByName: target ? (a.name || "Main admin") : "",
-        single, title: clean(b.title).slice(0, 80) || (single ? `Story on ${startDate}` : `Week of ${startDate}`), caption: clean(b.caption), via, period,
-        privacy: b.privacy === "contacts" ? "contacts" : "all", pinned: b.pinned === "1" || b.pinned === "true",
-        startDate, postTime, status: "active", createdAt: new Date().toISOString(),
-        days: Array.from({ length: need }, (_, i) => {
-          const d = { n: i + 1, type: kinds[i], date: addDays(startDate, i), caption: clean(dayCaps[i]), hash: hashes[i], status: "pending", attempts: 0, error: "" };
-          if (kinds[i] === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta[i]?.duration) || 1)); d.vw = Math.min(4096, Number(meta[i]?.w) || 720); d.vh = Math.min(4096, Number(meta[i]?.h) || 1280); }
-          return d;
-        })
-      };
       // the picture saved for each day: the photo itself, or the preview picture of the video
       const images = files.map((f, i) => kinds[i] === "photo" ? fs.readFileSync(f.path) : vpost[i]);
-      await savePhotos(id, images);
-      for (let i = 0; i < need; i++) if (kinds[i] === "video") await saveVideo(id, i + 1, files[i].path);
-      plans.push(p); await save();
-      p.days.forEach(d => { if (d.type === "video") ensureNorm(p, d); }); // convert in the background, one video at a time
-      const first = p.days[0].type === "video" ? "Video" : "Photo";
-      const forTxt = target ? ` for ${target.name} (it goes out from ${target.name}'s own Telegram account)` : "";
-      if (target) notify(p, `📸 ${a.name || "The main admin"} set up ${single ? "a story" : "a weekly story plan"} for you: "${p.title}" (${p.startDate}${single ? "" : " → " + p.days[p.days.length - 1].date} at ${postTime}). It is posted from your own Telegram account.`);
-      res.json({ ok: true, plan: view(p, a), message: single ? `✅ Saved${forTxt}. The ${first.toLowerCase()} will be posted once, on ${p.days[0].date} at ${postTime}.` : `✅ Saved${forTxt}. ${first} 1 will be posted on ${p.days[0].date} at ${postTime}, then one new item each day until ${p.days[DAYS - 1].date}.` });
+      const created = [];
+      for (const t of targets) {
+        const id = crypto.randomBytes(6).toString("hex");
+        const via = wantsBusiness && t.role === "owner" ? "business" : "account"; // only a main admin's own plan can use the shared Business account
+        const p = {
+          id, ownerKey: t.key, ownerTelegramId: t.telegramId, ownerRole: t.role, ownerName: t.name,
+          createdByName: t.self ? "" : (a.name || "Main admin"),
+          title: clean(b.title).slice(0, 80) || `Week of ${startDate}`, caption: clean(b.caption), via, period,
+          privacy: b.privacy === "contacts" ? "contacts" : "all", pinned: b.pinned === "1" || b.pinned === "true",
+          startDate, postTime, status: "active", createdAt: new Date().toISOString(),
+          days: Array.from({ length: need }, (_, i) => {
+            const d = { n: i + 1, type: kinds[i], date: addDays(startDate, i), caption: clean(dayCaps[i]), hash: hashes[i], status: "pending", attempts: 0, error: "" };
+            if (kinds[i] === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta[i]?.duration) || 1)); d.vw = Math.min(4096, Number(meta[i]?.w) || 720); d.vh = Math.min(4096, Number(meta[i]?.h) || 1280); }
+            return d;
+          })
+        };
+        await savePhotos(id, images);
+        for (let i = 0; i < need; i++) if (kinds[i] === "video") await saveVideo(id, i + 1, files[i].path);
+        plans.push(p); created.push({ p, t });
+      }
+      await save();
+      for (const { p, t } of created) {
+        p.days.forEach(d => { if (d.type === "video") ensureNorm(p, d); }); // convert in the background, one video at a time
+        if (!t.self) notify(p, `📸 ${a.name || "The main admin"} assigned a weekly story plan to you: "${p.title}" (${p.startDate} → ${p.days[p.days.length - 1].date} at ${postTime}). It is posted from your own Telegram account.`);
+      }
+      const mineP = created.find(c => c.t.self) || created[0];
+      const first = mineP.p.days[0].type === "video" ? "Video" : "Photo";
+      const lastDay = mineP.p.days[DAYS - 1].date;
+      const others = created.filter(c => !c.t.self).map(c => c.t.name);
+      const forTxt = others.length === 0 ? "" : created.length === 1 ? ` for ${others[0]} (it goes out from ${others[0]}'s own Telegram account)` : ` for ${created.length} admins (${created.map(c => c.t.self ? "you" : c.t.name).join(", ")}). Each one posts from their own Telegram account`;
+      res.json({ ok: true, plan: view(mineP.p, a), count: created.length, message: `✅ Saved${forTxt}. ${first} 1 will be posted on ${mineP.p.days[0].date} at ${postTime}, then one new item each day until ${lastDay}.` });
     } catch (e) { console.error("Story plan failed:", e); res.status(500).json({ ok: false, error: e.message || "Could not save the plan." }); }
     finally { cleanup(); }
   });
