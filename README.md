@@ -1,3 +1,14 @@
+## v100 — ⭐ Customer Rating (new page: /rating.html)
+- New page **⭐ Customer Rating**, opened from ⚙ Settings → *Customers messages*. After an order is **delivered**, the customer gets ONE message with a private rating link.
+- On the link (`/rate/<token>`, no login) the customer taps **1–5 stars** and may write a comment. One rating per order. Every admin gets a bot notification: `⭐ New rating 4/5`.
+- **Orders tab:** every order you created (main admin: all). Press **✅ Delivered · send link** → the order is marked delivered and the link is sent the same way the order card was sent (the admin's own Telegram account → Telegram Business → AMBAR bot). **↻ Send again** is available until the customer rates.
+- **🤖 Automatic switch (OFF by default, per admin):** when an order's **Delivery Date** arrives, the link is sent by itself, once. Orders more than 14 days past their Delivery Date, rejected orders and orders whose card was never delivered are skipped, so switching it on never floods old customers.
+- **✉️ Message tab:** your own message text with `{name} {order} {product} {admin} {link}`; the link is always added even if you remove `{link}`.
+- **⭐ Ratings tab:** average, number of ratings, every comment; main admin also sees the average per admin.
+- **Needs `PUBLIC_BASE_URL`** (your https site address) set in Render — the page warns you if it is missing.
+- New files: `ratings.js`, `public/rating.html`. Changed: `server.js` (route + module registration), `public/index.html` (Settings button). No new packages, Google Sheet script unchanged.
+- Redeploy the whole folder (`server.js`, `ratings.js`, `public/index.html`, `public/rating.html`).
+
 ## v99 — Weekly Story: ✏️ Edit plan
 - Every plan you made now has a **✏️ Edit** (pencil) button next to Pause / Delete, in **My plans**.
 - In the edit window you can change: plan name, first story day (only before the first story is posted — it moves the whole week), post time, how long the story stays visible, who can see it, the posting account (main admin), the caption for all stories, "keep on profile", and the **own caption of each day**.
