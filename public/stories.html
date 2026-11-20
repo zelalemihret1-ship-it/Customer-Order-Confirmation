@@ -218,7 +218,7 @@ async function showItem(){
   if(tok!==VW.tok)return;
   if(it.type==="video"){
     const v=document.createElement("video");
-    v.playsInline=true;v.setAttribute("playsinline","");v.setAttribute("webkit-playsinline","");v.controls=true;v.preload="auto";v.autoplay=true;
+    v.playsInline=false;v.removeAttribute("playsinline");v.removeAttribute("webkit-playsinline");v.controls=true;v.preload="auto";v.autoplay=true;v.setAttribute("controlslist","nodownload");
     let retried=false;
     const giveUp=()=>{
       if(tok!==VW.tok)return;
@@ -239,6 +239,14 @@ async function showItem(){
       giveUp();
     };
     v.src=src;st.innerHTML="";st.appendChild(v);
+    // hand the video to the phone's own player (iOS native player / Android system fullscreen player)
+    const nat=()=>{try{if(v.webkitEnterFullscreen){v.webkitEnterFullscreen();return true;}if(v.requestFullscreen){v.requestFullscreen();return true;}if(v.webkitRequestFullscreen){v.webkitRequestFullscreen();return true;}}catch{}return false;};
+    v.addEventListener("loadedmetadata",()=>{if(tok===VW.tok)nat();},{once:true});
+    const nb=document.createElement("button");nb.type="button";nb.textContent="⛶ Play in phone player";
+    nb.style.cssText="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:6;border:0;border-radius:999px;padding:11px 18px;font-size:14px;font-weight:700;background:#2fc77d;color:#fff;box-shadow:0 4px 14px #0008";
+    nb.onclick=()=>{nat();v.play().catch(()=>{});};st.appendChild(nb);
+    v.addEventListener("fullscreenchange",()=>{if(!document.fullscreenElement&&tok===VW.tok&&v.isConnected)v.pause();});
+    v.addEventListener("webkitendfullscreen",()=>{if(tok===VW.tok&&v.isConnected)v.pause();});
     const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{if(!v.isConnected)return;v.muted=true;v.play().then(()=>vwToast("Playing without sound — use the volume button")).catch(()=>{if(v.isConnected)vwToast("Tap ▶ to play");});});
   }else{
     const im=new Image();im.alt="";im.onload=()=>{if(tok===VW.tok){st.innerHTML="";st.appendChild(im);}};
