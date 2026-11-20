@@ -1,6 +1,7 @@
 ## v114 — Weekly Story: assign ONE plan to several admins · "One story" removed
 - The **🎯 One story** mode is removed. The Weekly Story page now has only the weekly plan (7 photos/videos, one per day).
 - **Assign this plan to** (main admin): instead of choosing one admin, tick as many admins as you want (or **Select all admins**). The plan is created once and every ticked admin gets their **own copy** — the same photos, videos, captions, dates and time — posted from **that admin's own Telegram account**. Each admin is notified. Admins not yet connected to Telegram are fine: the plan is saved and posts when they connect.
+- **One tap for everyone:** the top card **👥 All admins** selects every admin (and you) in one click; tap it again to go back to just you. Each admin card can still be ticked on its own.
 - "Create plan for…" on the *All admins* tab now selects just that admin in the list. Normal admins still only create plans for themselves. Plans saved earlier (including old one-story plans) keep working.
 - Files changed: `stories.js`, `public/stories.html`. No new packages, Google Sheet script unchanged. Redeploy the whole folder.
 
