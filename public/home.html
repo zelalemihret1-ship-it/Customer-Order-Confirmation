@@ -67,14 +67,15 @@ const $=id=>document.getElementById(id);
 // every tile keeps the Telegram #hash so the Mini App identity survives the page change
 document.querySelectorAll("a.tile").forEach(a=>a.addEventListener("click",e=>{if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}}));
 (async()=>{
+  // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
   try{
     const m=await (await fetch("/api/me")).json();
-    if(m.role==="owner"||m.role==="admin"){
-      $("gate").style.display="none";
+    const allowed=m.role==="owner"||m.role==="admin"||m.enforced===false;
+    if(allowed){
       $("hello").textContent="Hello"+(m.name?", "+m.name:"")+" 👋";
-      if(m.role==="owner"){$("hAdmin").classList.remove("hide");$("gAdmin").classList.remove("hide");}
+      if(m.role==="owner"||m.enforced===false){$("hAdmin").classList.remove("hide");$("gAdmin").classList.remove("hide");}
     }else{$("gate").style.display="flex";$("gateMsg").textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}
-  }catch(e){$("gate").style.display="flex";$("gateMsg").textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}
+  }catch(e){$("hello").textContent="Could not check your access — the areas below will check it when opened.";}
 })();
 </script>
 </body>
