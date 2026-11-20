@@ -85,7 +85,7 @@ button:disabled{opacity:.5;cursor:default}
 <body>
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 <header>
-  <a class="back" href="/">← Order Cards</a>
+  <a class="back" href="/home.html">← Home</a>
   <h1>📸 Weekly Story</h1>
   <div class="sub">7 photos or videos once · one story per day · nothing repeats</div>
 </header>
@@ -393,5 +393,6 @@ async function load(){
 }
 drawSlots();load();setInterval(()=>{if(!busy&&document.visibilityState==="visible")load();},30000);
 </script>
+<script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
 </body>
 </html>
