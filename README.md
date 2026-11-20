@@ -1,3 +1,9 @@
+## v114 — Weekly Story: assign ONE plan to several admins · "One story" removed
+- The **🎯 One story** mode is removed. The Weekly Story page now has only the weekly plan (7 photos/videos, one per day).
+- **Assign this plan to** (main admin): instead of choosing one admin, tick as many admins as you want (or **Select all admins**). The plan is created once and every ticked admin gets their **own copy** — the same photos, videos, captions, dates and time — posted from **that admin's own Telegram account**. Each admin is notified. Admins not yet connected to Telegram are fine: the plan is saved and posts when they connect.
+- "Create plan for…" on the *All admins* tab now selects just that admin in the list. Normal admins still only create plans for themselves. Plans saved earlier (including old one-story plans) keep working.
+- Files changed: `stories.js`, `public/stories.html`. No new packages, Google Sheet script unchanged. Redeploy the whole folder.
+
 ## v110 — Story videos: every format, every phone
 - Weekly Story accepts **any video format** (MP4, MOV, MKV, AVI, WebM, 3GP, WMV, FLV, MPEG, HEVC/H.265 …). The server converts each one to H.264 + AAC MP4 (`storyvideo.js`), so it plays **inside the mini app** on every phone and posts to Telegram. Videos already in that format are only re-wrapped (fast).
 - Needs ffmpeg: the `@ffmpeg-installer/ffmpeg` package is an *optional* dependency in `package.json` (ships the binary, no download step, so it can never break the deploy). Or set `FFMPEG_PATH`. Videos saved earlier are converted once, the first time they are opened.
