@@ -1,3 +1,8 @@
+## v101 — 🏠 Home page (new: /home.html)
+- New start page with one big tile per area: **Customer Order Confirmation**, **Customer ID** (Customers Data), **First Greeting**, **Customer Rating**, **Weekly Story**, and **Setup & Admins** (main admin only). Tap a tile to open that area.
+- Open it at `/home.html` (set it as the bot's menu-button address in @BotFather if you want it to be the first screen). The normal `/` page still opens the order form as before.
+- Redeploy `server.js` and `public/home.html`.
+
 ## v100 — ⭐ Customer Rating (new page: /rating.html)
 - New page **⭐ Customer Rating**, opened from ⚙ Settings → *Customers messages*. After an order is **delivered**, the customer gets ONE message with a private rating link.
 - On the link (`/rate/<token>`, no login) the customer taps **1–5 stars** and may write a comment. One rating per order. Every admin gets a bot notification: `⭐ New rating 4/5`.
