@@ -1,3 +1,8 @@
+## v116 — Weekly Story: smaller, clearer Admin overview
+- The **👑 Admin overview** (All admins tab) is now compact: a 4-box summary (Admins · Connected · Running · Posted today / Failed), a red alert line only when something failed, and **one slim row per admin** (initial, name, MAIN badge, green/amber Telegram dot, running / today / failed). Tap **+** to create a plan for that admin.
+- Admins with failures or no Telegram connection are listed **first**; a **Needs attention** filter appears only when there is something to fix. First 5 shown, **Show all** for the rest.
+- Only `public/stories.html` changed. Redeploy the whole folder.
+
 ## v115 — Story videos: memory fix (Render "exceeded its memory limit") · videos open faster
 - **Cause:** videos were read into server memory whole (up to 200 MB) when saving, backing up, re-downloading after a restart, and — since v114 — once per assigned admin. On a small instance this restarted the server, which also made videos show "still loading".
 - **Fixed:** nothing big is held in memory any more — files are streamed (hash, download from the backup, play). A big original is backed up only after it is converted (much smaller). Admins who get the same plan share ONE file on disk and the video is converted ONCE, then handed to every copy.
