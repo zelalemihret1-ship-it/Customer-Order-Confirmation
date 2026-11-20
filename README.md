@@ -1,7 +1,9 @@
 ## v116 — Weekly Story: smaller, clearer Admin overview
 - The **👑 Admin overview** (All admins tab) is now compact: a 4-box summary (Admins · Connected · Running · Posted today / Failed), a red alert line only when something failed, and **one slim row per admin** (initial, name, MAIN badge, green/amber Telegram dot, running / today / failed). Tap **+** to create a plan for that admin.
 - Admins with failures or no Telegram connection are listed **first**; a **Needs attention** filter appears only when there is something to fix. First 5 shown, **Show all** for the rest.
-- Only `public/stories.html` changed. Redeploy the whole folder.
+- **Tap an admin to see their plans:** the plan list below shows only the selected admin (tap again, or **✕ Show all admins**, to see everyone). The **+** button still creates a new plan for that admin.
+- **No more bot messages about stories.** The bot no longer sends "plan assigned to you", "posted from your account" or "could not be posted" messages. Status is still visible on the Weekly Story page (Posted / Failed, and the red alert in the overview). To bring the messages back, set `STORY_BOT_MESSAGES=1` in Render.
+- Files changed: `stories.js`, `public/stories.html`. Redeploy the whole folder.
 
 ## v115 — Story videos: memory fix (Render "exceeded its memory limit") · videos open faster
 - **Cause:** videos were read into server memory whole (up to 200 MB) when saving, backing up, re-downloading after a restart, and — since v114 — once per assigned admin. On a small instance this restarted the server, which also made videos show "still loading".
