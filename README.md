@@ -1,3 +1,9 @@
+## v110 — Story videos: every format, every phone
+- Weekly Story accepts **any video format** (MP4, MOV, MKV, AVI, WebM, 3GP, WMV, FLV, MPEG, HEVC/H.265 …). The server converts each one to H.264 + AAC MP4 (`storyvideo.js`), so it plays **inside the mini app** on every phone and posts to Telegram. Videos already in that format are only re-wrapped (fast).
+- Needs ffmpeg: the `ffmpeg-static` package is in `package.json` and installs automatically on Render (redeploy so `npm install` runs). Or set `FFMPEG_PATH`.
+- Without ffmpeg, only videos the phone itself can read (normally MP4/MOV) are accepted.
+- Limits unchanged: 60 seconds and 200 MB per video. Converting can take up to about a minute per video.
+
 ## v107 — Speed-up · Open Google Sheet fixed at the bottom
 - **Open Google Sheet** is now a button fixed at the **bottom** of Home (just above the tab bar) and opens the sheet straight away (no extra page).
 - Faster server: gzip on pages/JSON, pages revalidate (304) instead of re-downloading, order list cached 5 s (refreshed after every save), Google "script version" check cached 5 min and skipped for the sheet button, customer-status sheet sync runs in the background.
