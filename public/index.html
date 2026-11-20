@@ -48,6 +48,8 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#stOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
 <style>
 </style>
+<link rel="stylesheet" href="/app.css?v=106">
+<meta name="theme-color" content="#0f3d30">
 </head>
 <body>
 <div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
@@ -391,7 +393,7 @@ let editingId="";
 async function render(keepMsg){
   const me=await api("/api/me");
   if(me.role!=="owner"){
-    box.innerHTML='<h2>⚙️ Admin Control</h2><p>Only the owner can manage admins. Enter the owner key (ADMIN_SETUP_KEY):</p><input id="acKey" type="password" placeholder="Owner key"><button data-a="key">Enter</button><button class="grey" data-a="close">Close</button><div id="acMsg" class="msg"></div>';return;}
+    box.innerHTML='<h2>⚙️ Admin Control</h2><p>Only a main admin can manage admins. Enter the owner key (ADMIN_SETUP_KEY):</p><input id="acKey" type="password" placeholder="Owner key"><button data-a="key">Enter</button><button class="grey" data-a="close">Close</button><div id="acMsg" class="msg"></div>';return;}
   const a=await api("/api/setup/app-admins");
   if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
 
@@ -403,12 +405,13 @@ async function render(keepMsg){
       +'<label><small>Note (optional)</small><input id="eNote" value="'+esc(p.note||"")+'" placeholder="e.g. Sales, Addis branch"></label>'
       +'<small style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</small>'
       +'<div style="display:flex;gap:8px;margin-top:6px"><button data-a="saveedit" data-id="'+esc(p.telegramId)+'">Save</button><button class="grey" data-a="canceledit">Cancel</button></div></div>';
-    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b><br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — admin must tap Connect my Telegram account')+'</small></div><div style="display:flex;gap:6px"><button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
+    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b>'+(p.main?' <span style="background:#153a2e;color:#ffd877;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800">👑 MAIN ADMIN</span>':'')+'<br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — admin must tap Connect my Telegram account')+'</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="grey" style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:'+(p.main?'#8a5a00':'#153a2e')+'" data-a="setmain" data-main="'+(p.main?'0':'1')+'" data-id="'+esc(p.telegramId)+'">'+(p.main?'Remove main admin':'👑 Make main admin')+'</button><button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
   }).join("")||'<p><small>No admins assigned yet.</small></p>';
   box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
   +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
+  +(a.primaryOwners&&a.primaryOwners.length?'<div style="background:#f3efe6;border-radius:10px;padding:9px 11px;margin:8px 0;font-size:13px"><b>👑 Original main admin:</b> '+a.primaryOwners.map(esc).join(", ")+'<br><small>Set in Render. Extra main admins (below) have the same full control and can manage everything; only the original one can never be removed here.</small></div>':'')
   +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
-  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><button data-a="addperson">Assign admin</button>'
+  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 2px;font-weight:600"><input id="nMain" type="checkbox" style="width:auto;margin:0"> 👑 Make them MAIN ADMINS too (full control, same as me)</label><button data-a="addperson">Assign admin</button>'
   +'<h3>🔐 Access and bot connection</h3><p><small><b>Main admin:</b> assigns/removes users and connects the shared AMBAR bot in Telegram Settings → Telegram Business → Chatbots. Enable Business Mode for the bot in @BotFather first, then grant it access and Reply to messages. This shared bot connection does not use a personal login code. <b>Assigned admins:</b> can access AMBAR only after assignment; they may optionally connect their own Telegram account, and cannot use another admin’s account.</small></p>'
   +'<div id="acMsg" class="msg"></div>';
 }
@@ -418,7 +421,8 @@ ov.addEventListener("click",async e=>{
   try{
   if(act==="close"){ov.style.display="none";return;}
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
-  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId")});await render();say(d);return;}
+  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),main:!!(document.getElementById("nMain")||{}).checked});await render();say(d);return;}
+  if(act==="setmain"){const make=b.dataset.main==="1";if(!confirm(make?"Make this person a MAIN ADMIN?\n\nThey get the same full control as you: manage admins, Google Sheet, Start from ZERO, all stories, everything.":"Remove main-admin rights from this person? They stay a normal assigned admin."))return;const d=await api("/api/setup/app-admins/set-main",{telegramId:b.dataset.id,main:make});await render();say(d);return;}
   if(act==="editperson"){editingId=String(b.dataset.id);await render();return;}
   if(act==="canceledit"){editingId="";await render();return;}
   if(act==="saveedit"){const d=await api("/api/setup/app-admins/update",{telegramId:b.dataset.id,newTelegramId:val("eId"),name:val("eName"),phone:val("ePhone"),note:val("eNote")});if(d.ok)editingId="";await render();say(d);return;}
@@ -732,6 +736,7 @@ let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.o
   let seen=false;setInterval(()=>{if(anyOpen())seen=true;else if(seen)goHome();},400);
 })();
 </script>
-<script>try{var B=Telegram.WebApp.BackButton;B.show();B.onClick(function(){location.href="/home.html"+location.hash;});}catch(e){}</script>
+
+<script src="/app.js?v=106"></script>
 </body>
 </html>
