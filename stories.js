@@ -61,10 +61,46 @@ function register(app, ctx) {
   const videoFile = (id, n) => path.join(DIR, `${id}-${n}.mp4`);
   const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "order-images";
   const videoKey = (id, n) => `stories/${id}-${n}.mp4`;
-  async function saveVideo(id, n, tmpPath) {
+  const MAX_REMOTE_BACKUP = 60 * 1024 * 1024; // a bigger file is never loaded into memory for the backup copy
+  // remote: false = keep it on disk only for now (the converted, much smaller copy is backed up later)
+  async function saveVideo(id, n, srcPath, { remote = true, link = false } = {}) {
     fs.mkdirSync(DIR, { recursive: true });
-    fs.copyFileSync(tmpPath, videoFile(id, n));
-    if (supabase) { try { const { error } = await supabase.storage.from(BUCKET).upload(videoKey(id, n), fs.readFileSync(tmpPath), { contentType: "video/mp4", upsert: true }); if (error) throw error; } catch (e) { console.warn("Story video backup failed:", e.message); } }
+    const dest = videoFile(id, n), part = dest + ".part";
+    try { fs.unlinkSync(part); } catch {}
+    if (path.resolve(srcPath) !== path.resolve(dest)) { try { fs.unlinkSync(dest); } catch {} } // never write through a shared (hard-linked) file
+    let done = false;
+    if (link) { try { fs.linkSync(srcPath, dest); done = true; } catch {} } // same video for several admins: no second copy on disk
+    if (!done && path.resolve(srcPath) !== path.resolve(dest)) { fs.copyFileSync(srcPath, part); fs.renameSync(part, dest); }
+    if (remote && supabase) {
+      try {
+        if (fs.statSync(dest).size > MAX_REMOTE_BACKUP) { console.warn("Story video too big for the backup copy; it stays on the server disk only."); return; }
+        const { error } = await supabase.storage.from(BUCKET).upload(videoKey(id, n), fs.readFileSync(dest), { contentType: "video/mp4", upsert: true }); if (error) throw error;
+      } catch (e) { console.warn("Story video backup failed:", e.message); }
+    }
+  }
+  // Streams a video from the backup to disk (never the whole file in memory). Returns the file path or null.
+  const dlLocks = new Map();
+  function ensureVideoFile(id, n) {
+    const f = videoFile(id, n);
+    if (fs.existsSync(f)) return Promise.resolve(f);
+    if (!supabase) return Promise.resolve(null);
+    if (dlLocks.has(f)) return dlLocks.get(f);
+    const job = (async () => {
+      const part = f + ".dl";
+      try {
+        const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(videoKey(id, n), 900);
+        if (error || !data?.signedUrl) return null;
+        const r = await fetch(data.signedUrl); if (!r.ok || !r.body) return null;
+        fs.mkdirSync(DIR, { recursive: true });
+        await require("stream/promises").pipeline(require("stream").Readable.fromWeb(r.body), fs.createWriteStream(part));
+        fs.renameSync(part, f); return f;
+      } catch (e) { try { fs.unlinkSync(part); } catch {} return null; }
+      finally { dlLocks.delete(f); }
+    })();
+    dlLocks.set(f, job); return job;
+  }
+  async function hashFile(file) {
+    return new Promise((resolve, reject) => { const h = crypto.createHash("sha1"); fs.createReadStream(file).on("data", c => h.update(c)).on("end", () => resolve(h.digest("hex"))).on("error", reject); });
   }
   // Videos saved before the converter existed (MOV / HEVC / odd codecs) are converted ONCE, the first time they are opened.
   const normLocks = new Map();
@@ -78,8 +114,17 @@ function register(app, ctx) {
         await normChain.catch(() => {}); // one conversion at a time (keeps a small server responsive)
         if (d.norm) return;
         const nv = await storyVideo.normalize(videoFile(p.id, d.n), { maxSeconds: MAX_VIDEO_SECONDS });
-        if (nv.ok) { await saveVideo(p.id, d.n, nv.path); try { fs.unlinkSync(nv.path); } catch {} d.norm = true; d.duration = Math.min(MAX_VIDEO_SECONDS, nv.duration); d.vw = nv.w; d.vh = nv.h; await save(); }
-        else if (!nv.missing) { d.norm = true; await save(); } // unreadable: don't retry forever
+        if (nv.ok) {
+          await saveVideo(p.id, d.n, nv.path); try { fs.unlinkSync(nv.path); } catch {} d.norm = true; d.duration = Math.min(MAX_VIDEO_SECONDS, nv.duration); d.vw = nv.w; d.vh = nv.h;
+          // the same video assigned to other admins: hand them this converted file, so it is converted only ONCE
+          for (const q of plans) for (const e of q.days) {
+            if ((q === p && e === d) || e.type !== "video" || e.norm || !e.hash || e.hash !== d.hash || e.status === "posted" || e.status === "posting") continue;
+            try { await saveVideo(q.id, e.n, videoFile(p.id, d.n)); e.norm = true; e.duration = d.duration; e.vw = d.vw; e.vh = d.vh; } catch (er) { console.warn("Story video share failed:", er.message); }
+          }
+          await save();
+        }
+        else if (nv.missing) { try { if (supabase && fs.statSync(videoFile(p.id, d.n)).size <= MAX_REMOTE_BACKUP) await saveVideo(p.id, d.n, videoFile(p.id, d.n), { link: false }); } catch {} }
+        else { d.norm = true; await save(); } // unreadable: don't retry forever
       } catch (e) { console.warn("Story video convert failed:", e.message); }
       finally { normLocks.delete(key); }
     })();
@@ -104,15 +149,10 @@ function register(app, ctx) {
     try { fs.unlinkSync(videoFile(id, n)); } catch {}
     if (supabase) { try { await supabase.storage.from(BUCKET).remove([videoKey(id, n)]); } catch {} }
   }
-  async function getVideo(id, n) { // Buffer or null
-    try { return fs.readFileSync(videoFile(id, n)); } catch {}
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.storage.from(BUCKET).download(videoKey(id, n));
-        if (!error && data) { const buf = Buffer.from(await data.arrayBuffer()); fs.mkdirSync(DIR, { recursive: true }); try { fs.writeFileSync(videoFile(id, n), buf); } catch {} return buf; }
-      } catch {}
-    }
-    return null;
+  async function getVideo(id, n) { // Buffer or null (only used at posting time, after the video was converted to a small file)
+    const f = await ensureVideoFile(id, n);
+    if (!f) return null;
+    try { return fs.readFileSync(f); } catch { return null; }
   }
   async function getPhoto(id, n) {
     try { return fs.readFileSync(photoFile(id, n)); } catch {}
@@ -343,7 +383,7 @@ function register(app, ctx) {
         return "";
       });
       if (kinds.some(k => !k)) return res.status(400).json({ ok: false, error: "Only photos (JPG, PNG, WebP …) or video files are accepted." });
-      const hashes = files.map(f => crypto.createHash("sha1").update(fs.readFileSync(f.path)).digest("hex"));
+      const hashes = []; for (const f of files) hashes.push(await hashFile(f.path));
       for (let i = 0; i < hashes.length; i++) { const j = hashes.indexOf(hashes[i]); if (j !== i) return res.status(400).json({ ok: false, error: `Item ${j + 1} and item ${i + 1} are the same file. Each day needs a different photo or video, so none repeats.` }); }
       const today = todayLocal();
       const startDate = String(b.startDate || today); if (!validDate(startDate)) return res.status(400).json({ ok: false, error: "Start date is not valid." });
@@ -411,7 +451,11 @@ function register(app, ctx) {
           })
         };
         await savePhotos(id, images);
-        for (let i = 0; i < need; i++) if (kinds[i] === "video") await saveVideo(id, i + 1, files[i].path);
+        const firstCopy = created.length === 0;
+        for (let i = 0; i < need; i++) if (kinds[i] === "video") {
+          if (firstCopy) await saveVideo(id, i + 1, files[i].path, { remote: files[i].size <= 25 * 1024 * 1024 }); // big originals are backed up AFTER conversion (small)
+          else await saveVideo(id, i + 1, videoFile(created[0].p.id, i + 1), { remote: false, link: true });
+        }
         plans.push(p); created.push({ p, t });
       }
       await save();
@@ -491,7 +535,7 @@ function register(app, ctx) {
       let meta = {}; try { meta = JSON.parse(req.body?.meta || "{}"); } catch {}
       const kind = /^image\/(jpeg|png|webp)$/i.test(f.mimetype) ? "photo" : (meta.type === "video" ? "video" : "");
       if (!kind) return res.status(400).json({ ok: false, error: "Only photos (JPG, PNG, WebP …) or video files are accepted." });
-      const hash = crypto.createHash("sha1").update(fs.readFileSync(f.path)).digest("hex");
+      const hash = await hashFile(f.path);
       const same = p.days.find(x => x.n !== n && x.hash === hash);
       if (same) return res.status(400).json({ ok: false, error: `This is the same file as Day ${same.n}. Each day needs a different photo or video, so none repeats.` });
       let posterBuf = null;
@@ -507,7 +551,7 @@ function register(app, ctx) {
         } else return res.status(400).json({ ok: false, error: `The video ${qi.error}` });
       }
       await savePhotoOne(p.id, n, kind === "video" ? posterBuf : fs.readFileSync(f.path));
-      if (kind === "video") await saveVideo(p.id, n, f.path); else await dropVideoOne(p.id, n);
+      if (kind === "video") await saveVideo(p.id, n, f.path, { remote: f.size <= 25 * 1024 * 1024 }); else await dropVideoOne(p.id, n);
       d.type = kind; d.hash = hash; d.v = (d.v || 0) + 1; delete d.norm;
       if (kind === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta.duration) || 1)); d.vw = Math.min(4096, Number(meta.w) || 720); d.vh = Math.min(4096, Number(meta.h) || 1280); }
       else { delete d.duration; delete d.vw; delete d.vh; }
@@ -557,10 +601,11 @@ function register(app, ctx) {
       if (!d) return res.status(404).end();
       res.set("Cache-Control", "private, max-age=3600");
       if (!isVideo(d)) { const buf = await getPhoto(p.id, n); if (!buf) return res.status(404).end(); return res.type("image/jpeg").send(buf); }
-      let file = videoFile(p.id, n);
-      if (!fs.existsSync(file)) { const buf = await getVideo(p.id, n); if (!buf) return res.status(404).end(); }
+      const file = await ensureVideoFile(p.id, n);
+      if (!file) return res.status(404).end();
+      // wait a little for the conversion, but never leave the phone waiting for a long queue: play the saved file as it is
+      await Promise.race([ensureNorm(p, d), new Promise(r => setTimeout(r, 6000))]);
       if (!fs.existsSync(file)) return res.status(404).end();
-      await ensureNorm(p, d);
       const size = fs.statSync(file).size, range = String(req.headers.range || "");
       res.set("Accept-Ranges", "bytes").type("video/mp4");
       const m = range.match(/^bytes=(\d*)-(\d*)$/);
