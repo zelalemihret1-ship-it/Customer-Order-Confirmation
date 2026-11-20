@@ -66,7 +66,7 @@ button:disabled{opacity:.5;cursor:default}
 <body>
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 <header>
-  <a class="back" href="/">← Order Cards</a>
+  <a class="back" href="/home.html">← Home</a>
   <h1>👥 Customers Data</h1>
   <div class="sub">Customer list · filled by sales or by the customer · separate from order confirmation</div>
 </header>
@@ -266,7 +266,7 @@ $("syncBtn").onclick=async()=>{
 $("copyBtn").onclick=async()=>{
   const H=["Customer ID","Phone Number","Additional Phone Number","Name","username","Location","Status","Last Conversation","Date","Time","Status","Rejection Reason","Sales Name","Total Spend","Order id","Source"];
   const cell=v=>String(v==null?"":v).replace(/[\t\r\n]+/g," ");
-  const rows=[...ALL].sort((a,b)=>b.seq-a.seq).map(c=>[c.id,c.phone,c.additionalPhone||"",c.name,c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
+  const rows=[...ALL].sort((a,b)=>b.seq-a.seq).map(c=>[c.id,c.phone,c.name,c.additionalPhone||"",c.username,c.location,c.customerStatus,c.lastConversation,c.date,c.time,c.orderStatus,c.rejectionReason,c.salesName,c.totalSpend||"",c.orderId,c.source].map(cell).join("\t"));
   const text=[H.join("\t"),...rows].join("\n");
   try{await navigator.clipboard.writeText(text);$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}
   catch{const t=document.createElement("textarea");t.value=text;document.body.appendChild(t);t.select();try{document.execCommand("copy");$("copyBtn").textContent="✅ Copied "+rows.length+" rows";}catch{$("copyBtn").textContent="Copy failed";}t.remove();}
@@ -288,5 +288,6 @@ $("copyBtn").onclick=async()=>{
   }
 })();
 </script>
+<script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
 </body>
 </html>
