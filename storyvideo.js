@@ -85,4 +85,19 @@ async function normalize(inPath, { maxSeconds = 60 } = {}) {
   if (!poster || !poster.length) { rm(out); return { ok: false, error: "could not be read (no picture). Please try another video." }; }
   return { ok: true, path: out, duration: dur, w: fin.w || info.w || 720, h: fin.h || info.h || 1280, poster, converted };
 }
-module.exports = { normalize, probe };
+// Fast check used at upload time: is it a real video, how long, plus a preview picture. NO conversion here
+// (conversion of a big video can take minutes; it is done afterwards in the background).
+async function quickInfo(inPath, { maxSeconds = 60 } = {}) {
+  const info = await probe(inPath);
+  if (info.missing) return { ok: false, missing: true };
+  if (!info.hasVideo || !(info.duration > 0)) return { ok: false, error: "is not a readable video file." };
+  if (info.duration > maxSeconds + 0.5) return { ok: false, error: `is longer than ${maxSeconds} seconds (it is ${Math.round(info.duration)} s). Telegram stories allow up to ${maxSeconds} seconds.` };
+  const pp = tmp(".jpg");
+  await run(["-y", "-hide_banner", "-loglevel", "error", "-ss", String(Math.min(1, info.duration / 2)), "-i", inPath, "-frames:v", "1",
+    "-vf", "scale=270:480:force_original_aspect_ratio=decrease,pad=270:480:(ow-iw)/2:(oh-ih)/2:color=0x153a2e", "-q:v", "4", pp], 60000);
+  let poster = null; try { poster = fs.readFileSync(pp); } catch {} rm(pp);
+  if (!poster || !poster.length) return { ok: false, error: "could not be read (no picture). Please try another video." };
+  const rot = info.rotation === 90 || info.rotation === 270;
+  return { ok: true, duration: Math.min(maxSeconds, info.duration), w: (rot ? info.h : info.w) || 720, h: (rot ? info.w : info.h) || 1280, poster };
+}
+module.exports = { normalize, quickInfo, probe };
