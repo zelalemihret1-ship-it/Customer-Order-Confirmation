@@ -5,6 +5,7 @@ const fs = require("fs");
 let createClient = null;
 try { ({ createClient } = require("@supabase/supabase-js")); } catch (e) { console.error("Supabase library unavailable, continuing without it:", e.message); }
 const crypto = require("crypto");
+const zlib = require("zlib");
 
 
 const ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "chosen_inline_result"];
@@ -136,6 +137,27 @@ function createTelegram({ token, publicBaseUrl, secret, apiBase, log = console }
 
 
 const app = express();
+// Speed: gzip every text / JSON response (the order page is ~84 KB -> ~20 KB on the wire).
+app.use((req, res, next) => {
+  const send = res.send;
+  res.send = function (body) {
+    try {
+      if (this.headersSent || req.method === "HEAD" || this.get("Content-Encoding") || !/\bgzip\b/.test(req.headers["accept-encoding"] || "")) return send.call(this, body);
+      const buf = typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.isBuffer(body) ? body : null;
+      let ct = String(this.get("Content-Type") || "");
+      if (!ct && typeof body === "string") ct = "text/html; charset=utf-8";
+      if (!buf || buf.length < 1024 || !/text\/|json|javascript|xml|svg/i.test(ct)) return send.call(this, body);
+      if (/^text\/|json|javascript|xml/i.test(ct) && !/charset=/i.test(ct)) ct += "; charset=utf-8";
+      zlib.gzip(buf, { level: 5 }, (err, out) => {
+        if (err || this.headersSent) return send.call(this, body);
+        this.set("Content-Type", ct); this.set("Content-Encoding", "gzip"); this.vary("Accept-Encoding");
+        send.call(this, out);
+      });
+      return this;
+    } catch { return send.call(this, body); }
+  };
+  next();
+});
 const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim().replace(/^["']|["']$/g, "").trim();
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || "";
@@ -772,7 +794,7 @@ const NOZOOM_HEAD = `<meta name="viewport" content="width=device-width,initial-s
 const noZoom = html => html.includes("user-scalable=no") ? html : html.replace(/<meta[^>]*name=["']viewport["'][^>]*>/i, "").replace(/<head[^>]*>/i, m => m + NOZOOM_HEAD);
 // Serves public/<file> when it exists (so you can edit it); otherwise the built-in copy above, so the app always starts.
 const sendPage = (file, fallback) => (req, res) => {
-  res.set("Cache-Control", "no-store");
+  res.set("Cache-Control", "no-cache");
   fs.readFile(path.join(__dirname, "public", file), "utf8", (err, txt) => res.type("html").send(noZoom(err || !txt ? fallback : txt)));
 };
 // The Mini App opens on the HOME page (choose an area). The order form lives at /orders.html (and /index.html);
@@ -783,7 +805,7 @@ const sendHome = (req, res) => {
   if (req.query.edit) return sendOrderForm(req, res);
   fs.readFile(path.join(__dirname, "public", "home.html"), "utf8", (err, txt) => {
     if (err || !txt) return sendOrderForm(req, res);
-    res.set("Cache-Control", "no-store").type("html").send(noZoom(txt));
+    res.set("Cache-Control", "no-cache").type("html").send(noZoom(txt));
   });
 };
 app.get("/", sendHome);
@@ -795,7 +817,7 @@ app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charse
 app.get(["/home", "/home.html"], sendHome);
 app.get("/rating.html", sendPage("rating.html", "<!doctype html><meta charset=utf-8><p>public/rating.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/customers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), { maxAge: "10m" }));
 
 app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
 
@@ -1348,8 +1370,7 @@ async function syncCustomerOrderStatus(order) {
     const mine = (orders || []).filter(o => String(o.id) !== String(order.id) && (String(o.customerId || "") || customerIdFor(o)) === customerId).concat(order);
     applyCustomerStatus(customer, mine, true);
     await saveCallers();
-    const result = sheetNote(await sheets.callerSave(callerSheetRow(customer)));
-    if (!result.ok) console.warn("Customer order status sheet sync failed:", result.error);
+    Promise.resolve(sheets.callerSave(callerSheetRow(customer))).then(r => { const n = sheetNote(r); if (!n.ok) console.warn("Customer order status sheet sync failed:", n.error); }).catch(e => console.warn("Customer order status sheet sync failed:", e.message));
   } catch (e) { console.warn("Customer order status sync failed:", e.message); }
 }
 // Backfill: make every customer who has orders a "Customer" with the right order status (runs at start and before each customer sync).
@@ -1378,15 +1399,28 @@ async function saveOrderRecordCore(order) {
   }
   const row = { id: order.id, order_id: order.orderId, status: order.status || "Pending", telegram_chat_id: String(order.telegramChatId || ""), business_connection_id: order.businessConnectionId || null, telegram_message_id: order.telegramMessageId || null, sent: !!order.sent, photo_url: order.photo || null, card_image_url: order.cardImage || null, comments: order.comments || [], order_data: order };
   const { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
+  invalidateOrders();
   if (error) throw new Error(`Supabase order save failed: ${error.message}`);
   return order;
 }
-async function loadOrders() {
+let ordersLoadedAt = 0, ordersLoading = null;
+const invalidateOrders = () => { ordersLoadedAt = 0; };
+// Reads are cached for 5 s and run one at a time; every write (and "Start from ZERO") invalidates the cache.
+function loadOrders() {
+  if (!supabase) return Promise.resolve();
+  if (ordersLoading) return ordersLoading;
+  if (Date.now() - ordersLoadedAt < 5000) return Promise.resolve();
+  ordersLoading = loadOrdersNow().finally(() => { ordersLoading = null; });
+  return ordersLoading;
+}
+async function loadOrdersNow() {
   if (!supabase) return;
+  const startedAt = Date.now();
   const { data, error } = await supabase.from("orders").select("order_data,id,status,comments,photo_url,card_image_url,business_connection_id,telegram_message_id,sent").order("id", { ascending: true });
   if (error) { console.error("Supabase order restore failed:", error.message); return; }
   orders = (data || []).map(row => ({ ...(row.order_data || {}), id: row.id, status: row.status, comments: row.comments || [], photo: row.photo_url || row.order_data?.photo, cardImage: row.card_image_url || row.order_data?.cardImage, businessConnectionId: row.business_connection_id, telegramMessageId: row.telegram_message_id, sent: row.sent }));
   nextId = Math.max(0, ...orders.map(o => Number(o.id) || 0)) + 1;
+  ordersLoadedAt = startedAt;
 }
 
 // Telegram sends this object when the admin connects/disconnects the bot in Telegram Business.
@@ -2977,9 +3011,13 @@ const sheetsAccess = (req, res, next) => {
   res.status(403).json({ ok: false, error: "Only the main admin can change the Google Sheet connection." });
 };
 app.use("/api/sheets", requireAccess, sheetsAccess);
+const sheetVerCache = { v: "", at: 0 };
 app.get("/api/sheets/status", async (req, res) => {
   const st = sheets.status();
-  if (req.actor?.role === "owner" && st.configured) { st.scriptVersion = (await sheets.scriptVersionNow()) || "not reachable"; st.scriptWanted = sheets.expectedScriptVersion().short; }
+  if (req.actor?.role === "owner" && st.configured && !req.query.quick) { // asking Google which script version runs is slow: remember the answer for 5 minutes
+    if (!sheetVerCache.v || Date.now() - sheetVerCache.at > 300000 || req.query.fresh) { sheetVerCache.v = (await sheets.scriptVersionNow()) || "not reachable"; sheetVerCache.at = Date.now(); }
+    st.scriptVersion = sheetVerCache.v; st.scriptWanted = sheets.expectedScriptVersion().short;
+  }
   // How much data is in the app (what "Sync ALL" sends).
   const counts = { orderCount: Array.isArray(orders) ? orders.length : 0, customerCount: callersDb.list.length };
   if (req.actor?.role === "owner") return res.json({ ok: true, role: "owner", ...st, ...counts });
@@ -3017,7 +3055,7 @@ app.post("/api/sheets/reset-all", async (req, res) => { // MAIN ADMIN ONLY: back
       backup = r.sent ? " The sheet backup is being created (about a minute)." : ` The sheet kept ${r.archived} old tab(s) as "Backup …" tabs and started a clean one.`;
     } else backup = " (Google Sheet is not connected, so there is no sheet backup.)";
     if (supabase) { const { error } = await supabase.from("orders").delete().not("id", "is", null); if (error) throw new Error("Could not delete orders: " + error.message); }
-    orders = []; nextId = 1;
+    orders = []; nextId = 1; invalidateOrders();
     res.json({ ok: true, removed: total, message: `✅ Started from ZERO. ${total} order(s) removed from the app.${backup}` });
   } catch (e) { res.json({ ok: false, error: e.message + " — nothing was deleted from the app." }); }
 });
