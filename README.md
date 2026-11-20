@@ -1,3 +1,12 @@
+## v104 — Home: Connect Telegram, Google Sheet, Administration · old gear removed · back buttons
+- The old ⚙ settings gear on the order form is **removed**. Everything it did is now on the **Home page**:
+  - **My account → 🔗 Connect my Telegram account** (every admin).
+  - **Google Sheet → 📊 Open Google Sheet** (every admin).
+  - **Administration** (main admin only): **⚡ Connect Google Sheet**, **👥 Manage Assigned Admins**, **🗑 Start from ZERO** (still asks twice), **⚙️ Setup & Checks**.
+- A Home tile opens that one action straight away (the order form stays hidden, a **← Home** bar is shown on top); closing the panel returns to Home. After *Start from ZERO* finishes you land on Home.
+- **Back buttons:** every area page has **← Home** at the top, and Telegram's own back arrow (top bar) also returns to Home on all of them, including Setup.
+- Redeploy the whole folder (`server.js` is unchanged; all changes are in `public/`).
+
 ## v103 — Mini App opens on the 🏠 Home page
 - Opening the Mini App (`/`) now shows the **Home page** (choose an area). The **order form** moved to **/orders.html** (the old `/index.html` still works).
 - The ✏️ **Edit order** button in the admin bot still opens the order form directly (`/?edit=<id>`).
