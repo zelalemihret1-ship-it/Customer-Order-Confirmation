@@ -1,3 +1,10 @@
+## v103 — Mini App opens on the 🏠 Home page
+- Opening the Mini App (`/`) now shows the **Home page** (choose an area). The **order form** moved to **/orders.html** (the old `/index.html` still works).
+- The ✏️ **Edit order** button in the admin bot still opens the order form directly (`/?edit=<id>`).
+- Every area page has a **← Home** button; the order form has one too.
+- If `public/home.html` is missing, `/` falls back to the order form, so the app never breaks. Unknown addresses open Home.
+- Redeploy the whole folder (`server.js` + all files in `public/`). In @BotFather keep the menu-button address as your plain site address.
+
 ## v101 — 🏠 Home page (new: /home.html)
 - New start page with one big tile per area: **Customer Order Confirmation**, **Customer ID** (Customers Data), **First Greeting**, **Customer Rating**, **Weekly Story**, and **Setup & Admins** (main admin only). Tap a tile to open that area.
 - Open it at `/home.html` (set it as the bot's menu-button address in @BotFather if you want it to be the first screen). The normal `/` page still opens the order form as before.
