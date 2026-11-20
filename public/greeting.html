@@ -61,6 +61,8 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
 #gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
 @media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
 </style>
+<link rel="stylesheet" href="/app.css?v=106">
+<meta name="theme-color" content="#0f3d30">
 </head>
 <body>
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
@@ -140,6 +142,7 @@ async function load(){
 load();
 </script>
 <script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
-<script>try{var B=Telegram.WebApp.BackButton;B.show();B.onClick(function(){location.href="/home.html"+location.hash;});}catch(e){}</script>
+
+<script src="/app.js?v=106"></script>
 </body>
 </html>
