@@ -79,8 +79,36 @@ button:disabled{opacity:.5;cursor:default}
 .modal .mh h2{margin:0}
 .modal .slot .st{margin:4px 0}
 .modal .slot .rep{width:100%;margin-top:6px;border:1px solid #d6d1c7;background:#fff;border-radius:8px;padding:6px 0;cursor:pointer;font-size:12px;color:#153a2e;font-weight:700}
+
+.ph,.th{cursor:pointer}
+.ph.vid::after,.th.vid::after{content:"▶";position:absolute;inset:auto 0 0 0;top:0;margin:auto;width:38px;height:38px;border-radius:50%;background:#000b;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;padding-left:3px;border:2px solid #fff8;pointer-events:none}
+.ph.has::before,.th.has::before{content:"⤢";position:absolute;right:6px;bottom:6px;width:24px;height:24px;border-radius:8px;background:#000a;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none}
+.th{position:relative}
+.vw{position:fixed;inset:0;z-index:200;background:#000;display:none;flex-direction:column;touch-action:pan-y;overscroll-behavior:contain}
+.vw.on{display:flex;animation:vwIn .18s ease-out}
+@keyframes vwIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.vwTop{position:absolute;left:0;right:0;top:0;z-index:5;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 28px;background:linear-gradient(#000c,#0000);color:#fff}
+.vwSegs{display:flex;gap:4px;margin-bottom:10px}
+.vwSegs i{flex:1;height:3px;border-radius:3px;background:#ffffff44}
+.vwSegs i.done{background:#fff}.vwSegs i.cur{background:#ffd877}
+.vwRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#vwTitle{font-weight:800;font-size:14px;text-shadow:0 1px 3px #000}
+#vwX{background:#ffffff26;color:#fff;border:0;border-radius:50%;width:38px;height:38px;font-size:18px;cursor:pointer;backdrop-filter:blur(6px)}
+.vwStage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;position:relative}
+.vwStage img,.vwStage video{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;background:#000}
+.vwSpin{width:42px;height:42px;border-radius:50%;border:4px solid #ffffff33;border-top-color:#fff;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.vwErr{color:#fff;text-align:center;padding:30px;font-size:14px;line-height:1.5}
+.vwNav{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:44px;height:64px;border:0;background:#ffffff1f;color:#fff;font-size:30px;cursor:pointer;border-radius:14px;backdrop-filter:blur(6px)}
+.vwNav.l{left:8px}.vwNav.r{right:8px}
+.vwCap{position:absolute;left:0;right:0;bottom:0;z-index:5;padding:30px 16px calc(18px + env(safe-area-inset-bottom,0px));background:linear-gradient(#0000,#000d);color:#fff;font-size:14px;line-height:1.45;pointer-events:none;display:none}
+.vwStage video{padding-bottom:0}
+.vwToast{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);background:#000c;color:#fff;border-radius:999px;padding:8px 14px;font-size:12px;z-index:6}
+@media(min-width:700px){.vwStage img,.vwStage video{max-width:min(100%,520px)}}
 @media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
 </style>
+<link rel="stylesheet" href="/app.css?v=106">
+<meta name="theme-color" content="#0f3d30">
 </head>
 <body>
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
@@ -117,6 +145,8 @@ button:disabled{opacity:.5;cursor:default}
           <select id="period"><option value="86400" selected>24 hours (recommended)</option><option value="43200">12 hours</option><option value="172800">48 hours</option><option value="21600">6 hours</option></select></label></div>
         <div id="privWrap"><label>Who can see it
           <select id="privacy"><option value="all">Everyone</option><option value="contacts">My contacts only</option></select></label></div>
+        <div id="forWrap" class="full" style="display:none"><label>Create this plan for
+          <select id="forAdmin"><option value="">Me</option></select></label><small id="forHint">It is posted from that admin's own Telegram account.</small></div>
         <div id="viaWrap" class="full" style="display:none"><label>Post from
           <select id="via"><option value="account">My own Telegram account</option><option value="business">Shared Telegram Business account (main admin)</option></select></label></div>
         <div class="full"><label>Caption for every story (optional) <small>max 200 characters</small>
@@ -138,6 +168,7 @@ button:disabled{opacity:.5;cursor:default}
 <div id="editBg" class="modalBg"><div class="modal" role="dialog" aria-label="Edit plan">
   <div class="mh"><h2>✏️ Edit plan</h2><button class="ghost" id="eClose" type="button">✕ Close</button></div>
   <div id="eNote" class="notice"></div>
+  <div id="eFor" class="notice info" style="display:none"></div>
   <div class="grid">
     <div class="full"><label>Plan name<input id="eTitle" maxlength="80"></label></div>
     <div><label>First story day<input id="eStart" type="date"></label><small id="eStartHint"></small></div>
@@ -150,7 +181,7 @@ button:disabled{opacity:.5;cursor:default}
       <select id="eVia"><option value="account">My own Telegram account</option><option value="business">Shared Telegram Business account (main admin)</option></select></label></div>
     <div class="full"><label>Caption for every story (optional) <small>max 200 characters</small>
       <textarea id="eCaption" maxlength="200"></textarea></label></div>
-    <div class="full"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input id="ePinned" type="checkbox" style="width:auto;margin:0"> Keep each story on my profile after it ends</label></div>
+    <div class="full"><label style="display:flex;gap:8px;align-items:center;font-weight:600"><input id="ePinned" type="checkbox" style="width:auto;margin:0"> Keep each story on the profile after it ends</label></div>
   </div>
   <h3>Days <small>— change a caption, or replace the photo / video of a day that is not posted yet</small></h3>
   <div class="slots" id="eDays"></div>
@@ -159,6 +190,7 @@ button:disabled{opacity:.5;cursor:default}
   <div class="row" style="margin-top:12px"><button class="primary" id="eSave" type="button">💾 Save changes</button><button class="ghost" id="eCancel" type="button">Cancel</button></div>
 </div></div>
 
+<div id="vw" class="vw" role="dialog" aria-label="Preview"><div class="vwTop"><div class="vwSegs" id="vwSegs"></div><div class="vwRow"><div id="vwTitle"></div><button id="vwX" type="button" aria-label="Close">✕</button></div></div><div class="vwStage" id="vwStage"></div><button class="vwNav l" id="vwPrev" type="button" aria-label="Previous">‹</button><button class="vwNav r" id="vwNext" type="button" aria-label="Next">›</button><div class="vwCap" id="vwCap"></div></div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -167,6 +199,60 @@ const say=(m,k)=>{const n=$("note");n.className="notice "+(k||"info");n.textCont
 const ask=(m,cb)=>{if(W&&W.showConfirm){try{W.showConfirm(m,ok=>{if(ok)cb();});return;}catch{}}if(confirm(m))cb();};
 let S=null, photos=[], busy=false;
 const MAX=7;
+
+
+// ── full-screen viewer: tap any photo / video to see it big; videos start playing ──
+const VW={items:[],i:0,tok:0,urls:[]};
+const haptic=()=>{try{Telegram.WebApp.HapticFeedback.impactOccurred("light");}catch{}};
+function stopMedia(){const st=$("vwStage");st.querySelectorAll("video").forEach(v=>{try{v.pause();v.removeAttribute("src");v.load();}catch{}});}
+function freeUrls(){VW.urls.forEach(u=>{try{URL.revokeObjectURL(u);}catch{}});VW.urls=[];}
+function vwToast(m){const t=document.createElement("div");t.className="vwToast";t.textContent=m;$("vwStage").appendChild(t);setTimeout(()=>t.remove(),2600);}
+async function showItem(){
+  const tok=++VW.tok,it=VW.items[VW.i],st=$("vwStage");
+  stopMedia();st.innerHTML='<div class="vwSpin"></div>';
+  $("vwTitle").textContent=it.label||"";
+  const cap=$("vwCap");cap.textContent=it.caption||"";cap.style.display=it.caption?"block":"none";
+  $("vwSegs").innerHTML=VW.items.map((_,k)=>`<i class="${k<VW.i?"done":k===VW.i?"cur":""}"></i>`).join("");
+  $("vwPrev").style.visibility=VW.i>0?"visible":"hidden";$("vwNext").style.visibility=VW.i<VW.items.length-1?"visible":"hidden";
+  let src;try{src=await it.src();}catch(e){if(tok===VW.tok)st.innerHTML='<div class="vwErr">❌ '+esc(e.message||"Could not load this item.")+'</div>';return;}
+  if(tok!==VW.tok)return;
+  if(it.type==="video"){
+    const v=document.createElement("video");
+    v.playsInline=true;v.setAttribute("playsinline","");v.setAttribute("webkit-playsinline","");v.controls=true;v.preload="auto";v.autoplay=true;
+    v.onerror=()=>{if(tok===VW.tok)st.innerHTML='<div class="vwErr">This video can\'t be played on this phone.<br>It is still saved and will be posted as it is.</div>';};
+    v.src=src;st.innerHTML="";st.appendChild(v);
+    const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{if(!v.isConnected)return;v.muted=true;v.play().then(()=>vwToast("Playing without sound — use the volume button")).catch(()=>{if(v.isConnected)vwToast("Tap ▶ to play");});});
+  }else{
+    const im=new Image();im.alt="";im.onload=()=>{if(tok===VW.tok){st.innerHTML="";st.appendChild(im);}};
+    im.onerror=()=>{if(tok===VW.tok)st.innerHTML='<div class="vwErr">Could not load this photo.</div>';};im.src=src;
+  }
+}
+function openViewer(items,i){
+  if(!items||!items.length)return;
+  VW.items=items;VW.i=Math.max(0,Math.min(i||0,items.length-1));
+  $("vw").classList.add("on");document.body.style.overflow="hidden";haptic();
+  if(window.AppBack)AppBack.push(closeViewer);
+  showItem();
+}
+function closeViewer(){
+  if(!$("vw").classList.contains("on"))return;
+  VW.tok++;stopMedia();$("vwStage").innerHTML="";$("vw").classList.remove("on");document.body.style.overflow="";freeUrls();
+  if(window.AppBack)AppBack.remove(closeViewer);
+}
+function stepViewer(d){const n=VW.i+d;if(n<0||n>=VW.items.length)return;VW.i=n;haptic();showItem();}
+$("vwX").onclick=closeViewer;$("vwPrev").onclick=()=>stepViewer(-1);$("vwNext").onclick=()=>stepViewer(1);
+document.addEventListener("keydown",e=>{if(!$("vw").classList.contains("on"))return;if(e.key==="Escape")closeViewer();if(e.key==="ArrowRight")stepViewer(1);if(e.key==="ArrowLeft")stepViewer(-1);});
+(function(){let x0=0,y0=0,t0=0;const el=$("vw");
+  el.addEventListener("touchstart",e=>{if(e.touches.length!==1)return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;t0=Date.now();},{passive:true});
+  el.addEventListener("touchend",e=>{if(!e.changedTouches.length||e.target.closest("video"))return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;if(Date.now()-t0>700)return;
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.4)stepViewer(dx<0?1:-1);else if(dy>90&&Math.abs(dy)>Math.abs(dx)*1.4)closeViewer();},{passive:true});})();
+// saved plan items → signed link (a <video> tag can't send the Telegram login header)
+const savedSrc=(id,n)=>async()=>{const d=await (await fetch("/api/stories/"+id+"/media-url/"+n)).json();if(!d.ok)throw new Error(d.error||"Could not open it.");return d.url;};
+const planItems=p=>p.days.map(d=>({type:d.type,label:"Day "+d.n+" · "+dayLabel(d.date)+(d.type==="video"?" · 🎬":""),caption:d.caption||p.caption||"",src:savedSrc(p.id,d.n)}));
+const findPlan=id=>S&&(S.mine.find(x=>x.id===id)||(S.team||[]).find(x=>x.id===id));
+// items picked on this phone, before saving
+const localItems=()=>photos.map((p,i)=>({type:p.kind,label:"Day "+(i+1)+(p.kind==="video"?" · 🎬 "+Math.round(p.meta.duration)+"s":" · 🖼"),caption:p.caption||"",
+  src:async()=>{if(p.kind==="video"){const u=URL.createObjectURL(p.blob);VW.urls.push(u);return u;}return p.url;}}));
 
 // ── tabs ──
 function tab(t){["New","Mine","Team"].forEach(x=>{$("v"+x).style.display=x===t?"block":"none";$("tab"+x).classList.toggle("on",x===t);});}
@@ -241,7 +327,7 @@ function drawSlots(){
   const start=$("startDate").value;
   $("slots").innerHTML=Array.from({length:MAX},(_,i)=>{
     const p=photos[i],lab=start?dayLabel(addDays(start,i)):"";
-    return p?`<div class="slot filled"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph" style="background-image:url(${p.url})"><span class="kind">${p.kind==="video"?"🎬 "+Math.round(p.meta.duration)+"s":"🖼 Photo"}</span></div>
+    return p?`<div class="slot filled"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph has ${p.kind==="video"?"vid":""}" data-view="${i}" style="background-image:url(${p.url})"><span class="kind">${p.kind==="video"?"🎬 "+Math.round(p.meta.duration)+"s":"🖼 Photo"}</span></div>
       <div class="ctl"><button data-a="l" data-i="${i}" ${i===0?"disabled":""}>◀</button><button data-a="r" data-i="${i}" ${i===photos.length-1?"disabled":""}>▶</button><button data-a="x" data-i="${i}">✕</button></div>
       <input data-cap="${i}" maxlength="200" placeholder="Own caption (optional)" value="${esc(p.caption)}"></div>`
     :`<div class="slot"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph">＋</div></div>`;}).join("");
@@ -253,6 +339,7 @@ $("slots").addEventListener("click",e=>{const b=e.target.closest("button[data-a]
   if(a==="x"){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}
   else{const j=a==="l"?i-1:i+1;[photos[i],photos[j]]=[photos[j],photos[i]];}
   drawSlots();});
+$("slots").addEventListener("click",e=>{const t=e.target.closest("[data-view]");if(!t||e.target.closest("button"))return;openViewer(localItems(),+t.dataset.view);});
 $("slots").addEventListener("input",e=>{const i=e.target.dataset&&e.target.dataset.cap;if(i!=null&&photos[+i])photos[+i].caption=e.target.value;});
 $("startDate").addEventListener("change",drawSlots);
 $("clear").onclick=()=>{photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];drawSlots();};
@@ -267,6 +354,7 @@ $("create").onclick=async()=>{
     ["title","caption","startDate","postTime","period","privacy"].forEach(k=>fd.append(k,$(k).value));
     fd.append("pinned",$("pinned").checked?"1":"0");
     fd.append("via",$("viaWrap").style.display==="none"?"account":$("via").value);
+    if($("forWrap").style.display!=="none"&&$("forAdmin").value)fd.append("forAdmin",$("forAdmin").value);
     fd.append("dayCaptions",JSON.stringify(photos.map(p=>p.caption||"")));
     const d=await (await fetch("/api/stories",{method:"POST",body:fd})).json();
     if(!d.ok){say("❌ "+(d.error||"Could not save."),"bad");}
@@ -275,19 +363,28 @@ $("create").onclick=async()=>{
   busy=false;$("create").textContent="✅ Create weekly story plan";drawSlots();
 };
 
+// ── main admin: create the plan FOR another admin ──
+function updateFor(){
+  const v=$("forAdmin").value,p=S&&S.people&&S.people.find(x=>x.telegramId===v),h=$("forHint");
+  if(!v||!p){h.textContent="It is posted from your own Telegram account.";h.style.color="";$("viaWrap").style.display=(S&&S.me.role==="owner"&&S.canBusiness)?"block":"none";return;}
+  $("viaWrap").style.display=p.main&&S.canBusiness?"block":"none";
+  h.textContent=p.connected?"✅ "+p.name+" is connected — each story is posted from "+p.name+"'s own Telegram account.":"⚠️ "+p.name+" has not connected Telegram yet. You can set the plan up now; it is posted as soon as they connect.";
+  h.style.color=p.connected?"#176b3a":"#b3261e";
+}
+$("forAdmin").addEventListener("change",updateFor);
 // ── plans ──
 const thumbs=new Map();
 async function thumb(id,n,el,v){const k=id+"/"+n+"/"+(v||0);try{if(!thumbs.has(k)){const r=await fetch("/api/stories/"+id+"/photo/"+n+"?v="+(v||0));if(!r.ok)return;thumbs.set(k,URL.createObjectURL(await r.blob()));}el.style.backgroundImage="url("+thumbs.get(k)+")";}catch{}}
 const STAT={pending:"⏳ Scheduled",posting:"📤 Posting…",posted:"✅ Posted",failed:"⚠️ Failed",missed:"⏭ Missed"};
 function planCard(p,opts){
-  const mine=p.mine,who=opts.team?`<span class="pill">👤 ${esc(p.ownerName)}${p.ownerRole==="owner"?" · main admin":""}</span> `:"";
+  const mine=p.mine,who=opts.team?`<span class="pill">👤 ${esc(p.ownerName)}${p.ownerRole==="owner"?" · main admin":""}</span> ${p.createdByName?`<span class="pill">set up by ${esc(p.createdByName)}</span> `:""}${p.status!=="done"&&!p.accountReady&&p.via!=="business"?`<span class="pill off">Telegram not connected</span> `:""}`:"";
   const posted=p.days.filter(d=>d.status==="posted").length;
   return `<div class="card plan" data-id="${p.id}"><div class="top"><div><div class="nm">${esc(p.title)}</div>
     <div class="meta">${who}<span class="pill ${p.status}">${p.status==="active"?"Running":p.status==="paused"?"Paused":"Finished"}</span>
     · ${posted}/7 posted · ${esc(p.startDate)} → ${esc(p.days[6].date)} at ${esc(p.postTime)} · ${p.via==="business"?"Shared Business account":"Own account"} · ${Math.round(p.period/3600)}h</div></div>
-    <div class="row">${mine?`<button class="ghost pencil" data-a="edit" title="Edit this plan" aria-label="Edit this plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit</button>`:""}${p.status==="paused"?`<button class="ghost" data-a="resume">▶ Resume</button>`:(p.status==="active"?`<button class="ghost" data-a="pause">⏸ Pause</button>`:"")}<button class="danger" data-a="del">🗑 Delete</button></div></div>
-    <div class="days">${p.days.map(d=>`<div class="day"><div class="th" data-th="${d.n}" data-v="${d.v||0}" style="position:relative">${d.type==="video"?`<span class="kind">🎬 Video</span>`:""}</div><b>Day ${d.n}</b> · ${esc(dayLabel(d.date))}<br><span class="pill ${d.status}">${STAT[d.status]||d.status}</span>${d.postedAt?`<div>${esc(d.postedAt.slice(11))}</div>`:""}${d.error?`<div class="err">${esc(d.error)}</div>`:""}
-      ${mine&&d.status!=="posted"&&d.status!=="posting"?`<button class="ghost" data-a="now" data-day="${d.n}">Post now</button>`:""}</div>`).join("")}</div></div>`;
+    <div class="row">${p.canEdit?`<button class="ghost pencil" data-a="edit" title="Edit this plan" aria-label="Edit this plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit</button>`:""}${p.status==="paused"?`<button class="ghost" data-a="resume">▶ Resume</button>`:(p.status==="active"?`<button class="ghost" data-a="pause">⏸ Pause</button>`:"")}<button class="danger" data-a="del">🗑 Delete</button></div></div>
+    <div class="days">${p.days.map(d=>`<div class="day"><div class="th has ${d.type==="video"?"vid":""}" data-th="${d.n}" data-v="${d.v||0}" style="position:relative">${d.type==="video"?`<span class="kind">🎬 ${d.duration?Math.round(d.duration)+"s":"Video"}</span>`:""}</div><b>Day ${d.n}</b> · ${esc(dayLabel(d.date))}<br><span class="pill ${d.status}">${STAT[d.status]||d.status}</span>${d.postedAt?`<div>${esc(d.postedAt.slice(11))}${d.postedBy?` · by ${esc(d.postedBy)}`:""}</div>`:""}${d.error?`<div class="err">${esc(d.error)}</div>`:""}
+      ${p.canEdit&&d.status!=="posted"&&d.status!=="posting"?`<button class="ghost" data-a="now" data-day="${d.n}">${mine?"Post now":"Post for "+esc((p.ownerName||"admin").split(" ")[0])}</button>`:""}</div>`).join("")}</div></div>`;
 }
 function paint(el,list,opts,emptyMsg){
   el.innerHTML=(opts.before||"")+(list.length?list.map(p=>planCard(p,opts)).join(""):`<div class="empty">${emptyMsg}</div>`);
@@ -302,35 +399,39 @@ async function act(e){
   if(a==="del")return ask("Delete this weekly plan? Photos not yet posted will not be posted. Stories already on Telegram stay until they expire.",()=>call("DELETE","/api/stories/"+id));
   if(a==="now")return ask("Post item "+b.dataset.day+" as a story right now?",()=>call("POST","/api/stories/"+id+"/post-now",{day:+b.dataset.day}));
 }
+function thClick(e){const t=e.target.closest(".th[data-th]");if(!t)return;const card=t.closest("[data-id]"),p=card&&findPlan(card.dataset.id);if(!p)return;openViewer(planItems(p),(+t.dataset.th)-1);}
 $("vMine").addEventListener("click",act);$("vTeam").addEventListener("click",act);
+$("vMine").addEventListener("click",thClick);$("vTeam").addEventListener("click",thClick);
+$("vTeam").addEventListener("click",e=>{const b=e.target.closest("button[data-for]");if(!b)return;$("forAdmin").value=b.dataset.for;updateFor();tab("New");window.scrollTo({top:0,behavior:"smooth"});});
 
 // ── ✏️ edit a plan ──
 let E=null,eBusy=false;
 const esay=(m,k)=>{const n=$("eNote");n.className="notice "+(k||"info");n.textContent=m;n.scrollIntoView({behavior:"smooth",block:"nearest"});};
 function openEdit(id){
-  const p=S&&S.mine.find(x=>x.id===id);if(!p)return;
+  const p=findPlan(id);if(!p)return;
   E=JSON.parse(JSON.stringify(p));
   const posted=E.days.some(d=>d.status==="posted"),owner=S.me.role==="owner";
   $("eNote").className="notice";$("eNote").textContent="";
   $("eTitle").value=E.title||"";$("eStart").value=E.startDate;$("eStart").min=S.now.slice(0,10);$("eStart").disabled=posted;
   $("eStartHint").textContent=posted?"Locked: the first story was already posted.":"Moves the whole week.";
   $("eTime").value=E.postTime;$("ePeriod").value=String(E.period);$("ePrivacy").value=E.privacy||"all";
-  $("eViaWrap").style.display=(owner&&(S.canBusiness||E.via==="business"))?"block":"none";$("eVia").value=E.via||"account";
+  $("eViaWrap").style.display=(owner&&E.ownerRole==="owner"&&(S.canBusiness||E.via==="business"))?"block":"none";
+  $("eFor").style.display=E.mine?"none":"block";$("eFor").textContent=E.mine?"":"✏️ You are editing "+(E.ownerName||"this admin")+"'s plan as main admin. Posting goes out from "+(E.ownerName||"their")+"'s own Telegram account.";$("eVia").value=E.via||"account";
   $("eCaption").value=E.caption||"";$("ePinned").checked=!!E.pinned;
-  drawEdit();$("editBg").style.display="flex";
+  drawEdit();$("editBg").style.display="flex";if(window.AppBack)AppBack.push(closeEdit);
 }
-function closeEdit(){$("editBg").style.display="none";E=null;}
+function closeEdit(){$("editBg").style.display="none";E=null;if(window.AppBack)AppBack.remove(closeEdit);}
 function syncCaps(){if(!E)return;document.querySelectorAll("#eDays input[data-ecap]").forEach(i=>{const d=E.days[+i.dataset.ecap];if(d&&d.status!=="posted")d.caption=i.value;});}
 function drawEdit(){
   if(!E)return;
   $("eDays").innerHTML=E.days.map((d,i)=>{const done=d.status==="posted";
     return `<div class="slot filled"><div class="dn">Day ${d.n}</div><div class="dd">${esc(dayLabel(d.date))}</div>
-      <div class="ph" data-eth="${d.n}" data-v="${d.v||0}"><span class="kind">${d.type==="video"?"🎬 Video":"🖼 Photo"}</span></div>
+      <div class="ph has ${d.type==="video"?"vid":""}" data-eth="${d.n}" data-v="${d.v||0}" style="position:relative"><span class="kind">${d.type==="video"?"🎬 Video":"🖼 Photo"}</span></div>
       <div class="st"><span class="pill ${d.status}">${STAT[d.status]||d.status}</span></div>
       ${done?`<small>Already posted</small>`:`<input data-ecap="${i}" maxlength="200" placeholder="Own caption (optional)" value="${esc(d.caption)}"><button class="rep" type="button" data-rep="${d.n}">🔄 Replace photo / video</button>`}</div>`;}).join("");
   document.querySelectorAll("#eDays [data-eth]").forEach(t=>thumb(E.id,t.dataset.eth,t,t.dataset.v));
 }
-$("eDays").addEventListener("click",e=>{const b=e.target.closest("button[data-rep]");if(!b||eBusy)return;syncCaps();$("eFile").dataset.day=b.dataset.rep;$("eFile").click();});
+$("eDays").addEventListener("click",e=>{const t=e.target.closest("[data-eth]");if(t&&!e.target.closest("button")){openViewer(planItems(E),(+t.dataset.eth)-1);return;}const b=e.target.closest("button[data-rep]");if(!b||eBusy)return;syncCaps();$("eFile").dataset.day=b.dataset.rep;$("eFile").click();});
 $("eFile").addEventListener("change",async e=>{
   const f=e.target.files[0],n=+e.target.dataset.day;e.target.value="";if(!f||!E||!n)return;
   const maxMb=(S.limits&&S.limits.videoMb)||200,maxSec=(S.limits&&S.limits.videoSeconds)||60;
@@ -376,24 +477,28 @@ async function load(){
   $("gate").style.display="none";S=d;
   const owner=d.me.role==="owner";
   $("cMine").textContent=d.mine.length;
-  $("viaWrap").style.display=owner&&d.canBusiness?"block":"none";
+  if(owner){const cur=$("forAdmin").value;$("forWrap").style.display="block";
+    $("forAdmin").innerHTML='<option value="">Me ('+esc(d.me.name||"main admin")+')</option>'+(d.people||[]).map(x=>`<option value="${esc(x.telegramId)}">${esc(x.name)}${x.main?" · main admin":""}${x.connected?"":" (not connected)"}</option>`).join("");
+    $("forAdmin").value=cur;if($("forAdmin").value!==cur)$("forAdmin").value="";updateFor();}
+  else{$("forWrap").style.display="none";$("viaWrap").style.display="none";}
   $("privWrap").style.display="block";
   if(!$("startDate").value){const t=d.now.slice(0,10);$("startDate").value=(d.now.slice(11,16)>$("postTime").value)?addDays(t,1):t;}
   const w=$("acctWarn");
-  if(!d.accountReady&&!(owner&&d.canBusiness)){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected, so stories can't be posted yet. Open <b>⚙ Settings → 🔗 Connect my Telegram account</b> in the main page. You can still create the plan now.";}
-  else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected. Choose “Shared Telegram Business account” above, or connect your account in ⚙ Settings.";}
+  if(!d.accountReady&&!(owner&&d.canBusiness)){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected, so stories can't be posted yet. Go to <b>Home → Connect Telegram</b>. You can still create the plan now.";}
+  else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected. Choose “Shared Telegram Business account” above, or connect your account on the Home page.";}
   else{w.className="notice";w.textContent="";}
   paint($("vMine"),d.mine,{},"No weekly plans yet. Go to “New week”, add 7 photos or videos and press Create.");
   if(owner){
     $("tabTeam").style.display="";$("cTeam").textContent=d.team.length;
-    const people=`<div class="card"><h2>👑 Admin overview</h2>${d.people.length?`<div class="people">${d.people.map(x=>`<div class="person"><b>${esc(x.name)}</b><br><span class="pill ${x.connected?"on":"off"}">${x.connected?"Telegram connected":"Not connected"}</span><br>Running plans: ${x.activePlans}<br>Posted today: ${x.postedToday}<br>${x.failed?`<span style="color:#b3261e">Failed stories: ${x.failed}</span>`:"No failures"}</div>`).join("")}</div>`:`<div class="empty">No assigned admins yet.</div>`}
-      <p class="hint" style="margin-top:10px">Each admin plans and posts separately from their own Telegram account. You can pause, resume or delete any plan, but only its admin can post it.</p></div>`;
+    const people=`<div class="card"><h2>👑 Admin overview</h2>${d.people.length?`<div class="people">${d.people.map(x=>`<div class="person"><b>${esc(x.name)}</b><br><span class="pill ${x.connected?"on":"off"}">${x.connected?"Telegram connected":"Not connected"}</span><br>Running plans: ${x.activePlans}<br>Posted today: ${x.postedToday}<br>${x.failed?`<span style="color:#b3261e">Failed stories: ${x.failed}</span>`:"No failures"}<br><button class="ghost" style="padding:7px 10px;font-size:12px;margin-top:6px" data-for="${esc(x.telegramId)}">➕ New plan for ${esc((x.name||"").split(" ")[0])}</button></div>`).join("")}</div>`:`<div class="empty">No assigned admins yet.</div>`}
+      <p class="hint" style="margin-top:10px">Each plan is posted from <b>its own admin's</b> Telegram account. As main admin you can <b>create, edit, pause, delete and post</b> any admin's plan — tap a photo or video to see it full screen.</p></div>`;
     paint($("vTeam"),d.team,{team:true,before:people},"No admin has made a weekly plan yet.");
   }
 }
 drawSlots();load();setInterval(()=>{if(!busy&&document.visibilityState==="visible")load();},30000);
 </script>
 <script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
-<script>try{var B=Telegram.WebApp.BackButton;B.show();B.onClick(function(){location.href="/home.html"+location.hash;});}catch(e){}</script>
+
+<script src="/app.js?v=106"></script>
 </body>
 </html>
