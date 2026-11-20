@@ -601,6 +601,7 @@ const gear=document.getElementById("stOpen"),ov=document.getElementById("stOverl
 let role="";
 const items=()=>{
   const L=[];
+  L.push('<button class="main" data-c="home">🏠 Home (choose an area)</button>');
   L.push('<h4>Customers</h4>');
   L.push('<button class="main" data-c="callers">👥 Customers Data (Customer IDs)</button>');
   L.push('<h4>Customers messages</h4>');
@@ -627,6 +628,7 @@ ov.addEventListener("click",e=>{
   const b=e.target.closest("button[data-c]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   const c=b.dataset.c;
   if(c==="close"){ov.style.display="none";return;}
+  if(c==="home"){window.location.href="/home.html"+(window.location.hash||"");return;}
   if(c==="greeting"){window.location.href="/greeting.html"+(window.location.hash||"");return;}
   if(c==="rating"){window.location.href="/rating.html"+(window.location.hash||"");return;}
   if(c==="stories"){window.location.href="/stories.html"+(window.location.hash||"");return;}
