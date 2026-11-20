@@ -66,6 +66,7 @@ button:disabled{opacity:.5;cursor:default}
 .day .err{color:#b3261e;margin-top:3px;line-height:1.3}
 .day button{width:100%;margin-top:5px;padding:7px 4px;font-size:12px}
 .empty{text-align:center;color:#8a8478;padding:26px 10px;font-size:14px}
+.assign{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}.assign label.opt{display:flex;gap:8px;align-items:center;border:1px solid #e4ded2;border-radius:12px;padding:9px 11px;background:#faf8f3;font-weight:600;font-size:13px;margin:0;cursor:pointer}.assign label.opt.on{border-color:#176b3a;background:#e9f6ee}.assign label.opt input{width:auto;margin:0}.assign label.opt small{display:block;font-weight:400;color:#6b6558}
 .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .person{border:1px solid #e4ded2;border-radius:14px;padding:12px;background:#faf8f3;font-size:12px;line-height:1.7}
 .person b{font-size:14px}
@@ -127,7 +128,6 @@ button:disabled{opacity:.5;cursor:default}
 
   <section id="vNew">
     <div class="card">
-      <div id="modeWrap" class="row" style="display:none;margin-bottom:12px"><button class="primary" id="modeWeek" type="button" style="flex:1">📅 Weekly plan (7)</button><button class="ghost" id="modeOne" type="button" style="flex:1">🎯 One story</button></div>
       <h2><span id="h1New">1. Add your 7 photos or videos</span> <span class="counter" id="cnt">0 / 7</span></h2>
       <p class="hint" id="hintNew" style="margin:0 0 8px">Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.</p>
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="addPhoto" type="button">🖼 Add photos</button><button class="ghost" id="addVideo" type="button">🎬 Add videos</button></div>
@@ -146,8 +146,10 @@ button:disabled{opacity:.5;cursor:default}
           <select id="period"><option value="86400" selected>24 hours (recommended)</option><option value="43200">12 hours</option><option value="172800">48 hours</option><option value="21600">6 hours</option></select></label></div>
         <div id="privWrap"><label>Who can see it
           <select id="privacy"><option value="all">Everyone</option><option value="contacts">My contacts only</option></select></label></div>
-        <div id="forWrap" class="full" style="display:none"><label>Create this plan for
-          <select id="forAdmin"><option value="">Me</option></select></label><small id="forHint">It is posted from that admin's own Telegram account.</small></div>
+        <div id="forWrap" class="full" style="display:none"><label>Assign this plan to <small id="forCount"></small></label>
+          <div id="forList" class="assign"></div>
+          <div class="row" style="margin-top:8px"><button class="ghost" id="forAll" type="button">Select all admins</button><button class="ghost" id="forNone" type="button">Clear</button></div>
+          <small id="forHint">Each chosen admin gets their own copy of this plan. It is posted from that admin's own Telegram account.</small></div>
         <div id="viaWrap" class="full" style="display:none"><label>Post from
           <select id="via"><option value="account">My own Telegram account</option><option value="business">Shared Telegram Business account (main admin)</option></select></label></div>
         <div class="full"><label>Caption for every story (optional) <small>max 200 characters</small>
@@ -199,7 +201,7 @@ const W=window.Telegram&&Telegram.WebApp;
 const say=(m,k)=>{const n=$("note");n.className="notice "+(k||"info");n.textContent=m;n.scrollIntoView({behavior:"smooth",block:"nearest"});};
 const ask=(m,cb)=>{if(W&&W.showConfirm){try{W.showConfirm(m,ok=>{if(ok)cb();});return;}catch{}}if(confirm(m))cb();};
 let S=null, photos=[], busy=false;
-let MAX=7,MODE="weekly";
+const MAX=7;const FOR=new Set(["me"]); // admins this plan is assigned to ("me" = myself)
 
 
 // ── full-screen viewer: tap any photo / video to see it big; videos start playing ──
@@ -364,8 +366,8 @@ function drawSlots(){
       <input data-cap="${i}" maxlength="200" placeholder="Own caption (optional)" value="${esc(p.caption)}"></div>`
     :`<div class="slot"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph">＋</div></div>`;}).join("");
   $("cnt").textContent=photos.length+" / "+MAX;
-  $("create").disabled=busy||photos.length!==MAX;
-  $("createHint").textContent=photos.length===MAX?(MODE==="single"?"Ready. The story is posted once, on the day and time you chose.":"Everything is ready. Each item will go out on its own day, once."):"Add "+(MAX-photos.length)+" more photo(s) or video(s) to continue.";
+  $("create").disabled=busy||photos.length!==MAX||!FOR.size;
+  $("createHint").textContent=photos.length===MAX?"Everything is ready. Each item will go out on its own day, once.":"Add "+(MAX-photos.length)+" more photo(s) or video(s) to continue.";
 }
 $("slots").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const i=+b.dataset.i,a=b.dataset.a;
   if(a==="x"){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}
@@ -377,46 +379,49 @@ $("startDate").addEventListener("change",drawSlots);
 $("clear").onclick=()=>{photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];drawSlots();};
 
 $("create").onclick=async()=>{
-  if(photos.length!==MAX||busy)return;busy=true;$("create").disabled=true;$("create").textContent=photos.some(p=>p.kind==="video")?"Uploading… please wait":"Saving…";
+  if(photos.length!==MAX||busy||!FOR.size)return;busy=true;$("create").disabled=true;$("create").textContent=photos.some(p=>p.kind==="video")?"Uploading… please wait":"Saving…";
   try{
     const fd=new FormData();
     photos.forEach((p,i)=>fd.append("photos",p.blob,p.kind==="video"?"day"+(i+1)+".mp4":"day"+(i+1)+".jpg"));
     photos.filter(p=>p.kind==="video").forEach((p,i)=>fd.append("posters",p.poster,"poster"+(i+1)+".jpg"));
     fd.append("dayMeta",JSON.stringify(photos.map(p=>p.kind==="video"?p.meta:{type:"photo"})));
     ["title","caption","startDate","postTime","period","privacy"].forEach(k=>fd.append(k,$(k).value));
-    fd.append("pinned",$("pinned").checked?"1":"0");fd.append("mode",MODE);
+    fd.append("pinned",$("pinned").checked?"1":"0");
     fd.append("via",$("viaWrap").style.display==="none"?"account":$("via").value);
-    if($("forWrap").style.display!=="none"&&$("forAdmin").value)fd.append("forAdmin",$("forAdmin").value);
+    if($("forWrap").style.display!=="none")fd.append("forAdmins",JSON.stringify([...FOR]));
     fd.append("dayCaptions",JSON.stringify(photos.map(p=>p.caption||"")));
     const d=await (await fetch("/api/stories",{method:"POST",body:fd})).json();
     if(!d.ok){say("❌ "+(d.error||"Could not save."),"bad");}
     else{say(d.message,"ok");$("clear").click();$("title").value="";$("caption").value="";await load();tab("Mine");}
   }catch(e){say("❌ "+e.message,"bad");}
-  busy=false;$("create").textContent=MODE==="single"?"✅ Plan this story":"✅ Create weekly story plan";drawSlots();
+  busy=false;setCreateLabel();drawSlots();
 };
 
-// ── main admin only: weekly plan (7) or ONE single story, for themselves or for another admin ──
-function setMode(m){
-  MODE=m;const one=m==="single";MAX=one?1:7;
-  while(photos.length>MAX){URL.revokeObjectURL(photos[photos.length-1].url);photos.pop();}
-  $("modeWeek").className=one?"ghost":"primary";$("modeOne").className=one?"primary":"ghost";
-  $("h1New").textContent=one?"1. Add the photo or video of the story":"1. Add your 7 photos or videos";
-  $("hintNew").innerHTML=one?"Choose <b>one photo or video</b>. It is posted <b>once</b>, on the day and time you choose below, for yourself or for the admin you pick.":"Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.";
-  $("lblStart").textContent=one?"Story day":"First story day";
-  $("subHead").textContent=one?"one story · one day · for you or for another admin":"7 photos or videos once · one story per day · nothing repeats";
-  $("create").textContent=one?"✅ Plan this story":"✅ Create weekly story plan";
-  drawSlots();
+// ── main admin: assign ONE plan to several admins at once (each gets their own copy, posted from their own Telegram account) ──
+function setCreateLabel(){const n=FOR.size;$("create").textContent=n>1?"✅ Create plan for "+n+" admins":"✅ Create weekly story plan";}
+function drawFor(){
+  if(!S||S.me.role!=="owner")return;
+  const list=[{id:"me",name:"Me ("+(S.me.name||"main admin")+")",sub:"",me:true}].concat((S.people||[]).map(x=>({id:x.telegramId,name:x.name,sub:(x.main?"main admin · ":"")+(x.connected?"✅ connected":"⚠️ not connected yet")})));
+  for(const k of [...FOR])if(!list.some(x=>x.id===k))FOR.delete(k);
+  const html=list.map(x=>`<label class="opt ${FOR.has(x.id)?"on":""}"><input type="checkbox" data-for="${esc(x.id)}" ${FOR.has(x.id)?"checked":""}><span>${esc(x.name)}${x.sub?`<small>${esc(x.sub)}</small>`:""}</span></label>`).join("");
+  if($("forList").innerHTML!==html)$("forList").innerHTML=html;
+  updateFor();
 }
-$("modeWeek").onclick=()=>setMode("weekly");$("modeOne").onclick=()=>setMode("single");
-// ── main admin: create the plan FOR another admin ──
 function updateFor(){
-  const v=$("forAdmin").value,p=S&&S.people&&S.people.find(x=>x.telegramId===v),h=$("forHint");
-  if(!v||!p){h.textContent="It is posted from your own Telegram account.";h.style.color="";$("viaWrap").style.display=(S&&S.me.role==="owner"&&S.canBusiness)?"block":"none";return;}
-  $("viaWrap").style.display=p.main&&S.canBusiness?"block":"none";
-  h.textContent=p.connected?"✅ "+p.name+" is connected — each story is posted from "+p.name+"'s own Telegram account.":"⚠️ "+p.name+" has not connected Telegram yet. You can set the plan up now; it is posted as soon as they connect.";
-  h.style.color=p.connected?"#176b3a":"#b3261e";
+  const sel=[...FOR],n=sel.length,people=(S&&S.people)||[];
+  const others=sel.filter(k=>k!=="me").map(k=>people.find(x=>x.telegramId===k)).filter(Boolean);
+  $("forCount").textContent=n?"· "+n+" selected":"· choose at least one";
+  const h=$("forHint"),off=others.filter(x=>!x.connected);
+  if(!n){h.textContent="⚠️ Choose at least one admin.";h.style.color="#b3261e";}
+  else if(off.length){h.textContent="⚠️ "+off.map(x=>x.name).join(", ")+(off.length>1?" have":" has")+" not connected Telegram yet. The plan is saved now and posted as soon as they connect.";h.style.color="#b3261e";}
+  else{h.textContent=n>1||others.length?"✅ Each chosen admin gets their own copy of this plan. It is posted from that admin's own Telegram account.":"It is posted from your own Telegram account.";h.style.color=others.length?"#176b3a":"";}
+  const bizOk=S&&S.canBusiness&&(FOR.has("me")||others.some(x=>x.main));
+  $("viaWrap").style.display=bizOk?"block":"none";
+  setCreateLabel();$("create").disabled=busy||photos.length!==MAX||!FOR.size;
 }
-$("forAdmin").addEventListener("change",updateFor);
+$("forList").addEventListener("change",e=>{const c=e.target.closest("input[data-for]");if(!c)return;if(c.checked)FOR.add(c.dataset.for);else FOR.delete(c.dataset.for);drawFor();});
+$("forAll").onclick=()=>{FOR.add("me");((S&&S.people)||[]).forEach(x=>FOR.add(x.telegramId));drawFor();};
+$("forNone").onclick=()=>{FOR.clear();drawFor();};
 // ── plans ──
 const thumbs=new Map();
 async function thumb(id,n,el,v){const k=id+"/"+n+"/"+(v||0);try{if(!thumbs.has(k)){const r=await fetch("/api/stories/"+id+"/photo/"+n+"?v="+(v||0));if(!r.ok)return;thumbs.set(k,URL.createObjectURL(await r.blob()));}el.style.backgroundImage="url("+thumbs.get(k)+")";}catch{}}
@@ -424,7 +429,7 @@ const STAT={pending:"⏳ Scheduled",posting:"📤 Posting…",posted:"✅ Posted
 function planCard(p,opts){
   const mine=p.mine,who=opts.team?`<span class="pill">👤 ${esc(p.ownerName)}${p.ownerRole==="owner"?" · main admin":""}</span> ${p.createdByName?`<span class="pill">set up by ${esc(p.createdByName)}</span> `:""}${p.status!=="done"&&!p.accountReady&&p.via!=="business"?`<span class="pill off">Telegram not connected</span> `:""}`:"";
   const posted=p.days.filter(d=>d.status==="posted").length;
-  return `<div class="card plan" data-id="${p.id}"><div class="top"><div><div class="nm">${p.single?"🎯 ":""}${esc(p.title)}</div>
+  return `<div class="card plan" data-id="${p.id}"><div class="top"><div><div class="nm">${esc(p.title)}</div>
     <div class="meta">${who}<span class="pill ${p.status}">${p.status==="active"?"Running":p.status==="paused"?"Paused":"Finished"}</span>
     · ${posted}/${p.days.length} posted · ${esc(p.startDate)}${p.days.length>1?" → "+esc(p.days[p.days.length-1].date):""} at ${esc(p.postTime)} · ${p.via==="business"?"Shared Business account":"Own account"} · ${Math.round(p.period/3600)}h</div></div>
     <div class="row">${p.canEdit?`<button class="ghost pencil" data-a="edit" title="Edit this plan" aria-label="Edit this plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit</button>`:""}${p.status==="paused"?`<button class="ghost" data-a="resume">▶ Resume</button>`:(p.status==="active"?`<button class="ghost" data-a="pause">⏸ Pause</button>`:"")}<button class="danger" data-a="del">🗑 Delete</button></div></div>
@@ -447,7 +452,7 @@ async function act(e){
 function thClick(e){const t=e.target.closest(".th[data-th]");if(!t)return;const card=t.closest("[data-id]"),p=card&&findPlan(card.dataset.id);if(!p)return;openViewer(planItems(p),(+t.dataset.th)-1);}
 $("vMine").addEventListener("click",act);$("vTeam").addEventListener("click",act);
 $("vMine").addEventListener("click",thClick);$("vTeam").addEventListener("click",thClick);
-$("vTeam").addEventListener("click",e=>{const b=e.target.closest("button[data-for]");if(!b)return;$("forAdmin").value=b.dataset.for;updateFor();tab("New");window.scrollTo({top:0,behavior:"smooth"});});
+$("vTeam").addEventListener("click",e=>{const b=e.target.closest("button[data-for]");if(!b)return;FOR.clear();FOR.add(b.dataset.for);drawFor();tab("New");window.scrollTo({top:0,behavior:"smooth"});});
 
 // ── ✏️ edit a plan ──
 let E=null,eBusy=false;
@@ -522,9 +527,7 @@ async function load(){
   $("gate").style.display="none";S=d;
   const owner=d.me.role==="owner";
   $("cMine").textContent=d.mine.length;
-  if(owner){$("modeWrap").style.display="flex";const cur=$("forAdmin").value;$("forWrap").style.display="block";
-    $("forAdmin").innerHTML='<option value="">Me ('+esc(d.me.name||"main admin")+')</option>'+(d.people||[]).map(x=>`<option value="${esc(x.telegramId)}">${esc(x.name)}${x.main?" · main admin":""}${x.connected?"":" (not connected)"}</option>`).join("");
-    $("forAdmin").value=cur;if($("forAdmin").value!==cur)$("forAdmin").value="";updateFor();}
+  if(owner){$("forWrap").style.display="block";drawFor();}
   else{$("forWrap").style.display="none";$("viaWrap").style.display="none";}
   $("privWrap").style.display="block";
   if(!$("startDate").value){const t=d.now.slice(0,10);$("startDate").value=(d.now.slice(11,16)>$("postTime").value)?addDays(t,1):t;}
