@@ -775,12 +775,24 @@ const sendPage = (file, fallback) => (req, res) => {
   res.set("Cache-Control", "no-store");
   fs.readFile(path.join(__dirname, "public", file), "utf8", (err, txt) => res.type("html").send(noZoom(err || !txt ? fallback : txt)));
 };
-app.get(["/", "/index.html"], sendPage("index.html", PAGE_INDEX));
+// The Mini App opens on the HOME page (choose an area). The order form lives at /orders.html (and /index.html);
+// "/?edit=<order id>" (the ✏️ Edit order button in the admin bot) still opens the order form directly.
+// If public/home.html is ever missing, "/" falls back to the order form so the app never breaks.
+const sendOrderForm = sendPage("index.html", PAGE_INDEX);
+const sendHome = (req, res) => {
+  if (req.query.edit) return sendOrderForm(req, res);
+  fs.readFile(path.join(__dirname, "public", "home.html"), "utf8", (err, txt) => {
+    if (err || !txt) return sendOrderForm(req, res);
+    res.set("Cache-Control", "no-store").type("html").send(noZoom(txt));
+  });
+};
+app.get("/", sendHome);
+app.get(["/index.html", "/orders.html"], sendOrderForm);
 app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/stories.html", sendPage("stories.html", "<!doctype html><meta charset=utf-8><p>public/stories.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charset=utf-8><p>public/greeting.html is missing. Keep the public folder in the deploy.</p>"));
-app.get(["/home", "/home.html"], sendPage("home.html", "<!doctype html><meta charset=utf-8><p>public/home.html is missing. Keep the public folder in the deploy.</p>"));
+app.get(["/home", "/home.html"], sendHome);
 app.get("/rating.html", sendPage("rating.html", "<!doctype html><meta charset=utf-8><p>public/rating.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/customers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.use(express.static(path.join(__dirname, "public")));
@@ -3422,7 +3434,7 @@ const ratingModule = require("./ratings").register(app, {
   publicBaseUrl: PUBLIC_BASE_URL, noZoomHead: NOZOOM_HEAD, getAppAdmins: () => appAdmins
 });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
-app.get("*", sendPage("index.html", PAGE_INDEX));
+app.get("*", sendHome);
 
 process.on("unhandledRejection", error => console.error("Unhandled rejection:", error));
 process.on("uncaughtException", error => console.error("Uncaught exception:", error));
