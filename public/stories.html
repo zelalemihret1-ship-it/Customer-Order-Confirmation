@@ -131,8 +131,8 @@ button:disabled{opacity:.5;cursor:default}
       <p class="hint" style="margin:0 0 8px">Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.</p>
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="addPhoto" type="button">🖼 Add photos</button><button class="ghost" id="addVideo" type="button">🎬 Add videos</button></div>
       <input id="filesPhoto" type="file" accept="image/*" multiple style="display:none">
-      <input id="filesVideo" type="file" accept="video/mp4,video/quicktime,video/*" multiple style="display:none">
-      <p class="hint" style="margin:0">Videos: up to 60 seconds and 200 MB each, MP4 recommended, vertical (9:16) looks best.</p>
+      <input id="filesVideo" type="file" accept="video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,.3gp,.3g2,.wmv,.flv,.mts,.m2ts,.mpg,.mpeg,.ts,.hevc,.ogv,.vob,.asf,.f4v" multiple style="display:none">
+      <p class="hint" style="margin:0">Videos: <b>any format</b> (MP4, MOV, MKV, AVI, WebM, 3GP, WMV …) up to 60 seconds and 200 MB each. Every video is converted automatically so it plays on all phones; vertical (9:16) looks best.</p>
       <div class="slots" id="slots"></div>
     </div>
     <div class="card">
@@ -185,7 +185,7 @@ button:disabled{opacity:.5;cursor:default}
   </div>
   <h3>Days <small>— change a caption, or replace the photo / video of a day that is not posted yet</small></h3>
   <div class="slots" id="eDays"></div>
-  <input id="eFile" type="file" accept="image/*,video/mp4,video/quicktime,video/*" style="display:none">
+  <input id="eFile" type="file" accept="image/*,video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,.3gp,.3g2,.wmv,.flv,.mts,.m2ts,.mpg,.mpeg,.ts,.hevc,.ogv,.vob,.asf,.f4v" style="display:none">
   <p class="hint" style="margin-top:10px">Stories already posted on Telegram are never changed or posted again. If the post time has already passed today, today's story is posted right away.</p>
   <div class="row" style="margin-top:12px"><button class="primary" id="eSave" type="button">💾 Save changes</button><button class="ghost" id="eCancel" type="button">Cancel</button></div>
 </div></div>
@@ -218,16 +218,16 @@ async function showItem(){
   if(tok!==VW.tok)return;
   if(it.type==="video"){
     const v=document.createElement("video");
-    v.playsInline=false;v.removeAttribute("playsinline");v.removeAttribute("webkit-playsinline");v.controls=true;v.preload="auto";v.autoplay=true;v.setAttribute("controlslist","nodownload");
+    v.playsInline=true;v.setAttribute("playsinline","");v.setAttribute("webkit-playsinline","");v.setAttribute("x5-playsinline","");v.setAttribute("controlslist","nodownload nofullscreen");v.disablePictureInPicture=true;v.controls=true;v.preload="auto";v.autoplay=true;
     let retried=false;
     const giveUp=()=>{
       if(tok!==VW.tok)return;
-      const po=it.poster?it.poster():"",link=/^blob:/.test(src)?"":new URL(src,location.origin).href;
+      const po=it.poster?it.poster():"";
       st.innerHTML='<div class="vwErr">'+(po?'<img src="'+po+'" alt="" style="max-width:70%;max-height:38vh;border-radius:12px;opacity:.9;display:block;margin:0 auto 14px">':"")
-        +'This video can\'t be played inside the app on this phone.<br>It is still saved and will be posted as it is.'
-        +(link?'<br><button type="button" id="vwExt" style="margin-top:14px;border:0;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:700;background:#2fc77d;color:#fff">▶ Open video in browser</button>':"")+'</div>';
-      const b=document.getElementById("vwExt");
-      if(b)b.onclick=()=>{try{if(Telegram.WebApp.openLink){Telegram.WebApp.openLink(link);return;}}catch{}window.open(link,"_blank","noopener");};
+        +'The video is still loading or could not start.<br>It is saved and will be posted as it is.'
+        +'<br><button type="button" id="vwRetry" style="margin-top:14px;border:0;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:700;background:#2fc77d;color:#fff">↻ Try again</button></div>';
+      const b=document.getElementById("vwRetry");
+      if(b)b.onclick=()=>{if(tok===VW.tok)showItem();};
     };
     // 1st failure: some phones can't stream it from the link, so download it once and play the local copy; 2nd failure: show the fallback
     v.onerror=async()=>{
@@ -239,14 +239,6 @@ async function showItem(){
       giveUp();
     };
     v.src=src;st.innerHTML="";st.appendChild(v);
-    // hand the video to the phone's own player (iOS native player / Android system fullscreen player)
-    const nat=()=>{try{if(v.webkitEnterFullscreen){v.webkitEnterFullscreen();return true;}if(v.requestFullscreen){v.requestFullscreen();return true;}if(v.webkitRequestFullscreen){v.webkitRequestFullscreen();return true;}}catch{}return false;};
-    v.addEventListener("loadedmetadata",()=>{if(tok===VW.tok)nat();},{once:true});
-    const nb=document.createElement("button");nb.type="button";nb.textContent="⛶ Play in phone player";
-    nb.style.cssText="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:6;border:0;border-radius:999px;padding:11px 18px;font-size:14px;font-weight:700;background:#2fc77d;color:#fff;box-shadow:0 4px 14px #0008";
-    nb.onclick=()=>{nat();v.play().catch(()=>{});};st.appendChild(nb);
-    v.addEventListener("fullscreenchange",()=>{if(!document.fullscreenElement&&tok===VW.tok&&v.isConnected)v.pause();});
-    v.addEventListener("webkitendfullscreen",()=>{if(tok===VW.tok&&v.isConnected)v.pause();});
     const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{if(!v.isConnected)return;v.muted=true;v.play().then(()=>vwToast("Playing without sound — use the volume button")).catch(()=>{if(v.isConnected)vwToast("Tap ▶ to play");});});
   }else{
     const im=new Image();im.alt="";im.onload=()=>{if(tok===VW.tok){st.innerHTML="";st.appendChild(im);}};
@@ -277,7 +269,7 @@ const savedSrc=(id,n)=>async()=>{const d=await (await fetch("/api/stories/"+id+"
 const planItems=p=>p.days.map(d=>({type:d.type,label:"Day "+d.n+" · "+dayLabel(d.date)+(d.type==="video"?" · 🎬":""),caption:d.caption||p.caption||"",src:savedSrc(p.id,d.n),poster:()=>thumbs.get(p.id+"/"+d.n+"/"+(d.v||0))||""}));
 const findPlan=id=>S&&(S.mine.find(x=>x.id===id)||(S.team||[]).find(x=>x.id===id));
 // items picked on this phone, before saving
-const localItems=()=>photos.map((p,i)=>({type:p.kind,label:"Day "+(i+1)+(p.kind==="video"?" · 🎬 "+Math.round(p.meta.duration)+"s":" · 🖼"),caption:p.caption||"",
+const localItems=()=>photos.map((p,i)=>({type:p.kind,label:"Day "+(i+1)+(p.kind==="video"?" · 🎬"+(p.meta.duration?" "+Math.round(p.meta.duration)+"s":""):" · 🖼"),caption:p.caption||"",
   poster:()=>p.url,src:async()=>{if(p.kind==="video"){const u=URL.createObjectURL(p.blob);VW.urls.push(u);return u;}return p.url;}}));
 
 // ── tabs ──
@@ -306,7 +298,12 @@ function toStory(file){return new Promise((resolve,reject)=>{
   img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("This file is not a readable photo: "+file.name));};
   img.src=url;});}
 // A video keeps its own file; only a small preview picture is made on the phone (and its length/size read).
-function readVideo(file){return new Promise((resolve,reject)=>{
+const VID_RE=/\.(mp4|mov|m4v|mkv|avi|webm|3gp|3g2|wmv|flv|mts|m2ts|mpg|mpeg|ts|hevc|h265|ogv|vob|mxf|asf|divx|f4v)$/i;
+const isVid=f=>/^video\//i.test(f.type)||VID_RE.test(f.name);
+// A phone may be unable to open some formats (MKV, AVI, HEVC …). Then we make a plain preview picture here and the server reads/converts the real video.
+function placeholderPoster(){return new Promise(res=>{const c=document.createElement("canvas");c.width=270;c.height=480;const x=c.getContext("2d");x.fillStyle="#153a2e";x.fillRect(0,0,270,480);x.fillStyle="#d7b36e";x.font="64px sans-serif";x.textAlign="center";x.textBaseline="middle";x.fillText("🎬",135,220);x.fillStyle="#f4efe3";x.font="bold 15px sans-serif";x.fillText("Video",135,290);c.toBlob(b=>res(b),"image/jpeg",0.8);});}
+async function readVideo(file){try{return await readVideoStrict(file);}catch(e){return {poster:await placeholderPoster(),meta:{type:"video",duration:0,w:0,h:0,unknown:true}};}}
+function readVideoStrict(file){return new Promise((resolve,reject)=>{
   const v=document.createElement("video"),url=URL.createObjectURL(file);
   v.preload="metadata";v.muted=true;v.playsInline=true;
   const fail=m=>{URL.revokeObjectURL(url);reject(new Error(m));};
@@ -328,7 +325,7 @@ async function addFiles(list){
     const key=f.name+"|"+f.size+"|"+f.lastModified;
     if(photos.some(p=>p.key===key)){skipped++;continue;}
     try{
-      if(/^video\//i.test(f.type)||/\.(mp4|mov|m4v)$/i.test(f.name)){
+      if(isVid(f)){
         if(f.size>maxMb*1048576){big++;continue;}
         const {poster,meta}=await readVideo(f);
         if(meta.duration>maxSec+0.5){long_++;continue;}
@@ -353,7 +350,7 @@ function drawSlots(){
   const start=$("startDate").value;
   $("slots").innerHTML=Array.from({length:MAX},(_,i)=>{
     const p=photos[i],lab=start?dayLabel(addDays(start,i)):"";
-    return p?`<div class="slot filled"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph has ${p.kind==="video"?"vid":""}" data-view="${i}" style="background-image:url(${p.url})"><span class="kind">${p.kind==="video"?"🎬 "+Math.round(p.meta.duration)+"s":"🖼 Photo"}</span></div>
+    return p?`<div class="slot filled"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph has ${p.kind==="video"?"vid":""}" data-view="${i}" style="background-image:url(${p.url})"><span class="kind">${p.kind==="video"?"🎬 "+(p.meta.duration?Math.round(p.meta.duration)+"s":"Video"):"🖼 Photo"}</span></div>
       <div class="ctl"><button data-a="l" data-i="${i}" ${i===0?"disabled":""}>◀</button><button data-a="r" data-i="${i}" ${i===photos.length-1?"disabled":""}>▶</button><button data-a="x" data-i="${i}">✕</button></div>
       <input data-cap="${i}" maxlength="200" placeholder="Own caption (optional)" value="${esc(p.caption)}"></div>`
     :`<div class="slot"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph">＋</div></div>`;}).join("");
@@ -371,7 +368,7 @@ $("startDate").addEventListener("change",drawSlots);
 $("clear").onclick=()=>{photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];drawSlots();};
 
 $("create").onclick=async()=>{
-  if(photos.length!==MAX||busy)return;busy=true;$("create").disabled=true;$("create").textContent="Saving…";
+  if(photos.length!==MAX||busy)return;busy=true;$("create").disabled=true;$("create").textContent=photos.some(p=>p.kind==="video")?"Saving & converting videos… please wait":"Saving…";
   try{
     const fd=new FormData();
     photos.forEach((p,i)=>fd.append("photos",p.blob,p.kind==="video"?"day"+(i+1)+".mp4":"day"+(i+1)+".jpg"));
@@ -461,10 +458,10 @@ $("eDays").addEventListener("click",e=>{const t=e.target.closest("[data-eth]");i
 $("eFile").addEventListener("change",async e=>{
   const f=e.target.files[0],n=+e.target.dataset.day;e.target.value="";if(!f||!E||!n)return;
   const maxMb=(S.limits&&S.limits.videoMb)||200,maxSec=(S.limits&&S.limits.videoSeconds)||60;
-  eBusy=true;esay("⏳ Uploading the new file for Day "+n+"…","info");
+  eBusy=true;esay("⏳ Uploading the new file for Day "+n+(isVid(f)?" (videos are converted so they play on every phone — this can take a minute)":"")+"…","info");
   try{
     const fd=new FormData();
-    if(/^video\//i.test(f.type)||/\.(mp4|mov|m4v)$/i.test(f.name)){
+    if(isVid(f)){
       if(f.size>maxMb*1048576)throw new Error("This video is over "+maxMb+" MB.");
       const {poster,meta}=await readVideo(f);
       if(meta.duration>maxSec+0.5)throw new Error("This video is longer than "+maxSec+" seconds.");
