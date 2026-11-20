@@ -1538,19 +1538,30 @@ function numericTelegramIds(...values) {
   return [...new Set(values.flatMap(v => String(v || "").split(/[;,\s]+/)).map(v => v.replace(/\D/g, "")).filter(Boolean))];
 }
 const LEGACY_ADMIN_IDS = numericTelegramIds(process.env.ADMIN_TELEGRAM_IDS);
-const OWNER_IDS = numericTelegramIds(
+// ENV_OWNER_IDS = the original main admin(s) from Render. They can never be removed from inside the app.
+const ENV_OWNER_IDS = numericTelegramIds(
   process.env.OWNER_TELEGRAM_IDS,
   process.env.MAIN_ADMIN_TELEGRAM_ID,
   process.env.ADMIN_TELEGRAM_ID,
   LEGACY_ADMIN_IDS.length === 1 ? LEGACY_ADMIN_IDS[0] : ""
 );
+// OWNER_IDS = every main admin: the original ones + the extra main admins assigned inside the app (appAdmins[].main).
+// It is changed IN PLACE so stories.js / greetings.js / ratings.js (which hold this same array) see changes at once.
+const OWNER_IDS = [...ENV_OWNER_IDS];
+function syncOwners() {
+  const extra = appAdmins.filter(a => a && a.main && a.telegramId).map(a => String(a.telegramId));
+  OWNER_IDS.length = 0;
+  OWNER_IDS.push(...new Set([...ENV_OWNER_IDS, ...extra]));
+}
 async function loadAppAdmins() {
   let list = [];
   if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "app_admins").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
   if (!list.length) { try { list = JSON.parse(fs.readFileSync(APP_ADMINS_FILE, "utf8")); } catch {} }
   appAdmins = list.filter(a => a?.telegramId).map(a => ({ ...a, accountId: a.accountId && String(a.accountId).startsWith("u" + String(a.telegramId)) ? a.accountId : "" }));
+  syncOwners();
 }
 async function saveAppAdmins() {
+  syncOwners();
   try { fs.mkdirSync(path.dirname(APP_ADMINS_FILE), { recursive: true }); fs.writeFileSync(APP_ADMINS_FILE, JSON.stringify(appAdmins)); } catch {}
   if (supabase) { try { await supabase.from("app_settings").upsert({ key: "app_admins", value: appAdmins, updated_at: new Date().toISOString() }); } catch {} }
 }
@@ -1575,8 +1586,8 @@ function identify(req) {
   const user = verifyInitData(req.get("x-telegram-init-data"));
   if (!user) return { telegramId: "" };
   const id = String(user.id), name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || id;
-  if (OWNER_IDS.includes(id)) return { role: "owner", name, telegramId: id, accountId: "" };
   const a = appAdmins.find(x => String(x.telegramId) === id);
+  if (OWNER_IDS.includes(id)) return { role: "owner", name: (a && a.name) || name, telegramId: id, accountId: (a && a.accountId) || "", primary: ENV_OWNER_IDS.includes(id) };
   return a ? { role: "admin", name: a.name || name, telegramId: id, accountId: a.accountId || "" } : { telegramId: id, name };
 }
 function requireAccess(req, res, next) {
@@ -1590,7 +1601,7 @@ app.get("/api/me", (req, res) => {
   const error = a.role ? "" : (!a.telegramId
     ? "Telegram identity was not received. Open AMBAR Furniture from its Telegram bot menu button, not a normal browser tab."
     : `Telegram account ${a.telegramId} is not authorized. Add this exact numeric ID to MAIN_ADMIN_TELEGRAM_ID (or OWNER_TELEGRAM_IDS) in Render, then redeploy.`);
-  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", error });
+  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", primary: !!a.primary || (a.role === "owner" && !a.telegramId), error });
 });
 const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
 function inlineId_ref(callback, connectionId, chatId) {
@@ -2184,7 +2195,7 @@ function accountFor(actor) {
   }
   // Backward compatibility for an older main-admin session created before
   // per-user account IDs were introduced. Assigned admins never use this fallback.
-  if (actor?.role === "owner") return [...admins.values()].find(x => !x.ownerTelegramId) || null;
+  if (actor?.role === "owner" && (!actor.telegramId || ENV_OWNER_IDS.includes(String(actor.telegramId)))) return [...admins.values()].find(x => !x.ownerTelegramId) || null;
   return null;
 }
 
@@ -2325,7 +2336,7 @@ app.get("/api/setup/app-admins", (req, res) => {
     const account = admins.get(String(person.accountId || ""));
     return { ...person, connected: !!account?.ready, accountLabel: account?.label || "", connectionError: account && !account.ready ? (account.error || "Not connected") : "" };
   });
-  res.json({ ok: true, enforced: accessEnforced(), owners: OWNER_IDS, appAdmins: people, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: !!a.ready, ownerTelegramId: a.ownerTelegramId || "", error: a.ready ? "" : (a.error || "Not connected") })) });
+  res.json({ ok: true, enforced: accessEnforced(), owners: OWNER_IDS, primaryOwners: ENV_OWNER_IDS, appAdmins: people, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: !!a.ready, ownerTelegramId: a.ownerTelegramId || "", error: a.ready ? "" : (a.error || "Not connected") })) });
 });
 app.post("/api/setup/app-admins/add", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2338,7 +2349,8 @@ app.post("/api/setup/app-admins/add", async (req, res) => {
     const telegramId = m[1];
     const name = (m[2] || (lines.length === 1 ? String(req.body?.name || "") : "")).trim().slice(0, 60);
     const prev = appAdmins.find(a => String(a.telegramId) === telegramId);
-    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "" });
+    const asMain = req.body?.main === true || req.body?.main === "1" || req.body?.main === "true" || !!prev?.main;
+    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...(prev || {}), telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", ...(asMain ? { main: true } : {}) });
     added.push(name || telegramId);
   }
   if (!added.length) return res.status(400).json({ ok: false, error: "Enter numeric Telegram IDs, one per line, e.g. 123456789 Abebe" });
@@ -2346,9 +2358,27 @@ app.post("/api/setup/app-admins/add", async (req, res) => {
   sheets.log("Admin assigned", added.join(", "), identify(req).name || "Owner");
   res.json({ ok: true, message: `${added.length} admin${added.length > 1 ? "s" : ""} assigned: ${added.join(", ")}.` });
 });
+// Give / take away MAIN ADMIN rights (full control, same as the original main admin). Any main admin can do this,
+// but the original main admin (set in Render) can never be demoted from inside the app.
+app.post("/api/setup/app-admins/set-main", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  if (ENV_OWNER_IDS.includes(telegramId)) return res.status(400).json({ ok: false, error: "This is the original main admin (set in Render). It can't be changed here." });
+  const make = req.body?.main === true || req.body?.main === "1" || req.body?.main === "true";
+  const me = identify(req);
+  if (!make && String(me.telegramId) === telegramId) return res.status(400).json({ ok: false, error: "You can't remove your own main-admin rights. Ask another main admin." });
+  if (make) rec.main = true; else delete rec.main;
+  await saveAppAdmins();
+  sheets.log(make ? "Main admin added" : "Main admin removed", rec.name || rec.telegramId, me.name || "Owner");
+  res.json({ ok: true, message: make ? `${rec.name || telegramId} is now a MAIN ADMIN (full control). They must reopen the app once.` : `${rec.name || telegramId} is a normal assigned admin again.` });
+});
 app.post("/api/setup/app-admins/remove", async (req, res) => {
   if (!setupAuth(req, res)) return;
   const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  if (ENV_OWNER_IDS.includes(telegramId)) return res.status(400).json({ ok: false, error: "This is the original main admin (set in Render). It can't be removed here." });
+  if (String(identify(req).telegramId) === telegramId) return res.status(400).json({ ok: false, error: "You can't delete yourself. Ask another main admin." });
   const gone = appAdmins.find(a => String(a.telegramId) === telegramId);
   appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId);
   await saveAppAdmins();
