@@ -1,0 +1,183 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Ambar Furniture — Customer Rating</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+</script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:18px 16px;text-align:center;border-bottom:4px solid #b89552;position:relative}
+header h1{margin:0;font-size:22px;letter-spacing:.5px}
+header .sub{opacity:.82;margin-top:5px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase}
+header a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#f4efe3;text-decoration:none;font-size:12px;font-weight:700;border:1px solid #ffffff55;border-radius:999px;padding:7px 11px}
+main{max-width:920px;margin:auto;padding:14px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;border-radius:12px;padding:13px 8px;font-weight:700;font-size:14px;background:#fff;color:#153a2e;border:1.5px solid #ddd4c4;cursor:pointer}
+.tabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
+.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+h2{margin:0 0 12px;color:#153a2e;font-size:17px}
+label{font-weight:700;font-size:13px;display:block}
+input,select,textarea{width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px;font-family:inherit;background:#fff;color:#18382e}
+textarea{min-height:130px;resize:vertical}
+.hint{color:#6d675d;font-size:12px}
+.notice{border-radius:12px;padding:11px 13px;font-size:13px;font-weight:700;margin-bottom:12px;display:none;white-space:pre-wrap}
+.notice.info{display:block;background:#fff6e0;border:1px solid #e9c46a;color:#7a5600}
+.notice.ok{display:block;background:#eaf6ee;border:1px solid #2e9e4f;color:#176b3a}
+.notice.bad{display:block;background:#fdecea;border:1px solid #e3b4b0;color:#b3261e}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button.primary,button.ghost,button.send{border:0;border-radius:11px;padding:12px 16px;font-weight:700;cursor:pointer;font-size:14px}
+.primary{background:#153a2e;color:#fff}
+.send{background:#1f8a4c;color:#fff;padding:10px 13px;font-size:13px}
+.ghost{background:#fff;color:#153a2e;border:1.5px solid #cfd8d3!important}
+button:disabled{opacity:.5;cursor:default}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chips button{border:1px solid #d6d1c7;background:#faf8f3;border-radius:999px;padding:6px 11px;font-size:12px;cursor:pointer;color:#153a2e}
+.preview{background:#e7f3dc;border-radius:14px 14px 14px 4px;padding:11px 13px;font-size:14px;white-space:pre-wrap;margin-top:10px;border:1px solid #cfe3bd;word-break:break-word}
+.tools{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.tools input,.tools select{margin:0;flex:1;min-width:140px}
+.ord{border:1px solid #e4ded2;border-radius:14px;padding:11px 12px;margin-bottom:8px;background:#fff}
+.ord .top{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.cid{background:#153a2e;color:#ffa939;border-radius:8px;padding:3px 9px;font-weight:800;font-size:13px;letter-spacing:1px}
+.ord .nm{font-weight:800;font-size:15px;margin-top:6px}
+.ord .meta{font-size:12px;color:#6d675d;margin-top:2px;line-height:1.5}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;background:#f1ede2;color:#5b574c}
+.pill.sent{background:#e8f0fb;color:#1f4f93}.pill.rated{background:#e1f4e8;color:#176b3a}.pill.failed{background:#fdeceb;color:#b3261e}.pill.delivered{background:#fff1d6;color:#8a5a00}
+.stars{color:#ffa939;letter-spacing:2px;font-size:16px}.stars i{color:#d6d1c7;font-style:normal}
+.cmt{background:#faf8f3;border-left:3px solid #b89552;border-radius:0 10px 10px 0;padding:7px 10px;margin-top:7px;font-size:13px;white-space:pre-wrap;word-break:break-word}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{background:#faf8f3;border:1px solid #e4ded2;border-radius:14px;padding:12px 6px;text-align:center}
+.stat b{display:block;font-size:22px;color:#153a2e}.stat span{font-size:11px;color:#6d675d;text-transform:uppercase;letter-spacing:.8px}
+.empty{text-align:center;color:#8a8478;padding:24px 10px;font-size:14px}
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.person{border:1px solid #e4ded2;border-radius:14px;padding:12px;background:#faf8f3;font-size:12px;line-height:1.7}.person b{font-size:14px}
+button.sw{flex:none;width:62px;height:34px;border-radius:999px;border:0;background:#c9c3b3;position:relative;cursor:pointer;transition:background .2s}
+button.sw i{position:absolute;top:3px;left:3px;width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #0004;transition:left .2s}
+button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
+#gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
+#gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
+@media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
+<header>
+  <a class="back" href="/">← Order Cards</a>
+  <h1>⭐ Customer Rating</h1>
+  <div class="sub">After the order is delivered · a rating link goes to the customer</div>
+</header>
+<main>
+  <div class="tabs"><button id="tabOrders" class="on">📦 Orders</button><button id="tabText">✉️ Message</button><button id="tabRes">⭐ Ratings</button></div>
+  <div id="note" class="notice"></div>
+  <div id="warn" class="notice"></div>
+
+  <section id="vOrders">
+    <div class="card" id="autoCard">
+      <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
+        <div><h2 style="margin:0">🤖 Automatic rating link</h2><div class="hint" id="autoState" style="margin-top:4px"></div></div>
+        <button id="autoSw" class="sw" aria-label="Automatic rating link on/off" role="switch" aria-checked="false"><i></i></button>
+      </div>
+      <p class="hint" style="margin:10px 0 0">When ON: as soon as an order's <b>Delivery Date</b> arrives, the customer gets the rating link automatically — once. When OFF: press <b>✅ Delivered · send link</b> on an order yourself. Only orders you created are used.</p>
+    </div>
+    <div class="card">
+      <h2>Orders</h2>
+      <div class="tools"><input id="q" placeholder="Search order ID, customer or product…" autocomplete="off"><select id="f"><option value="">All</option><option value="waiting">Not delivered yet</option><option value="sent">Link sent · waiting for rating</option><option value="rated">Rated</option><option value="failed">Not sent (problem)</option></select></div>
+      <div id="list"></div>
+    </div>
+  </section>
+
+  <section id="vText" style="display:none">
+    <div class="card">
+      <h2>Your message to the customer</h2>
+      <label>Text <span class="hint">(the rating link is always added)</span>
+        <textarea id="text" maxlength="1000"></textarea></label>
+      <div class="chips"><button data-ins="{name}">{name} first name</button><button data-ins="{order}">{order} order ID</button><button data-ins="{product}">{product}</button><button data-ins="{admin}">{admin} your name</button><button data-ins="{link}">{link} rating link</button></div>
+      <div class="preview" id="preview"></div>
+      <div class="row" style="margin-top:12px"><button class="ghost" id="save">💾 Save my text</button><button class="ghost" id="reset">Use standard text</button></div>
+      <p class="hint">This text belongs to you only; every admin keeps their own. It is used for both the button and the automatic sending.</p>
+    </div>
+  </section>
+
+  <section id="vRes" style="display:none"></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const say=(m,k)=>{const n=$("note");n.className="notice "+(k||"info");n.textContent=m;n.scrollIntoView({behavior:"smooth",block:"nearest"});};
+const ask=(m,cb)=>{const w=window.Telegram&&Telegram.WebApp;if(w&&w.showConfirm){try{w.showConfirm(m,ok=>{if(ok)cb();});return;}catch{}}if(confirm(m))cb();};
+const post=(p,b)=>fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}).then(r=>r.json());
+let D=null;
+function tab(t){["Orders","Text","Res"].forEach(x=>{$("v"+x).style.display=x===t?"block":"none";$("tab"+x).classList.toggle("on",x===t);});}
+$("tabOrders").onclick=()=>tab("Orders");$("tabText").onclick=()=>tab("Text");$("tabRes").onclick=()=>tab("Res");
+
+const first=n=>String(n||"").trim().split(/\s+/)[0]||"there";
+function preview(){
+  let t=$("text").value;if(!/\{link\}/i.test(t))t=t.trim()+"\n\n{link}";
+  $("preview").textContent=t.replace(/\{name\}/gi,first("Abel Tesfaye")).replace(/\{fullname\}/gi,"Abel Tesfaye").replace(/\{order\}/gi,"0007-03").replace(/\{product\}/gi,"Shoe Shelf").replace(/\{admin\}/gi,D?D.me.name||"Ambar Furniture":"Ambar Furniture").replace(/\{link\}/gi,location.origin+"/rate/xxxxxxxx");
+}
+$("text").addEventListener("input",preview);
+document.querySelector(".chips").addEventListener("click",e=>{const b=e.target.closest("button[data-ins]");if(!b)return;const t=$("text"),s=t.selectionStart,e2=t.selectionEnd;t.value=t.value.slice(0,s)+b.dataset.ins+t.value.slice(e2);t.focus();t.selectionStart=t.selectionEnd=s+b.dataset.ins.length;preview();});
+$("reset").onclick=()=>{$("text").value=D.defaultTemplate;preview();};
+$("save").onclick=async()=>{const d=await post("/api/ratings/template",{text:$("text").value});say(d.ok?"✅ "+d.message:"❌ "+d.error,d.ok?"ok":"bad");};
+
+function drawAuto(){const on=!!D.auto;$("autoSw").classList.toggle("on",on);$("autoSw").setAttribute("aria-checked",on);$("autoState").textContent=on?"🟢 ON — sent when the Delivery Date arrives":"⚪ OFF — you press the button";}
+$("autoSw").onclick=async()=>{
+  const want=!D.auto;$("autoSw").disabled=true;
+  try{const d=await post("/api/ratings/auto",{on:want,text:$("text").value});say(d.ok?d.message:"❌ "+d.error,d.ok?"ok":"bad");if(d.ok)D.auto=d.on;}catch(e){say("❌ "+e.message,"bad");}
+  $("autoSw").disabled=false;drawAuto();};
+
+const LABEL={waiting:"Not delivered yet",delivered:"Delivered",sent:"Link sent",rated:"Rated",failed:"Not sent"};
+const starsHtml=n=>`<span class="stars">${"★".repeat(n)}<i>${"★".repeat(5-n)}</i></span>`;
+function drawOrders(){
+  const q=$("q").value.trim().toLowerCase(),f=$("f").value;
+  const rows=D.orders.filter(o=>(!f||o.state===f)&&(!q||[o.orderId,o.customer,o.product].some(x=>String(x).toLowerCase().includes(q))));
+  $("list").innerHTML=rows.length?rows.map(o=>{
+    let btn="";
+    if(o.state==="waiting"||o.state==="delivered"||o.state==="failed")btn=`<button class="send" data-id="${esc(o.id)}">✅ Delivered · send link</button>`;
+    else if(o.state==="sent")btn=`<button class="ghost" data-id="${esc(o.id)}" data-resend="1">↻ Send again</button>`;
+    return `<div class="ord"><div class="top"><span class="cid">${esc(o.orderId)}</span><span class="pill ${o.state}">${LABEL[o.state]}</span></div>
+      <div class="nm">${esc(o.customer)}</div>
+      <div class="meta">${esc(o.product)}${o.deliveryDate?" · delivery "+esc(o.deliveryDate):""}${D.people?" · by "+esc(o.owner||"Main admin"):""}${o.sentAt?"<br>Link sent "+esc(o.sentAt)+(o.via?" · "+esc(o.via):""):""}</div>
+      ${o.stars?`<div style="margin-top:6px">${starsHtml(o.stars)} <span class="hint">${o.stars}/5 · ${esc(o.ratedAt)}</span></div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}`:""}
+      ${o.error?`<div class="meta" style="color:#b3261e">${esc(o.error)}</div>`:""}
+      ${btn?`<div class="row" style="margin-top:8px">${btn}</div>`:""}</div>`;
+  }).join(""):`<div class="empty">No orders to show.</div>`;
+}
+$("q").addEventListener("input",drawOrders);$("f").addEventListener("change",drawOrders);
+$("list").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-id]");if(!b)return;
+  const o=D.orders.find(x=>String(x.id)===b.dataset.id),resend=!!b.dataset.resend;
+  ask(resend?`Send the rating link again to ${o.customer}?`:`Order ${o.orderId} was delivered? The rating link will be sent to ${o.customer} now.`,async()=>{
+    b.disabled=true;
+    try{const d=await post("/api/ratings/send",{id:o.id,resend});say(d.ok?d.message:"❌ "+d.error,d.ok?"ok":"bad");}catch(err){say("❌ "+err.message,"bad");}
+    load();
+  });
+});
+function drawResults(){
+  const s=D.stats;let h=`<div class="card"><h2>Overview</h2><div class="stats"><div class="stat"><b>${s.orders}</b><span>Orders</span></div><div class="stat"><b>${s.sent}</b><span>Links sent</span></div><div class="stat"><b>${s.rated}</b><span>Rated</span></div><div class="stat"><b>${s.rated?s.avg+" ★":"—"}</b><span>Average</span></div></div></div>`;
+  if(D.people)h+=`<div class="card"><h2>👑 All admins</h2>${D.people.length?`<div class="people">${D.people.map(p=>`<div class="person"><b>${esc(p.name)}</b><br>${p.avg} ★ average<br>${p.count} rating(s)</div>`).join("")}</div>`:`<div class="empty">No ratings yet.</div>`}</div>`;
+  const rated=D.orders.filter(o=>o.stars).sort((a,b)=>String(b.ratedAt).localeCompare(String(a.ratedAt)));
+  h+=`<div class="card"><h2>${D.people?"All ratings":"My ratings"}</h2>${rated.length?rated.map(o=>`<div class="ord"><div class="top"><span class="cid">${esc(o.orderId)}</span>${starsHtml(o.stars)}</div><div class="nm">${esc(o.customer)}</div><div class="meta">${esc(o.product)} · ${esc(o.ratedAt)}${D.people?" · by "+esc(o.owner||"Main admin"):""}</div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}</div>`).join(""):`<div class="empty">No ratings received yet.</div>`}</div>`;
+  $("vRes").innerHTML=h;
+}
+async function load(){
+  let d;
+  try{d=await (await fetch("/api/ratings")).json();if(!d.ok){$("gate").style.display="flex";$("gateMsg").textContent=d.error||"No access.";return;}}
+  catch(e){$("gate").style.display="flex";$("gateMsg").textContent="Could not load. Check your connection.";return;}
+  $("gate").style.display="none";
+  const firstLoad=!D;D=d;
+  if(firstLoad)$("text").value=d.template;
+  const w=$("warn");
+  if(!d.https){w.className="notice bad";w.textContent="⚠️ The rating link needs your public https address. Set PUBLIC_BASE_URL in Render and redeploy — until then no link can be sent.";}
+  else{w.className="notice";w.textContent="";}
+  drawAuto();preview();drawOrders();drawResults();
+}
+load();
+</script>
+</body>
+</html>
