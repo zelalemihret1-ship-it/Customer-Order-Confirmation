@@ -1,3 +1,10 @@
+## v105 — Home page redesign (modern look, real 3D icons)
+- All symbols are now **real 3D icons** (drawn in the page itself — no extra files, no internet needed, same look on every phone).
+- **Customer Order Confirmation** and **Customer ID** are side by side at the top.
+- **Connect Telegram** and **Open Google Sheet** are two buttons side by side in a bar that stays fixed at the **bottom** of the screen.
+- **Administration** (main admin only): dark panel with Connect Google Sheet, Manage Admins, Setup & Checks, Start from ZERO (red, still asks twice).
+- Only `public/home.html` changed. Redeploy the whole folder.
+
 ## v104 — Home: Connect Telegram, Google Sheet, Administration · old gear removed · back buttons
 - The old ⚙ settings gear on the order form is **removed**. Everything it did is now on the **Home page**:
   - **My account → 🔗 Connect my Telegram account** (every admin).
