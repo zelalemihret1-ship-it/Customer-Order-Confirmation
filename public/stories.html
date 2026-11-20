@@ -115,7 +115,7 @@ button:disabled{opacity:.5;cursor:default}
 <header>
   <a class="back" href="/home.html">← Home</a>
   <h1>📸 Weekly Story</h1>
-  <div class="sub">7 photos or videos once · one story per day · nothing repeats</div>
+  <div class="sub" id="subHead">7 photos or videos once · one story per day · nothing repeats</div>
 </header>
 <main>
   <div class="tabs">
@@ -127,19 +127,20 @@ button:disabled{opacity:.5;cursor:default}
 
   <section id="vNew">
     <div class="card">
-      <h2>1. Add your 7 photos or videos <span class="counter" id="cnt">0 / 7</span></h2>
-      <p class="hint" style="margin:0 0 8px">Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.</p>
+      <div id="modeWrap" class="row" style="display:none;margin-bottom:12px"><button class="primary" id="modeWeek" type="button" style="flex:1">📅 Weekly plan (7)</button><button class="ghost" id="modeOne" type="button" style="flex:1">🎯 One story</button></div>
+      <h2><span id="h1New">1. Add your 7 photos or videos</span> <span class="counter" id="cnt">0 / 7</span></h2>
+      <p class="hint" id="hintNew" style="margin:0 0 8px">Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.</p>
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="addPhoto" type="button">🖼 Add photos</button><button class="ghost" id="addVideo" type="button">🎬 Add videos</button></div>
       <input id="filesPhoto" type="file" accept="image/*" multiple style="display:none">
-      <input id="filesVideo" type="file" accept="video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,.3gp,.3g2,.wmv,.flv,.mts,.m2ts,.mpg,.mpeg,.ts,.hevc,.ogv,.vob,.asf,.f4v" multiple style="display:none">
-      <p class="hint" style="margin:0">Videos: <b>any format</b> (MP4, MOV, MKV, AVI, WebM, 3GP, WMV …) up to 60 seconds and 200 MB each. Every video is converted automatically so it plays on all phones; vertical (9:16) looks best.</p>
+      <input id="filesVideo" type="file" multiple style="display:none">
+      <p class="hint" style="margin:0">Videos: <b>any format</b> (MP4, MOV, MKV, AVI, WebM, 3GP, WMV …) up to 60 seconds and 200 MB each. Videos are converted automatically after saving so they play on all phones (this can take a few minutes for big videos); vertical (9:16) looks best.</p>
       <div class="slots" id="slots"></div>
     </div>
     <div class="card">
       <h2>2. When and how</h2>
       <div class="grid">
         <div class="full"><label>Plan name (optional)<input id="title" maxlength="80" placeholder="e.g. New sofas week"></label></div>
-        <div><label>First story day<input id="startDate" type="date"></label></div>
+        <div><label><span id="lblStart">First story day</span><input id="startDate" type="date"></label></div>
         <div><label>Post time every day<input id="postTime" type="time" value="09:00"></label></div>
         <div><label>Story stays visible for
           <select id="period"><option value="86400" selected>24 hours (recommended)</option><option value="43200">12 hours</option><option value="172800">48 hours</option><option value="21600">6 hours</option></select></label></div>
@@ -185,7 +186,7 @@ button:disabled{opacity:.5;cursor:default}
   </div>
   <h3>Days <small>— change a caption, or replace the photo / video of a day that is not posted yet</small></h3>
   <div class="slots" id="eDays"></div>
-  <input id="eFile" type="file" accept="image/*,video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,.3gp,.3g2,.wmv,.flv,.mts,.m2ts,.mpg,.mpeg,.ts,.hevc,.ogv,.vob,.asf,.f4v" style="display:none">
+  <input id="eFile" type="file" style="display:none">
   <p class="hint" style="margin-top:10px">Stories already posted on Telegram are never changed or posted again. If the post time has already passed today, today's story is posted right away.</p>
   <div class="row" style="margin-top:12px"><button class="primary" id="eSave" type="button">💾 Save changes</button><button class="ghost" id="eCancel" type="button">Cancel</button></div>
 </div></div>
@@ -198,7 +199,7 @@ const W=window.Telegram&&Telegram.WebApp;
 const say=(m,k)=>{const n=$("note");n.className="notice "+(k||"info");n.textContent=m;n.scrollIntoView({behavior:"smooth",block:"nearest"});};
 const ask=(m,cb)=>{if(W&&W.showConfirm){try{W.showConfirm(m,ok=>{if(ok)cb();});return;}catch{}}if(confirm(m))cb();};
 let S=null, photos=[], busy=false;
-const MAX=7;
+let MAX=7,MODE="weekly";
 
 
 // ── full-screen viewer: tap any photo / video to see it big; videos start playing ──
@@ -304,10 +305,13 @@ function toStory(file){return new Promise((resolve,reject)=>{
   img.src=url;});}
 // A video keeps its own file; only a small preview picture is made on the phone (and its length/size read).
 const VID_RE=/\.(mp4|mov|m4v|mkv|avi|webm|3gp|3g2|wmv|flv|mts|m2ts|mpg|mpeg|ts|hevc|h265|ogv|vob|mxf|asf|divx|f4v)$/i;
-const isVid=f=>/^video\//i.test(f.type)||VID_RE.test(f.name);
+const IMG_RE=/\.(jpe?g|png|webp|gif|bmp|heic|heif|avif|tiff?)$/i;
+const isVid=f=>/^video\//i.test(f.type)||VID_RE.test(f.name)||!(/^image\//i.test(f.type)||IMG_RE.test(f.name));
 // A phone may be unable to open some formats (MKV, AVI, HEVC …). Then we make a plain preview picture here and the server reads/converts the real video.
 function placeholderPoster(){return new Promise(res=>{const c=document.createElement("canvas");c.width=270;c.height=480;const x=c.getContext("2d");x.fillStyle="#153a2e";x.fillRect(0,0,270,480);x.fillStyle="#d7b36e";x.font="64px sans-serif";x.textAlign="center";x.textBaseline="middle";x.fillText("🎬",135,220);x.fillStyle="#f4efe3";x.font="bold 15px sans-serif";x.fillText("Video",135,290);c.toBlob(b=>res(b),"image/jpeg",0.8);});}
-async function readVideo(file){try{return await readVideoStrict(file);}catch(e){return {poster:await placeholderPoster(),meta:{type:"video",duration:0,w:0,h:0,unknown:true}};}}
+async function readVideo(file){
+  try{return await Promise.race([readVideoStrict(file),new Promise((_,rj)=>setTimeout(()=>rj(new Error("slow")),8000))]);}
+  catch(e){return {poster:await placeholderPoster(),meta:{type:"video",duration:0,w:0,h:0,unknown:true}};}}
 function readVideoStrict(file){return new Promise((resolve,reject)=>{
   const v=document.createElement("video"),url=URL.createObjectURL(file);
   v.preload="metadata";v.muted=true;v.playsInline=true;
@@ -345,7 +349,7 @@ async function addFiles(list){
   if(skipped)msg.push(skipped+" skipped — the same file can't be used twice.");
   if(big)msg.push(big+" video(s) skipped — over "+maxMb+" MB.");
   if(long_)msg.push(long_+" video(s) skipped — longer than "+maxSec+" seconds.");
-  if(over)msg.push("Only 7 items are used. "+over+" extra file(s) were ignored.");
+  if(over)msg.push("Only "+MAX+" item(s) are used. "+over+" extra file(s) were ignored.");
   if(msg.length)say("ℹ️ "+msg.join(" "),"info");
 }
 $("addPhoto").onclick=()=>$("filesPhoto").click();
@@ -361,7 +365,7 @@ function drawSlots(){
     :`<div class="slot"><div class="dn">Day ${i+1}</div><div class="dd">${esc(lab)}</div><div class="ph">＋</div></div>`;}).join("");
   $("cnt").textContent=photos.length+" / "+MAX;
   $("create").disabled=busy||photos.length!==MAX;
-  $("createHint").textContent=photos.length===MAX?"Everything is ready. Each item will go out on its own day, once.":"Add "+(MAX-photos.length)+" more photo(s) or video(s) to continue.";
+  $("createHint").textContent=photos.length===MAX?(MODE==="single"?"Ready. The story is posted once, on the day and time you chose.":"Everything is ready. Each item will go out on its own day, once."):"Add "+(MAX-photos.length)+" more photo(s) or video(s) to continue.";
 }
 $("slots").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const i=+b.dataset.i,a=b.dataset.a;
   if(a==="x"){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}
@@ -373,14 +377,14 @@ $("startDate").addEventListener("change",drawSlots);
 $("clear").onclick=()=>{photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];drawSlots();};
 
 $("create").onclick=async()=>{
-  if(photos.length!==MAX||busy)return;busy=true;$("create").disabled=true;$("create").textContent=photos.some(p=>p.kind==="video")?"Saving & converting videos… please wait":"Saving…";
+  if(photos.length!==MAX||busy)return;busy=true;$("create").disabled=true;$("create").textContent=photos.some(p=>p.kind==="video")?"Uploading… please wait":"Saving…";
   try{
     const fd=new FormData();
     photos.forEach((p,i)=>fd.append("photos",p.blob,p.kind==="video"?"day"+(i+1)+".mp4":"day"+(i+1)+".jpg"));
     photos.filter(p=>p.kind==="video").forEach((p,i)=>fd.append("posters",p.poster,"poster"+(i+1)+".jpg"));
     fd.append("dayMeta",JSON.stringify(photos.map(p=>p.kind==="video"?p.meta:{type:"photo"})));
     ["title","caption","startDate","postTime","period","privacy"].forEach(k=>fd.append(k,$(k).value));
-    fd.append("pinned",$("pinned").checked?"1":"0");
+    fd.append("pinned",$("pinned").checked?"1":"0");fd.append("mode",MODE);
     fd.append("via",$("viaWrap").style.display==="none"?"account":$("via").value);
     if($("forWrap").style.display!=="none"&&$("forAdmin").value)fd.append("forAdmin",$("forAdmin").value);
     fd.append("dayCaptions",JSON.stringify(photos.map(p=>p.caption||"")));
@@ -388,9 +392,22 @@ $("create").onclick=async()=>{
     if(!d.ok){say("❌ "+(d.error||"Could not save."),"bad");}
     else{say(d.message,"ok");$("clear").click();$("title").value="";$("caption").value="";await load();tab("Mine");}
   }catch(e){say("❌ "+e.message,"bad");}
-  busy=false;$("create").textContent="✅ Create weekly story plan";drawSlots();
+  busy=false;$("create").textContent=MODE==="single"?"✅ Plan this story":"✅ Create weekly story plan";drawSlots();
 };
 
+// ── main admin only: weekly plan (7) or ONE single story, for themselves or for another admin ──
+function setMode(m){
+  MODE=m;const one=m==="single";MAX=one?1:7;
+  while(photos.length>MAX){URL.revokeObjectURL(photos[photos.length-1].url);photos.pop();}
+  $("modeWeek").className=one?"ghost":"primary";$("modeOne").className=one?"primary":"ghost";
+  $("h1New").textContent=one?"1. Add the photo or video of the story":"1. Add your 7 photos or videos";
+  $("hintNew").innerHTML=one?"Choose <b>one photo or video</b>. It is posted <b>once</b>, on the day and time you choose below, for yourself or for the admin you pick.":"Choose <b>photos, videos or a mix of both</b> — whatever you want for each day. All 7 at once (or in several steps). Item 1 becomes Day 1, item 2 Day 2 … Each one is posted <b>once</b> on its own day. Use ◀ ▶ to change the order.";
+  $("lblStart").textContent=one?"Story day":"First story day";
+  $("subHead").textContent=one?"one story · one day · for you or for another admin":"7 photos or videos once · one story per day · nothing repeats";
+  $("create").textContent=one?"✅ Plan this story":"✅ Create weekly story plan";
+  drawSlots();
+}
+$("modeWeek").onclick=()=>setMode("weekly");$("modeOne").onclick=()=>setMode("single");
 // ── main admin: create the plan FOR another admin ──
 function updateFor(){
   const v=$("forAdmin").value,p=S&&S.people&&S.people.find(x=>x.telegramId===v),h=$("forHint");
@@ -407,9 +424,9 @@ const STAT={pending:"⏳ Scheduled",posting:"📤 Posting…",posted:"✅ Posted
 function planCard(p,opts){
   const mine=p.mine,who=opts.team?`<span class="pill">👤 ${esc(p.ownerName)}${p.ownerRole==="owner"?" · main admin":""}</span> ${p.createdByName?`<span class="pill">set up by ${esc(p.createdByName)}</span> `:""}${p.status!=="done"&&!p.accountReady&&p.via!=="business"?`<span class="pill off">Telegram not connected</span> `:""}`:"";
   const posted=p.days.filter(d=>d.status==="posted").length;
-  return `<div class="card plan" data-id="${p.id}"><div class="top"><div><div class="nm">${esc(p.title)}</div>
+  return `<div class="card plan" data-id="${p.id}"><div class="top"><div><div class="nm">${p.single?"🎯 ":""}${esc(p.title)}</div>
     <div class="meta">${who}<span class="pill ${p.status}">${p.status==="active"?"Running":p.status==="paused"?"Paused":"Finished"}</span>
-    · ${posted}/7 posted · ${esc(p.startDate)} → ${esc(p.days[6].date)} at ${esc(p.postTime)} · ${p.via==="business"?"Shared Business account":"Own account"} · ${Math.round(p.period/3600)}h</div></div>
+    · ${posted}/${p.days.length} posted · ${esc(p.startDate)}${p.days.length>1?" → "+esc(p.days[p.days.length-1].date):""} at ${esc(p.postTime)} · ${p.via==="business"?"Shared Business account":"Own account"} · ${Math.round(p.period/3600)}h</div></div>
     <div class="row">${p.canEdit?`<button class="ghost pencil" data-a="edit" title="Edit this plan" aria-label="Edit this plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit</button>`:""}${p.status==="paused"?`<button class="ghost" data-a="resume">▶ Resume</button>`:(p.status==="active"?`<button class="ghost" data-a="pause">⏸ Pause</button>`:"")}<button class="danger" data-a="del">🗑 Delete</button></div></div>
     <div class="days">${p.days.map(d=>`<div class="day"><div class="th has ${d.type==="video"?"vid":""}" data-th="${d.n}" data-v="${d.v||0}" style="position:relative">${d.type==="video"?`<span class="kind">🎬 ${d.duration?Math.round(d.duration)+"s":"Video"}</span>`:""}</div><b>Day ${d.n}</b> · ${esc(dayLabel(d.date))}<br><span class="pill ${d.status}">${STAT[d.status]||d.status}</span>${d.postedAt?`<div>${esc(d.postedAt.slice(11))}${d.postedBy?` · by ${esc(d.postedBy)}`:""}</div>`:""}${d.error?`<div class="err">${esc(d.error)}</div>`:""}
       ${p.canEdit&&d.status!=="posted"&&d.status!=="posting"?`<button class="ghost" data-a="now" data-day="${d.n}">${mine?"Post now":"Post for "+esc((p.ownerName||"admin").split(" ")[0])}</button>`:""}</div>`).join("")}</div></div>`;
@@ -463,7 +480,7 @@ $("eDays").addEventListener("click",e=>{const t=e.target.closest("[data-eth]");i
 $("eFile").addEventListener("change",async e=>{
   const f=e.target.files[0],n=+e.target.dataset.day;e.target.value="";if(!f||!E||!n)return;
   const maxMb=(S.limits&&S.limits.videoMb)||200,maxSec=(S.limits&&S.limits.videoSeconds)||60;
-  eBusy=true;esay("⏳ Uploading the new file for Day "+n+(isVid(f)?" (videos are converted so they play on every phone — this can take a minute)":"")+"…","info");
+  eBusy=true;esay("⏳ Uploading the new file for Day "+n+(isVid(f)?" (large videos can take a moment)":"")+"…","info");
   try{
     const fd=new FormData();
     if(isVid(f)){
@@ -505,7 +522,7 @@ async function load(){
   $("gate").style.display="none";S=d;
   const owner=d.me.role==="owner";
   $("cMine").textContent=d.mine.length;
-  if(owner){const cur=$("forAdmin").value;$("forWrap").style.display="block";
+  if(owner){$("modeWrap").style.display="flex";const cur=$("forAdmin").value;$("forWrap").style.display="block";
     $("forAdmin").innerHTML='<option value="">Me ('+esc(d.me.name||"main admin")+')</option>'+(d.people||[]).map(x=>`<option value="${esc(x.telegramId)}">${esc(x.name)}${x.main?" · main admin":""}${x.connected?"":" (not connected)"}</option>`).join("");
     $("forAdmin").value=cur;if($("forAdmin").value!==cur)$("forAdmin").value="";updateFor();}
   else{$("forWrap").style.display="none";$("viaWrap").style.display="none";}
