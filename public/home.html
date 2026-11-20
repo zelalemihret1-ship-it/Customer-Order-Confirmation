@@ -23,7 +23,7 @@ header{background:radial-gradient(120% 140% at 85% -20%,#2a8a6c 0%,transparent 5
 .top{max-width:760px;margin:auto;display:flex;align-items:center;gap:14px}
 .logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(150deg,#ffe58f,#e0a21a);color:#5a3a00;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;box-shadow:0 8px 14px rgba(0,0,0,.3),inset 0 2px 2px rgba(255,255,255,.7),inset 0 -4px 6px rgba(120,70,0,.3)}
 .top h1{margin:0;font-size:20px;font-weight:700}.top .sub{font-size:13px;opacity:.78;margin-top:2px}
-main{max-width:760px;margin:-46px auto 0;padding:0 14px calc(100px + env(safe-area-inset-bottom,0px))}
+main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
 .hello{margin:0 4px 14px;font-size:15px;font-weight:600;color:#fff;min-height:20px}
 
 .duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -49,7 +49,11 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px calc(100px + env(safe-ar
 .at b{display:block;font-size:14.5px;line-height:1.25}.at span.d{display:block;font-size:11.5px;color:#aebdb7;margin-top:3px;line-height:1.35}
 .at.danger{background:rgba(224,58,58,.12);border-color:rgba(224,58,58,.4)}
 
-/* bottom bar */
+/* quick actions (Connect Telegram disappears by itself once connected) */
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
+.quick.solo{grid-template-columns:1fr}
+.quick .btn{min-height:52px}
+/* old bottom bar (kept for reference, unused) */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
 .bar .in{max-width:760px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btn{display:flex;align-items:center;justify-content:center;gap:9px;border-radius:15px;padding:9px 10px;color:#fff;font-weight:700;font-size:13.5px;line-height:1.2;box-shadow:0 8px 16px -8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.4);transition:transform .12s}
@@ -63,6 +67,8 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px calc(100px + env(safe-ar
 #gate h2{margin:0 0 10px;font-size:20px;color:var(--gold)}#gate p{margin:0;color:#c7d3ce;line-height:1.5}
 @media(min-width:620px){.admin .grid{grid-template-columns:repeat(4,1fr)}}
 </style>
+<link rel="stylesheet" href="/app.css?v=106">
+<meta name="theme-color" content="#0f3d30">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="wh-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e8eef8"/></linearGradient><linearGradient id="wh-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8eef8"/><stop offset="1" stop-color="#9db0cc"/></linearGradient><radialGradient id="wh-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#e8eef8"/><stop offset="1" stop-color="#9db0cc"/></radialGradient><linearGradient id="blue-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8cc0ff"/><stop offset="1" stop-color="#3a74e8"/></linearGradient><linearGradient id="blue-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a74e8"/><stop offset="1" stop-color="#1c3f9e"/></linearGradient><radialGradient id="blue-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#8cc0ff"/><stop offset=".55" stop-color="#3a74e8"/><stop offset="1" stop-color="#1c3f9e"/></radialGradient><linearGradient id="gold-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe58f"/><stop offset="1" stop-color="#f0a81c"/></linearGradient><linearGradient id="gold-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f0a81c"/><stop offset="1" stop-color="#a86a05"/></linearGradient><radialGradient id="gold-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ffe58f"/><stop offset=".55" stop-color="#f0a81c"/><stop offset="1" stop-color="#a86a05"/></radialGradient><linearGradient id="org-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc27f"/><stop offset="1" stop-color="#f27a1a"/></linearGradient><linearGradient id="org-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f27a1a"/><stop offset="1" stop-color="#a84608"/></linearGradient><radialGradient id="org-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ffc27f"/><stop offset=".55" stop-color="#f27a1a"/><stop offset="1" stop-color="#a84608"/></radialGradient><linearGradient id="yel-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff08a"/><stop offset="1" stop-color="#f5c400"/></linearGradient><linearGradient id="yel-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f5c400"/><stop offset="1" stop-color="#a37c00"/></linearGradient><radialGradient id="yel-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#fff08a"/><stop offset=".55" stop-color="#f5c400"/><stop offset="1" stop-color="#a37c00"/></radialGradient><linearGradient id="pink-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9cc6"/><stop offset="1" stop-color="#e0337b"/></linearGradient><linearGradient id="pink-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e0337b"/><stop offset="1" stop-color="#8f1450"/></linearGradient><radialGradient id="pink-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ff9cc6"/><stop offset=".55" stop-color="#e0337b"/><stop offset="1" stop-color="#8f1450"/></radialGradient><linearGradient id="grn-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86efb0"/><stop offset="1" stop-color="#1fa860"/></linearGradient><linearGradient id="grn-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1fa860"/><stop offset="1" stop-color="#0c6a3a"/></linearGradient><radialGradient id="grn-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#86efb0"/><stop offset=".55" stop-color="#1fa860"/><stop offset="1" stop-color="#0c6a3a"/></radialGradient><linearGradient id="sky-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#93deff"/><stop offset="1" stop-color="#2a9ae0"/></linearGradient><linearGradient id="sky-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a9ae0"/><stop offset="1" stop-color="#12609a"/></linearGradient><radialGradient id="sky-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#93deff"/><stop offset=".55" stop-color="#2a9ae0"/><stop offset="1" stop-color="#12609a"/></radialGradient><linearGradient id="vio-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bda6ff"/><stop offset="1" stop-color="#6d4de0"/></linearGradient><linearGradient id="vio-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d4de0"/><stop offset="1" stop-color="#3a24a0"/></linearGradient><radialGradient id="vio-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#bda6ff"/><stop offset=".55" stop-color="#6d4de0"/><stop offset="1" stop-color="#3a24a0"/></radialGradient><linearGradient id="red-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9f9f"/><stop offset="1" stop-color="#e03a3a"/></linearGradient><linearGradient id="red-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e03a3a"/><stop offset="1" stop-color="#8c1515"/></linearGradient><radialGradient id="red-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#ff9f9f"/><stop offset=".55" stop-color="#e03a3a"/><stop offset="1" stop-color="#8c1515"/></radialGradient><linearGradient id="gry-f" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9d5df"/><stop offset="1" stop-color="#7c91a2"/></linearGradient><linearGradient id="gry-s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c91a2"/><stop offset="1" stop-color="#41525f"/></linearGradient><radialGradient id="gry-r" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#c9d5df"/><stop offset=".55" stop-color="#7c91a2"/><stop offset="1" stop-color="#41525f"/></radialGradient><linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><symbol id="d-order" viewBox="0 0 64 64"><rect x="16" y="14" width="34" height="46" rx="7" fill="url(#blue-s)"/>
@@ -115,6 +121,11 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px calc(100px + env(safe-ar
 <main>
   <p class="hello" id="hello"></p>
 
+  <div class="quick solo" id="quick">
+    <a class="btn tg" id="btnTg" href="/orders.html?open=connect" style="display:none"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-plane"/></svg>Connect Telegram</a>
+    <a class="btn sh" id="btnSh" href="/orders.html?open=sheet"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-sheet"/></svg>Open Google Sheet</a>
+  </div>
+
   <div class="duo">
     <a class="big first" href="/orders.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Customer Order Confirmation</b><span class="d">Create an order card and send it</span></div></a>
     <a class="big" href="/callers.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-users"/></svg><div><b>Customer ID</b><span class="d">Add, edit and find customers</span></div></a>
@@ -131,17 +142,13 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px calc(100px + env(safe-ar
     <div class="sec">Administration<span class="badge">Main admin only</span></div>
     <div class="admin"><div class="grid">
       <a class="at" href="/orders.html?open=cfg"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-bolt"/></svg><div><b>Connect Google Sheet</b><span class="d">One click · all data</span></div></a>
-      <a class="at" href="/orders.html?open=admins"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-admin"/></svg><div><b>Manage Admins</b><span class="d">Add, edit or remove admins</span></div></a>
+      <a class="at" href="/orders.html?open=admins"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-admin"/></svg><div><b>Manage Admins</b><span class="d">Add admins · make main admins</span></div></a>
       <a class="at" href="/setup.html"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-gear"/></svg><div><b>Setup &amp; Checks</b><span class="d">Status and setup key tools</span></div></a>
       <a class="at danger" href="/orders.html?open=zero"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-trash"/></svg><div><b>Start from ZERO</b><span class="d">Backup, then clear all orders</span></div></a>
     </div></div>
   </div>
 </main>
 
-<div class="bar"><div class="in">
-  <a class="btn tg" href="/orders.html?open=connect"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-plane"/></svg>Connect Telegram</a>
-  <a class="btn sh" href="/orders.html?open=sheet"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-sheet"/></svg>Open Google Sheet</a>
-</div></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -155,9 +162,18 @@ document.querySelectorAll("a[href^='/']").forEach(a=>a.addEventListener("click",
     if(allowed){
       $("hello").textContent="Hello"+(m.name?", "+m.name:"")+" 👋";
       if(m.role==="owner"||m.enforced===false)document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});
+      // "Connect Telegram" is shown ONLY until this admin's own Telegram account is connected; after that it is gone.
+      try{
+        const a=await (await fetch("/api/my-account")).json();
+        const connected=!!(a&&a.ok&&a.connected);
+        const showTg=!!(a&&a.ok&&!connected);
+        $("btnTg").style.display=showTg?"flex":"none";
+        $("quick").classList.toggle("solo",!showTg);
+      }catch(e){}
     }else{$("gate").style.display="flex";$("gateMsg").textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}
   }catch(e){$("hello").textContent="Could not check your access — the areas below will check it when opened.";}
 })();
 </script>
+<script src="/app.js?v=106"></script>
 </body>
 </html>
