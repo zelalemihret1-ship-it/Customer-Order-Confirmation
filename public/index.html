@@ -605,6 +605,7 @@ const items=()=>{
   L.push('<button class="main" data-c="callers">👥 Customers Data (Customer IDs)</button>');
   L.push('<h4>Customers messages</h4>');
   L.push('<button class="main" data-c="greeting">👋 First Greeting (automatic · text only)</button>');
+  L.push('<button class="main" data-c="rating">⭐ Customer Rating (link sent after delivery)</button>');
   L.push('<h4>Stories</h4>');
   L.push('<button class="main" data-c="stories">📸 Weekly Story (7 photos or videos · one per day)</button>');
   L.push('<h4>Google Sheet</h4>');
@@ -627,6 +628,7 @@ ov.addEventListener("click",e=>{
   const c=b.dataset.c;
   if(c==="close"){ov.style.display="none";return;}
   if(c==="greeting"){window.location.href="/greeting.html"+(window.location.hash||"");return;}
+  if(c==="rating"){window.location.href="/rating.html"+(window.location.hash||"");return;}
   if(c==="stories"){window.location.href="/stories.html"+(window.location.hash||"");return;}
   if(c==="callers"){window.location.href="/callers.html"+(window.location.hash||"");return;}
   if(c==="sheet"){go("shOpen");return;}
