@@ -219,7 +219,25 @@ async function showItem(){
   if(it.type==="video"){
     const v=document.createElement("video");
     v.playsInline=true;v.setAttribute("playsinline","");v.setAttribute("webkit-playsinline","");v.controls=true;v.preload="auto";v.autoplay=true;
-    v.onerror=()=>{if(tok===VW.tok)st.innerHTML='<div class="vwErr">This video can\'t be played on this phone.<br>It is still saved and will be posted as it is.</div>';};
+    let retried=false;
+    const giveUp=()=>{
+      if(tok!==VW.tok)return;
+      const po=it.poster?it.poster():"",link=/^blob:/.test(src)?"":new URL(src,location.origin).href;
+      st.innerHTML='<div class="vwErr">'+(po?'<img src="'+po+'" alt="" style="max-width:70%;max-height:38vh;border-radius:12px;opacity:.9;display:block;margin:0 auto 14px">':"")
+        +'This video can\'t be played inside the app on this phone.<br>It is still saved and will be posted as it is.'
+        +(link?'<br><button type="button" id="vwExt" style="margin-top:14px;border:0;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:700;background:#2fc77d;color:#fff">▶ Open video in browser</button>':"")+'</div>';
+      const b=document.getElementById("vwExt");
+      if(b)b.onclick=()=>{try{if(Telegram.WebApp.openLink){Telegram.WebApp.openLink(link);return;}}catch{}window.open(link,"_blank","noopener");};
+    };
+    // 1st failure: some phones can't stream it from the link, so download it once and play the local copy; 2nd failure: show the fallback
+    v.onerror=async()=>{
+      if(tok!==VW.tok)return;
+      if(!retried&&!/^blob:/.test(src)){
+        retried=true;
+        try{const r=await fetch(src);if(!r.ok)throw 0;const u=URL.createObjectURL(new Blob([await r.arrayBuffer()],{type:"video/mp4"}));VW.urls.push(u);if(tok!==VW.tok)return;v.src=u;v.load();v.play().catch(()=>{});return;}catch(e){}
+      }
+      giveUp();
+    };
     v.src=src;st.innerHTML="";st.appendChild(v);
     const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{if(!v.isConnected)return;v.muted=true;v.play().then(()=>vwToast("Playing without sound — use the volume button")).catch(()=>{if(v.isConnected)vwToast("Tap ▶ to play");});});
   }else{
@@ -248,11 +266,11 @@ document.addEventListener("keydown",e=>{if(!$("vw").classList.contains("on"))ret
     if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.4)stepViewer(dx<0?1:-1);else if(dy>90&&Math.abs(dy)>Math.abs(dx)*1.4)closeViewer();},{passive:true});})();
 // saved plan items → signed link (a <video> tag can't send the Telegram login header)
 const savedSrc=(id,n)=>async()=>{const d=await (await fetch("/api/stories/"+id+"/media-url/"+n)).json();if(!d.ok)throw new Error(d.error||"Could not open it.");return d.url;};
-const planItems=p=>p.days.map(d=>({type:d.type,label:"Day "+d.n+" · "+dayLabel(d.date)+(d.type==="video"?" · 🎬":""),caption:d.caption||p.caption||"",src:savedSrc(p.id,d.n)}));
+const planItems=p=>p.days.map(d=>({type:d.type,label:"Day "+d.n+" · "+dayLabel(d.date)+(d.type==="video"?" · 🎬":""),caption:d.caption||p.caption||"",src:savedSrc(p.id,d.n),poster:()=>thumbs.get(p.id+"/"+d.n+"/"+(d.v||0))||""}));
 const findPlan=id=>S&&(S.mine.find(x=>x.id===id)||(S.team||[]).find(x=>x.id===id));
 // items picked on this phone, before saving
 const localItems=()=>photos.map((p,i)=>({type:p.kind,label:"Day "+(i+1)+(p.kind==="video"?" · 🎬 "+Math.round(p.meta.duration)+"s":" · 🖼"),caption:p.caption||"",
-  src:async()=>{if(p.kind==="video"){const u=URL.createObjectURL(p.blob);VW.urls.push(u);return u;}return p.url;}}));
+  poster:()=>p.url,src:async()=>{if(p.kind==="video"){const u=URL.createObjectURL(p.blob);VW.urls.push(u);return u;}return p.url;}}));
 
 // ── tabs ──
 function tab(t){["New","Mine","Team"].forEach(x=>{$("v"+x).style.display=x===t?"block":"none";$("tab"+x).classList.toggle("on",x===t);});}
