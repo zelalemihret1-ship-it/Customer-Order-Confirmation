@@ -239,6 +239,11 @@ async function showItem(){
       giveUp();
     };
     v.src=src;st.innerHTML="";st.appendChild(v);
+    const wait=document.createElement("div");wait.style.cssText="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:#fff;font-size:13px;line-height:1.5;pointer-events:none;padding:0 24px";
+    wait.innerHTML='<div class="vwSpin" style="margin:0 auto 12px"></div>Preparing the video for your phone…<br><small style="opacity:.75">the first time can take a minute</small>';st.appendChild(wait);
+    const clearWait=()=>{clearTimeout(wd);wait.remove();};
+    const wd=setTimeout(()=>{if(tok===VW.tok&&v.readyState<2){v.onerror&&v.onerror();}},150000);
+    v.addEventListener("loadeddata",clearWait,{once:true});v.addEventListener("playing",clearWait,{once:true});
     const pr=v.play();if(pr&&pr.catch)pr.catch(()=>{if(!v.isConnected)return;v.muted=true;v.play().then(()=>vwToast("Playing without sound — use the volume button")).catch(()=>{if(v.isConnected)vwToast("Tap ▶ to play");});});
   }else{
     const im=new Image();im.alt="";im.onload=()=>{if(tok===VW.tok){st.innerHTML="";st.appendChild(im);}};
