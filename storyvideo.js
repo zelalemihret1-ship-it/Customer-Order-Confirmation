@@ -71,7 +71,7 @@ async function normalize(inPath, { maxSeconds = 60 } = {}) {
   if (!ok) {
     converted = true;
     const r = await run(["-y", "-hide_banner", "-loglevel", "error", "-i", inPath, "-map", "0:v:0", "-map", "0:a:0?",
-      "-vf", "scale='min(1080,iw)':-2,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-profile:v", "high", "-level", "4.1",
+      "-threads", "1", "-vf", "scale='min(720,iw)':-2,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-profile:v", "high", "-level", "4.1",
       "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart", "-max_muxing_queue_size", "1024", "-t", String(maxSeconds), out]);
     ok = r.code === 0 && fs.existsSync(out) && fs.statSync(out).size > 0;
     if (!ok) { rm(out); return { ok: false, error: r.timeout ? "took too long to convert. Please use a shorter or smaller video." : "could not be converted. Please try another video." }; }
