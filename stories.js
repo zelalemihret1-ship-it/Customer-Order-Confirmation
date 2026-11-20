@@ -6,8 +6,9 @@
 // Every person works separately:
 //  • assigned admin  → own plans only, posted ONLY from their own connected Telegram account;
 //  • main admin      → own plans (own account or the shared Telegram Business connection)
-//                      PLUS a team view: sees every admin's plans, can pause / resume / delete them
-//                      (but never posts through another admin's account).
+//                      PLUS a team view: sees every admin's plans, can CREATE plans for an admin, EDIT them
+//                      (captions, dates, replace photo / video), pause / resume / delete them and POST them
+//                      for that admin — the story then goes out from THAT admin's own Telegram account.
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -16,6 +17,7 @@ const express = require("express");
 const multer = require("multer");
 
 const DAYS = 7;
+const MEDIA_SECRET = crypto.createHash("sha256").update(String(process.env.BOT_TOKEN || process.env.ADMIN_SETUP_KEY || "") + "|story-media|" + crypto.randomBytes(16).toString("hex")).digest();
 const MAX_CAPTION = 200;
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // per video or photo file
 const MAX_VIDEO_SECONDS = 60;             // Telegram story video limit
@@ -123,6 +125,9 @@ function register(app, ctx) {
   const actorKey = a => a?.telegramId ? String(a.telegramId) : (a?.role === "owner" ? "owner" : "");
   const isOwner = a => a?.role === "owner";
   const canSee = (a, p) => isOwner(a) || p.ownerKey === actorKey(a);
+  const canManage = (a, p) => isOwner(a) || p.ownerKey === actorKey(a); // edit / post: the plan's admin or ANY main admin
+  const ownerKeyIsMain = id => ownerIds.includes(String(id || ""));
+  const personName = id => { const r = (ctx.getAppAdmins() || []).find(x => String(x.telegramId) === String(id)); return (r && r.name) || ""; };
   const ownerConnection = () => [...businessConnections.values()].find(c => isUsable(c) && ownerIds.includes(String(c.user?.id || "")) && c.rights?.can_manage_stories !== false) || null;
   const accountOf = p => accountFor({ role: p.ownerRole, telegramId: p.ownerTelegramId });
   function pickAccount(p) { // ONLY the plan owner's own account — never another admin's session
@@ -186,7 +191,7 @@ function register(app, ctx) {
     for (const id of targets) { try { await tgApi.call("sendMessage", { chat_id: id, text }, { retry: false }); } catch {} }
   }
   // Posts ONE day's photo. Returns { ok, waiting?, error? }. A day that is already "posted" is never posted again.
-  async function postDay(p, day, manual) {
+  async function postDay(p, day, manual, byName) {
     const key = p.id + ":" + day.n;
     if (day.status === "posted") return { ok: true, already: true };
     if (posting.has(key)) return { ok: false, error: "Already posting this photo." };
@@ -194,14 +199,14 @@ function register(app, ctx) {
     try {
       let account = null, conn = null;
       if (p.via === "business") { conn = ownerConnection(); if (!conn) return { ok: false, waiting: true, error: "No active Telegram Business connection with the \"Manage stories\" permission." }; }
-      else { account = pickAccount(p); if (!account) return { ok: false, waiting: true, error: "Your Telegram account is not connected. Open ⚙ Settings → Connect my Telegram account." }; }
+      else { account = pickAccount(p); if (!account) return { ok: false, waiting: true, error: `${p.ownerName || "The admin"}'s Telegram account is not connected. Open the app and tap Connect Telegram.` }; }
       const buf = isVideo(day) ? await getVideo(p.id, day.n) : await getPhoto(p.id, day.n);
       if (!buf) { day.status = "failed"; day.error = isVideo(day) ? "The saved video could not be found." : "The saved photo could not be found."; day.attempts = MAX_ATTEMPTS; await save(); return { ok: false, error: day.error }; }
       day.status = "posting"; day.error = ""; await save(); // saved BEFORE sending: a crash can never cause a second copy
       const caption = String(day.caption || p.caption || "").slice(0, MAX_CAPTION);
       try {
         day.storyId = conn ? await sendViaBusiness(conn, p, day, buf, caption) : await sendViaAccount(account, p, day, buf, caption);
-        day.status = "posted"; day.postedAt = nowLocal(); day.error = ""; await save();
+        day.status = "posted"; day.postedAt = nowLocal(); day.error = ""; if (byName) day.postedBy = byName; else delete day.postedBy; await save();
         return { ok: true };
       } catch (e) {
         day.attempts = (day.attempts || 0) + 1; day.error = friendly(e);
@@ -253,8 +258,10 @@ function register(app, ctx) {
   const view = (p, a) => ({
     id: p.id, title: p.title, status: p.status, via: p.via, period: p.period, privacy: p.privacy, pinned: !!p.pinned,
     caption: p.caption, startDate: p.startDate, postTime: p.postTime, createdAt: p.createdAt,
-    ownerName: p.ownerName, ownerRole: p.ownerRole, mine: p.ownerKey === actorKey(a),
-    days: p.days.map(d => ({ n: d.n, v: d.v || 0, type: isVideo(d) ? "video" : "photo", date: d.date, eth: eth(d.date), caption: d.caption || "", status: d.status, postedAt: d.postedAt || "", error: d.error || "", attempts: d.attempts || 0 }))
+    ownerName: p.ownerName, ownerRole: p.ownerRole, ownerTelegramId: p.ownerTelegramId || "", createdByName: p.createdByName || "",
+    mine: p.ownerKey === actorKey(a), canEdit: canManage(a, p),
+    accountReady: !!(pickAccount(p)), 
+    days: p.days.map(d => ({ n: d.n, v: d.v || 0, type: isVideo(d) ? "video" : "photo", date: d.date, eth: eth(d.date), caption: d.caption || "", status: d.status, postedAt: d.postedAt || "", postedBy: d.postedBy || "", error: d.error || "", attempts: d.attempts || 0, duration: d.duration || 0 }))
   });
 
   router.get("/", (req, res) => {
@@ -266,10 +273,12 @@ function register(app, ctx) {
       const others = plans.filter(p => p.ownerKey !== actorKey(a));
       out.team = others.map(p => view(p, a)).sort((x, y) => y.createdAt.localeCompare(x.createdAt));
       const today = todayLocal();
-      const people = (ctx.getAppAdmins() || []).map(x => {
+      const roster = (ctx.getAppAdmins() || []).filter(x => String(x.telegramId) !== actorKey(a));
+      for (const id of ownerIds) if (id !== actorKey(a) && !roster.some(x => String(x.telegramId) === String(id))) roster.push({ telegramId: id, name: "Main admin " + id });
+      const people = roster.map(x => {
         const acc = admins.get("u" + String(x.telegramId));
         const theirs = plans.filter(p => p.ownerKey === String(x.telegramId));
-        return { name: x.name || x.telegramId, telegramId: String(x.telegramId), connected: !!acc?.ready,
+        return { name: x.name || x.telegramId, telegramId: String(x.telegramId), main: ownerKeyIsMain(x.telegramId), connected: !!acc?.ready,
           activePlans: theirs.filter(p => p.status === "active").length,
           postedToday: theirs.reduce((s, p) => s + p.days.filter(d => d.status === "posted" && (d.postedAt || "").startsWith(today)).length, 0),
           failed: theirs.reduce((s, p) => s + p.days.filter(d => d.status === "failed").length, 0) };
@@ -279,6 +288,15 @@ function register(app, ctx) {
     res.json(out);
   });
 
+  // Short-lived signed link so a <video> / <img> tag (which cannot send headers) can play a saved item.
+  const sign = (id, n, exp) => crypto.createHmac("sha256", MEDIA_SECRET).update(`${id}:${n}:${exp}`).digest("hex").slice(0, 32);
+  router.get("/:id/media-url/:n", async (req, res) => {
+    const p = plans.find(x => x.id === req.params.id);
+    if (!p || !canSee(req.actor, p)) return res.status(404).json({ ok: false, error: "Not found." });
+    const n = Number(req.params.n), d = p.days.find(x => x.n === n); if (!d) return res.status(404).json({ ok: false, error: "Not found." });
+    const exp = Date.now() + 2 * 3600 * 1000;
+    res.json({ ok: true, type: isVideo(d) ? "video" : "photo", url: `/api/stories/media/${p.id}/${n}?v=${d.v || 0}&e=${exp}&s=${sign(p.id, n, exp)}`, caption: d.caption || p.caption || "" });
+  });
   router.get("/:id/photo/:n", async (req, res) => {
     const p = plans.find(x => x.id === req.params.id);
     if (!p || !canSee(req.actor, p)) return res.status(404).end();
@@ -315,13 +333,23 @@ function register(app, ctx) {
       if (startDate < today) return res.status(400).json({ ok: false, error: "The start date is in the past. Choose today or a later day." });
       const period = Number(b.period) || 86400; if (!PERIODS.includes(period)) return res.status(400).json({ ok: false, error: "Story duration is not valid." });
       const owner = isOwner(a);
+      // A main admin may set a plan up FOR another admin: it is then that admin's plan and goes out from THEIR account.
+      let target = null;
+      if (b.forAdmin && String(b.forAdmin) !== actorKey(a)) {
+        if (!owner) return res.status(403).json({ ok: false, error: "Only a main admin can create a plan for another admin." });
+        const rec = (ctx.getAppAdmins() || []).find(x => String(x.telegramId) === String(b.forAdmin));
+        if (!rec && !ownerIds.includes(String(b.forAdmin))) return res.status(400).json({ ok: false, error: "That admin was not found. Refresh the page and choose again." });
+        target = { telegramId: String(b.forAdmin), name: (rec && rec.name) || ("Admin " + b.forAdmin), role: ownerIds.includes(String(b.forAdmin)) ? "owner" : "admin" };
+      }
       let via = b.via === "business" ? "business" : "account";
+      if (target && target.role !== "owner") via = "account";
       if (via === "business") { if (!owner) return res.status(403).json({ ok: false, error: "Only the main admin can post through the shared Business connection." }); if (!ownerConnection()) return res.status(400).json({ ok: false, error: "No active Telegram Business connection with the \"Manage stories\" permission was found." }); }
       let dayCaps = []; try { dayCaps = JSON.parse(b.dayCaptions || "[]"); } catch {}
       const clean = s => String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, MAX_CAPTION);
       const id = crypto.randomBytes(6).toString("hex");
       const p = {
-        id, ownerKey: actorKey(a), ownerTelegramId: a.telegramId || "", ownerRole: a.role, ownerName: a.name || "Admin",
+        id, ownerKey: target ? target.telegramId : actorKey(a), ownerTelegramId: target ? target.telegramId : (a.telegramId || ""), ownerRole: target ? target.role : a.role, ownerName: target ? target.name : (a.name || "Admin"),
+        createdByName: target ? (a.name || "Main admin") : "",
         title: clean(b.title).slice(0, 80) || `Week of ${startDate}`, caption: clean(b.caption), via, period,
         privacy: b.privacy === "contacts" ? "contacts" : "all", pinned: b.pinned === "1" || b.pinned === "true",
         startDate, postTime, status: "active", createdAt: new Date().toISOString(),
@@ -338,7 +366,9 @@ function register(app, ctx) {
       for (let i = 0; i < DAYS; i++) if (kinds[i] === "video") await saveVideo(id, i + 1, files[i].path);
       plans.push(p); await save();
       const first = p.days[0].type === "video" ? "Video" : "Photo";
-      res.json({ ok: true, plan: view(p, a), message: `✅ Saved. ${first} 1 will be posted on ${p.days[0].date} at ${postTime}, then one new item each day until ${p.days[DAYS - 1].date}.` });
+      const forTxt = target ? ` for ${target.name} (it goes out from ${target.name}'s own Telegram account)` : "";
+      if (target) notify(p, `📸 ${a.name || "The main admin"} set up a weekly story plan for you: "${p.title}" (${p.startDate} → ${p.days[DAYS - 1].date} at ${postTime}). It is posted from your own Telegram account.`);
+      res.json({ ok: true, plan: view(p, a), message: `✅ Saved${forTxt}. ${first} 1 will be posted on ${p.days[0].date} at ${postTime}, then one new item each day until ${p.days[DAYS - 1].date}.` });
     } catch (e) { console.error("Story plan failed:", e); res.status(500).json({ ok: false, error: e.message || "Could not save the plan." }); }
     finally { cleanup(); }
   });
@@ -352,7 +382,7 @@ function register(app, ctx) {
   const cleanText = s => String(s || "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, MAX_CAPTION);
   const ownPlan = (req, res) => {
     const p = find(req, res); if (!p) return null;
-    if (p.ownerKey !== actorKey(req.actor)) { res.status(403).json({ ok: false, error: "Only the admin who made this plan can edit it." }); return null; }
+    if (!canManage(req.actor, p)) { res.status(403).json({ ok: false, error: "Only the admin who made this plan or a main admin can edit it." }); return null; }
     if (p.days.some(d => d.status === "posting")) { res.status(409).json({ ok: false, error: "A story of this plan is being posted right now. Try again in a moment." }); return null; }
     return p;
   };
@@ -374,7 +404,7 @@ function register(app, ctx) {
       if (!PERIODS.includes(period)) return res.status(400).json({ ok: false, error: "Story duration is not valid." });
       let via = b.via != null ? (b.via === "business" ? "business" : "account") : p.via;
       if (via === "business" && via !== p.via) {
-        if (!owner) return res.status(403).json({ ok: false, error: "Only the main admin can post through the shared Business connection." });
+        if (!owner || p.ownerRole !== "owner") return res.status(403).json({ ok: false, error: "Only a main admin's own plan can post through the shared Business connection." });
         if (!ownerConnection()) return res.status(400).json({ ok: false, error: "No active Telegram Business connection with the \"Manage stories\" permission was found." });
       }
       // everything is valid — apply
@@ -437,16 +467,45 @@ function register(app, ctx) {
   // Posting is only ever done by the plan's own admin, through their own account.
   router.post("/:id/post-now", async (req, res) => {
     const p = find(req, res); if (!p) return;
-    if (p.ownerKey !== actorKey(req.actor)) return res.status(403).json({ ok: false, error: "Only the admin who made this plan can post it (from their own Telegram account)." });
+    if (!canManage(req.actor, p)) return res.status(403).json({ ok: false, error: "Only the admin who made this plan or a main admin can post it." });
     const n = Number(req.body?.day), day = p.days.find(d => d.n === n);
     if (!day) return res.status(400).json({ ok: false, error: "Choose a day." });
     if (day.status === "posted") return res.status(400).json({ ok: false, error: "That story was already posted. It is never posted twice." });
-    const r = await postDay(p, day, true); refreshStatus(p); await save();
-    res.json(r.ok ? { ok: true, message: `✅ ${isVideo(day) ? "Video" : "Photo"} ${n} posted as a story.` } : { ok: false, error: r.error });
+    const forOther = p.ownerKey !== actorKey(req.actor);
+    if (forOther && p.via !== "business" && !pickAccount(p)) return res.status(400).json({ ok: false, error: `${p.ownerName || "That admin"} has not connected their Telegram account yet, so the story can't be posted from their account. Ask them to open the app and tap Connect Telegram.` });
+    const r = await postDay(p, day, true, forOther ? (req.actor.name || "Main admin") : ""); refreshStatus(p); await save();
+    if (r.ok && forOther) notify({ ownerTelegramId: p.ownerTelegramId, title: p.title }, `📸 ${req.actor.name || "A main admin"} posted Day ${n} ("${p.title}") as a story from your Telegram account.`);
+    res.json(r.ok ? { ok: true, message: forOther ? `✅ ${isVideo(day) ? "Video" : "Photo"} ${n} posted from ${p.ownerName || "the admin"}'s account.` : `✅ ${isVideo(day) ? "Video" : "Photo"} ${n} posted as a story.` } : { ok: false, error: r.error });
   });
   router.use((err, req, res, next) => { // e.g. a video over the size limit
     const big = err && err.code === "LIMIT_FILE_SIZE";
     res.status(400).json({ ok: false, error: big ? `A file is too big. Videos can be up to ${MAX_VIDEO_BYTES / 1048576} MB each.` : (err && err.message) || "Upload failed." });
+  });
+  // Media stream (no login header, signed link). Supports Range so videos start at once and can be scrubbed.
+  app.get("/api/stories/media/:id/:n", async (req, res) => {
+    try {
+      const n = Number(req.params.n), exp = Number(req.query.e) || 0, sg = String(req.query.s || "");
+      const good = sign(req.params.id, n, exp);
+      if (!exp || exp < Date.now() || sg.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sg), Buffer.from(good))) return res.status(403).end();
+      const p = plans.find(x => x.id === req.params.id), d = p && p.days.find(x => x.n === n);
+      if (!d) return res.status(404).end();
+      res.set("Cache-Control", "private, max-age=3600");
+      if (!isVideo(d)) { const buf = await getPhoto(p.id, n); if (!buf) return res.status(404).end(); return res.type("image/jpeg").send(buf); }
+      let file = videoFile(p.id, n);
+      if (!fs.existsSync(file)) { const buf = await getVideo(p.id, n); if (!buf) return res.status(404).end(); }
+      if (!fs.existsSync(file)) return res.status(404).end();
+      const size = fs.statSync(file).size, range = String(req.headers.range || "");
+      res.set("Accept-Ranges", "bytes").type("video/mp4");
+      const m = range.match(/^bytes=(\d*)-(\d*)$/);
+      if (m && (m[1] || m[2])) {
+        let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2])), end = m[1] && m[2] ? Number(m[2]) : size - 1;
+        end = Math.min(end, size - 1);
+        if (start > end || start >= size) return res.status(416).set("Content-Range", `bytes */${size}`).end();
+        res.status(206).set({ "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": end - start + 1 });
+        return fs.createReadStream(file, { start, end }).pipe(res);
+      }
+      res.set("Content-Length", size); fs.createReadStream(file).pipe(res);
+    } catch (e) { if (!res.headersSent) res.status(500).end(); }
   });
   app.use("/api/stories", router);
   return { start, tick };
