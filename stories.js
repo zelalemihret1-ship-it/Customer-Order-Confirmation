@@ -246,7 +246,11 @@ function register(app, ctx) {
     });
     return r?.id != null ? String(r.id) : "";
   }
+  // Story bot messages are switched OFF (v116). Status (posted / failed) is shown inside the Weekly Story page instead.
+  // To turn the messages back on, set the Render variable STORY_BOT_MESSAGES=1.
+  const STORY_BOT_MESSAGES = process.env.STORY_BOT_MESSAGES === "1";
   async function notify(p, text) {
+    if (!STORY_BOT_MESSAGES) return;
     const targets = new Set([p.ownerTelegramId, ...ownerIds].filter(Boolean).map(String));
     for (const id of targets) { try { await tgApi.call("sendMessage", { chat_id: id, text }, { retry: false }); } catch {} }
   }
