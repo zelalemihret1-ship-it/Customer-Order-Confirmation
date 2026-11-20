@@ -83,6 +83,12 @@ button:disabled{opacity:.5;cursor:default}
 .ov .list{border-top:1px solid #efe9dc}
 .ov .adm{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #efe9dc}
 .ov .adm:last-child{border-bottom:0}
+.ov .adm{cursor:pointer;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:12px;transition:background .15s}
+.ov .adm:hover{background:#faf8f3}
+.ov .adm.sel{background:#e9f6ee;box-shadow:inset 0 0 0 1.5px #2e9e4f;border-bottom-color:transparent}
+.ov .chev{flex:none;color:#b0a894;font-size:18px;margin-right:2px}.ov .adm.sel .chev{color:#176b3a}
+.fbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#153a2e;color:#f4efe3;border-radius:14px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:700}
+.fbar button{border:0;background:#ffffff26;color:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer}
 .ov .av{flex:none;width:34px;height:34px;border-radius:50%;background:#153a2e;color:#f4efe3;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;position:relative}
 .ov .av.main{box-shadow:0 0 0 2px #fff,0 0 0 3.5px #b89552}
 .ov .av i{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid #fff;background:#2e9e4f}
@@ -551,7 +557,7 @@ $("eClose").onclick=closeEdit;$("eCancel").onclick=closeEdit;
 $("editBg").addEventListener("mousedown",e=>{if(e.target===$("editBg"))closeEdit();});
 
 // ── Admin overview: small summary + one tidy row per admin (problems first) ──
-const OV={filter:"all",all:false,LIMIT:5};
+const OV={filter:"all",all:false,sel:null,LIMIT:5};
 const needsAttention=x=>x.failed>0||!x.connected;
 function overviewHtml(people){
   people=people||[];
@@ -562,22 +568,38 @@ function overviewHtml(people){
   const shown=OV.all?rows:rows.slice(0,OV.LIMIT);
   const row=x=>{
     const nm=String(x.name||"?").trim(),first=esc(nm.split(" ")[0]);
-    return `<div class="adm"><div class="av ${x.main?"main":""}" title="${x.connected?"Telegram connected":"Telegram not connected"}">${esc(nm.charAt(0).toUpperCase())}<i class="${x.connected?"":"off"}"></i></div>
+    return `<div class="adm ${OV.sel===x.telegramId?"sel":""}" data-sel="${esc(x.telegramId)}"><div class="av ${x.main?"main":""}" title="${x.connected?"Telegram connected":"Telegram not connected"}">${esc(nm.charAt(0).toUpperCase())}<i class="${x.connected?"":"off"}"></i></div>
       <div class="inf"><div class="n">${esc(nm)}${x.main?"<em>MAIN</em>":""}</div>
       <div class="s">${x.connected?"":`<span class="wait">Not connected</span>`}<span><b>${x.activePlans}</b> running</span><span><b>${x.postedToday}</b> today</span>${x.failed?`<span class="bad">${x.failed} failed</span>`:""}</div></div>
-      <button class="add" type="button" data-for="${esc(x.telegramId)}" title="New plan for ${first}" aria-label="New plan for ${first}">+</button></div>`;};
+      <span class="chev">${OV.sel===x.telegramId?"✓":"›"}</span><button class="add" type="button" data-for="${esc(x.telegramId)}" title="New plan for ${first}" aria-label="New plan for ${first}">+</button></div>`;};
   return `<div class="card ov"><div class="ovHead"><h2>👑 Admin overview</h2>
     ${attn?`<div class="seg"><button type="button" data-ov="all" class="${OV.filter==="all"?"on":""}">All ${people.length}</button><button type="button" data-ov="attn" class="${OV.filter==="attn"?"on":""}">Needs attention ${attn}</button></div>`:""}</div>
     ${people.length?`<div class="kpis"><div class="kpi"><b>${people.length}</b><span>Admins</span></div><div class="kpi"><b>${conn}/${people.length}</b><span>Connected</span></div><div class="kpi"><b>${sum("activePlans")}</b><span>Running</span></div><div class="kpi ${failed?"warn":""}"><b>${failed||sum("postedToday")}</b><span>${failed?"Failed":"Posted today"}</span></div></div>
     ${failed?`<div class="alert">⚠️ ${failed} failed ${failed>1?"stories need":"story needs"} attention — see the plan below.</div>`:""}
     <div class="list">${shown.length?shown.map(row).join(""):`<div class="none">Everything looks good ✅</div>`}</div>
     ${rows.length>OV.LIMIT?`<button class="more" type="button" data-ov="more">${OV.all?"Show less ▴":"Show all "+rows.length+" ▾"}</button>`:""}
-    <div class="foot">Tap <b>+</b> to create a plan for that admin. Stories post from each admin's own Telegram account.</div>`
+    <div class="foot">Tap an admin to see their plans below. Tap <b>+</b> to create a new plan for them.</div>`
     :`<div class="none">No assigned admins yet.</div>`}</div>`;
 }
-$("vTeam").addEventListener("click",e=>{const b=e.target.closest("button[data-ov]");if(!b||!S)return;const v=b.dataset.ov;
-  if(v==="more")OV.all=!OV.all;else{OV.filter=v;OV.all=false;}
-  paint($("vTeam"),S.team,{team:true,before:overviewHtml(S.people)},"No admin has made a weekly plan yet.");});
+function renderTeam(){
+  const people=S.people||[],sp=OV.sel&&people.find(x=>x.telegramId===OV.sel);
+  if(OV.sel&&!sp)OV.sel=null;
+  let list=S.team,empty="No admin has made a weekly plan yet.",before=overviewHtml(people);
+  if(sp){
+    list=S.team.filter(p=>p.ownerTelegramId?String(p.ownerTelegramId)===sp.telegramId:p.ownerName===sp.name);
+    before+=`<div class="fbar"><span>Showing ${esc(sp.name)}'s plans (${list.length})</span><button type="button" data-ov="clear">✕ Show all admins</button></div>`;
+    empty=esc(sp.name)+" has no weekly plan yet. Tap <b>+</b> above to create one.";
+  }
+  paint($("vTeam"),list,{team:true,before},empty);
+}
+$("vTeam").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-ov]");
+  if(b&&S){const v=b.dataset.ov;if(v==="more")OV.all=!OV.all;else if(v==="clear")OV.sel=null;else{OV.filter=v;OV.all=false;}renderTeam();return;}
+  if(e.target.closest("button.add"))return;
+  const r=e.target.closest(".adm[data-sel]");
+  if(r&&S){OV.sel=OV.sel===r.dataset.sel?null:r.dataset.sel;haptic();renderTeam();
+    if(OV.sel){const f=$("vTeam").querySelector(".fbar");if(f)f.scrollIntoView({behavior:"smooth",block:"nearest"});}}
+});
 
 async function load(){
   let d;
@@ -598,7 +620,7 @@ async function load(){
   paint($("vMine"),d.mine,{},"No weekly plans yet. Go to “New week”, add 7 photos or videos and press Create.");
   if(owner){
     $("tabTeam").style.display="";$("cTeam").textContent=d.team.length;
-    paint($("vTeam"),d.team,{team:true,before:overviewHtml(d.people)},"No admin has made a weekly plan yet.");
+    renderTeam();
   }
 }
 drawSlots();load();setInterval(()=>{if(!busy&&document.visibilityState==="visible")load();},30000);
