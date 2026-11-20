@@ -67,7 +67,7 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
 <body>
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 <header>
-  <a class="back" href="/">← Order Cards</a>
+  <a class="back" href="/home.html">← Home</a>
   <h1>⭐ Customer Rating</h1>
   <div class="sub">After the order is delivered · a rating link goes to the customer</div>
 </header>
@@ -179,5 +179,6 @@ async function load(){
 }
 load();
 </script>
+<script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
 </body>
 </html>
