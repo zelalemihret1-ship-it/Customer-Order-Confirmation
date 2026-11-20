@@ -394,5 +394,6 @@ async function load(){
 drawSlots();load();setInterval(()=>{if(!busy&&document.visibilityState==="visible")load();},30000);
 </script>
 <script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
+<script>try{var B=Telegram.WebApp.BackButton;B.show();B.onClick(function(){location.href="/home.html"+location.hash;});}catch(e){}</script>
 </body>
 </html>
