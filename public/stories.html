@@ -67,9 +67,38 @@ button:disabled{opacity:.5;cursor:default}
 .day button{width:100%;margin-top:5px;padding:7px 4px;font-size:12px}
 .empty{text-align:center;color:#8a8478;padding:26px 10px;font-size:14px}
 .assign{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}.assign label.opt{display:flex;gap:8px;align-items:center;border:1px solid #e4ded2;border-radius:12px;padding:9px 11px;background:#faf8f3;font-weight:600;font-size:13px;margin:0;cursor:pointer}.assign label.opt.all{grid-column:1/-1;border-style:dashed;font-size:14px}.assign label.opt.on{border-color:#176b3a;background:#e9f6ee}.assign label.opt input{width:auto;margin:0}.assign label.opt small{display:block;font-weight:400;color:#6b6558}
-.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-.person{border:1px solid #e4ded2;border-radius:14px;padding:12px;background:#faf8f3;font-size:12px;line-height:1.7}
-.person b{font-size:14px}
+/* ── Admin overview (compact) ── */
+.ov{padding:14px 14px 8px}
+.ov .ovHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.ov .ovHead h2{margin:0;font-size:15px;display:flex;align-items:center;gap:7px}
+.ov .seg{display:inline-flex;background:#f1ede2;border-radius:999px;padding:2px}
+.ov .seg button{border:0;background:transparent;color:#5b574c;font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:999px;cursor:pointer}
+.ov .seg button.on{background:#fff;color:#153a2e;box-shadow:0 1px 3px #00000022}
+.ov .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.ov .kpi{background:#faf8f3;border:1px solid #ece6d9;border-radius:12px;padding:8px 6px;text-align:center}
+.ov .kpi b{display:block;font-size:19px;line-height:1.1;color:#153a2e;font-weight:800}
+.ov .kpi span{display:block;font-size:10.5px;color:#6d675d;margin-top:2px;font-weight:600}
+.ov .kpi.warn{background:#fdeceb;border-color:#f0c9c5}.ov .kpi.warn b{color:#b3261e}
+.ov .alert{display:flex;align-items:center;gap:8px;background:#fdeceb;color:#9b1f18;border-radius:10px;padding:8px 11px;font-size:12px;font-weight:700;margin-bottom:8px}
+.ov .list{border-top:1px solid #efe9dc}
+.ov .adm{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #efe9dc}
+.ov .adm:last-child{border-bottom:0}
+.ov .av{flex:none;width:34px;height:34px;border-radius:50%;background:#153a2e;color:#f4efe3;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;position:relative}
+.ov .av.main{box-shadow:0 0 0 2px #fff,0 0 0 3.5px #b89552}
+.ov .av i{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid #fff;background:#2e9e4f}
+.ov .av i.off{background:#d9a21b}
+.ov .inf{flex:1;min-width:0}
+.ov .inf .n{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov .inf .n em{font-style:normal;font-size:10px;font-weight:800;color:#8a6a22;background:#f6ecd3;border-radius:999px;padding:1px 7px;margin-left:5px;vertical-align:1px}
+.ov .inf .s{font-size:11.5px;color:#6d675d;margin-top:2px;display:flex;flex-wrap:wrap;gap:2px 10px}
+.ov .inf .s b{color:#18382e}
+.ov .inf .s .bad{color:#b3261e;font-weight:700}.ov .inf .s .wait{color:#8a5a00;font-weight:700}
+.ov .add{flex:none;width:34px;height:34px;border-radius:10px;border:1.5px solid #cfd8d3;background:#fff;color:#153a2e;font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.ov .add:hover{background:#153a2e;color:#fff}
+.ov .more{display:block;width:100%;border:0;background:transparent;color:#153a2e;font-weight:700;font-size:12.5px;padding:9px 0 6px;cursor:pointer}
+.ov .none{text-align:center;color:#8a8478;font-size:13px;padding:16px 0}
+.ov .foot{font-size:11px;color:#8a8478;margin:6px 0 4px;line-height:1.5}
+@media(max-width:360px){.ov .kpis{grid-template-columns:repeat(2,1fr)}}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
 #gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
 .pencil{display:inline-flex;align-items:center;gap:6px}
@@ -521,6 +550,35 @@ $("eSave").onclick=async()=>{
 $("eClose").onclick=closeEdit;$("eCancel").onclick=closeEdit;
 $("editBg").addEventListener("mousedown",e=>{if(e.target===$("editBg"))closeEdit();});
 
+// ── Admin overview: small summary + one tidy row per admin (problems first) ──
+const OV={filter:"all",all:false,LIMIT:5};
+const needsAttention=x=>x.failed>0||!x.connected;
+function overviewHtml(people){
+  people=people||[];
+  const sum=k=>people.reduce((s,x)=>s+(x[k]||0),0),conn=people.filter(x=>x.connected).length,failed=sum("failed"),attn=people.filter(needsAttention).length;
+  if(!attn)OV.filter="all";
+  let rows=people.slice().sort((a,b)=>(b.failed>0)-(a.failed>0)||(!a.connected)-(!b.connected)||b.activePlans-a.activePlans||String(a.name).localeCompare(String(b.name)));
+  if(OV.filter==="attn")rows=rows.filter(needsAttention);
+  const shown=OV.all?rows:rows.slice(0,OV.LIMIT);
+  const row=x=>{
+    const nm=String(x.name||"?").trim(),first=esc(nm.split(" ")[0]);
+    return `<div class="adm"><div class="av ${x.main?"main":""}" title="${x.connected?"Telegram connected":"Telegram not connected"}">${esc(nm.charAt(0).toUpperCase())}<i class="${x.connected?"":"off"}"></i></div>
+      <div class="inf"><div class="n">${esc(nm)}${x.main?"<em>MAIN</em>":""}</div>
+      <div class="s">${x.connected?"":`<span class="wait">Not connected</span>`}<span><b>${x.activePlans}</b> running</span><span><b>${x.postedToday}</b> today</span>${x.failed?`<span class="bad">${x.failed} failed</span>`:""}</div></div>
+      <button class="add" type="button" data-for="${esc(x.telegramId)}" title="New plan for ${first}" aria-label="New plan for ${first}">+</button></div>`;};
+  return `<div class="card ov"><div class="ovHead"><h2>👑 Admin overview</h2>
+    ${attn?`<div class="seg"><button type="button" data-ov="all" class="${OV.filter==="all"?"on":""}">All ${people.length}</button><button type="button" data-ov="attn" class="${OV.filter==="attn"?"on":""}">Needs attention ${attn}</button></div>`:""}</div>
+    ${people.length?`<div class="kpis"><div class="kpi"><b>${people.length}</b><span>Admins</span></div><div class="kpi"><b>${conn}/${people.length}</b><span>Connected</span></div><div class="kpi"><b>${sum("activePlans")}</b><span>Running</span></div><div class="kpi ${failed?"warn":""}"><b>${failed||sum("postedToday")}</b><span>${failed?"Failed":"Posted today"}</span></div></div>
+    ${failed?`<div class="alert">⚠️ ${failed} failed ${failed>1?"stories need":"story needs"} attention — see the plan below.</div>`:""}
+    <div class="list">${shown.length?shown.map(row).join(""):`<div class="none">Everything looks good ✅</div>`}</div>
+    ${rows.length>OV.LIMIT?`<button class="more" type="button" data-ov="more">${OV.all?"Show less ▴":"Show all "+rows.length+" ▾"}</button>`:""}
+    <div class="foot">Tap <b>+</b> to create a plan for that admin. Stories post from each admin's own Telegram account.</div>`
+    :`<div class="none">No assigned admins yet.</div>`}</div>`;
+}
+$("vTeam").addEventListener("click",e=>{const b=e.target.closest("button[data-ov]");if(!b||!S)return;const v=b.dataset.ov;
+  if(v==="more")OV.all=!OV.all;else{OV.filter=v;OV.all=false;}
+  paint($("vTeam"),S.team,{team:true,before:overviewHtml(S.people)},"No admin has made a weekly plan yet.");});
+
 async function load(){
   let d;
   try{const r=await fetch("/api/stories");d=await r.json();
@@ -540,9 +598,7 @@ async function load(){
   paint($("vMine"),d.mine,{},"No weekly plans yet. Go to “New week”, add 7 photos or videos and press Create.");
   if(owner){
     $("tabTeam").style.display="";$("cTeam").textContent=d.team.length;
-    const people=`<div class="card"><h2>👑 Admin overview</h2>${d.people.length?`<div class="people">${d.people.map(x=>`<div class="person"><b>${esc(x.name)}</b><br><span class="pill ${x.connected?"on":"off"}">${x.connected?"Telegram connected":"Not connected"}</span><br>Running plans: ${x.activePlans}<br>Posted today: ${x.postedToday}<br>${x.failed?`<span style="color:#b3261e">Failed stories: ${x.failed}</span>`:"No failures"}<br><button class="ghost" style="padding:7px 10px;font-size:12px;margin-top:6px" data-for="${esc(x.telegramId)}">➕ New plan for ${esc((x.name||"").split(" ")[0])}</button></div>`).join("")}</div>`:`<div class="empty">No assigned admins yet.</div>`}
-      <p class="hint" style="margin-top:10px">Each plan is posted from <b>its own admin's</b> Telegram account. As main admin you can <b>create, edit, pause, delete and post</b> any admin's plan — tap a photo or video to see it full screen.</p></div>`;
-    paint($("vTeam"),d.team,{team:true,before:people},"No admin has made a weekly plan yet.");
+    paint($("vTeam"),d.team,{team:true,before:overviewHtml(d.people)},"No admin has made a weekly plan yet.");
   }
 }
 drawSlots();load();setInterval(()=>{if(!busy&&document.visibilityState==="visible")load();},30000);
