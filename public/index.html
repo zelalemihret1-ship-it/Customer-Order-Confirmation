@@ -54,7 +54,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <script>
 (async()=>{const gate=document.getElementById("ambarAccessGate"),msg=document.getElementById("ambarAccessMessage");gate.style.display="flex";try{const r=await fetch("/api/me");const m=await r.json();if(r.ok&&(m.role==="owner"||m.role==="admin")){document.body.classList.add("ambar-authorized");gate.style.display="none";window.AMBAR_ROLE=m.role;window.AMBAR_TELEGRAM_ID=m.telegramId||"";}else{msg.textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}}catch(e){msg.textContent="Unable to verify access. Open AMBAR Furniture inside Telegram and try again.";}})();
 </script>
-<header><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
+<header style="position:relative"><a href="/home.html" id="homeLink" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#f4efe3;text-decoration:none;font-size:12px;font-weight:700;border:1px solid #ffffff55;border-radius:999px;padding:7px 11px">← Home</a><h1>Ambar Furniture</h1><div class="sub">Telegram Customer Order Card</div></header>
 <main>
 <div class="card" id="businessStatus" role="status" style="margin-bottom:16px"><b>Sending account:</b> <span id="senderState">checking…</span><div id="senderPickWrap" style="display:none;margin-top:10px"><label style="font-weight:700">Choose which connected admin sends this order<select id="senderAdminPick" name="senderAdminId" style="display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #cfc5b4;border-radius:9px;background:#fff"><option value="">Use my own account / Telegram Business</option></select></label><div class="small" style="margin-top:5px">Only connected accounts can be selected. Assigned admins can send only from their own account.</div></div></div>
 <form id="orderForm">
@@ -698,5 +698,6 @@ let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.o
 (async()=>{try{const r=await fetch("/api/callers"),d=await r.json();if(d.ok){list=[...d.customers].sort((a,b)=>String(b.updatedAt||b.createdAt||b.seq||b.id).localeCompare(String(a.updatedAt||a.createdAt||a.seq||a.id),undefined,{numeric:true}));options();if(!list.length)help.innerHTML='No customers yet. <a href="/customers.html" style="color:#153a2e;font-weight:700">Add the customer in Customers Data</a> before creating an order.';}}catch{help.textContent="Could not load customers. Check your connection and refresh.";}})();
 })();
 </script>
+<script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
 </body>
 </html>
