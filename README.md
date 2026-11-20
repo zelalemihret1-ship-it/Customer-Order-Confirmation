@@ -1,3 +1,10 @@
+## v115 — Story videos: memory fix (Render "exceeded its memory limit") · videos open faster
+- **Cause:** videos were read into server memory whole (up to 200 MB) when saving, backing up, re-downloading after a restart, and — since v114 — once per assigned admin. On a small instance this restarted the server, which also made videos show "still loading".
+- **Fixed:** nothing big is held in memory any more — files are streamed (hash, download from the backup, play). A big original is backed up only after it is converted (much smaller). Admins who get the same plan share ONE file on disk and the video is converted ONCE, then handed to every copy.
+- Converting uses 1 thread and 720p (Telegram's own story size), so it needs far less memory.
+- Opening a video no longer waits behind a long conversion queue: after a few seconds it plays the saved file as it is.
+- Files changed: `stories.js`, `storyvideo.js`. Redeploy the whole folder.
+
 ## v114 — Weekly Story: assign ONE plan to several admins · "One story" removed
 - The **🎯 One story** mode is removed. The Weekly Story page now has only the weekly plan (7 photos/videos, one per day).
 - **Assign this plan to** (main admin): instead of choosing one admin, tick as many admins as you want (or **Select all admins**). The plan is created once and every ticked admin gets their **own copy** — the same photos, videos, captions, dates and time — posted from **that admin's own Telegram account**. Each admin is notified. Admins not yet connected to Telegram are fine: the plan is saved and posts when they connect.
