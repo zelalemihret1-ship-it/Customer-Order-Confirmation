@@ -1,6 +1,6 @@
 ## v110 — Story videos: every format, every phone
 - Weekly Story accepts **any video format** (MP4, MOV, MKV, AVI, WebM, 3GP, WMV, FLV, MPEG, HEVC/H.265 …). The server converts each one to H.264 + AAC MP4 (`storyvideo.js`), so it plays **inside the mini app** on every phone and posts to Telegram. Videos already in that format are only re-wrapped (fast).
-- Needs ffmpeg: the `ffmpeg-static` package is in `package.json` and installs automatically on Render (redeploy so `npm install` runs). Or set `FFMPEG_PATH`.
+- Needs ffmpeg: the `@ffmpeg-installer/ffmpeg` package is an *optional* dependency in `package.json` (ships the binary, no download step, so it can never break the deploy). Or set `FFMPEG_PATH`. Videos saved earlier are converted once, the first time they are opened.
 - Without ffmpeg, only videos the phone itself can read (normally MP4/MOV) are accepted.
 - Limits unchanged: 60 seconds and 200 MB per video. Converting can take up to about a minute per video.
 
