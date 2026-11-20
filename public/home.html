@@ -29,6 +29,7 @@ a.tile:active{transform:none}
 .go{margin-left:auto;color:#b89552;font-size:22px;font-weight:700}
 a.tile.main{grid-column:1/-1;background:linear-gradient(135deg,#0f2f25,#1b4d3d);border-color:#0f2f25}
 a.tile.main .tx b{color:#ffa939;font-size:18px}a.tile.main .tx span{color:#d9d3c3}a.tile.main .ic{background:#ffffff1f;border-bottom-color:#ffa939}
+a.tile.warn{border-color:#e6c47a;background:#fffaf0}a.tile.warn .ic{background:linear-gradient(135deg,#8a5a00,#b3761a)}
 .hide{display:none!important}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
 #gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
@@ -57,9 +58,22 @@ a.tile.main .tx b{color:#ffa939;font-size:18px}a.tile.main .tx span{color:#d9d3c
     <a class="tile" href="/stories.html"><div class="ic">📸</div><div class="tx"><b>Weekly Story</b><span>7 photos or videos, one posted per day</span></div><div class="go">›</div></a>
   </div>
 
-  <h2 id="hAdmin" class="hide">Administration</h2>
-  <div class="grid hide" id="gAdmin">
-    <a class="tile" href="/setup.html"><div class="ic">⚙️</div><div class="tx"><b>Setup &amp; Admins</b><span>Status checks and assigned admins (main admin only)</span></div><div class="go">›</div></a>
+  <h2>Google Sheet</h2>
+  <div class="grid">
+    <a class="tile" href="/orders.html?open=sheet"><div class="ic">📊</div><div class="tx"><b>Open Google Sheet</b><span>Orders, customers, dashboard and graphs</span></div><div class="go">›</div></a>
+  </div>
+
+  <h2>My account</h2>
+  <div class="grid">
+    <a class="tile" href="/orders.html?open=connect"><div class="ic">🔗</div><div class="tx"><b>Connect my Telegram account</b><span>Send cards and messages from your own Telegram</span></div><div class="go">›</div></a>
+  </div>
+
+  <h2 class="own hide">Administration</h2>
+  <div class="grid own hide">
+    <a class="tile" href="/orders.html?open=cfg"><div class="ic">⚡</div><div class="tx"><b>Connect Google Sheet</b><span>One click · all data (main admin only)</span></div><div class="go">›</div></a>
+    <a class="tile" href="/orders.html?open=admins"><div class="ic">👥</div><div class="tx"><b>Manage Assigned Admins</b><span>Add, edit or remove admins (main admin only)</span></div><div class="go">›</div></a>
+    <a class="tile warn" href="/orders.html?open=zero"><div class="ic">🗑</div><div class="tx"><b>Start from ZERO</b><span>Backup to the sheet, then clear all orders (main admin only)</span></div><div class="go">›</div></a>
+    <a class="tile" href="/setup.html"><div class="ic">⚙️</div><div class="tx"><b>Setup &amp; Checks</b><span>Status checks and setup key tools (main admin only)</span></div><div class="go">›</div></a>
   </div>
 </main>
 <script>
@@ -73,7 +87,7 @@ document.querySelectorAll("a.tile").forEach(a=>a.addEventListener("click",e=>{if
     const allowed=m.role==="owner"||m.role==="admin"||m.enforced===false;
     if(allowed){
       $("hello").textContent="Hello"+(m.name?", "+m.name:"")+" 👋";
-      if(m.role==="owner"||m.enforced===false){$("hAdmin").classList.remove("hide");$("gAdmin").classList.remove("hide");}
+      if(m.role==="owner"||m.enforced===false)document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});
     }else{$("gate").style.display="flex";$("gateMsg").textContent=m.error||"Access denied. This Telegram account has not been assigned by the main admin.";}
   }catch(e){$("hello").textContent="Could not check your access — the areas below will check it when opened.";}
 })();
