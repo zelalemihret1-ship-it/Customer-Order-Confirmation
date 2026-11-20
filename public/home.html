@@ -50,9 +50,12 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
 .at.danger{background:rgba(224,58,58,.12);border-color:rgba(224,58,58,.4)}
 
 /* quick actions (Connect Telegram disappears by itself once connected) */
-.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
+.quick{position:fixed;left:0;right:0;bottom:var(--amb-tabs-h,66px);z-index:55;display:grid;grid-template-columns:1fr 1fr;gap:10px;
+  max-width:760px;margin:0 auto;padding:10px 14px;background:linear-gradient(to top,rgba(242,244,248,.97) 70%,rgba(242,244,248,0))}
 .quick.solo{grid-template-columns:1fr}
-.quick .btn{min-height:52px}
+.quick .btn{min-height:52px;border:0;font-family:inherit;cursor:pointer;width:100%}
+.quick .btn[disabled]{opacity:.7}
+body.amb-tabs.hasq{padding-bottom:calc(var(--amb-tabs-h,66px) + 84px)!important}
 /* old bottom bar (kept for reference, unused) */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
 .bar .in{max-width:760px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -121,10 +124,7 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
 <main>
   <p class="hello" id="hello"></p>
 
-  <div class="quick solo" id="quick">
-    <a class="btn tg" id="btnTg" href="/orders.html?open=connect" style="display:none"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-plane"/></svg>Connect Telegram</a>
-    <a class="btn sh" id="btnSh" href="/orders.html?open=sheet"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-sheet"/></svg>Open Google Sheet</a>
-  </div>
+
 
   <div class="duo">
     <a class="big first" href="/orders.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Customer Order Confirmation</b><span class="d">Create an order card and send it</span></div></a>
@@ -148,12 +148,30 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
     </div></div>
   </div>
 </main>
+<div class="quick solo" id="quick">
+    <a class="btn tg" id="btnTg" href="/orders.html?open=connect" style="display:none"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-plane"/></svg>Connect Telegram</a>
+    <button type="button" class="btn sh" id="btnSh"><svg class="d3 xs" viewBox="0 0 64 64"><use href="#d-sheet"/></svg><span>Open Google Sheet</span></button>
+  </div>
+
 
 
 <script>
 const $=id=>document.getElementById(id);
 // every link keeps the Telegram #hash so the Mini App identity survives the page change
 document.querySelectorAll("a[href^='/']").forEach(a=>a.addEventListener("click",e=>{if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}}));
+document.body.classList.add("hasq");
+$("btnSh").addEventListener("click",async()=>{
+  const b=$("btnSh"),lab=b.querySelector("span"),old=lab.textContent;
+  if(b.disabled)return;b.disabled=true;lab.textContent="Opening…";
+  const open=u=>{try{if(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.openLink){Telegram.WebApp.openLink(u);return;}}catch(e){}window.open(u,"_blank","noopener");};
+  try{
+    const st=await (await fetch("/api/sheets/status?quick=1")).json();
+    if(st&&st.configured&&st.url&&!st.lastError)open(st.url);
+    else if(st&&st.role==="owner")AppGo("/orders.html?open=sheet"+location.hash); // owner: connect / fix it
+    else (window.AppToast||alert)("The Google Sheet is not connected yet. Please ask the main admin.");
+  }catch(e){(window.AppToast||alert)("Could not reach the server. Try again.");}
+  b.disabled=false;lab.textContent=old;
+});
 (async()=>{
   // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
   try{
