@@ -592,12 +592,11 @@ openBtn.onclick=()=>{ov.style.display="block";render();};
 #stBox button.warn{background:#fff6e5;color:#8a5a00;border-color:#e6c47a}
 #stBox h4{margin:14px 0 2px;font:700 12px system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#777}
 </style>
-<button id="stOpen" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 <div id="stOverlay" style="display:none;position:fixed;inset:0;z-index:99997;background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow:auto;flex-direction:column;justify-content:flex-end"><div id="stBox" style="background:#fff;max-width:400px;margin:auto 12px 12px auto;border-radius:20px;padding:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);font-family:system-ui,sans-serif;color:#222"></div></div>
 <script>
 // ONE settings icon holds every control button. The old floating buttons stay hidden and are triggered from here.
 (function(){
-const gear=document.getElementById("stOpen"),ov=document.getElementById("stOverlay"),box=document.getElementById("stBox");
+const gear=document.createElement("button"),ov=document.getElementById("stOverlay"),box=document.getElementById("stBox");
 let role="";
 const items=()=>{
   const L=[];
@@ -623,7 +622,7 @@ const items=()=>{
 };
 function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="flex";}
 const go=id=>{ov.style.display="none";const e=document.getElementById(id);if(e)e.click();};
-gear.onclick=show;
+gear.onclick=show;window.AMBAR_settingsShow=show;
 ov.addEventListener("click",e=>{
   const b=e.target.closest("button[data-c]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   const c=b.dataset.c;
@@ -699,5 +698,40 @@ let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.o
 })();
 </script>
 <script>document.querySelectorAll("a.back,#homeLink").forEach(function(a){a.addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}});});</script>
+<style>#openBar{display:none}body.open-mode>header,body.open-mode>main{display:none!important}body.open-mode #openBar{display:flex}body.open-mode #acBox,body.open-mode #shBox,body.open-mode #myBox{margin-top:72px!important;margin-bottom:20px!important}
+#openBar{position:fixed;left:0;right:0;top:0;z-index:99999;align-items:center;gap:12px;background:#153a2e;color:#f4efe3;padding:14px 16px;border-bottom:4px solid #b89552;font-family:Arial,Helvetica,sans-serif}
+#openBar a{color:#f4efe3;text-decoration:none;font-size:13px;font-weight:700;border:1px solid #ffffff55;border-radius:999px;padding:8px 13px;white-space:nowrap}#openBar b{font-size:15px}</style>
+<div id="openBar"><a href="/home.html" id="openBack">← Home</a><b id="openTitle">Opening…</b></div>
+<script>
+// Home → action. One action opens straight away (its own panel); closing the panel returns to Home.
+(function(){
+  const q=new URLSearchParams(location.search),o=q.get("open");
+  const goHome=()=>{try{sessionStorage.removeItem("ambarGoHome");}catch{}location.href="/home.html"+location.hash;};
+  try{const t=+sessionStorage.getItem("ambarGoHome")||0;if(t){sessionStorage.removeItem("ambarGoHome");if(!o&&!q.get("edit")&&Date.now()-t<120000){location.replace("/home.html"+location.hash);return;}}}catch{}
+  if(!o||q.get("edit"))return;
+  const TITLE={connect:"🔗 Connect my Telegram account",admins:"👥 Manage Assigned Admins",cfg:"⚡ Connect Google Sheet",sheet:"📊 Google Sheet",zero:"🗑 Start from ZERO"},MAP={connect:"myOpen",admins:"acOpen",cfg:"shCfg",sheet:"shOpen"};
+  if(!TITLE[o])return;
+  document.body.classList.add("open-mode");document.getElementById("openTitle").textContent=TITLE[o];
+  try{history.replaceState(null,"",location.pathname+location.hash);}catch{} // a reload must never re-run the action
+  document.getElementById("openBack").addEventListener("click",e=>{e.preventDefault();goHome();});
+  let tries=0;
+  if(o==="zero"){
+    const t=setInterval(()=>{
+      try{
+        window.AMBAR_settingsShow&&window.AMBAR_settingsShow();
+        const ov=document.getElementById("stOverlay"),z=document.querySelector('#stBox [data-c="zero"]');
+        ov.style.display="none";
+        if(z){clearInterval(t);try{sessionStorage.setItem("ambarGoHome",String(Date.now()));}catch{}z.click();ov.style.display="none";}
+        else if(++tries>30){clearInterval(t);document.getElementById("openTitle").textContent="Only the main admin can do this.";}
+      }catch{}
+    },200);
+    return;
+  }
+  const t=setInterval(()=>{const b=document.getElementById(MAP[o]);if(b||++tries>30){clearInterval(t);if(b)b.click();}},200);
+  const OVS=["acOverlay","shOverlay","myOverlay"],anyOpen=()=>OVS.some(id=>{const e=document.getElementById(id);return e&&e.style.display&&e.style.display!=="none";});
+  let seen=false;setInterval(()=>{if(anyOpen())seen=true;else if(seen)goHome();},400);
+})();
+</script>
+<script>try{var B=Telegram.WebApp.BackButton;B.show();B.onClick(function(){location.href="/home.html"+location.hash;});}catch(e){}</script>
 </body>
 </html>
