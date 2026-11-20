@@ -50,12 +50,14 @@ main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
 .at.danger{background:rgba(224,58,58,.12);border-color:rgba(224,58,58,.4)}
 
 /* quick actions (Connect Telegram disappears by itself once connected) */
-.quick{position:fixed;left:0;right:0;bottom:var(--amb-tabs-h,66px);z-index:55;display:grid;grid-template-columns:1fr 1fr;gap:10px;
-  max-width:760px;margin:0 auto;padding:10px 14px;background:linear-gradient(to top,rgba(242,244,248,.97) 70%,rgba(242,244,248,0))}
+.quick{position:fixed;left:0;right:0;bottom:0;z-index:61;display:grid;grid-template-columns:1fr 1fr;gap:10px;
+  max-width:760px;margin:0 auto;padding:8px 14px calc(8px + env(safe-area-inset-bottom,0px));background:#fff;border-top:1px solid var(--line)}
 .quick.solo{grid-template-columns:1fr}
 .quick .btn{min-height:52px;border:0;font-family:inherit;cursor:pointer;width:100%}
 .quick .btn[disabled]{opacity:.7}
-body.amb-tabs.hasq{padding-bottom:calc(var(--amb-tabs-h,66px) + 84px)!important}
+body.hasq #ambTabs{bottom:var(--q-h,70px);padding-bottom:6px;border-top:0;box-shadow:none}
+body.amb-tabs.hasq{padding-bottom:calc(var(--amb-tabs-h,60px) + var(--q-h,70px) + 12px)!important}
+body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 /* old bottom bar (kept for reference, unused) */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
 .bar .in{max-width:760px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -160,6 +162,7 @@ const $=id=>document.getElementById(id);
 // every link keeps the Telegram #hash so the Mini App identity survives the page change
 document.querySelectorAll("a[href^='/']").forEach(a=>a.addEventListener("click",e=>{if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}}));
 document.body.classList.add("hasq");
+(function(){const q=$("quick"),set=()=>document.documentElement.style.setProperty("--q-h",q.offsetHeight+"px");set();addEventListener("resize",set);addEventListener("load",set);new MutationObserver(set).observe(q,{attributes:true,subtree:true,attributeFilter:["style","class"]});})();
 $("btnSh").addEventListener("click",async()=>{
   const b=$("btnSh"),lab=b.querySelector("span"),old=lab.textContent;
   if(b.disabled)return;b.disabled=true;lab.textContent="Opening…";
