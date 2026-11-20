@@ -66,6 +66,22 @@ function register(app, ctx) {
     fs.copyFileSync(tmpPath, videoFile(id, n));
     if (supabase) { try { const { error } = await supabase.storage.from(BUCKET).upload(videoKey(id, n), fs.readFileSync(tmpPath), { contentType: "video/mp4", upsert: true }); if (error) throw error; } catch (e) { console.warn("Story video backup failed:", e.message); } }
   }
+  // Videos saved before the converter existed (MOV / HEVC / odd codecs) are converted ONCE, the first time they are opened.
+  const normLocks = new Map();
+  function ensureNorm(p, d) {
+    if (d.norm || d.type !== "video") return Promise.resolve();
+    const key = p.id + ":" + d.n;
+    if (normLocks.has(key)) return normLocks.get(key);
+    const job = (async () => {
+      try {
+        const nv = await storyVideo.normalize(videoFile(p.id, d.n), { maxSeconds: MAX_VIDEO_SECONDS });
+        if (nv.ok) { await saveVideo(p.id, d.n, nv.path); try { fs.unlinkSync(nv.path); } catch {} d.norm = true; d.duration = Math.min(MAX_VIDEO_SECONDS, nv.duration); d.vw = nv.w; d.vh = nv.h; await save(); }
+        else if (!nv.missing) { d.norm = true; await save(); } // unreadable: don't retry forever
+      } catch (e) { console.warn("Story video convert failed:", e.message); }
+      finally { normLocks.delete(key); }
+    })();
+    normLocks.set(key, job); return job;
+  }
   // Replace ONE day's picture (used by Edit): disk copy + backup copy, without touching the other days.
   async function savePhotoOne(id, n, buf) {
     fs.mkdirSync(DIR, { recursive: true });
@@ -342,11 +358,11 @@ function register(app, ctx) {
       if (target && target.role !== "owner") via = "account";
       if (via === "business") { if (!owner) return res.status(403).json({ ok: false, error: "Only the main admin can post through the shared Business connection." }); if (!ownerConnection()) return res.status(400).json({ ok: false, error: "No active Telegram Business connection with the \"Manage stories\" permission was found." }); }
       // every video, in any format, becomes H.264 + AAC MP4 so it plays on every phone and posts to Telegram
-      const vpost = {}, vidx = kinds.map((k, i) => k === "video" ? i : -1).filter(i => i >= 0), useClientPosters = posters.length === vidx.length;
+      const normDone = {}, vpost = {}, vidx = kinds.map((k, i) => k === "video" ? i : -1).filter(i => i >= 0), useClientPosters = posters.length === vidx.length;
       for (let q = 0; q < vidx.length; q++) {
         const i = vidx[q], cp = useClientPosters && !meta[i]?.unknown && posters[q] && posters[q].size > 0 ? posters[q] : null;
         const nv = await storyVideo.normalize(files[i].path, { maxSeconds: MAX_VIDEO_SECONDS });
-        if (nv.ok) { extraTmp.push(files[i].path); files[i].path = nv.path; extraTmp.push(nv.path); meta[i] = { type: "video", duration: nv.duration, w: nv.w, h: nv.h }; vpost[i] = cp ? fs.readFileSync(cp.path) : nv.poster; }
+        if (nv.ok) { normDone[i] = true; extraTmp.push(files[i].path); files[i].path = nv.path; extraTmp.push(nv.path); meta[i] = { type: "video", duration: nv.duration, w: nv.w, h: nv.h }; vpost[i] = cp ? fs.readFileSync(cp.path) : nv.poster; }
         else if (nv.missing) { // no converter on this server: keep the file only if the phone could already read it
           if (!cp || !(Number(meta[i]?.duration) > 0)) return res.status(400).json({ ok: false, error: `Video ${i + 1}: this format needs the server's video converter (ffmpeg), which is not installed. Please use an MP4 video.` });
           if (Number(meta[i].duration) > MAX_VIDEO_SECONDS + 0.5) return res.status(400).json({ ok: false, error: `Video ${i + 1} is longer than ${MAX_VIDEO_SECONDS} seconds. Telegram stories allow up to ${MAX_VIDEO_SECONDS} seconds.` });
@@ -364,7 +380,7 @@ function register(app, ctx) {
         startDate, postTime, status: "active", createdAt: new Date().toISOString(),
         days: Array.from({ length: DAYS }, (_, i) => {
           const d = { n: i + 1, type: kinds[i], date: addDays(startDate, i), caption: clean(dayCaps[i]), hash: hashes[i], status: "pending", attempts: 0, error: "" };
-          if (kinds[i] === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta[i]?.duration) || 1)); d.vw = Math.min(4096, Number(meta[i]?.w) || 720); d.vh = Math.min(4096, Number(meta[i]?.h) || 1280); }
+          if (kinds[i] === "video") { if (normDone[i]) d.norm = true; d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta[i]?.duration) || 1)); d.vw = Math.min(4096, Number(meta[i]?.w) || 720); d.vh = Math.min(4096, Number(meta[i]?.h) || 1280); }
           return d;
         })
       };
@@ -446,11 +462,11 @@ function register(app, ctx) {
       const hash = crypto.createHash("sha1").update(fs.readFileSync(f.path)).digest("hex");
       const same = p.days.find(x => x.n !== n && x.hash === hash);
       if (same) return res.status(400).json({ ok: false, error: `This is the same file as Day ${same.n}. Each day needs a different photo or video, so none repeats.` });
-      let posterBuf = null, videoPath = f.path;
+      let posterBuf = null, videoPath = f.path, conv = false;
       if (kind === "video") {
         const cp = po && po.size > 0 && !meta.unknown ? po : null;
         const nv = await storyVideo.normalize(f.path, { maxSeconds: MAX_VIDEO_SECONDS });
-        if (nv.ok) { videoPath = nv.path; extraTmp.push(nv.path); meta = { type: "video", duration: nv.duration, w: nv.w, h: nv.h }; posterBuf = cp ? fs.readFileSync(cp.path) : nv.poster; }
+        if (nv.ok) { conv = true; videoPath = nv.path; extraTmp.push(nv.path); meta = { type: "video", duration: nv.duration, w: nv.w, h: nv.h }; posterBuf = cp ? fs.readFileSync(cp.path) : nv.poster; }
         else if (nv.missing) {
           if (!cp || !(Number(meta.duration) > 0)) return res.status(400).json({ ok: false, error: "This video format needs the server's video converter (ffmpeg), which is not installed. Please use an MP4 video." });
           if (Number(meta.duration) > MAX_VIDEO_SECONDS + 0.5) return res.status(400).json({ ok: false, error: `The video is longer than ${MAX_VIDEO_SECONDS} seconds. Telegram stories allow up to ${MAX_VIDEO_SECONDS} seconds.` });
@@ -459,7 +475,7 @@ function register(app, ctx) {
       }
       await savePhotoOne(p.id, n, kind === "video" ? posterBuf : fs.readFileSync(f.path));
       if (kind === "video") await saveVideo(p.id, n, videoPath); else await dropVideoOne(p.id, n);
-      d.type = kind; d.hash = hash; d.v = (d.v || 0) + 1;
+      d.type = kind; d.hash = hash; d.v = (d.v || 0) + 1; if (kind === "video" && conv) d.norm = true; else delete d.norm;
       if (kind === "video") { d.duration = Math.min(MAX_VIDEO_SECONDS, Math.max(1, Number(meta.duration) || 1)); d.vw = Math.min(4096, Number(meta.w) || 720); d.vh = Math.min(4096, Number(meta.h) || 1280); }
       else { delete d.duration; delete d.vw; delete d.vh; }
       d.attempts = 0; delete d.nextTry;
@@ -510,6 +526,7 @@ function register(app, ctx) {
       let file = videoFile(p.id, n);
       if (!fs.existsSync(file)) { const buf = await getVideo(p.id, n); if (!buf) return res.status(404).end(); }
       if (!fs.existsSync(file)) return res.status(404).end();
+      await ensureNorm(p, d);
       const size = fs.statSync(file).size, range = String(req.headers.range || "");
       res.set("Accept-Ranges", "bytes").type("video/mp4");
       const m = range.match(/^bytes=(\d*)-(\d*)$/);
