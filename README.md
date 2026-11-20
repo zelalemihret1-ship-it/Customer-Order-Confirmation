@@ -1,3 +1,9 @@
+## v107 — Speed-up · Open Google Sheet fixed at the bottom
+- **Open Google Sheet** is now a button fixed at the **bottom** of Home (just above the tab bar) and opens the sheet straight away (no extra page).
+- Faster server: gzip on pages/JSON, pages revalidate (304) instead of re-downloading, order list cached 5 s (refreshed after every save), Google "script version" check cached 5 min and skipped for the sheet button, customer-status sheet sync runs in the background.
+- Faster pages: shorter page fade + splash, duplicate Telegram script removed, repeated `/api/me` calls on the order page merged into one.
+- Files changed: `server.js`, `public/home.html`, `public/index.html`, `public/app.js`, `public/app.css`. Redeploy the whole folder.
+
 ## v106 — More main admins · Story full-screen preview · main admin manages other admins' stories · real-app feel
 - **Connect Telegram disappears once connected.** On Home the *Connect Telegram* button is shown only until your own Telegram account is connected; after that it is gone (only *Open Google Sheet* stays). It comes back by itself if you ever disconnect.
 - **Feels like a real app** (new shared files `public/app.css` + `public/app.js`, loaded by every page): bottom **tab bar** (Home · Orders · Customers · Stories), short **splash** when the app opens, smooth page transitions, a light **haptic tick** on every tap, no text-selection / rubber-band scrolling, swipe-down-to-close switched off, Telegram's header/background colours matched to the app, Telegram's back arrow closes the open panel first and otherwise goes Home, "No connection" notice when offline.
