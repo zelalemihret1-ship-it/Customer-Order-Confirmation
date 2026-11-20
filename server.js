@@ -780,6 +780,7 @@ app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/stories.html", sendPage("stories.html", "<!doctype html><meta charset=utf-8><p>public/stories.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charset=utf-8><p>public/greeting.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/rating.html", sendPage("rating.html", "<!doctype html><meta charset=utf-8><p>public/rating.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/customers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -3413,6 +3414,12 @@ const greetingModule = require("./greetings").register(app, {
   requireAccess, accountFor, resolveUser: resolveUserEntity, getCallers: () => callersDb, businessConnections, isUsable,
   ownerIds: OWNER_IDS, telegram, resolveChatId, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR
 });
+// ── Customer Rating (separate module + page: /rating.html; public customer page: /rate/<token>) ──
+const ratingModule = require("./ratings").register(app, {
+  requireAccess, getOrders: () => orders, loadOrders, saveOrderRecord, telegram, admins, accountFor, resolveUser: resolveUserEntity,
+  businessConnections, isUsable, ownerIds: OWNER_IDS, notifyAdminsText, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR,
+  publicBaseUrl: PUBLIC_BASE_URL, noZoomHead: NOZOOM_HEAD, getAppAdmins: () => appAdmins
+});
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendPage("index.html", PAGE_INDEX));
 
@@ -3432,6 +3439,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadCallers(); // callers data (Customer IDs 0001, 0002 …)
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await greetingModule.load(); // first-greeting log
+    await ratingModule.load(); ratingModule.start(); // customer rating links (sent after delivery)
     await storyPlanner.start(); // weekly story scheduler (one photo per day, never repeated)
     await tgApi.configureWebhook();
     if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); return refreshCustomerStatuses().then(() => pushAllCallers()); }).then(c => { if (c && !c.ok) console.warn("Callers tab:", c.error); }, e => console.warn("Google Sheet not ready:", e.message));
