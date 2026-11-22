@@ -1,7 +1,10 @@
 # v118 — Reports (Workflow · Stock · Material) from a NEW Google Sheet · View-only admins
 **Reports (main admins only)**
 - New **Reports** tile on Home (inside the main-admin area). Tabs **Workflow / Stock / Material** show the sheet exactly as it looks (colours, merged cells). **📄 Make PDF** builds an A4-landscape PDF (header, page numbers, date) in the phone; then **⬇ Download**, **Open**, or **✈ Send to my Telegram** (the bot sends the PDF to your own chat — the reliable way inside Telegram).
-- Data comes LIVE from a **second Google Sheet**. The old order sheet and `google-sheet-script.gs` are unchanged and keep working. The new sheet uses its own read-only script: **`reports-sheet-script.gs`** (never writes to the sheet).
+- **The report you see in the app IS the PDF page** (same header, colours, page numbers) with Fit / − / + zoom. **✏️ Edit** mode: tap a cell to change it, **➕ Insert row below** or **🗑 Delete row** — saved straight into the sheet (formula cells are locked; every edit is written to the Activity Log). Main admins only.
+- If a report is empty the page says why and offers **🔍 Check connection** (link → script → tabs → rows read per tab) and an inline tab picker.
+- After updating, paste the new `reports-sheet-script.gs` (script version `reports-3`) in the NEW sheet and deploy a New version (needed for editing).
+- Data comes LIVE from a **second Google Sheet**. The old order sheet and `google-sheet-script.gs` are unchanged and keep working. The new sheet uses its own script: **`reports-sheet-script.gs`** (reads, and saves your in-app edits).
 - First time: Home → Reports → follow the steps on screen (copy script → paste in the NEW sheet's Apps Script → deploy as Web app → paste the `/exec` link → Connect). The link is saved permanently (file + Supabase) like the order sheet.
 - **Render:** set ONLY `REPORTS_SCRIPT_URL` = the `/exec` link and redeploy. No key needed (`REPORTS_SCRIPT_KEY` / `REPORT_KEY` are optional). The tab list and Workflow/Stock/Material tabs are detected automatically.
 - ⚙ Settings (on the Reports page): choose which sheet tab(s) belong to Workflow / Stock / Material (guessed from the tab names), reload the tab list, open the sheet, disconnect. A report can use several tabs (e.g. Stock = Shoe Shelf + Others + Gadgets); each tab starts a new PDF page.
