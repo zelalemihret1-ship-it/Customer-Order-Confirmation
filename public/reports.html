@@ -1,0 +1,347 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Ambar Furniture — Reports</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+</script>
+<link rel="stylesheet" href="/app.css?v=118">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3efe6;color:#18382e}
+header{background:#153a2e;color:#f4efe3;padding:18px 16px;text-align:center;border-bottom:4px solid #b89552;position:relative}
+header h1{margin:0;font-size:22px;letter-spacing:.5px}
+header .sub{opacity:.82;margin-top:5px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase}
+header a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#f4efe3;text-decoration:none;font-size:12px;font-weight:700;border:1px solid #ffffff55;border-radius:999px;padding:7px 11px}
+main{max-width:1100px;margin:auto;padding:14px}
+.seg{display:flex;gap:8px;margin-bottom:12px}
+.seg button{flex:1;border-radius:12px;padding:13px 6px;font-weight:800;font-size:14px;background:#fff;color:#153a2e;border:1.5px solid #ddd4c4;cursor:pointer}
+.seg button.on{background:#153a2e;color:#fff;border-color:#153a2e}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.bar button{flex:1;min-width:120px;border:0;border-radius:12px;padding:12px 10px;font-weight:800;font-size:14px;color:#fff;background:#153a2e;cursor:pointer}
+.bar button.pdf{background:#b3261e}.bar button.tg{background:#229ed9}.bar button.grey{background:#6d675d}
+.bar button:disabled{opacity:.5}
+.card{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
+.card h2{margin:0 0 10px;color:#153a2e;font-size:17px}
+.card ol{padding-left:20px;line-height:1.65;font-size:14px;margin:8px 0}
+label{font-weight:700;font-size:13px;display:block;margin-top:8px}
+input[type=text],input[type=password],input:not([type]){width:100%;padding:11px;border:1px solid #d6d1c7;border-radius:10px;margin-top:5px;font-size:15px;font-family:inherit;background:#fff;color:#18382e}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:13px;font-weight:800;font-size:15px;color:#fff;background:#153a2e;margin-top:10px;cursor:pointer}
+.btn.grey{background:#6d675d}.btn.red{background:#b3261e}.btn.blue{background:#229ed9}
+.hint{color:#6d675d;font-size:12px;line-height:1.5}
+.msg{border-radius:12px;padding:11px 13px;font-size:13px;font-weight:700;margin:10px 0;white-space:pre-wrap;display:none}
+.msg.ok{display:block;background:#e8f6ec;border:1px solid #9bd3ad;color:#176b3a}
+.msg.bad{display:block;background:#fdeceb;border:1px solid #efb1ac;color:#9a1d15}
+.msg.info{display:block;background:#fff6e0;border:1px solid #e9c46a;color:#7a5600}
+.tabname{font-weight:800;font-size:13px;color:#153a2e;margin:12px 2px 6px;letter-spacing:.3px}
+.sheet{overflow:auto;max-height:68vh;border:1px solid #cfc8b8;border-radius:10px;background:#fff;-webkit-overflow-scrolling:touch}
+.sheet table{border-collapse:collapse;table-layout:fixed}
+.sheet td{border:1px solid #d4d4d4;padding:0 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-family:Arial,"Noto Sans Ethiopic",Nyala,sans-serif;line-height:1.1}
+.meta{font-size:12px;color:#6d675d;margin:2px 2px 10px}
+.empty{text-align:center;padding:26px 10px;color:#6d675d}
+.ov{position:fixed;inset:0;background:#0009;z-index:200;display:none;align-items:flex-end;justify-content:center}
+.ov .box{background:#fff;width:100%;max-width:640px;max-height:88vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom,0px))}
+.ov.on{display:flex}
+.chk{display:flex;align-items:center;gap:9px;padding:8px 4px;font-size:14px;font-weight:600}
+.chk input{width:auto;margin:0}
+.chip{display:inline-block;background:#153a2e;color:#ffd877;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800}
+.busy{position:fixed;inset:0;background:#fffc;z-index:300;display:none;align-items:center;justify-content:center;font-weight:800;color:#153a2e;font-size:16px}
+.busy.on{display:flex}
+</style>
+</head>
+<body>
+<header><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><div class="sub">Workflow · Stock · Material</div></header>
+<main>
+  <div id="gate" class="card" style="display:none"><h2>🔒 Main admins only</h2><p id="gateMsg">Reports can only be opened by a main admin.</p></div>
+
+  <!-- not connected yet -->
+  <div id="setup" class="card" style="display:none">
+    <h2>📊 Connect the reports Google Sheet <span class="chip">once</span></h2>
+    <p class="hint">This is the NEW sheet with the Workflow, Stock and Material reports. Your old order sheet is not touched and keeps working as before. The script below only <b>reads</b> — it never changes the sheet.</p>
+    <ol>
+      <li>Open the <b>new reports Google Sheet</b> → <b>Extensions → Apps Script</b>.</li>
+      <li>Tap <b>Copy script</b> here, paste it in the Apps Script editor (replace everything), and Save. (Nothing to change.)</li>
+      <li><b>Deploy → New deployment → Web app</b> → Execute as <b>Me</b> → Who has access <b>Anyone</b> → Deploy → allow access.</li>
+      <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>) and paste it below, <b>or</b> put it in Render as <code>REPORTS_SCRIPT_URL</code>.</li>
+    </ol>
+    <button class="btn grey" id="copyScript" type="button">📋 Copy script</button>
+    <label>Web app URL <input id="sUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+    <button class="btn" id="sConnect" type="button">🔌 Connect</button>
+    <div id="sMsg" class="msg"></div>
+  </div>
+
+  <!-- connected -->
+  <div id="view" style="display:none">
+    <div class="seg" id="seg"></div>
+    <div class="bar">
+      <button class="pdf" id="bPdf" type="button">📄 Make PDF</button>
+      <button id="bRef" type="button">🔄 Refresh</button>
+      <button class="grey" id="bCfg" type="button">⚙ Settings</button>
+    </div>
+    <div id="vMsg" class="msg"></div>
+    <div id="meta" class="meta"></div>
+    <div id="out"></div>
+  </div>
+</main>
+
+<!-- PDF ready -->
+<div class="ov" id="pdfOv"><div class="box">
+  <h2 style="margin:0 0 6px;color:#153a2e">📄 PDF is ready</h2>
+  <div class="hint" id="pdfInfo"></div>
+  <a class="btn" id="pdfDl" href="#" download style="text-decoration:none;text-align:center">⬇ Download PDF</a>
+  <button class="btn blue" id="pdfTg" type="button">✈ Send to my Telegram</button>
+  <button class="btn grey" id="pdfOpen" type="button">Open PDF</button>
+  <div id="pdfMsg" class="msg"></div>
+  <button class="btn grey" id="pdfClose" type="button" style="background:#fff;color:#153a2e;border:1.5px solid #ddd4c4">Close</button>
+</div></div>
+
+<!-- settings -->
+<div class="ov" id="cfgOv"><div class="box" id="cfgBox"></div></div>
+<div class="busy" id="busy"><span id="busyTx">Please wait…</span></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const TYPES=[["wf","Workflow"],["st","Stock"],["mt","Material"]];
+let ST=null,cur="wf",DATA=null,pdfBlob=null,pdfUrl="",pdfName="";
+try{const s=localStorage.getItem("repTab");if(TYPES.some(t=>t[0]===s))cur=s;}catch{}
+
+async function api(path,body,raw){
+  const o=body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)};
+  const r=await fetch(path,o);let d;try{d=await r.json();}catch{d={ok:false,error:"Server answered with an error ("+r.status+")."};}
+  if(r.status===401||r.status===403)d.ok=false;return d;
+}
+const say=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"info");e.textContent=t;e.style.display=t?"block":"none";if(!t)e.className="msg";};
+const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
+
+// ── start ──────────────────────────────────────────────────────────────────────────
+(async()=>{
+  let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
+  if(me.role!=="owner"){
+    $("gate").style.display="block";
+    $("gateMsg").textContent=me.viewer?"You are a view-only admin. Reports are only for main admins.":(me.role==="admin"?"Reports are only for main admins.":(me.error||"Access denied."));
+    return;
+  }
+  await refreshStatus();
+})();
+async function refreshStatus(refresh){
+  const d=await api("/api/reports/status"+(refresh?"?refresh=1":""));
+  if(!d.ok&&!d.configured){say("vMsg",d.error||"Could not read the reports settings.","bad");}
+  ST=d;
+  if(!d.configured){$("setup").style.display="block";$("view").style.display="none";return;}
+  $("setup").style.display="none";$("view").style.display="block";
+  drawSeg();await loadReport(false);
+}
+function drawSeg(){
+  $("seg").innerHTML=TYPES.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===cur?"on":"")+'">'+t[1]+'</button>').join("");
+}
+$("seg").addEventListener("click",e=>{const b=e.target.closest("button[data-t]");if(!b)return;cur=b.dataset.t;try{localStorage.setItem("repTab",cur);}catch{}drawSeg();loadReport(false);});
+$("bRef").onclick=()=>loadReport(true);
+$("bCfg").onclick=openCfg;
+
+// ── connect ────────────────────────────────────────────────────────────────────────
+$("copyScript").onclick=async()=>{
+  try{
+    const t=await (await fetch("/api/reports/script")).text();
+    if(!/doPost/.test(t))throw new Error("script missing");
+    try{await navigator.clipboard.writeText(t);}catch{const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();}
+    say("sMsg","✅ Script copied. Paste it in Apps Script.","ok");
+  }catch{say("sMsg","Could not copy. Open /api/reports/script in a browser (main admin) and copy the text.","bad");}
+};
+$("sConnect").onclick=async()=>{
+  const u=$("sUrl").value.trim();
+  if(!u){say("sMsg","Paste the Web app URL (ends with /exec).","bad");return;}
+  busy("Connecting…");const d=await api("/api/reports/connect",{scriptUrl:u});busy("");
+  if(!d.ok){say("sMsg",d.error||"Could not connect.","bad");return;}
+  say("sMsg",d.message,"ok");ST=d;
+  setTimeout(()=>refreshStatus(false),500);
+};
+
+// ── load + show a report ───────────────────────────────────────────────────────────
+async function loadReport(fresh){
+  say("vMsg","");$("meta").textContent="";$("out").innerHTML='<div class="empty">Loading…</div>';DATA=null;
+  const d=await api("/api/reports/data?type="+cur+(fresh?"&fresh=1":""));
+  if(!d.ok){$("out").innerHTML='<div class="empty">'+esc(d.error||"Could not load the report.")+(d.code==="NO_TAB"?'<br><br><button class="btn" onclick="openCfg()">⚙ Choose tab(s)</button>':"")+'</div>';return;}
+  DATA=d;
+  $("meta").textContent=d.title+" · "+(d.sheetName||"")+" · updated "+new Date(d.fetchedAt).toLocaleString();
+  $("out").innerHTML=d.tabs.map(t=>'<div class="tabname">'+esc(t.name)+'</div><div class="sheet">'+tableHtml(t)+'</div>').join("");
+}
+function mergeMaps(t){
+  const origin=new Map(),covered=new Set();
+  for(const [r,c,rs,cs] of t.merges||[]){origin.set(r+","+c,[rs,cs]);for(let i=0;i<rs;i++)for(let j=0;j<cs;j++)if(i||j)covered.add((r+i)+","+(c+j));}
+  return {origin,covered};
+}
+function alignOf(cell){const a=cell[5];if(a==="left"||a==="center"||a==="right")return a;return /^[-+]?[\d.,:\/% ]+$/.test(cell[0]||"")&&cell[0]!==""?"right":"left";}
+function tableHtml(t){
+  const {origin,covered}=mergeMaps(t);
+  let h='<table><colgroup>'+t.colW.map(w=>'<col style="width:'+Math.max(14,w)+'px">').join("")+'</colgroup>';
+  t.rows.forEach((row,r)=>{
+    h+='<tr style="height:'+Math.max(14,t.rowH[r]||21)+'px">';
+    row.forEach((c,ci)=>{
+      if(covered.has(r+","+ci))return;
+      const m=origin.get(r+","+ci);
+      const st=[];if(c[1])st.push("background:"+c[1]);if(c[2])st.push("color:"+c[2]);if(c[3])st.push("font-weight:800");
+      st.push("font-size:"+Math.max(9,Math.min(26,Math.round((c[4]||10)*1.25)))+"px","text-align:"+alignOf(c));
+      h+='<td'+(m&&m[0]>1?' rowspan="'+m[0]+'"':'')+(m&&m[1]>1?' colspan="'+m[1]+'"':'')+' style="'+st.join(";")+'">'+esc(c[0])+'</td>';
+    });
+    h+='</tr>';
+  });
+  return h+'</table>';
+}
+
+// ── PDF (built in the phone: every tab → A4 landscape pages that look like the sheet) ──
+const PW=2339,PH=1654,MX=60,TOP=150,BOT=70; // A4 landscape at 200 dpi
+function planPages(t){
+  const total=t.colW.reduce((a,b)=>a+b,0)||1,scale=Math.min((PW-2*MX)/total,2.4);
+  const rowsH=t.rowH.map(h=>Math.max(14,h||21)*scale),avail=PH-TOP-BOT-40;
+  const pages=[];let cur=[],y=0;
+  rowsH.forEach((h,i)=>{if(cur.length&&y+h>avail){pages.push(cur);cur=[];y=0;}cur.push(i);y+=h;});
+  if(cur.length)pages.push(cur);
+  if(!pages.length)pages.push([]);
+  return {scale,pages,rowsH,total};
+}
+function fitText(ctx,txt,maxW,px,bold){
+  const fam='Arial,"Noto Sans Ethiopic",Nyala,"Abyssinica SIL",sans-serif';
+  let s=px;
+  for(let i=0;i<8;i++){ctx.font=(bold?"700 ":"400 ")+s+"px "+fam;if(ctx.measureText(txt).width<=maxW||s<=px*.62)break;s*=.92;}
+  if(ctx.measureText(txt).width>maxW){let a=txt;while(a.length>1&&ctx.measureText(a+"…").width>maxW)a=a.slice(0,-1);return a+"…";}
+  return txt;
+}
+function drawPage(ctx,title,tabName,t,plan,rowsIdx,pageNo,pageTotal,sheetName,stamp){
+  ctx.fillStyle="#fff";ctx.fillRect(0,0,PW,PH);
+  ctx.fillStyle="#153a2e";ctx.fillRect(0,0,PW,92);ctx.fillStyle="#b89552";ctx.fillRect(0,92,PW,8);
+  ctx.textBaseline="middle";ctx.fillStyle="#f4efe3";ctx.font='700 40px Arial,sans-serif';ctx.textAlign="left";ctx.fillText("AMBAR FURNITURE",MX,46);
+  ctx.font='400 28px Arial,sans-serif';ctx.textAlign="right";ctx.fillText(stamp,PW-MX,46);
+  ctx.fillStyle="#153a2e";ctx.textAlign="left";ctx.font='800 44px Arial,sans-serif';ctx.fillText(title+(tabName&&tabName!==title?"  ·  "+tabName:""),MX,TOP-26);
+  const {origin,covered}=mergeMaps(t),sc=plan.scale;
+  const xs=[0];t.colW.forEach(w=>xs.push(xs[xs.length-1]+w*sc));
+  const onPage=new Set(rowsIdx);let y=TOP+10;
+  const ys=new Map();rowsIdx.forEach(r=>{ys.set(r,y);y+=plan.rowsH[r];});
+  const endY=y;
+  ctx.lineWidth=1;
+  for(const r of rowsIdx){
+    const row=t.rows[r],y0=ys.get(r),h=plan.rowsH[r];
+    for(let c=0;c<row.length;c++){
+      let cell=row[c],x0=MX+xs[c],w=t.colW[c]*sc,hh=h,drawText=true;
+      const key=r+","+c;
+      if(covered.has(key)){
+        // part of a merged block: find its origin; the origin draws it, unless the origin is on another page
+        let o=null;for(const [k,v] of origin){const [or,oc]=k.split(",").map(Number);if(or<=r&&r<or+v[0]&&oc<=c&&c<oc+v[1]){o={or,oc,v};break;}}
+        if(o&&onPage.has(o.or))continue;
+        if(o){cell=t.rows[o.or][o.oc];drawText=false;}
+      }
+      const m=origin.get(key);
+      if(m){ // merged origin: width over its columns, height over its rows that are on this page
+        w=0;for(let j=0;j<m[1];j++)w+=(t.colW[c+j]||0)*sc;
+        hh=0;for(let i=0;i<m[0];i++)if(onPage.has(r+i))hh+=plan.rowsH[r+i];
+      }
+      if(cell[1]){ctx.fillStyle=cell[1];ctx.fillRect(x0,y0,w,hh);}
+      ctx.strokeStyle="#bdbdbd";ctx.strokeRect(x0+.5,y0+.5,w,hh);
+      const v=String(cell[0]==null?"":cell[0]);
+      if(drawText&&v){
+        const px=Math.max(12,(cell[4]||10)*(96/72)*sc*.95),pad=8*Math.min(sc,1.6)+2;
+        const txt=fitText(ctx,v.replace(/\s*\n\s*/g," "),w-2*pad,Math.min(px,hh*.78),!!cell[3]);
+        ctx.fillStyle=cell[2]||"#000";ctx.textBaseline="middle";
+        const al=alignOf(cell);ctx.textAlign=al;
+        const tx=al==="left"?x0+pad:al==="right"?x0+w-pad:x0+w/2;
+        ctx.save();ctx.beginPath();ctx.rect(x0,y0,w,hh);ctx.clip();ctx.fillText(txt,tx,y0+hh/2+1);ctx.restore();
+      }
+    }
+  }
+  ctx.fillStyle="#6d675d";ctx.font='400 24px Arial,sans-serif';ctx.textBaseline="middle";
+  ctx.textAlign="left";ctx.fillText((sheetName||"")+"  ·  "+title,MX,PH-34);
+  ctx.textAlign="right";ctx.fillText("Page "+pageNo+" / "+pageTotal,PW-MX,PH-34);
+  return endY;
+}
+async function jpegBytes(cv){const b=await new Promise(r=>cv.toBlob(r,"image/jpeg",.92));return new Uint8Array(await b.arrayBuffer());}
+function buildPdf(imgs){
+  const enc=new TextEncoder(),chunks=[],offs=[];let len=0;
+  const push=x=>{const u=typeof x==="string"?enc.encode(x):x;chunks.push(u);len+=u.length;};
+  const obj=(id,fn)=>{offs[id]=len;push(id+" 0 obj\n");fn();push("\nendobj\n");};
+  const n=imgs.length;
+  push("%PDF-1.4\n%âãÏÓ\n");
+  obj(1,()=>push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>push("<< /Type /Pages /Kids ["+imgs.map((_,i)=>(3+i*3)+" 0 R").join(" ")+"] /Count "+n+" >>"));
+  imgs.forEach((im,i)=>{
+    const p=3+i*3,c=p+1,x=p+2,cs="q 842 0 0 595 0 0 cm /Im0 Do Q";
+    obj(p,()=>push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /XObject << /Im0 "+x+" 0 R >> >> /Contents "+c+" 0 R >>"));
+    obj(c,()=>push("<< /Length "+cs.length+" >>\nstream\n"+cs+"\nendstream"));
+    obj(x,()=>{push("<< /Type /XObject /Subtype /Image /Width "+im.w+" /Height "+im.h+" /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "+im.u8.length+" >>\nstream\n");push(im.u8);push("\nendstream");});
+  });
+  const total=3+n*3,xref=len;
+  push("xref\n0 "+total+"\n0000000000 65535 f \n");
+  for(let id=1;id<total;id++)push(String(offs[id]).padStart(10,"0")+" 00000 n \n");
+  push("trailer\n<< /Size "+total+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF");
+  return new Blob(chunks,{type:"application/pdf"});
+}
+$("bPdf").onclick=async()=>{
+  if(!DATA){say("vMsg","Nothing to export yet.","bad");return;}
+  busy("Making the PDF…");
+  try{
+    const stamp=new Date().toLocaleString([], {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const cv=document.createElement("canvas");cv.width=PW;cv.height=PH;const ctx=cv.getContext("2d");
+    const plans=DATA.tabs.map(t=>planPages(t)),totalPages=plans.reduce((a,p)=>a+p.pages.length,0);
+    const imgs=[];let no=0;
+    for(let ti=0;ti<DATA.tabs.length;ti++){
+      const t=DATA.tabs[ti],plan=plans[ti];
+      for(const rows of plan.pages){
+        no++;busy("Making the PDF… page "+no+" / "+totalPages);
+        drawPage(ctx,DATA.title,t.name,t,plan,rows,no,totalPages,DATA.sheetName,stamp);
+        imgs.push({u8:await jpegBytes(cv),w:PW,h:PH});
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+    pdfBlob=buildPdf(imgs);
+    pdfName="AMBAR-"+DATA.title.replace(/\s+/g,"-")+"-"+new Date().toISOString().slice(0,10)+".pdf";
+    if(pdfUrl)URL.revokeObjectURL(pdfUrl);pdfUrl=URL.createObjectURL(pdfBlob);
+    $("pdfDl").href=pdfUrl;$("pdfDl").setAttribute("download",pdfName);
+    $("pdfInfo").textContent=pdfName+" · "+totalPages+" page"+(totalPages>1?"s":"")+" · "+(pdfBlob.size/1048576).toFixed(1)+" MB";
+    say("pdfMsg","");$("pdfOv").classList.add("on");
+  }catch(e){say("vMsg","Could not make the PDF: "+(e&&e.message||e),"bad");}
+  busy("");
+};
+$("pdfClose").onclick=()=>$("pdfOv").classList.remove("on");
+$("pdfOv").addEventListener("click",e=>{if(e.target===$("pdfOv"))$("pdfOv").classList.remove("on");});
+$("pdfOpen").onclick=()=>{try{window.open(pdfUrl,"_blank");}catch{}};
+$("pdfTg").onclick=async()=>{
+  if(!pdfBlob)return;const b=$("pdfTg");b.disabled=true;say("pdfMsg","Sending…","info");
+  try{
+    const r=await fetch("/api/reports/send-pdf?name="+encodeURIComponent(pdfName),{method:"POST",headers:{"Content-Type":"application/pdf"},body:pdfBlob});
+    const d=await r.json();say("pdfMsg",d.message||d.error||"Done.",d.ok?"ok":"bad");
+  }catch(e){say("pdfMsg","Could not send: "+e.message,"bad");}
+  b.disabled=false;
+};
+
+// ── settings ───────────────────────────────────────────────────────────────────────
+function openCfg(){
+  if(!ST||!ST.configured)return;
+  const all=ST.allTabs||[];
+  const sec=TYPES.map(([k,label])=>'<div style="margin-top:10px"><b>'+label+'</b> <span class="hint">(tick the tab(s) of this report)</span>'+(all.map(n=>'<label class="chk"><input type="checkbox" data-k="'+k+'" value="'+esc(n)+'"'+((ST.tabs[k]||[]).includes(n)?" checked":"")+'> '+esc(n)+'</label>').join("")||'<div class="hint">No tabs found. Press “Reload tab list”.</div>')+'</div>').join("");
+  $("cfgBox").innerHTML='<h2 style="margin:0 0 4px;color:#153a2e">⚙ Reports settings</h2><div class="hint">Connected sheet: <b>'+esc(ST.sheetName||"")+'</b></div>'+sec
+    +'<button class="btn" id="cfgSave" type="button">Save</button><button class="btn grey" id="cfgReload" type="button">🔄 Reload tab list</button>'
+    +(ST.sheetUrl?'<button class="btn blue" id="cfgOpen" type="button">Open the reports sheet ↗</button>':'')
+    +'<button class="btn red" id="cfgOff" type="button">Disconnect reports sheet</button><div id="cfgMsg" class="msg"></div><button class="btn grey" id="cfgClose" type="button" style="background:#fff;color:#153a2e;border:1.5px solid #ddd4c4">Close</button>';
+  $("cfgOv").classList.add("on");
+}
+$("cfgOv").addEventListener("click",async e=>{
+  if(e.target===$("cfgOv")){$("cfgOv").classList.remove("on");return;}
+  const id=e.target.id;
+  if(id==="cfgClose")$("cfgOv").classList.remove("on");
+  if(id==="cfgSave"){
+    const body={};TYPES.forEach(([k])=>{body[k]=[...document.querySelectorAll('#cfgBox input[data-k="'+k+'"]:checked')].map(i=>i.value);});
+    const d=await api("/api/reports/map",body);say("cfgMsg",d.message||d.error,d.ok?"ok":"bad");
+    if(d.ok){ST=d;loadReport(true);}
+  }
+  if(id==="cfgReload"){say("cfgMsg","Reading the sheet…","info");const d=await api("/api/reports/status?refresh=1");if(d.error){say("cfgMsg",d.error,"bad");return;}ST=d;openCfg();say("cfgMsg","✅ "+(d.allTabs||[]).length+" tab(s) found.","ok");}
+  if(id==="cfgOpen"){try{Telegram.WebApp.openLink(ST.sheetUrl);}catch{window.open(ST.sheetUrl,"_blank");}}
+  if(id==="cfgOff"){if(!confirm("Disconnect the reports sheet? (The order Google Sheet is not affected.)"))return;const d=await api("/api/reports/disconnect",{});$("cfgOv").classList.remove("on");ST=d;refreshStatus(false);}
+});
+</script>
+<script src="/app.js?v=118"></script>
+</body>
+</html>
