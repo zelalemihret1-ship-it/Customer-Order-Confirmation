@@ -8,7 +8,8 @@
 //  • Material: add a new material, ➕ add more, ✂️ cut (use) — every movement is logged with Ethiopian date + time.
 //  • Backup: one tab per section per ETHIOPIAN MONTH (Workflow · Stock · Material); a new month creates its tabs by itself. reports-sheet-script.gs (script version reports-5) is pasted in the reports Google Sheet; the /exec link is saved
 //    (file + Supabase) or set in Render as REPORTS_SCRIPT_URL. The old order sheet is never touched.
-// Access: owner (main admin) only. Assigned admins get 403 on every endpoint; view-only admins are refused on writes by requireAccess.
+// Access: main admins, plus any assigned admin the main admin gave the "Reports" section (Manage Admins). View-only admins are refused on writes by requireAccess.
+// Connecting the backup sheet, disconnecting it and "Start from ZERO" stay main-admin only.
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -19,7 +20,7 @@ const num = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "")
 const uid = () => crypto.randomBytes(6).toString("hex");
 
 function register(app, ctx) {
-  const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
+  const { requireAccess, hasPerm, supabase, baseDir, tgApi, helpers, log } = ctx;
   const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
   const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
@@ -61,7 +62,8 @@ function register(app, ctx) {
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
     if (cfg.scriptUrl) scheduleBackup(8000); // a restart / redeploy refreshes the backup once
     // New Ethiopian month → the backup runs by itself so the next month's Workflow / Stock / Material tabs appear (checked every 20 minutes)
-    const t = setInterval(() => { if (cfg.scriptUrl && cfg.backup.month !== nowEth().d.slice(0, 7)) backupNow().catch(() => {}); }, 20 * 60 * 1000);
+    // New Ethiopian day → S.TODAY turns into SOLD in the sheet (checked every 5 minutes); a new month also creates its tabs.
+    const t = setInterval(() => { if (cfg.scriptUrl && cfg.backup.d !== nowEth().d) backupNow().catch(() => {}); }, 5 * 60 * 1000);
     if (t.unref) t.unref();
   }
 
@@ -138,7 +140,8 @@ function register(app, ctx) {
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
   router.use(requireAccess);
-  router.use((req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Reports are for main admins only." }));
+  router.use((req, res, next) => hasPerm(req.actor, "reports") ? next() : res.status(403).json({ ok: false, error: "Reports are only for admins the main admin gave the Reports section." }));
+  const ownerOnly = (req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Only a main admin can do this." });
   router.use(express.json({ limit: "200kb" }));
 
   router.get("/state", (req, res) => res.json({ ok: true, ...view() }));
@@ -260,8 +263,30 @@ function register(app, ctx) {
     done(res, `🗑 ${matName(m)} deleted. Its movements stay in the log.`);
   });
 
+  // START FROM ZERO: the current data is first saved in the Google Sheet (the month tabs are kept as "Archive …" tabs),
+  // then every product, material and movement is cleared. If the sheet backup fails, NOTHING is deleted.
+  router.post("/reset", ownerOnly, async (req, res) => {
+    try {
+      if (req.body?.confirm !== "ZERO") return fail(res, "Not confirmed. Type ZERO to confirm.");
+      const had = db.products.length + db.materials.length + db.log.length;
+      let note = " (The backup sheet is not connected, so nothing was saved in Google Sheets.)";
+      if (cfg.scriptUrl && had) {
+        clearTimeout(timer);
+        const b = await backupNow();
+        if (!b.ok && !b.queued) return fail(res, "The Google Sheet backup failed, so nothing was deleted: " + b.error);
+        const a = await callScript({ action: "archive", data: { now: nowEth() } });
+        note = ` The old report is kept in the Google Sheet (${a.archived || 0} tab${a.archived === 1 ? "" : "s"} saved as “Archive …”).`;
+      }
+      db.products = []; db.materials = []; db.log = [];
+      audit("Report: START FROM ZERO", `${had} record(s) cleared`, req.actor);
+      persist();
+      if (cfg.scriptUrl) scheduleBackup(1500);
+      res.json({ ok: true, message: "✅ Reports started from 0." + note, ...view() });
+    } catch (e) { fail(res, "Could not start from zero: " + e.message + " — nothing was deleted."); }
+  });
+
   // BACKUP sheet
-  router.post("/backup/connect", async (req, res) => {
+  router.post("/backup/connect", ownerOnly, async (req, res) => {
     try {
       const url = scriptUrl(req.body?.scriptUrl), key = String(req.body?.scriptKey || "").trim();
       const p = await callScript({ action: "ping" }, { url, key });
@@ -275,7 +300,7 @@ function register(app, ctx) {
     const r = await backupNow();
     res.json({ ...(r.ok ? { ok: true, message: "✅ Backup saved in the Google Sheet." } : { ok: false, error: r.error }), ...view() });
   });
-  router.post("/backup/disconnect", async (req, res) => {
+  router.post("/backup/disconnect", ownerOnly, async (req, res) => {
     cfg = { ...cfg, scriptUrl: "", scriptKey: "", sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
     await saveCfg();
     res.json({ ok: true, message: "Backup sheet disconnected. The data stays in the app.", ...view() });
