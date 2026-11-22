@@ -380,7 +380,41 @@ document.addEventListener("submit",async e=>{
 </script>
 <button id="acOpen" style="display:none;position:fixed;right:10px;bottom:10px;z-index:9998;padding:10px 14px;border:0;border-radius:24px;background:rgba(22,18,14,.88);border:1px solid #c18b3a;color:#f3c77c;font:600 14px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(14px)">👥 Manage Assigned Admins</button>
 <div id="acOverlay" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.5);overflow:auto"><div id="acBox" style="background:#fff;max-width:560px;margin:20px auto;border-radius:14px;padding:18px;font-family:system-ui,sans-serif;color:#222"></div></div>
-<style>#acBox input,#acBox select,#acBox button{font-size:15px;padding:9px;margin:3px 0;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc}#acBox button{background:#1a73e8;color:#fff;border:0}#acBox button.del{background:#c62828;width:auto;padding:6px 10px;margin:0}#acBox button.edit{background:#f3c77c;color:#222;width:auto;padding:6px 11px;margin:0;font-size:17px}#acBox button.grey{background:#666}#acBox .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}#acBox h3{margin:18px 0 6px}#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style>
+<style>
+#acBox{--ink:#0f2e25;--gr:#1b4d3e;--gold:#b89552;--line:#e6e0d2;--mut:#6d675d}
+#acBox input,#acBox select,#acBox textarea{font-size:15px;padding:11px 12px;margin:4px 0;width:100%;box-sizing:border-box;border-radius:12px;border:1.5px solid #d9d3c4;font-family:inherit;background:#fff}
+#acBox button{font-family:inherit;font-size:14px;font-weight:700;border:0;border-radius:12px;padding:11px 14px;cursor:pointer;background:var(--ink);color:#fff;width:100%;margin:4px 0}
+#acBox button.sm{width:auto;padding:8px 12px;margin:0;font-size:12.5px}
+#acBox button.ghost{background:#fff;color:var(--gr);border:1.5px solid var(--line)}
+#acBox button.qr{background:#229ed9}#acBox button.gold{background:#a5782a}#acBox button.del{background:#fff;color:#b3261e;border:1.5px solid #efc1bd}
+#acBox button.grey{background:#666}#acBox button.edit{background:#f3c77c;color:#222}
+#acBox .hd{background:linear-gradient(135deg,#0b2119,#1b4d3e);color:#f4efe3;margin:-18px -18px 14px;padding:18px;border-radius:14px 14px 0 0;border-bottom:3px solid var(--gold);display:flex;align-items:center;gap:12px}
+#acBox .hd h2{margin:0;font-size:19px}#acBox .hd small{opacity:.78;display:block;margin-top:2px}#acBox .hd button{width:auto;background:#ffffff22;padding:8px 14px;margin:0}
+#acBox .stat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+#acBox .stat div{background:#f7f4ec;border:1px solid var(--line);border-radius:14px;padding:10px 6px;text-align:center}#acBox .stat b{display:block;font-size:20px;color:var(--ink)}#acBox .stat span{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut)}
+#acBox h3{margin:20px 0 8px;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:var(--gr);border-bottom:2px solid var(--gold);padding-bottom:6px}
+#acBox .pc{border:1px solid var(--line);border-radius:16px;padding:12px;margin:10px 0;background:#fff;box-shadow:0 3px 12px #0000000a}
+#acBox .pt{display:flex;gap:12px;align-items:center}
+#acBox .av{flex:none;width:46px;height:46px;border-radius:50%;background:linear-gradient(150deg,#1b4d3e,#0f2e25);color:#ffd877;font-weight:900;font-size:19px;display:flex;align-items:center;justify-content:center}
+#acBox .nm{font-weight:800;font-size:15.5px;color:var(--ink)}#acBox .sb{font-size:12px;color:var(--mut);margin-top:2px;line-height:1.45}
+#acBox .bd{display:inline-block;border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:800;margin-left:4px;vertical-align:middle}
+#acBox .bd.m{background:#153a2e;color:#ffd877}#acBox .bd.v{background:#e8eef5;color:#27415f;border:1px solid #b8c7da}
+#acBox .chips{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 2px}
+#acBox .cp{border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:800}#acBox .cp.on{background:#e3f4e8;color:#176b3a}#acBox .cp.off{background:#f1efe9;color:#a39d90;text-decoration:line-through}
+#acBox .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+#acBox .conn{font-size:11.5px;font-weight:700;margin-top:4px}
+#acBox .tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+#acBox .tile{display:flex;gap:9px;align-items:flex-start;border:1.5px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;background:#fff;position:relative}
+#acBox .tile input{position:absolute;opacity:0;width:0;height:0;margin:0}
+#acBox .tile .ic{font-size:20px;line-height:1}#acBox .tile b{display:block;font-size:13px;color:var(--ink)}#acBox .tile small{display:block;font-size:11px;color:var(--mut);line-height:1.3;margin-top:2px}
+#acBox .tile:has(input:checked){border-color:#1f8f55;background:#eaf7ef;box-shadow:0 0 0 2px #1f8f5522}
+#acBox .tile:has(input:checked)::after{content:"✓";position:absolute;right:8px;top:6px;color:#1f8f55;font-weight:900}
+#acBox .ed{background:#fffaf0;border:1.5px solid #ecd9a8;border-radius:14px;padding:12px;margin-top:10px}
+#acBox .ed label.f{display:block;font-size:12px;font-weight:800;color:var(--gr);margin-top:8px}
+#acBox .ck{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:10px 2px;font-weight:700;color:#153a2e}#acBox .ck input{width:auto;margin:0}
+#acBox .note{background:#f3efe6;border-radius:12px;padding:10px 12px;margin:10px 0;font-size:12.5px;line-height:1.5;color:#3d3a33}
+#acBox .msg{margin-top:10px;font-size:14px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}
+</style>
 <script>
 (function(){
 const esc=t=>String(t==null?"":t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -388,7 +422,7 @@ const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-
 const ov=document.getElementById("acOverlay"),box=document.getElementById("acBox");
 const say=(d)=>{const m=document.getElementById("acMsg");if(m){m.className="msg "+(d.ok?"ok":"bad");m.textContent=d.message||d.error||"";}};
 const val=id=>(document.getElementById(id)||{}).value||"";
-let editingId="",qrT=null,qrLastLink="";
+let editingId="",permId="",qrT=null,qrLastLink="";
 const stopQr=()=>{clearInterval(qrT);qrT=null;};
 function drawQr(link){
   const img=document.getElementById("qrImg");if(!img||!link||link===qrLastLink)return;qrLastLink=link;img.innerHTML="";
@@ -423,25 +457,48 @@ async function render(keepMsg){stopQr();
   const a=await api("/api/setup/app-admins");
   if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
 
+  const PERMS=[["orders","📦","Orders","Create and send order cards"],["customers","👥","Customers","Customer ID list"],["greeting","💬","First Greeting","Welcome message"],["rating","⭐","Ratings","Delivered orders and reviews"],["stories","📸","Weekly Story","Story planner"],["reports","📊","Reports","Workflow · Stock · Material"]];
+  const tiles=(prefix,sel)=>'<div class="tiles">'+PERMS.map(p=>'<label class="tile"><input type="checkbox" id="'+prefix+p[0]+'"'+(sel.includes(p[0])?' checked':'')+'><span class="ic">'+p[1]+'</span><span><b>'+p[2]+'</b><small>'+p[3]+'</small></span></label>').join("")+'</div>';
+  const getPerms=prefix=>PERMS.map(p=>p[0]).filter(k=>(document.getElementById(prefix+k)||{}).checked);
+  window.__acPerms=getPerms;
+  const initial=n=>esc((String(n||"?").trim().charAt(0)||"?").toUpperCase());
   const people=(a.appAdmins||[]).map(p=>{
-    if(editingId===String(p.telegramId))return '<div class="row" style="display:block;background:#fff8e8;border-radius:10px;padding:10px;margin:6px 0"><b>✏️ Edit admin</b>'
-      +'<label><small>Name</small><input id="eName" value="'+esc(p.name||"")+'" placeholder="Name"></label>'
-      +'<label><small>Telegram ID (numbers only)</small><input id="eId" inputmode="numeric" value="'+esc(p.telegramId)+'"></label>'
-      +'<label><small>Phone (optional)</small><input id="ePhone" value="'+esc(p.phone||"")+'" placeholder="09…"></label>'
-      +'<label><small>Note (optional)</small><input id="eNote" value="'+esc(p.note||"")+'" placeholder="e.g. Sales, Addis branch"></label>'
-      +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 2px;font-weight:700;color:#153a2e"><input id="eMain" type="checkbox" style="width:auto;margin:0"'+(p.main?' checked':'')+'> 👑 Assignee: main admin (full control, same as me)</label>'
-      +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 2px;font-weight:700;color:#153a2e"><input id="eViewer" type="checkbox" style="width:auto;margin:0"'+(p.viewer&&!p.main?' checked':'')+'> 👁 View only (can watch everything, cannot create, edit or send anything)</label>'
-      +'<small style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</small>'
-      +'<div style="display:flex;gap:8px;margin-top:6px"><button data-a="saveedit" data-id="'+esc(p.telegramId)+'">Save</button><button class="grey" data-a="canceledit">Cancel</button></div></div>';
-    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b>'+(p.main?' <span style="background:#153a2e;color:#ffd877;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800">👑 MAIN ADMIN</span>':'')+(p.viewer&&!p.main?' <span style="background:#e8eef5;color:#27415f;border:1px solid #b8c7da;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800">👁 VIEW ONLY</span>':'')+'<br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — tap 📱 Generate connection QR, then the admin scans it')+'</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:#229ed9" data-a="qr" data-id="'+esc(p.telegramId)+'" data-name="'+esc(p.name||p.telegramId)+'">📱 '+(p.connected?'Reconnect QR':'Generate connection QR')+'</button><button class="grey" style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:'+(p.main?'#8a5a00':'#153a2e')+'" data-a="setmain" data-main="'+(p.main?'0':'1')+'" data-id="'+esc(p.telegramId)+'">'+(p.main?'Remove main admin':'👑 Make main admin')+'</button>'+(p.main?'':'<button class="grey" style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:'+(p.viewer?'#2f6f4f':'#27415f')+'" data-a="setview" data-view="'+(p.viewer?'0':'1')+'" data-id="'+esc(p.telegramId)+'">'+(p.viewer?'✏️ Allow editing':'👁 Make view-only')+'</button>')+'<button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
-  }).join("")||'<p><small>No admins assigned yet.</small></p>';
-  box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
-  +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
-  +(a.primaryOwners&&a.primaryOwners.length?'<div style="background:#f3efe6;border-radius:10px;padding:9px 11px;margin:8px 0;font-size:13px"><b>👑 Original main admin:</b> '+a.primaryOwners.map(esc).join(", ")+'<br><small>Set in Render. Extra main admins (below) have the same full control and can manage everything; only the original one can never be removed here.</small></div>':'')
-  +(me.telegramId?'<div style="background:#eef7fc;border:1px solid #b9dcef;border-radius:10px;padding:10px 12px;margin:10px 0"><b>📱 My own Telegram account</b><br><small>'+((a.accounts||[]).some(x=>String(x.ownerTelegramId)===String(me.telegramId)&&x.ready)?'✓ Connected':'Not connected')+' — generate a QR and scan it with your own Telegram.</small><button data-a="qr" data-id="'+esc(me.telegramId)+'" data-name="'+esc(me.name||'My account')+'" style="background:#229ed9;margin-top:6px">📱 Generate my connection QR</button></div>':'')
-  +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
-  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>After assigning, tap <b>📱 Generate connection QR</b> on the admin’s row. The admin scans it with their own Telegram (Settings → Devices → Link Desktop Device) and is connected — no phone number, SMS or login code.</small></p><label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 2px;font-weight:600"><input id="nMain" type="checkbox" style="width:auto;margin:0"> 👑 Make them MAIN ADMINS too (full control, same as me)</label><label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 2px;font-weight:600"><input id="nViewer" type="checkbox" style="width:auto;margin:0"> 👁 VIEW-ONLY admins (can watch everything, cannot create, edit or send anything)</label><button data-a="addperson">Assign admin</button>'
-  +'<h3>🔐 Access and bot connection</h3><p><small><b>Main admin:</b> assigns/removes users and connects the shared AMBAR bot in Telegram Settings → Telegram Business → Chatbots. Enable Business Mode for the bot in @BotFather first, then grant it access and Reply to messages. <b>Assigned admins:</b> can access AMBAR only after assignment. Their Telegram account is connected <b>only by the QR code you generate</b> — it works only for the admin it was made for, and nobody can use another admin’s account.</small></p>'
+    const id=String(p.telegramId),pm=p.perms||[];
+    if(editingId===id)return '<div class="pc"><div class="ed"><b>✏️ Edit admin</b>'
+      +'<label class="f">Name<input id="eName" value="'+esc(p.name||"")+'" placeholder="Name"></label>'
+      +'<label class="f">Telegram ID (numbers only)<input id="eId" inputmode="numeric" value="'+esc(p.telegramId)+'"></label>'
+      +'<label class="f">Phone (optional)<input id="ePhone" value="'+esc(p.phone||"")+'" placeholder="09…"></label>'
+      +'<label class="f">Note (optional)<input id="eNote" value="'+esc(p.note||"")+'" placeholder="e.g. Sales, Addis branch"></label>'
+      +'<label class="f">Sections this admin can open</label>'+tiles("ep_",pm)
+      +'<label class="ck"><input id="eMain" type="checkbox"'+(p.main?' checked':'')+'> 👑 Main admin (full control, same as me)</label>'
+      +'<label class="ck"><input id="eViewer" type="checkbox"'+(p.viewer&&!p.main?' checked':'')+'> 👁 View only (can watch, cannot change anything)</label>'
+      +'<div class="sb" style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</div>'
+      +'<div class="acts"><button style="flex:1" data-a="saveedit" data-id="'+esc(id)+'">Save</button><button class="ghost" style="flex:1" data-a="canceledit">Cancel</button></div></div></div>';
+    if(permId===id)return '<div class="pc"><div class="pt"><div class="av">'+initial(p.name)+'</div><div><div class="nm">'+esc(p.name||"(no name)")+'</div><div class="sb">Choose what '+esc(p.name||"this admin")+' can open</div></div></div>'
+      +tiles("pp_",pm)+'<div class="acts"><button class="sm ghost" data-a="permall">Select all</button><button class="sm ghost" data-a="permnone">Clear</button></div>'
+      +'<div class="acts"><button style="flex:1" data-a="saveperms" data-id="'+esc(id)+'">Save access</button><button class="ghost" style="flex:1" data-a="cancelperm">Cancel</button></div></div>';
+    const chips=p.main?'<span class="cp on">All sections (main admin)</span>':PERMS.map(x=>'<span class="cp '+(pm.includes(x[0])?'on':'off')+'">'+x[1]+' '+x[2]+'</span>').join("");
+    return '<div class="pc"><div class="pt"><div class="av">'+initial(p.name)+'</div><div style="min-width:0"><div class="nm">'+esc(p.name||"(no name)")+(p.main?'<span class="bd m">👑 MAIN ADMIN</span>':'')+(p.viewer&&!p.main?'<span class="bd v">👁 VIEW ONLY</span>':'')+'</div>'
+      +'<div class="sb">Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+(p.note?'<br>'+esc(p.note):'')+'</div>'
+      +'<div class="conn" style="color:'+(p.connected?'#176b3a':'#a35b18')+'">'+(p.connected?'✓ Telegram connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected yet')+'</div></div></div>'
+      +'<div class="chips">'+chips+'</div>'
+      +'<div class="acts">'+(p.main?'':'<button class="sm gold" data-a="editperms" data-id="'+esc(id)+'">🔑 Section access</button>')
+      +'<button class="sm qr" data-a="qr" data-id="'+esc(id)+'" data-name="'+esc(p.name||id)+'">📱 '+(p.connected?'Reconnect QR':'Connection QR')+'</button>'
+      +'<button class="sm ghost" data-a="setmain" data-main="'+(p.main?'0':'1')+'" data-id="'+esc(id)+'">'+(p.main?'Remove main admin':'👑 Make main admin')+'</button>'
+      +(p.main?'':'<button class="sm ghost" data-a="setview" data-view="'+(p.viewer?'0':'1')+'" data-id="'+esc(id)+'">'+(p.viewer?'✏️ Allow editing':'👁 View-only')+'</button>')
+      +'<button class="sm edit" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(id)+'">✏️ Edit</button><button class="sm del" data-a="delperson" data-id="'+esc(id)+'">Delete</button></div></div>';
+  }).join("")||'<div class="note">No admins assigned yet. Add the first one below.</div>';
+  const list=a.appAdmins||[];
+  box.innerHTML='<div class="hd"><div style="flex:1"><h2>⚙️ Admin Control</h2><small>Who can use AMBAR, and which sections they can open</small></div><button data-a="close">Close</button></div>'
+  +'<div class="stat"><div><b>'+list.length+'</b><span>Assigned</span></div><div><b>'+list.filter(x=>x.main).length+'</b><span>Main admins</span></div><div><b>'+list.filter(x=>x.perms&&x.perms.includes("reports")).length+'</b><span>With Reports</span></div></div>'
+  +'<div class="note">Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.'+(a.primaryOwners&&a.primaryOwners.length?'<br><b>👑 Original main admin:</b> '+a.primaryOwners.map(esc).join(", ")+' — set in Render, can never be removed here.':'')+'</div>'
+  +(me.telegramId?'<div class="note" style="background:#eef7fc;border:1px solid #b9dcef"><b>📱 My own Telegram account</b> — '+((a.accounts||[]).some(x=>String(x.ownerTelegramId)===String(me.telegramId)&&x.ready)?'✓ connected':'not connected')+'<button class="qr" data-a="qr" data-id="'+esc(me.telegramId)+'" data-name="'+esc(me.name||'My account')+'">📱 Generate my connection QR</button></div>':'')
+  +'<h3>👥 Assigned admins ('+list.length+')</h3>'+people
+  +'<h3>➕ Assign new admins</h3><textarea id="nId" rows="3" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea>'
+  +'<div class="sb" style="margin:6px 0 2px"><b>Sections they can open</b> (you can change this any time with 🔑 Section access):</div>'+tiles("np_",["orders","customers","greeting","rating","stories"])
+  +'<label class="ck"><input id="nMain" type="checkbox"> 👑 Make them MAIN ADMINS too (full control)</label><label class="ck"><input id="nViewer" type="checkbox"> 👁 View-only (cannot create, edit or send)</label><button data-a="addperson">Assign admin</button>'
+  +'<div class="sb" style="margin-top:8px">After assigning, tap <b>📱 Connection QR</b> on the admin’s card; the admin scans it in Telegram → Settings → Devices → Link Desktop Device. No phone number, SMS or code is used. Turning on <b>📊 Reports</b> makes the Reports section appear on that admin’s Home page.</div>'
+  +'<h3>🔐 Bot connection</h3><div class="sb">The main admin connects the shared AMBAR bot in Telegram Settings → Telegram Business → Chatbots (enable Business Mode in @BotFather first, then grant access and Reply to messages). Each admin’s personal account is connected only by the QR you generate for them.</div>'
   +'<div id="acMsg" class="msg"></div>';
 }
 ov.addEventListener("click",async e=>{
@@ -453,12 +510,16 @@ ov.addEventListener("click",async e=>{
   if(act==="qrpw"){const d=await api("/api/setup/app-admins/qr-password",{telegramId:b.dataset.id,password:val("qrPwIn")});say(d);return;}
   if(act==="qrback"){stopQr();try{await api("/api/setup/app-admins/qr-cancel",{telegramId:b.dataset.id});}catch{}await render();return;}
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
-  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),main:!!(document.getElementById("nMain")||{}).checked,viewer:!!(document.getElementById("nViewer")||{}).checked});await render();say(d);return;}
+  if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),main:!!(document.getElementById("nMain")||{}).checked,viewer:!!(document.getElementById("nViewer")||{}).checked,perms:window.__acPerms("np_")});await render();say(d);return;}
   if(act==="setmain"){const make=b.dataset.main==="1";if(!confirm(make?"Make this person a MAIN ADMIN?\n\nThey get the same full control as you: manage admins, Google Sheet, Start from ZERO, all stories, everything.":"Remove main-admin rights from this person? They stay a normal assigned admin."))return;const d=await api("/api/setup/app-admins/set-main",{telegramId:b.dataset.id,main:make});await render();say(d);return;}
   if(act==="setview"){const on=b.dataset.view==="1";if(!confirm(on?"Make this person VIEW-ONLY?\n\nThey can watch orders, customers and stories but cannot create, edit, send or delete anything.":"Allow this person to create and edit again?"))return;const d=await api("/api/setup/app-admins/set-viewer",{telegramId:b.dataset.id,viewer:on});await render();say(d);return;}
+  if(act==="editperms"){permId=String(b.dataset.id);editingId="";await render();return;}
+  if(act==="cancelperm"){permId="";await render();return;}
+  if(act==="permall"||act==="permnone"){box.querySelectorAll('input[id^="pp_"]').forEach(i=>i.checked=act==="permall");return;}
+  if(act==="saveperms"){const d=await api("/api/setup/app-admins/set-perms",{telegramId:b.dataset.id,perms:window.__acPerms("pp_")});if(d.ok)permId="";await render();say(d);return;}
   if(act==="editperson"){editingId=String(b.dataset.id);await render();return;}
   if(act==="canceledit"){editingId="";await render();return;}
-  if(act==="saveedit"){const d=await api("/api/setup/app-admins/update",{telegramId:b.dataset.id,newTelegramId:val("eId"),name:val("eName"),phone:val("ePhone"),note:val("eNote"),main:!!(document.getElementById("eMain")||{}).checked,viewer:!!(document.getElementById("eViewer")||{}).checked});if(d.ok)editingId="";await render();say(d);return;}
+  if(act==="saveedit"){const d=await api("/api/setup/app-admins/update",{telegramId:b.dataset.id,newTelegramId:val("eId"),name:val("eName"),phone:val("ePhone"),note:val("eNote"),main:!!(document.getElementById("eMain")||{}).checked,viewer:!!(document.getElementById("eViewer")||{}).checked,perms:window.__acPerms("ep_")});if(d.ok)editingId="";await render();say(d);return;}
   if(act==="delperson"){if(!confirm("Delete this admin? They will lose access."))return;const d=await api("/api/setup/app-admins/remove",{telegramId:b.dataset.id});await render();say(d);return;}
   }catch(err){say({ok:false,error:err.message});}
 });
