@@ -68,6 +68,10 @@ h3.sec{margin:20px 2px 10px;font-size:13px;letter-spacing:1px;text-transform:upp
 label{font-weight:800;font-size:12.5px;display:block;margin-top:11px;color:var(--green)}
 label em{font-weight:600;font-style:normal;color:var(--mute)}
 input,textarea{width:100%;padding:12px;border:1.5px solid #d9d3c4;border-radius:12px;margin-top:5px;font-size:16px;font-family:inherit;background:#fff;color:var(--tx);user-select:text;-webkit-user-select:text}
+select{width:100%;padding:12px;border:1.5px solid #d9d3c4;border-radius:12px;margin-top:5px;font-size:16px;font-family:inherit;background:#fff;color:var(--tx)}
+.gh{grid-column:1/-1;margin:8px 2px 0;font-size:12px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--green);display:flex;justify-content:space-between;border-bottom:2px solid var(--gold);padding-bottom:5px}
+.pill.hi{background:var(--badbg);color:var(--bad)}.pill.med{background:var(--warnbg);color:var(--warn)}.pill.low2{background:#eceff1;color:#546e7a}.pill.cus{background:#f8dfe6;color:#8a2c4a}.pill.rdy{background:var(--bluebg);color:var(--blue)}.pill.today{background:#cfe2f3;color:#0b5394}
+.facts{font-size:12.5px;color:var(--mute);line-height:1.55}.facts b{color:var(--tx)}
 textarea{min-height:70px;resize:vertical}
 .btn{display:block;width:100%;border:0;border-radius:14px;padding:14px;font-weight:900;font-size:15px;color:#fff;background:var(--ink);margin-top:12px;cursor:pointer;text-align:center;text-decoration:none}
 .btn.grey{background:#fff;color:var(--green);border:1.5px solid var(--line)}.btn.red{background:var(--bad)}.btn.blue{background:#229ed9}.btn.ok{background:var(--ok)}.btn.gold{background:#a5782a}.btn.cut{background:var(--bad)}
@@ -129,9 +133,16 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const MN=["Meskerem","Tikimt","Hidar","Tahsas","Tir","Yekatit","Megabit","Miazia","Ginbot","Sene","Hamle","Nehase","Pagume"];
 const fmtD=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?(+m[3])+" "+(MN[+m[2]-1]||m[2])+" "+m[1]:(d||"");};
-const fmtDT=o=>o&&o.d?fmtD(o.d)+" · "+(o.t||""):"—";
+// Ethiopian clock: the day starts at sunrise. 13:15 → 7:15 ቀን · 21:00 → 3:00 ሌሊት · 06:00 → 12:00 ቀን
+const et=t=>{const m=/^(\d{1,2}):(\d{2})/.exec(t||"");if(!m)return t||"";const h=+m[1];return (((h+6)%12)||12)+":"+m[2]+" "+(h>=6&&h<18?"ቀን":"ሌሊት");};
+const fmtDT=o=>o&&o.d?fmtD(o.d)+" · "+et(o.t):"—";
+const dmy=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):(d||"");};
+const lab=p=>[p.model,p.desc].filter(Boolean).join(" ")||p.code;
+const matLab=m=>m.name+(m.type?" "+m.type:"");
+const logMat=l=>l.material+(l.mtype?" "+l.mtype:"");
+const isCus=p=>p.orderType==="CUSTOM";
 const nf=v=>(v===""||v==null)?"":Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
-let S={products:[],materials:[],log:[],backup:{},now:{d:"",t:""},nextCode:"P-0001"},tab="wf",sub="stock",q="";
+let S={products:[],materials:[],log:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",q="";
 try{const s=localStorage.getItem("repTab2");if(["wf","st","mt"].includes(s))tab=s;}catch{}
 const toast=m=>{try{(window.AppToast||alert)(m);}catch{alert(m);}};
 const say=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"info");e.textContent=t;e.style.display=t?"block":"none";if(!t)e.className="msg";};
@@ -164,55 +175,61 @@ const lowOf=m=>m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");
 function render(){
   const wf=by("workflow"),st=by("stock"),sd=by("sold");
   $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
-  const soldVal=sd.reduce((a,p)=>a+(Number(p.sold&&p.sold.price)||0),0),low=S.materials.filter(m=>lowOf(m)!=="ok").length,today=S.log.filter(l=>l.d===S.now.d).length;
+  const low=S.materials.filter(m=>lowOf(m)!=="ok").length,today=S.log.filter(l=>l.d===S.now.d).length,soldToday=sd.filter(p=>p.sold&&p.sold.d===S.now.d).length;
   const K=(l,n,s,c)=>'<div class="kpi" style="border-left-color:'+(c||"var(--green)")+'"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>';
   $("kpis").innerHTML=tab==="wf"?K("In workflow",wf.length,"products in progress","#d9a21b")+K("In stock",st.length,"finished","#1f8f55")+K("All products",S.products.length,"including sold","#14598f")
-    :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold",sd.length,"products sold","#14598f")+K("Sold value",nf(soldVal),"Birr (prices entered)","#0f2e25")
+    :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold",sd.length,"products sold","#14598f")+K("Sold today",soldToday,fmtD(S.now.d),"#b3261e")
     :K("Materials",S.materials.length,"kinds in store","#8a5a00")+K("Low / out",low,low?"to re-order":"all good",low?"#b3261e":"#1f8f55")+K("Moves today",today,fmtD(S.now.d),"#6d675d");
   $("addBtn").textContent=tab==="mt"?"➕ New material":"➕ New product";
   $("addBtn").style.display=tab==="st"?"none":"block";
-  $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search code or name…";
+  $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search Prod Id, model, description…";
   $("sub2").style.display=tab==="st"?"flex":"none";
   if(tab==="st")$("sub2").innerHTML='<button type="button" data-s="stock" class="'+(sub==="stock"?"on":"")+'">📦 In stock ('+st.length+')</button><button type="button" data-s="sold" class="'+(sub==="sold"?"on":"")+'">💰 Sold ('+sd.length+')</button>';
   const hit=t=>!q||String(t).toLowerCase().includes(q);
+  const text=p=>[p.code,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes].join(" ");
+  const facts=p=>{const f=[];if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
+  const prPill=p=>p.priority==="HIGH"?'<span class="pill hi">HIGH</span>':p.priority==="MEDIUM"?'<span class="pill med">MEDIUM</span>':'<span class="pill low2">LOW</span>';
+  const tyPill=p=>isCus(p)?'<span class="pill cus">CUSTOM</span>':'<span class="pill rdy">READYMADE</span>';
+  const head=p=>'<div class="top"><span class="code">'+esc(p.code)+'</span><span style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">'+tyPill(p)+(tab==="wf"?prPill(p):"")+'</span></div><div class="nm">'+esc(lab(p))+'</div>'+(p.category&&tab!=="wf"?'<div class="meta">'+esc(p.category)+'</div>':"")+(p.note?'<div class="nt">Correction: '+esc(p.note)+'</div>':"")+facts(p);
+  const group=(L,card)=>{const cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});return cats.map(c=>{const g=L.filter(p=>(p.category||"OTHERS")===c);return g.length?'<div class="gh"><span>'+esc(c)+'</span><span>'+g.length+'</span></div>'+g.map(card).join(""):"";}).join("");};
   let h="",extra="";
   if(tab==="wf"){
-    const L=wf.filter(p=>hit(p.code+" "+p.name+" "+p.note));
-    h=L.map(p=>'<div class="item"><div class="top"><span class="code">'+esc(p.code)+'</span><span class="pill wip">🛠 In progress</span></div><div class="nm">'+esc(p.name)+'</div>'+(p.note?'<div class="nt">'+esc(p.note)+'</div>':'')
-      +'<div class="meta">Added <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+(p.price!==""&&p.price!=null?' · Price <b>'+nf(p.price)+'</b> Birr':'')+'</div>'
+    const L=wf.filter(p=>hit(text(p)));
+    h=L.map(p=>'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+'</div>'
       +'<div class="acts"><button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
-    if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b>, write its product code and name.<br>When it is finished, press <b>Finished → In Stock</b>.")+'</div>';
+    if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b> and fill the Prod Id, model and description.<br>When it is finished, press <b>Finished → In Stock</b>.")+'</div>';
   }else if(tab==="st"){
     if(sub==="stock"){
-      const L=st.filter(p=>hit(p.code+" "+p.name+" "+p.note)).sort((a,b)=>((b.finished||{}).d+(b.finished||{}).t).localeCompare((a.finished||{}).d+(a.finished||{}).t));
-      h=L.map(p=>'<div class="item"><div class="top"><span class="code">'+esc(p.code)+'</span><span class="pill stock">📦 In stock</span></div><div class="nm">'+esc(p.name)+'</div>'+(p.note?'<div class="nt">'+esc(p.note)+'</div>':'')
-        +'<div class="meta">Finished <b>'+esc(fmtDT(p.finished))+'</b>'+(p.price!==""&&p.price!=null?' · Price <b>'+nf(p.price)+'</b> Birr':'')+'</div>'
-        +'<div class="acts"><button class="b gold" data-a="sold" data-id="'+p.id+'">💰 Sold</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Back to Workflow">↩</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
+      const L=st.filter(p=>hit(text(p))).sort((a,b)=>((a.finished||{}).d+(a.finished||{}).t).localeCompare((b.finished||{}).d+(b.finished||{}).t));
+      h=group(L,p=>'<div class="item">'+head(p)+'<div class="meta">Finished <b>'+esc(fmtDT(p.finished))+'</b></div>'
+        +'<div class="acts"><button class="b gold" data-a="sold" data-id="'+p.id+'">💰 Sold</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Back to Workflow">↩</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>');
       if(!L.length)h='<div class="empty">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>A product appears here the moment you press <b>Finished → In Stock</b> in Workflow.")+'</div>';
     }else{
-      const L=sd.filter(p=>hit(p.code+" "+p.name+" "+((p.sold||{}).buyer||""))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
-      h=L.map(p=>{const s=p.sold||{};return '<div class="item"><div class="top"><span class="code">'+esc(p.code)+'</span><span class="pill sold">💰 Sold</span></div><div class="nm">'+esc(p.name)+'</div>'
-        +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian date)'+(s.by?'<br>By '+esc(s.by):'')+(s.price!==""&&s.price!=null?'<br>Price <b>'+nf(s.price)+'</b> Birr':'')+(s.buyer?'<br>Buyer: '+esc(s.buyer):'')+'</div>'+(s.note?'<div class="nt">'+esc(s.note)+'</div>':'')
-        +'<div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Cancel the sale">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';}).join("");
+      const L=sd.filter(p=>hit(text(p))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
+      h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return '<div class="item">'+head(p)
+        +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+(td?"S.TODAY":"SOLD")+'</b> · Sales info <b>'+esc(s.salesInfo||(isCus(p)?"S.O":"S.R"))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
+        +'<div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';});
       if(!L.length)h='<div class="empty">'+(sd.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
   }else{
-    const L=S.materials.filter(m=>hit(m.name)).sort((a,b)=>a.name.localeCompare(b.name));
+    const L=S.materials.filter(m=>hit(matLab(m)+" "+m.group)).sort((a,b)=>(a.group||"").localeCompare(b.group||"")||a.name.localeCompare(b.name));
+    let lastG="";
     h=L.map(m=>{const s=lowOf(m),pct=m.min>0?Math.min(100,Math.round(m.qty/(m.min*2)*100)):(m.qty>0?100:0);const last=S.log.find(l=>l.matId===m.id);
-      return '<div class="item"><div class="top"><div class="nm">'+esc(m.name)+'</div>'+(s==="ok"?'<span class="pill stock">OK</span>':'<span class="pill '+s+'">'+(s==="out"?"OUT":"LOW")+'</span>')+'</div>'
-        +'<div class="bal"><span class="n">'+nf(m.qty)+'</span><span class="u">'+esc(m.unit)+' in store</span></div><div class="bar"><i class="'+(s==="ok"?"":s)+'" style="width:'+pct+'%"></i></div>'
-        +'<div class="meta">'+(m.min>0?'Low-stock alert at <b>'+nf(m.min)+'</b> '+esc(m.unit)+' · ':'')+(last?'Last move <b>'+esc(fmtDT(last))+'</b>':'No movement yet')+'</div>'
+      const gh=(m.group||"MATERIAL")!==lastG?'<div class="gh"><span>'+esc(m.group||"MATERIAL")+'</span><span>'+L.filter(x=>(x.group||"MATERIAL")===(m.group||"MATERIAL")).length+'</span></div>':"";lastG=m.group||"MATERIAL";
+      return gh+'<div class="item"><div class="top"><div class="nm">'+esc(matLab(m))+'</div>'+(s==="ok"?'<span class="pill stock">OK</span>':'<span class="pill '+s+'">'+(s==="out"?"OUT":"LOW")+'</span>')+'</div>'
+        +'<div class="bal"><span class="n">'+nf(m.qty)+'</span><span class="u">available · unit '+esc(m.unit)+'</span></div><div class="bar"><i class="'+(s==="ok"?"":s)+'" style="width:'+pct+'%"></i></div>'
+        +'<div class="meta">'+(m.min>0?'Low-stock alert at <b>'+nf(m.min)+'</b> · ':'')+(last?'Last move <b>'+esc(fmtDT(last))+'</b>':'No movement yet')+'</div>'
         +'<div class="acts"><button class="b add2" data-a="madd" data-id="'+m.id+'">➕ Add</button><button class="b cut" data-a="mcut" data-id="'+m.id+'">✂️ Cut</button><button class="b" data-a="mhist" data-id="'+m.id+'">📜</button><button class="b" data-a="medit" data-id="'+m.id+'">✏️</button><button class="b red" data-a="mdel" data-id="'+m.id+'">🗑</button></div></div>';}).join("");
     if(!L.length)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Tap <b>➕ New material</b>, then use <b>➕ Add</b> when stock arrives and <b>✂️ Cut</b> when you use it.")+'</div>';
-    const lg=S.log.filter(l=>!q||hit(l.material)).slice(0,25);
+    const lg=S.log.filter(l=>!q||hit(logMat(l))).slice(0,25);
     extra=lg.length?'<h3 class="sec">Recent movements</h3>'+lg.map(logRow).join(""):"";
   }
   $("out").innerHTML=h;$("extra").innerHTML=extra;
   const b=S.backup||{};
   $("cloud").className="cloud"+(b.configured?(b.ok===false?" bad":" ok"):"");
-  $("cloud").textContent=!b.configured?"☁ Backup off":(b.ok===false?"⚠ Backup failed":"☁ Backup ✓ "+(b.d?b.d.slice(5)+" "+b.t:""));
+  $("cloud").textContent=!b.configured?"☁ Backup off":(b.ok===false?"⚠ Backup failed":"☁ Backup ✓ "+(b.d?b.d.slice(5)+" "+et(b.t):""));
 }
-function logRow(l){const cut=l.type==="cut",nw=l.type==="new";return '<div class="logrow"><div class="q '+(cut?"m":"p")+'">'+(cut?"−":"+")+nf(l.qty)+'</div><div class="w"><b>'+esc(l.material)+'</b> · '+(nw?"New material":cut?"Cut":"Added")+(l.note&&!nw?' — '+esc(l.note):'')+'<small>'+esc(fmtDT(l))+' · balance '+nf(l.balance)+' '+esc(l.unit)+(l.by?' · '+esc(l.by):'')+'</small></div></div>';}
+function logRow(l){const cut=l.type==="cut",nw=l.type==="new";return '<div class="logrow"><div class="q '+(cut?"m":"p")+'">'+(cut?"−":"+")+nf(l.qty)+'</div><div class="w"><b>'+esc(logMat(l))+'</b> · '+(nw?"New material":cut?"Cut":"Added")+(l.note&&!nw?' — '+esc(l.note):'')+'<small>'+esc(fmtDT(l))+' · available '+nf(l.balance)+(l.by?' · '+esc(l.by):'')+'</small></div></div>';}
 $("seg").addEventListener("click",e=>{const b=e.target.closest("button[data-t]");if(!b)return;tab=b.dataset.t;try{localStorage.setItem("repTab2",tab);}catch{}q="";$("q").value="";render();});
 $("sub2").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
 $("q").addEventListener("input",()=>{q=$("q").value.trim().toLowerCase();render();});
@@ -221,8 +238,10 @@ $("q").addEventListener("input",()=>{q=$("q").value.trim().toLowerCase();render(
 let FORM=null;
 function openForm(o){
   FORM=o;$("fTitle").textContent=o.title;$("fInfo").innerHTML=o.info||"";say("fMsg","");
-  $("fBody").innerHTML=o.fields.map(f=>'<label>'+esc(f.label)+(f.opt?' <em>(optional)</em>':'')+(f.area?'<textarea data-k="'+f.k+'" placeholder="'+esc(f.ph||"")+'">'+esc(f.val||"")+'</textarea>':'<input data-k="'+f.k+'" '+(f.num?'inputmode="decimal"':'')+(f.list?' list="'+f.list+'"':'')+' placeholder="'+esc(f.ph||"")+'" value="'+esc(f.val==null?"":f.val)+'" autocomplete="off">')+'</label>').join("")
-    +'<datalist id="units"><option>pcs</option><option>m</option><option>kg</option><option>sheet</option><option>roll</option><option>liter</option><option>box</option></datalist>';
+  const opt=f=>f.opt?' <em>(optional)</em>':'';
+  $("fBody").innerHTML=o.fields.map(f=>'<label>'+esc(f.label)+opt(f)+(f.sel?'<select data-k="'+f.k+'">'+f.sel.map(x=>'<option'+(String(x)===String(f.val)?' selected':'')+'>'+esc(x)+'</option>').join("")+'</select>':f.area?'<textarea data-k="'+f.k+'" placeholder="'+esc(f.ph||"")+'">'+esc(f.val||"")+'</textarea>':'<input data-k="'+f.k+'" '+(f.num?'inputmode="decimal"':'')+(f.list?' list="'+f.list+'"':'')+' placeholder="'+esc(f.ph||"")+'" value="'+esc(f.val==null?"":f.val)+'" autocomplete="off">')+'</label>').join("")
+    +'<datalist id="units"><option>pcs</option><option>244-122</option><option>m</option><option>kg</option><option>sheet</option><option>roll</option><option>liter</option><option>box</option></datalist>'
+    +'<datalist id="groups">'+[...new Set(S.materials.map(m=>m.group||"MATERIAL"))].map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="sinfo"><option>S.R</option><option>S.O</option></datalist>';
   $("fOk").textContent=o.ok||"Save";$("fOk").className="btn "+(o.cls||"");$("fOk").disabled=false;
   $("fOv").classList.add("on");setTimeout(()=>{const i=$("fBody").querySelector("input,textarea");try{i&&i.focus();}catch{}},200);
 }
@@ -237,30 +256,42 @@ $("fOk").onclick=async()=>{
   closeForm();toast(d.message||"✅ Saved");render();
 };
 const P=id=>S.products.find(p=>p.id===id),M=id=>S.materials.find(m=>m.id===id);
+// the same columns as the Google Sheet: Prod Id · S.No · Model · Description · Order Type · Priority · Sales Name · Location · Delivery Date · Changes · Correction
+const prodFields=(p,isNew)=>[
+  {k:"code",label:"Prod Id",opt:isNew,val:p?p.code:"",ph:isNew?"Leave empty for "+S.nextCode:""},
+  {k:"sno",label:"S.No (order number)",opt:1,val:p?p.sno:""},
+  {k:"model",label:"Model",opt:1,val:p?p.model:"",ph:"e.g. M14"},
+  {k:"desc",label:"Description",opt:1,val:p?p.desc:"",ph:"e.g. L-90, W-35, H-120"},
+  {k:"orderType",label:"Order Type",sel:["READYMADE","CUSTOM"],val:p?p.orderType:"READYMADE"},
+  {k:"priority",label:"Priority",sel:["LOW","MEDIUM","HIGH"],val:p?p.priority:"LOW"},
+  {k:"category",label:"Stock group (for the Stock report)",sel:S.cats,val:p?p.category:"OTHERS"},
+  {k:"salesName",label:"Sales Name",opt:1,val:p?p.salesName:""},
+  {k:"location",label:"Location",opt:1,val:p?p.location:""},
+  {k:"deliveryDate",label:"Delivery Date (Ethiopian)",opt:1,val:p?p.deliveryDate:"",ph:"2019/03/25"},
+  {k:"changes",label:"Changes",opt:1,val:p?p.changes:""},
+  {k:"note",label:"Correction",opt:1,area:1,val:p?p.note:""}];
 $("addBtn").onclick=()=>{
-  if(tab==="mt")return openForm({title:"➕ New material",info:"Write the material once. Then use ➕ Add and ✂️ Cut.",ok:"Save material",
-    fields:[{k:"name",label:"Material name",ph:"e.g. MDF board 18mm"},{k:"unit",label:"Unit",val:"pcs",list:"units",ph:"pcs, m, kg, sheet…"},{k:"qty",label:"Quantity now in store",num:1,val:"0",opt:1},{k:"min",label:"Low-stock alert at",num:1,opt:1,ph:"e.g. 5"},{k:"note",label:"Note",opt:1,area:1}],
+  if(tab==="mt")return openForm({title:"➕ New material",info:"Write the material once. Then use ➕ Add when stock arrives and ✂️ Cut when you use it.",ok:"Save material",
+    fields:[{k:"name",label:"Material",ph:"e.g. NORMAL MDF"},{k:"type",label:"Type",opt:1,ph:"e.g. 18"},{k:"unit",label:"Unit",val:"244-122",list:"units"},{k:"group",label:"Table (group)",opt:1,val:"MATERIAL",list:"groups"},{k:"qty",label:"Available now",num:1,val:"0",opt:1},{k:"min",label:"Low-stock alert at",num:1,opt:1,ph:"e.g. 2"},{k:"note",label:"Note",opt:1,area:1}],
     submit:v=>api("/api/reports/material/add",v)});
-  openForm({title:"➕ New product",info:"It goes to <b>Workflow</b>. The date and time (Ethiopian) are saved automatically.",ok:"Add to Workflow",
-    fields:[{k:"code",label:"Product code",opt:1,ph:"Leave empty for "+S.nextCode},{k:"name",label:"Product name",ph:"e.g. Shoe shelf 5 tier"},{k:"price",label:"Price (Birr)",num:1,opt:1},{k:"note",label:"Note",opt:1,area:1}],
-    submit:v=>api("/api/reports/product/add",v)});
+  openForm({title:"➕ New product",info:"It goes to <b>Workflow</b>. Start date + clock time (Ethiopian) are saved automatically: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b>",ok:"Add to Workflow",fields:prodFields(null,true),submit:v=>api("/api/reports/product/add",v)});
 };
 async function act(path,body,ask){if(ask&&!confirm(ask))return;busy("Saving…");const d=await api(path,body);busy("");if(d.ok){toast(d.message||"✅ Saved");render();}else say("vMsg",d.error||"Could not save.","bad");}
 $("view").addEventListener("click",e=>{
   const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a,id=b.dataset.id;say("vMsg","");
   const p=P(id),m=M(id);
-  if(a==="finish"&&p)return act("/api/reports/product/finish",{id},"Product “"+p.code+" · "+p.name+"” is finished?\nIt will be sent to IN STOCK.");
+  if(a==="finish"&&p)return act("/api/reports/product/finish",{id},"Product “"+p.code+" · "+lab(p)+"” is finished?\nIt will be sent to IN STOCK.");
   if(a==="undo"&&p)return act("/api/reports/product/undo",{id},p.status==="sold"?"Cancel the sale of “"+p.code+"”? It goes back to In Stock.":"Move “"+p.code+"” back to Workflow?");
-  if(a==="del"&&p)return act("/api/reports/product/delete",{id},"Delete “"+p.code+" · "+p.name+"” for good?");
-  if(a==="hist"&&p)return showHist(p.code+" · "+p.name,(p.history||[]).slice().reverse().map(h=>'<div class="hrow"><b>'+esc(h.ev)+'</b><small>'+esc(fmtDT(h))+(h.by?' · '+esc(h.by):'')+'</small></div>').join("")||'<div class="hint">No history.</div>');
-  if(a==="edit"&&p)return openForm({title:"✏️ Edit product",ok:"Save changes",fields:[{k:"code",label:"Product code",val:p.code},{k:"name",label:"Product name",val:p.name},{k:"price",label:"Price (Birr)",num:1,opt:1,val:p.price},{k:"note",label:"Note",opt:1,area:1,val:p.note}],submit:v=>api("/api/reports/product/edit",{id,...v})});
-  if(a==="sold"&&p)return openForm({title:"💰 Sold — "+p.code,info:"<b>"+esc(p.name)+"</b><br>🗓 Saved now: <b>"+esc(fmtD(S.now.d))+" · "+esc(S.now.t)+"</b> (Ethiopian date, Addis Ababa time)",ok:"Confirm sold",cls:"gold",
-    fields:[{k:"price",label:"Sold price (Birr)",num:1,opt:1,val:p.price},{k:"buyer",label:"Buyer",opt:1},{k:"note",label:"Note",opt:1,area:1}],submit:v=>api("/api/reports/product/sold",{id,...v})});
-  if((a==="madd"||a==="mcut")&&m){const cut=a==="mcut";return openForm({title:(cut?"✂️ Cut — ":"➕ Add — ")+m.name,info:"In store now: <b>"+nf(m.qty)+" "+esc(m.unit)+"</b><br>🗓 Saved with "+esc(fmtD(S.now.d))+" · "+esc(S.now.t)+" (Ethiopian date)",ok:cut?"Cut from store":"Add to store",cls:cut?"cut":"ok",
-    fields:[{k:"qty",label:(cut?"Quantity to cut":"Quantity to add")+" ("+m.unit+")",num:1},{k:"note",label:cut?"Used for (product / order)":"Note (supplier, invoice…)",opt:1}],submit:v=>api("/api/reports/material/move",{id,type:cut?"cut":"add",...v})});}
-  if(a==="mhist"&&m)return showHist(m.name+" · movements",S.log.filter(l=>l.matId===id).map(logRow).join("")||'<div class="hint">No movement yet.</div>');
-  if(a==="medit"&&m)return openForm({title:"✏️ Edit material",info:"To change the quantity use ➕ Add or ✂️ Cut — so every move is recorded.",ok:"Save changes",fields:[{k:"name",label:"Material name",val:m.name},{k:"unit",label:"Unit",val:m.unit,list:"units"},{k:"min",label:"Low-stock alert at",num:1,opt:1,val:m.min||""}],submit:v=>api("/api/reports/material/edit",{id,...v})});
-  if(a==="mdel"&&m)return act("/api/reports/material/delete",{id},"Delete “"+m.name+"”? Its movements stay in the log.");
+  if(a==="del"&&p)return act("/api/reports/product/delete",{id},"Delete “"+p.code+" · "+lab(p)+"” for good?");
+  if(a==="hist"&&p)return showHist(p.code+" · "+lab(p),(p.history||[]).slice().reverse().map(h=>'<div class="hrow"><b>'+esc(h.ev)+'</b><small>'+esc(fmtDT(h))+(h.by?' · '+esc(h.by):'')+'</small></div>').join("")||'<div class="hint">No history.</div>');
+  if(a==="edit"&&p)return openForm({title:"✏️ Edit product",ok:"Save changes",fields:prodFields(p,false),submit:v=>api("/api/reports/product/edit",{id,...v})});
+  if(a==="sold"&&p)return openForm({title:"💰 Sold — "+p.code,info:"<b>"+esc(lab(p))+"</b><br>🗓 Saved now: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b> (Ethiopian date and clock)<br>Sold type becomes <b>S.TODAY</b> today and <b>SOLD</b> from tomorrow.",ok:"Confirm sold",cls:"gold",
+    fields:[{k:"salesName",label:"Sales Name",opt:1,val:p.salesName},{k:"salesInfo",label:"Sales info",opt:1,list:"sinfo",ph:"empty = "+(isCus(p)?"S.O":"S.R")},{k:"note",label:"Correction",opt:1,area:1,val:p.note}],submit:v=>api("/api/reports/product/sold",{id,...v})});
+  if((a==="madd"||a==="mcut")&&m){const cut=a==="mcut";return openForm({title:(cut?"✂️ Cut — ":"➕ Add — ")+matLab(m),info:"Available now: <b>"+nf(m.qty)+"</b> (unit "+esc(m.unit)+")<br>🗓 Saved with "+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+" (Ethiopian date and clock)",ok:cut?"Cut from store":"Add to store",cls:cut?"cut":"ok",
+    fields:[{k:"qty",label:cut?"Quantity to cut":"Quantity to add",num:1},{k:"note",label:cut?"Used for (product / order)":"Note (supplier, invoice…)",opt:1}],submit:v=>api("/api/reports/material/move",{id,type:cut?"cut":"add",...v})});}
+  if(a==="mhist"&&m)return showHist(matLab(m)+" · movements",S.log.filter(l=>l.matId===id).map(logRow).join("")||'<div class="hint">No movement yet.</div>');
+  if(a==="medit"&&m)return openForm({title:"✏️ Edit material",info:"To change the quantity use ➕ Add or ✂️ Cut — so every move is recorded.",ok:"Save changes",fields:[{k:"name",label:"Material",val:m.name},{k:"type",label:"Type",opt:1,val:m.type},{k:"unit",label:"Unit",val:m.unit,list:"units"},{k:"group",label:"Table (group)",opt:1,val:m.group,list:"groups"},{k:"min",label:"Low-stock alert at",num:1,opt:1,val:m.min||""}],submit:v=>api("/api/reports/material/edit",{id,...v})});
+  if(a==="mdel"&&m)return act("/api/reports/material/delete",{id},"Delete “"+matLab(m)+"”? Its movements stay in the log.");
 });
 function showHist(t,h){$("hTitle").textContent=t;$("hBody").innerHTML=h;$("hOv").classList.add("on");}
 $("hNo").onclick=()=>$("hOv").classList.remove("on");
@@ -274,8 +305,8 @@ function openBackup(){
       +'<ol><li>Open your reports Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Tap <b>Copy script</b>, paste it there (replace everything) and Save.</li><li><b>Deploy → New deployment → Web app</b> → Execute as <b>Me</b> → Access <b>Anyone</b> → Deploy.</li><li>Paste the <b>Web app URL</b> (ends with <code>/exec</code>) below.</li></ol>'
       +'<button class="btn grey" id="bkCopy" type="button">📋 Copy script</button><label>Web app URL<input id="bkUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label><button class="btn" id="bkConnect" type="button">🔌 Connect &amp; send first backup</button><div id="bkMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
   }else{
-    $("bkBox").innerHTML='<h2>☁ Google Sheet backup</h2><div class="card" style="margin-top:10px"><div class="meta">Sheet: <b>'+esc(b.sheetName||"connected")+'</b></div><div class="meta" style="margin-top:6px">'+(b.ok===false?'<b style="color:var(--bad)">⚠ Last backup failed:</b> '+esc(b.error):(b.at?'✅ Last backup <b>'+esc(fmtD(b.d))+' · '+esc(b.t)+'</b>'+(b.count?' · '+b.count+' records':''):'No backup sent yet.'))+'</div></div>'
-      +'<p class="hint">The sheet has 6 modern tabs: <b>Backup Overview · Workflow · In Stock · Sold · Materials · Material Log</b>. They are overwritten on every backup — work in the app, not in the sheet. Your other tabs are never touched.</p>'
+    $("bkBox").innerHTML='<h2>☁ Google Sheet backup</h2><div class="card" style="margin-top:10px"><div class="meta">Sheet: <b>'+esc(b.sheetName||"connected")+'</b></div><div class="meta" style="margin-top:6px">'+(b.ok===false?'<b style="color:var(--bad)">⚠ Last backup failed:</b> '+esc(b.error):(b.at?'✅ Last backup <b>'+esc(fmtD(b.d))+' · '+esc(et(b.t))+'</b>'+(b.count?' · '+b.count+' records':''):'No backup sent yet.'))+'</div></div>'
+      +'<p class="hint">For <b>every Ethiopian month</b> the sheet gets 3 tabs that look like your own sheets: <b>Workflow · Stock · Material</b>. When a new month starts, its 3 tabs are created automatically. They are overwritten on every backup — work in the app, not in the sheet. Your other tabs are never touched.</p>'
       +'<button class="btn" id="bkNow" type="button">🔄 Back up now</button>'+(b.sheetUrl?'<button class="btn blue" id="bkOpen" type="button">Open the Google Sheet ↗</button>':'')
       +'<button class="btn red" id="bkOff" type="button">Disconnect</button><div id="bkMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
   }
@@ -303,16 +334,21 @@ function grid(name,heads,widths,rows,opt={}){
   return {name,rows:out,colW:widths,rowH:out.map((_,i)=>i===0?32:28),merges:[]};
 }
 function pdfGrids(){
-  const dt=o=>o&&o.d?o.d+" "+(o.t||""):"";
-  if(tab==="wf"){const L=by("workflow");return {title:"Workflow Follow-up",tabs:[grid("In Workflow ("+L.length+")",["#","Product Code","Product Name","Note","Price (Birr)","Added (Ethiopian)","Added By"],[44,120,270,300,110,170,140],L.map((p,i)=>[i+1,p.code,p.name,p.note||"",nf(p.price),dt(p.added),(p.added||{}).by||""]),{al:["center","","","","right","center",""],bold:[1],empty:"No product in Workflow."})]};}
-  if(tab==="st"){const st=by("stock"),sd=by("sold"),tot=sd.reduce((a,p)=>a+(Number((p.sold||{}).price)||0),0);
-    return {title:"Stock Report",tabs:[
-      grid("In Stock ("+st.length+")",["#","Product Code","Product Name","Note","Price (Birr)","Finished (Ethiopian)","Finished By"],[44,120,270,300,110,170,140],st.map((p,i)=>[i+1,p.code,p.name,p.note||"",nf(p.price),dt(p.finished),(p.finished||{}).by||""]),{al:["center","","","","right","center",""],bold:[1],empty:"Nothing in stock."}),
-      grid("Sold ("+sd.length+")",["#","Product Code","Product Name","Sold (Ethiopian date · time)","Price (Birr)","Buyer","Sold By"],[44,120,270,200,110,230,140],sd.map((p,i)=>[i+1,p.code,p.name,dt(p.sold),nf((p.sold||{}).price),(p.sold||{}).buyer||"",(p.sold||{}).by||""]),{al:["center","","","center","right","",""],bold:[1],total:sd.length?["","","TOTAL SOLD","",nf(tot),"",""]:null,empty:"Nothing sold yet."})]};}
+  const dt=o=>o&&o.d?dmy(o.d)+" "+et(o.t):"";
+  if(tab==="wf"){const L=S.products.slice().sort((a,b)=>(a.added.d+a.added.t).localeCompare(b.added.d+b.added.t));
+    return {title:"Workflow Follow-up",tabs:[grid("WORKFLOW FOLLOW-UP ("+L.length+")",["No","S.No","Prod Id","Model","Description","Order Type","Priority","Start Date","Status","Finished Date","Delivery Date","Sales Name","Location","Changes","Correction"],[40,50,70,70,190,100,80,110,90,110,90,110,100,110,110],
+      L.map((p,i)=>[i+1,p.sno||"",p.code,p.model||"",p.desc||"",p.orderType,p.priority,dt(p.added),p.finished?"FINISHED":"WORKING",dt(p.finished),p.deliveryDate?dmy(p.deliveryDate):"",p.salesName||"",p.location||"",p.changes||"",p.note||""]),
+      {al:["center","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c)=>c===6?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===5?(v==="CUSTOM"?{bg:"#f4cccc"}:null):c===8?(v==="FINISHED"?{bg:"#e8eaed"}:null):null,empty:"No product yet."})]};}
+  if(tab==="st"){
+    const L=S.products.filter(p=>p.finished).sort((a,b)=>(a.finished.d+a.finished.t).localeCompare(b.finished.d+b.finished.t)),cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});
+    return {title:"Stock Report",tabs:cats.map(c=>{const G=L.filter(p=>(p.category||"OTHERS")===c),sold=G.filter(p=>p.status==="sold").length;
+      return grid("Finished Product Stock Report FOR "+c+" — "+G.length+" products · "+sold+" sold · "+(G.length-sold)+" in stock",["No","PRODUCT ID","MODEL","DESCRIPTION","TYPE","STATUS","SELSE INFO","SOLD DATE","SOLD TYPE","CORRECTION"],[40,100,90,230,110,90,100,150,100,200],
+        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?(s.salesInfo||(isCus(p)?"S.O":"S.R")):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
+        {al:["center","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c)=>c===5?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===4?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===8?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null,empty:"Nothing here yet."});})};}
   const lg=S.log.slice(0,150);
   return {title:"Material Report",tabs:[
-    grid("Materials ("+S.materials.length+")",["#","Material","Unit","Balance","Low-stock Alert","Status"],[44,330,90,130,150,120],S.materials.slice().sort((a,b)=>a.name.localeCompare(b.name)).map((m,i)=>[i+1,m.name,m.unit,nf(m.qty),m.min?nf(m.min):"",lowOf(m)==="ok"?"OK":lowOf(m)==="low"?"LOW":"OUT"]),{al:["center","","center","right","right","center"],bold:[1,3],fmt:(v,c)=>c===5?(v==="OK"?{bg:"#e3f4e8",fg:"#176b3a",b:1}:v==="LOW"?{bg:"#fff1d6",fg:"#8a5a00",b:1}:{bg:"#fde7e5",fg:"#9a1d15",b:1}):null,empty:"No material yet."}),
-    grid("Material Log — last "+lg.length,["#","Date (Ethiopian)","Time","Material","Action","Quantity","Balance After","Note","By"],[44,120,70,240,90,100,120,260,130],lg.map((l,i)=>[i+1,l.d,l.t,l.material,l.type==="cut"?"CUT":l.type==="new"?"NEW":"ADDED",(l.type==="cut"?"-":"+")+nf(l.qty)+" "+l.unit,nf(l.balance),l.note||"",l.by||""]),{al:["center","center","center","","center","right","right","",""],bold:[3],fmt:(v,c)=>c===4?(v==="CUT"?{bg:"#fde7e5",fg:"#9a1d15",b:1}:v==="NEW"?{bg:"#e4f0fb",fg:"#14598f",b:1}:{bg:"#e3f4e8",fg:"#176b3a",b:1}):null,empty:"No movement yet."})]};
+    grid("Material Report — available now ("+S.materials.length+")",["No","Material","Type","Unit","Table","Available","Low-stock Alert","Status"],[40,260,110,110,140,110,130,100],S.materials.slice().sort((a,b)=>(a.group||"").localeCompare(b.group||"")||a.name.localeCompare(b.name)).map((m,i)=>[i+1,m.name,m.type||"",m.unit,m.group||"MATERIAL",nf(m.qty),m.min?nf(m.min):"",lowOf(m)==="ok"?"OK":lowOf(m)==="low"?"LOW":"OUT"]),{al:["center","","","center","","right","right","center"],bold:[1,5],fmt:(v,c)=>c===7?(v==="OK"?{bg:"#e3f4e8",fg:"#176b3a",b:1}:v==="LOW"?{bg:"#fff1d6",fg:"#8a5a00",b:1}:{bg:"#fde7e5",fg:"#9a1d15",b:1}):null,empty:"No material yet."}),
+    grid("Material movements — last "+lg.length,["No","Date (Ethiopian)","Clock time","Material","Action","Quantity","Available After","Note","By"],[40,120,110,260,90,100,120,240,130],lg.map((l,i)=>[i+1,dmy(l.d),et(l.t),logMat(l),l.type==="cut"?"CUT":l.type==="new"?"NEW":"ADDED",(l.type==="cut"?"-":"+")+nf(l.qty),nf(l.balance),l.note||"",l.by||""]),{al:["center","center","center","","center","right","right","",""],bold:[3],fmt:(v,c)=>c===4?(v==="CUT"?{bg:"#fde7e5",fg:"#9a1d15",b:1}:v==="NEW"?{bg:"#e4f0fb",fg:"#14598f",b:1}:{bg:"#e3f4e8",fg:"#176b3a",b:1}):null,empty:"No movement yet."})]};
 }
 function mergeMaps(t){
   const origin=new Map(),covered=new Set();
@@ -421,7 +457,7 @@ async function buildPages(g,stampTxt){
 $("bPdf").onclick=async()=>{
   busy("Making the PDF…");
   try{
-    const g=pdfGrids(),pages=await buildPages(g,S.now.d+"  "+S.now.t+"  (Ethiopian)");
+    const g=pdfGrids(),pages=await buildPages(g,S.now.d+"  "+et(S.now.t)+"  (Ethiopian)");
     pdfBlob=buildPdf(pages);
     pdfName="AMBAR-"+g.title.replace(/\s+/g,"-")+"-"+(S.now.d||"").replace(/\//g,"-")+".pdf";
     if(pdfUrl)URL.revokeObjectURL(pdfUrl);pdfUrl=URL.createObjectURL(pdfBlob);
