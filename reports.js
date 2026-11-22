@@ -6,7 +6,7 @@
 //  • Workflow: add a product with a PRODUCT CODE → "Finished" sends it to IN STOCK → "Sold" records the sale
 //    with the ETHIOPIAN date + time (Addis Ababa clock).
 //  • Material: add a new material, ➕ add more, ✂️ cut (use) — every movement is logged with Ethiopian date + time.
-//  • Backup: reports-sheet-script.gs (script version reports-4) is pasted in the reports Google Sheet; the /exec link is saved
+//  • Backup: one tab per section per ETHIOPIAN MONTH (Workflow · Stock · Material); a new month creates its tabs by itself. reports-sheet-script.gs (script version reports-5) is pasted in the reports Google Sheet; the /exec link is saved
 //    (file + Supabase) or set in Render as REPORTS_SCRIPT_URL. The old order sheet is never touched.
 // Access: owner (main admin) only. Assigned admins get 403 on every endpoint; view-only admins are refused on writes by requireAccess.
 const fs = require("fs");
@@ -31,6 +31,8 @@ function register(app, ctx) {
     const g = new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }); // 2026-11-22 14:05:09
     return { d: helpers.ethDate(g.slice(0, 10)), t: g.slice(11, 16) };
   };
+  // Ethiopian clock: the day starts at sunrise (06:00 Addis = 12:00 ቀን). 13:15 → 7:15 ቀን · 21:00 → 3:00 ሌሊት
+  const ethClock = t => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || "")); if (!m) return String(t || ""); const h = +m[1]; return (((h + 6) % 12) || 12) + ":" + m[2] + " " + (h >= 6 && h < 18 ? "ቀን" : "ሌሊት"); };
   const who = req => clip(req.actor?.name || "Main admin", 60);
 
   // ── storage (file + Supabase, restored on every start) ──────────────────────────────────────
@@ -53,9 +55,14 @@ function register(app, ctx) {
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
     if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
     if (d && typeof d === "object") db = { products: [], materials: [], log: [], savedAt: "", ...d };
+    for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; }
+    for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
     if (cfg.scriptUrl) scheduleBackup(8000); // a restart / redeploy refreshes the backup once
+    // New Ethiopian month → the backup runs by itself so the next month's Workflow / Stock / Material tabs appear (checked every 20 minutes)
+    const t = setInterval(() => { if (cfg.scriptUrl && cfg.backup.month !== nowEth().d.slice(0, 7)) backupNow().catch(() => {}); }, 20 * 60 * 1000);
+    if (t.unref) t.unref();
   }
 
   // ── Google Sheet BACKUP (one-way: app → sheet) ──────────────────────────────────────────────
@@ -93,7 +100,7 @@ function register(app, ctx) {
     try {
       const d = await callScript({ action: "backup", data: snapshot() });
       const n = nowEth();
-      cfg.backup = { at: new Date().toISOString(), d: n.d, t: n.t, ok: true, error: "", count: d.rows || 0 };
+      cfg.backup = { at: new Date().toISOString(), d: n.d, t: n.t, ok: true, error: "", count: d.rows || 0, month: n.d.slice(0, 7) };
       if (d.url) cfg.sheetUrl = d.url;
       if (d.name) cfg.sheetName = d.name;
       await saveCfg();
@@ -120,14 +127,12 @@ function register(app, ctx) {
     return "P-" + String(max + 1).padStart(4, "0");
   };
   const addLog = (req, m, type, qty, balance, note) => {
-    db.log.unshift({ id: uid(), matId: m.id, material: m.name, unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
+    db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
   };
-  const priceOf = v => (v === "" || v == null) ? "" : num(v);
-  const badPrice = p => p !== "" && (Number.isNaN(p) || p < 0);
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
-  const view = () => ({ products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
@@ -138,32 +143,40 @@ function register(app, ctx) {
 
   router.get("/state", (req, res) => res.json({ ok: true, ...view() }));
 
-  // WORKFLOW → STOCK → SOLD
+  // WORKFLOW → STOCK → SOLD  (same columns as the Google Sheet: Prod Id · Model · Description · Order Type · Priority · Start Date · Status · Finished · Delivery · Sales Name · Location · Changes · Correction)
+  const CATS = ["SHOE SHELF", "OTHERS", "GADGETS"];
+  const lab = p => [p.model, p.desc].filter(Boolean).join(" ") || p.code;
+  const up = (v, n) => clip(v, n).toUpperCase();
+  const orderTypeOf = v => /CUS|ORD/i.test(String(v || "")) ? "CUSTOM" : "READYMADE";
+  const priorityOf2 = v => { const x = String(v || "").toUpperCase(); return x.startsWith("H") ? "HIGH" : x.startsWith("M") ? "MEDIUM" : "LOW"; };
+  const dateOk = v => !v || /^\d{4}\/\d{2}\/\d{2}$/.test(v);
+  function readProduct(b) {
+    return { code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
+      category: up(b.category, 30) || "OTHERS", salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
+  }
+  const readErr = f => (!f.model && !f.desc) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
   router.post("/product/add", (req, res) => {
-    const b = req.body || {}, name = clip(b.name, 120);
-    if (!name) return fail(res, "Write the product name.");
-    const code = clip(b.code, 30) || nextCode();
-    if (codeTaken(code)) return fail(res, `Product code “${code}” is already used. Choose another code.`);
-    const price = priceOf(b.price);
-    if (badPrice(price)) return fail(res, "The price must be a number.");
-    const p = { id: uid(), code, name, note: clip(b.note, 300), price, status: "workflow", added: stamp(req), history: [] };
+    const f = readProduct(req.body || {}), err = readErr(f);
+    if (err) return fail(res, err);
+    f.code = f.code || nextCode();
+    if (codeTaken(f.code)) return fail(res, `Prod ID “${f.code}” is already used. Choose another.`);
+    const p = { id: uid(), ...f, status: "workflow", added: stamp(req), history: [] };
     hist(p, "Added to Workflow", req);
     db.products.unshift(p);
-    audit("Report: product added", `${code} ${name}`, req.actor);
-    done(res, `✅ ${code} added to Workflow.`);
+    audit("Report: product added", `${p.code} ${lab(p)}`, req.actor);
+    done(res, `✅ ${p.code} added to Workflow.`);
   });
   router.post("/product/edit", (req, res) => {
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
-    const name = clip(b.name, 120), code = clip(b.code, 30);
-    if (!name || !code) return fail(res, "Product code and name are needed.");
-    if (codeTaken(code, p.id)) return fail(res, `Product code “${code}” is already used.`);
-    const price = priceOf(b.price);
-    if (badPrice(price)) return fail(res, "The price must be a number.");
-    const changed = p.code !== code || p.name !== name;
-    p.code = code; p.name = name; p.note = clip(b.note, 300); p.price = price;
+    const f = readProduct(b), err = readErr(f);
+    if (err) return fail(res, err);
+    if (!f.code) return fail(res, "The Prod ID is needed.");
+    if (codeTaken(f.code, p.id)) return fail(res, `Prod ID “${f.code}” is already used.`);
+    const changed = p.code !== f.code || lab(p) !== lab({ ...f });
+    Object.assign(p, f);
     if (changed) hist(p, "Edited", req);
-    audit("Report: product edited", `${code} ${name}`, req.actor);
+    audit("Report: product edited", `${p.code} ${lab(p)}`, req.actor);
     done(res, "✅ Saved.");
   });
   router.post("/product/finish", (req, res) => { // Workflow → In Stock
@@ -178,12 +191,11 @@ function register(app, ctx) {
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
     if (p.status !== "stock") return fail(res, "Only a product that is IN STOCK can be sold.");
-    const price = (b.price === "" || b.price == null) ? p.price : num(b.price);
-    if (badPrice(price)) return fail(res, "The price must be a number.");
-    p.status = "sold"; p.sold = { ...stamp(req), price, buyer: clip(b.buyer, 120), note: clip(b.note, 300) };
+    if (clip(b.salesName, 80)) p.salesName = clip(b.salesName, 80);
+    p.status = "sold"; p.sold = { ...stamp(req), salesInfo: up(b.salesInfo, 12), note: clip(b.note, 300) };
     hist(p, "Sold", req);
     audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
-    done(res, `💰 ${p.code} sold — ${p.sold.d} ${p.sold.t}.`);
+    done(res, `💰 ${p.code} sold — ${p.sold.d} · ${ethClock(p.sold.t)}.`);
   });
   router.post("/product/undo", (req, res) => { // fix a mistake: Sold → In Stock, In Stock → Workflow
     const p = findP(req.body?.id);
@@ -198,52 +210,54 @@ function register(app, ctx) {
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     db.products = db.products.filter(x => x !== p);
-    audit("Report: product deleted", `${p.code} ${p.name}`, req.actor);
+    audit("Report: product deleted", `${p.code} ${lab(p)}`, req.actor);
     done(res, `🗑 ${p.code} deleted.`);
   });
 
-  // MATERIAL: new · add · cut
+  // MATERIAL: new · add · cut   (Material · Type · Unit · Available · Opening stock · daily use · Total used · Note)
+  const matKey = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase();
+  const matName = m => m.name + (m.type ? " " + m.type : "");
   router.post("/material/add", (req, res) => {
-    const b = req.body || {}, name = clip(b.name, 100), unit = clip(b.unit, 20) || "pcs";
+    const b = req.body || {}, name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || "MATERIAL";
     if (!name) return fail(res, "Write the material name.");
-    if (db.materials.some(m => m.name.toLowerCase() === name.toLowerCase())) return fail(res, `“${name}” already exists. Use ➕ Add on it.`);
+    if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists. Use ➕ Add on it.`);
     const qty = (b.qty === "" || b.qty == null) ? 0 : num(b.qty), min = (b.min === "" || b.min == null) ? 0 : num(b.min);
-    if (Number.isNaN(qty) || qty < 0) return fail(res, "The opening quantity must be a number (0 or more).");
+    if (Number.isNaN(qty) || qty < 0) return fail(res, "The quantity must be a number (0 or more).");
     if (Number.isNaN(min) || min < 0) return fail(res, "The low-stock alert must be a number.");
-    const m = { id: uid(), name, unit, qty, min, created: stamp(req) };
+    const m = { id: uid(), name, type, unit, group, qty, min, created: stamp(req) };
     db.materials.push(m);
     addLog(req, m, "new", qty, qty, clip(b.note, 200) || "New material");
-    audit("Report: material added", `${name} ${qty} ${unit}`, req.actor);
-    done(res, `✅ ${name} added.`);
+    audit("Report: material added", `${matName(m)} ${qty} ${unit}`, req.actor);
+    done(res, `✅ ${matName(m)} added.`);
   });
   router.post("/material/move", (req, res) => {
     const b = req.body || {}, m = findM(b.id), type = b.type === "cut" ? "cut" : "add";
     if (!m) return fail(res, "Material not found.");
     const qty = num(b.qty);
     if (Number.isNaN(qty) || qty <= 0) return fail(res, "Write a quantity bigger than 0.");
-    if (type === "cut" && qty > m.qty) return fail(res, `Only ${m.qty} ${m.unit} left of ${m.name}. You cannot cut ${qty}.`);
+    if (type === "cut" && qty > m.qty) return fail(res, `Only ${m.qty} left of ${matName(m)}. You cannot cut ${qty}.`);
     m.qty = Math.round((type === "cut" ? m.qty - qty : m.qty + qty) * 1000) / 1000;
     addLog(req, m, type, qty, m.qty, b.note);
-    audit("Report: material " + type, `${m.name} ${qty} ${m.unit} → ${m.qty}`, req.actor);
-    done(res, type === "cut" ? `✂️ Cut ${qty} ${m.unit} of ${m.name}. Left: ${m.qty}.` : `➕ Added ${qty} ${m.unit} of ${m.name}. Now: ${m.qty}.`);
+    audit("Report: material " + type, `${matName(m)} ${qty} → ${m.qty}`, req.actor);
+    done(res, type === "cut" ? `✂️ Cut ${qty} of ${matName(m)}. Left: ${m.qty}.` : `➕ Added ${qty} to ${matName(m)}. Now: ${m.qty}.`);
   });
   router.post("/material/edit", (req, res) => {
     const b = req.body || {}, m = findM(b.id);
     if (!m) return fail(res, "Material not found.");
-    const name = clip(b.name, 100), unit = clip(b.unit, 20) || "pcs", min = (b.min === "" || b.min == null) ? 0 : num(b.min);
+    const name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || "MATERIAL", min = (b.min === "" || b.min == null) ? 0 : num(b.min);
     if (!name) return fail(res, "Write the material name.");
     if (Number.isNaN(min) || min < 0) return fail(res, "The low-stock alert must be a number.");
-    if (db.materials.some(x => x.id !== m.id && x.name.toLowerCase() === name.toLowerCase())) return fail(res, `“${name}” already exists.`);
-    m.name = name; m.unit = unit; m.min = min;
-    db.log.forEach(l => { if (l.matId === m.id) { l.material = name; l.unit = unit; } });
+    if (db.materials.some(x => x.id !== m.id && matKey(x.name, x.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists.`);
+    Object.assign(m, { name, type, unit, group, min });
+    db.log.forEach(l => { if (l.matId === m.id) { l.material = name; l.mtype = type; l.unit = unit; } });
     done(res, "✅ Saved.");
   });
   router.post("/material/delete", (req, res) => {
     const m = findM(req.body?.id);
     if (!m) return fail(res, "Material not found.");
     db.materials = db.materials.filter(x => x !== m);
-    audit("Report: material deleted", m.name, req.actor);
-    done(res, `🗑 ${m.name} deleted. Its movements stay in the log.`);
+    audit("Report: material deleted", matName(m), req.actor);
+    done(res, `🗑 ${matName(m)} deleted. Its movements stay in the log.`);
   });
 
   // BACKUP sheet
