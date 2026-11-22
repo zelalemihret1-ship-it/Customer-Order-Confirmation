@@ -19,6 +19,7 @@ header a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);col
 main{max-width:920px;margin:auto;padding:14px}
 .tabs{display:flex;gap:8px;margin-bottom:14px}
 .tabs button{flex:1;border-radius:12px;padding:13px 8px;font-weight:700;font-size:14px;background:#fff;color:#153a2e;border:1.5px solid #ddd4c4;cursor:pointer}
+.fseg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}.fseg button{flex:1;min-width:46%;border:1.5px solid #ddd4c4;background:#fff;color:#153a2e;border-radius:12px;padding:10px 6px;font-weight:800;font-size:13px;cursor:pointer;line-height:1.25}.fseg button small{display:block;font-size:11px;font-weight:700;opacity:.75}.fseg button.on{background:#153a2e;color:#fff;border-color:#153a2e}.fseg button.on small{color:#ffd877;opacity:1}.fseg button.k-notsent.on{background:#8a5a00;border-color:#8a5a00}.fseg button.k-rated.on{background:#176b3a;border-color:#176b3a}
 .tabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
 .card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
 h2{margin:0 0 12px;color:#153a2e;font-size:17px}
@@ -88,7 +89,8 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
     </div>
     <div class="card">
       <h2>Orders</h2>
-      <div class="tools"><input id="q" placeholder="Search order ID, customer or product…" autocomplete="off"><select id="f"><option value="">All</option><option value="waiting">Not delivered yet</option><option value="sent">Link sent · waiting for rating</option><option value="rated">Rated</option><option value="failed">Not sent (problem)</option></select></div>
+      <div class="tools"><input id="q" placeholder="Search order ID, customer or product…" autocomplete="off"></div>
+      <div id="fseg" class="fseg"></div>
       <div id="list"></div>
     </div>
   </section>
@@ -135,9 +137,19 @@ $("autoSw").onclick=async()=>{
 
 const LABEL={waiting:"Not delivered yet",delivered:"Delivered",sent:"Link sent",rated:"Rated",failed:"Not sent"};
 const starsHtml=n=>`<span class="stars">${"★".repeat(n)}<i>${"★".repeat(5-n)}</i></span>`;
+const GROUPS={
+  notsent:{label:"📤 Delivered · not sent",test:o=>o.state==="delivered"||o.state==="failed",empty:"No delivered order is waiting for its rating link. 🎉"},
+  waiting:{label:"🚚 Not delivered yet",test:o=>o.state==="waiting",empty:"No order is waiting for delivery."},
+  sent:{label:"✉️ Link sent · waiting",test:o=>o.state==="sent",empty:"No link is waiting for a rating."},
+  rated:{label:"⭐ Rated orders",test:o=>o.state==="rated",empty:"No order has been rated yet."}
+};
+let SEC="notsent";
+function drawSeg(){
+  $("fseg").innerHTML=Object.keys(GROUPS).map(k=>`<button type="button" class="k-${k}${k===SEC?" on":""}" data-k="${k}">${GROUPS[k].label}<small>${D.orders.filter(GROUPS[k].test).length} order${D.orders.filter(GROUPS[k].test).length===1?"":"s"}</small></button>`).join("");
+}
 function drawOrders(){
-  const q=$("q").value.trim().toLowerCase(),f=$("f").value;
-  const rows=D.orders.filter(o=>(!f||o.state===f)&&(!q||[o.orderId,o.customer,o.product].some(x=>String(x).toLowerCase().includes(q))));
+  const q=$("q").value.trim().toLowerCase();drawSeg();
+  const rows=D.orders.filter(o=>GROUPS[SEC].test(o)&&(!q||[o.orderId,o.customer,o.product].some(x=>String(x).toLowerCase().includes(q))));
   $("list").innerHTML=rows.length?rows.map(o=>{
     let btn="";
     if(o.state==="waiting"||o.state==="delivered"||o.state==="failed")btn=`<button class="send" data-id="${esc(o.id)}">✅ Delivered · send link</button>`;
@@ -148,9 +160,10 @@ function drawOrders(){
       ${o.stars?`<div style="margin-top:6px">${starsHtml(o.stars)} <span class="hint">${o.stars}/5 · ${esc(o.ratedAt)}</span></div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}`:""}
       ${o.error?`<div class="meta" style="color:#b3261e">${esc(o.error)}</div>`:""}
       ${btn?`<div class="row" style="margin-top:8px">${btn}</div>`:""}</div>`;
-  }).join(""):`<div class="empty">No orders to show.</div>`;
+  }).join(""):`<div class="empty">${q?"No order matches your search.":GROUPS[SEC].empty}</div>`;
 }
-$("q").addEventListener("input",drawOrders);$("f").addEventListener("change",drawOrders);
+$("q").addEventListener("input",drawOrders);
+$("fseg").addEventListener("click",e=>{const b=e.target.closest("button[data-k]");if(!b)return;SEC=b.dataset.k;drawOrders();});
 $("list").addEventListener("click",e=>{
   const b=e.target.closest("button[data-id]");if(!b)return;
   const o=D.orders.find(x=>String(x.id)===b.dataset.id),resend=!!b.dataset.resend;
