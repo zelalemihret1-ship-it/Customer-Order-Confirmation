@@ -1,3 +1,11 @@
+# v117 — Telegram connection is QR-only (main admin generates, assigned admin scans)
+- The phone-number / SMS / login-code method is **removed** (endpoints `/api/my-account/send-code|verify|resend`, `/api/setup/send-code|verify` are gone).
+- **Main admin:** ⚙ Settings → 👥 Manage Assigned Admins → tap **📱 Generate connection QR** on an admin's row (or **Generate my connection QR** for your own account).
+- **Assigned admin:** Telegram → Settings → Devices → Link Desktop Device → scan the QR → confirm. The row turns **✓ Telegram account connected**.
+- The QR works only for the Telegram ID it was generated for; if another account scans it, the login is refused and logged out. The QR refreshes automatically and expires after 5 minutes.
+- If the scanning account has 2-step verification, the admin types their own password in the box shown under the QR.
+- New endpoints (main admin / setup key only): `/api/setup/app-admins/qr-start|qr-poll|qr-password|qr-cancel`. Still needs `TG_API_ID` and `TG_API_HASH`.
+
 ## v116 — Weekly Story: smaller, clearer Admin overview
 - The **👑 Admin overview** (All admins tab) is now compact: a 4-box summary (Admins · Connected · Running · Posted today / Failed), a red alert line only when something failed, and **one slim row per admin** (initial, name, MAIN badge, green/amber Telegram dot, running / today / failed). Tap **+** to create a plan for that admin.
 - Admins with failures or no Telegram connection are listed **first**; a **Needs attention** filter appears only when there is something to fix. First 5 shown, **Show all** for the rest.
