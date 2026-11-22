@@ -24,7 +24,7 @@ const DEFAULT_TEXT = "Hello {name} 👋\nYour order {order} ({product}) has been
 
 function register(app, ctx) {
   const { requireAccess, getOrders, loadOrders, saveOrderRecord, telegram, admins, accountFor, resolveUser, businessConnections, isUsable, ownerIds,
-    notifyAdminsText, supabase, helpers, baseDir, publicBaseUrl, noZoomHead, getAppAdmins } = ctx;
+    notifyAdminsText, supabase, helpers, baseDir, publicBaseUrl, noZoomHead, getAppAdmins, getCallers } = ctx;
   const DB_FILE = path.join(baseDir, "ratings.json");
   // links[orderId] = { token, sentAt, by, byKey, via, status:"sent"|"failed", error, auto, stars, comment, ratedAt }
   let db = { templates: {}, auto: {}, links: {}, log: [], base: "" };
@@ -235,6 +235,23 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
       out.people = Object.values(by).map(p => ({ name: p.name, count: p.count, avg: Math.round(p.sum / p.count * 10) / 10 }));
     }
     res.json(out);
+  });
+  // Full customer info for a rated order: the customer record + this order's details + every order of that customer with its rating.
+  router.get("/customer/:id", async (req, res) => {
+    const a = req.actor;
+    if (supabase) { try { await loadOrders(); } catch {} }
+    const o = findOrder(req.params.id);
+    if (!o || !mine(o, a)) return res.status(404).json({ ok: false, error: "Order not found." });
+    const list = (getCallers?.()?.list) || [];
+    const c = list.find(x => String(x.id) === String(o.customerId || "")) || null;
+    const rt = id => { const r = db.links[id] || {}; return { stars: r.stars || 0, comment: r.comment || "", ratedAt: r.ratedAt || "" }; };
+    const pick = (obj, keys) => Object.fromEntries(keys.map(k => [k, obj[k] == null ? "" : obj[k]]));
+    const order = pick(o, ["orderId", "product", "length", "width", "height", "material", "color", "style", "design", "handle", "door", "partition", "drawer", "additionalFeatures",
+      "payment", "advance", "orderDate", "completionDate", "deliveryType", "deliveryService", "deliveryFee", "deliveryDate", "status", "createdByName", "location", "phone", "telegramUsername", "customerName"]);
+    order.deliveryDate = helpers.ethDate(o.deliveryDate) || o.deliveryDate || "";
+    const others = getOrders().filter(x => mine(x, a) && String(x.customerId || "") === String(o.customerId || "") && o.customerId).sort((x, y) => (Number(y.id) || 0) - (Number(x.id) || 0))
+      .map(x => ({ id: x.id, orderId: x.orderId, product: x.product || "", status: x.status || "", ...rt(x.id) }));
+    res.json({ ok: true, order, rating: rt(o.id), customer: c ? pick(c, ["id", "name", "phone", "additionalPhone", "username", "location", "customerStatus", "source", "salesName", "totalSpend", "orderId", "lastConversation", "date", "time", "createdBy"]) : null, orders: others });
   });
   router.post("/template", async (req, res) => {
     const t = clean(req.body?.text).slice(0, MAX_TEXT);
