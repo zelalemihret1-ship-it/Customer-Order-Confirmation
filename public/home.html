@@ -131,22 +131,25 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 
 
   <div class="duo">
-    <a class="big first" href="/orders.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Customer Order Confirmation</b><span class="d">Create an order card and send it</span></div></a>
-    <a class="big" href="/callers.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-users"/></svg><div><b>Customer ID</b><span class="d">Add, edit and find customers</span></div></a>
+    <a class="big first" data-perm="orders" href="/orders.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Customer Order Confirmation</b><span class="d">Create an order card and send it</span></div></a>
+    <a class="big" data-perm="customers,orders" href="/callers.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-users"/></svg><div><b>Customer ID</b><span class="d">Add, edit and find customers</span></div></a>
   </div>
 
   <div class="sec">Customers &amp; Marketing</div>
   <div class="list">
-    <a class="row" href="/greeting.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-chat"/></svg><div><b>First Greeting</b><span class="d">Automatic first message to new customers</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
-    <a class="row" href="/rating.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-star"/></svg><div><b>Customer Rating</b><span class="d">Rating link sent after delivery</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
-    <a class="row" href="/stories.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-cam"/></svg><div><b>Weekly Story</b><span class="d">7 photos or videos, one posted per day</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    <a class="row" data-perm="greeting" href="/greeting.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-chat"/></svg><div><b>First Greeting</b><span class="d">Automatic first message to new customers</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    <a class="row" data-perm="rating" href="/rating.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-star"/></svg><div><b>Customer Rating</b><span class="d">Rating link sent after delivery</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    <a class="row" data-perm="stories" href="/stories.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-cam"/></svg><div><b>Weekly Story</b><span class="d">7 photos or videos, one posted per day</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
   </div>
 
-  <div class="own hide">
-    <div class="sec">Reports<span class="badge">Main admin only</span></div>
+  <div class="hide" data-perm="reports">
+    <div class="sec">Reports</div>
     <div class="list">
       <a class="row" href="/reports.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Reports</b><span class="d">Workflow · Stock · Material — work inside the app</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
     </div>
+  </div>
+
+  <div class="own hide">
     <div class="sec">Administration<span class="badge">Main admin only</span></div>
     <div class="admin"><div class="grid">
       <a class="at" href="/orders.html?open=cfg"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-bolt"/></svg><div><b>Connect Google Sheet</b><span class="d">One click · all data</span></div></a>
@@ -189,6 +192,9 @@ $("btnSh").addEventListener("click",async()=>{
     if(allowed){
       $("hello").textContent="Hello"+(m.name?", "+m.name:"")+" 👋";
       if(m.role==="owner"||m.enforced===false)document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});
+      // Section access: the main admin decides which sections each assigned admin sees (e.g. turn on Reports → it appears here).
+      const full=m.role==="owner"||m.enforced===false,have=m.perms||[];
+      document.querySelectorAll("[data-perm]").forEach(function(e){const ok=full||e.dataset.perm.split(",").some(function(k){return have.indexOf(k)>-1;});e.classList.toggle("hide",!ok);});
       // "Connect Telegram" is shown ONLY until this admin's own Telegram account is connected; after that it is gone.
       try{
         const a=await (await fetch("/api/my-account")).json();
