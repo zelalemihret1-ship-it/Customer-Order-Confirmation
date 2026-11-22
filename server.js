@@ -3395,7 +3395,7 @@ const ratingModule = require("./ratings").register(app, {
   publicBaseUrl: PUBLIC_BASE_URL, noZoomHead: NOZOOM_HEAD, getAppAdmins: () => appAdmins
 });
 // ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
-const reportsModule = require("./reports").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers });
+const reportsModule = require("./reports").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
