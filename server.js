@@ -812,6 +812,7 @@ app.get("/", sendHome);
 app.get(["/index.html", "/orders.html"], sendOrderForm);
 app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/reports.html", sendPage("reports.html", "<!doctype html><meta charset=utf-8><p>public/reports.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/stories.html", sendPage("stories.html", "<!doctype html><meta charset=utf-8><p>public/stories.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charset=utf-8><p>public/greeting.html is missing. Keep the public folder in the deploy.</p>"));
 app.get(["/home", "/home.html"], sendHome);
@@ -1622,12 +1623,14 @@ function identify(req) {
   const id = String(user.id), name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || id;
   const a = appAdmins.find(x => String(x.telegramId) === id);
   if (OWNER_IDS.includes(id)) return { role: "owner", name: (a && a.name) || name, telegramId: id, accountId: (a && a.accountId) || "", primary: ENV_OWNER_IDS.includes(id) };
-  return a ? { role: "admin", name: a.name || name, telegramId: id, accountId: a.accountId || "" } : { telegramId: id, name };
+  return a ? { role: "admin", viewer: !!a.viewer, name: a.name || name, telegramId: id, accountId: a.accountId || "" } : { telegramId: id, name };
 }
 function requireAccess(req, res, next) {
   if (!accessEnforced()) { req.actor = { role: "open", name: "", telegramId: "", accountId: "" }; return next(); }
   const a = identify(req);
   if (!a.role) return res.status(401).json({ ok: false, code: "UNAUTHORISED", error: "You are not an assigned admin. Send the owner your Telegram ID" + (a.telegramId ? `: ${a.telegramId}` : ".") });
+  // v118 VIEW-ONLY admins: they may look, never change. Enforced here for EVERY protected route (orders, customers, stories, greetings, ratings, sheets…).
+  if (a.viewer && !["GET", "HEAD", "OPTIONS"].includes(req.method)) return res.status(403).json({ ok: false, code: "VIEW_ONLY", error: "👁 You are a view-only admin: you can watch, but not change anything." });
   req.actor = a; next();
 }
 app.get("/api/me", (req, res) => {
@@ -1635,7 +1638,7 @@ app.get("/api/me", (req, res) => {
   const error = a.role ? "" : (!a.telegramId
     ? "Telegram identity was not received. Open AMBAR Furniture from its Telegram bot menu button, not a normal browser tab."
     : `Telegram account ${a.telegramId} is not authorized. Add this exact numeric ID to MAIN_ADMIN_TELEGRAM_ID (or OWNER_TELEGRAM_IDS) in Render, then redeploy.`);
-  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", name: a.name || "", telegramId: a.telegramId || "", primary: !!a.primary || (a.role === "owner" && !a.telegramId), error });
+  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", viewer: !!a.viewer, name: a.name || "", telegramId: a.telegramId || "", primary: !!a.primary || (a.role === "owner" && !a.telegramId), error });
 });
 const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
 function inlineId_ref(callback, connectionId, chatId) {
@@ -1740,7 +1743,7 @@ app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/
 app.use("/api/business", ownerOnly);
 
 app.get("/api/customers", (req, res) => {
-  const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
+  const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || req.actor?.viewer || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
   const adminIds = new Set(allAdminChatIds({})); // admins are not customers
   res.json([...customers.values()].filter(c => mine(c) && !adminIds.has(String(c.id))).map(c => ({ ...c, first_name: c.name || c.first_name || "" })).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
 });
@@ -2319,7 +2322,9 @@ app.post("/api/setup/app-admins/add", async (req, res) => {
     const name = (m[2] || (lines.length === 1 ? String(req.body?.name || "") : "")).trim().slice(0, 60);
     const prev = appAdmins.find(a => String(a.telegramId) === telegramId);
     const asMain = req.body?.main === true || req.body?.main === "1" || req.body?.main === "true" || !!prev?.main;
-    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...(prev || {}), telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", ...(asMain ? { main: true } : {}) });
+    const wantViewer = req.body?.viewer === true || req.body?.viewer === "1" || req.body?.viewer === "true" || (req.body?.viewer === undefined && !!prev?.viewer);
+    const base = { ...(prev || {}) }; delete base.viewer;
+    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...base, telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", ...(asMain ? { main: true } : {}), ...(wantViewer && !asMain ? { viewer: true } : {}) });
     added.push(name || telegramId);
   }
   if (!added.length) return res.status(400).json({ ok: false, error: "Enter numeric Telegram IDs, one per line, e.g. 123456789 Abebe" });
@@ -2338,10 +2343,23 @@ app.post("/api/setup/app-admins/set-main", async (req, res) => {
   const make = req.body?.main === true || req.body?.main === "1" || req.body?.main === "true";
   const me = identify(req);
   if (!make && String(me.telegramId) === telegramId) return res.status(400).json({ ok: false, error: "You can't remove your own main-admin rights. Ask another main admin." });
-  if (make) rec.main = true; else delete rec.main;
+  if (make) { rec.main = true; delete rec.viewer; } else delete rec.main; // a main admin is never view-only
   await saveAppAdmins();
   sheets.log(make ? "Main admin added" : "Main admin removed", rec.name || rec.telegramId, me.name || "Owner");
   res.json({ ok: true, message: make ? `${rec.name || telegramId} is now a MAIN ADMIN (full control). They must reopen the app once.` : `${rec.name || telegramId} is a normal assigned admin again.` });
+});
+// v118: VIEW-ONLY admin — can watch everything but not change or send anything (the server blocks every write for them).
+app.post("/api/setup/app-admins/set-viewer", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  if (OWNER_IDS.includes(telegramId)) return res.status(400).json({ ok: false, error: "A main admin can't be view-only. Remove the main-admin rights first." });
+  const make = req.body?.viewer === true || req.body?.viewer === "1" || req.body?.viewer === "true";
+  if (make) rec.viewer = true; else delete rec.viewer;
+  await saveAppAdmins();
+  sheets.log(make ? "Admin set to view-only" : "Admin may edit again", rec.name || rec.telegramId, identify(req).name || "Owner");
+  res.json({ ok: true, message: make ? `👁 ${rec.name || telegramId} is now VIEW-ONLY: can watch, cannot change anything.` : `${rec.name || telegramId} is a normal assigned admin again (can create and edit).` });
 });
 app.post("/api/setup/app-admins/remove", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2407,8 +2425,14 @@ app.post("/api/setup/app-admins/update", async (req, res) => {
   if (req.body?.main !== undefined) { // assignee: main admin (set from the edit form)
     const wantMain = req.body.main === true || req.body.main === "1" || req.body.main === "true";
     if (!wantMain && rec.main && String(identify(req).telegramId) === oldId) return res.status(400).json({ ok: false, error: "You can't remove your own main-admin rights. Ask another main admin." });
-    if (wantMain && !rec.main) { rec.main = true; extra += " Now a MAIN ADMIN — they must reopen the app once."; sheets.log("Main admin added", rec.name || rec.telegramId, identify(req).name || "Owner"); }
+    if (wantMain && !rec.main) { rec.main = true; delete rec.viewer; extra += " Now a MAIN ADMIN — they must reopen the app once."; sheets.log("Main admin added", rec.name || rec.telegramId, identify(req).name || "Owner"); }
     else if (!wantMain && rec.main) { delete rec.main; extra += " Main-admin rights removed."; sheets.log("Main admin removed", rec.name || rec.telegramId, identify(req).name || "Owner"); }
+  }
+  if (req.body?.viewer !== undefined) {
+    const wantViewer = req.body.viewer === true || req.body.viewer === "1" || req.body.viewer === "true";
+    if (wantViewer && (rec.main || OWNER_IDS.includes(oldId))) extra += " (Not set to view-only: a main admin can't be view-only.)";
+    else if (wantViewer && !rec.viewer) { rec.viewer = true; extra += " Now VIEW-ONLY."; }
+    else if (!wantViewer && rec.viewer) { delete rec.viewer; extra += " May edit again."; }
   }
   if (newId !== oldId) { // the personal Telegram login belongs to the OLD ID, so it is disconnected; the new person connects their own
     const own = admins.get(String(rec.accountId || ""));
@@ -2987,7 +3011,7 @@ app.get("/api/orders", async (req, res) => {
   try {
     await supabaseReady;
     if (supabase) await loadOrders();
-    res.json(req.actor?.role === "admin" ? orders.filter(o => String(o.createdByTelegramId || "") === req.actor.telegramId) : orders);
+    res.json(req.actor?.role === "admin" && !req.actor?.viewer ? orders.filter(o => String(o.createdByTelegramId || "") === req.actor.telegramId) : orders);
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 app.post("/api/orders/:id/comment", async (req, res) => {
@@ -3370,6 +3394,8 @@ const ratingModule = require("./ratings").register(app, {
   businessConnections, isUsable, ownerIds: OWNER_IDS, notifyAdminsText, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR,
   publicBaseUrl: PUBLIC_BASE_URL, noZoomHead: NOZOOM_HEAD, getAppAdmins: () => appAdmins
 });
+// ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
+const reportsModule = require("./reports").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
@@ -3389,6 +3415,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await loadCallers(); // callers data (Customer IDs 0001, 0002 …)
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await greetingModule.load(); // first-greeting log
+    await reportsModule.load(); // the reports Google Sheet link comes back by itself
     await ratingModule.load(); ratingModule.start(); // customer rating links (sent after delivery)
     await storyPlanner.start(); // weekly story scheduler (one photo per day, never repeated)
     await tgApi.configureWebhook();
