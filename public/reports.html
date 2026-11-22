@@ -49,6 +49,15 @@ input[type=text],input[type=password],input:not([type]){width:100%;padding:11px;
 .chk{display:flex;align-items:center;gap:9px;padding:8px 4px;font-size:14px;font-weight:600}
 .chk input{width:auto;margin:0}
 .chip{display:inline-block;background:#153a2e;color:#ffd877;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800}
+.zoom{display:flex;gap:8px;align-items:center;margin:0 0 8px}
+.zoom button{border:1.5px solid #ddd4c4;background:#fff;color:#153a2e;border-radius:10px;padding:8px 14px;font-weight:800;font-size:15px;cursor:pointer}
+.paperbox{overflow:auto;-webkit-overflow-scrolling:touch;background:#c9c4b8;border-radius:12px;padding:8px;max-height:74vh;touch-action:pan-x pan-y}
+.paperbox img{display:block;margin:0 auto 10px;background:#fff;box-shadow:0 4px 16px #0004;max-width:none;-webkit-user-select:none;user-select:none}
+.diag div{padding:8px 4px;border-bottom:1px solid #eee;font-size:13px;line-height:1.45}.diag b.ok{color:#176b3a}.diag b.no{color:#9a1d15}.diag small{display:block;color:#6d675d;word-break:break-word}
+.sheet td.ed{cursor:pointer}.sheet td.lk{cursor:not-allowed}
+.sheet td.hit{outline:3px solid #229ed9;outline-offset:-3px}
+.editnote{background:#fff6e0;border:1px solid #e9c46a;color:#7a5600;border-radius:12px;padding:9px 12px;font-size:13px;font-weight:700;margin-bottom:10px}
+textarea#cellIn{width:100%;min-height:90px;padding:11px;border:1px solid #d6d1c7;border-radius:10px;font-size:16px;font-family:inherit;margin-top:6px;user-select:text;-webkit-user-select:text}
 .busy{position:fixed;inset:0;background:#fffc;z-index:300;display:none;align-items:center;justify-content:center;font-weight:800;color:#153a2e;font-size:16px}
 .busy.on{display:flex}
 </style>
@@ -79,11 +88,13 @@ input[type=text],input[type=password],input:not([type]){width:100%;padding:11px;
     <div class="seg" id="seg"></div>
     <div class="bar">
       <button class="pdf" id="bPdf" type="button">📄 Make PDF</button>
+      <button id="bEdit" type="button" style="background:#8a5a00">✏️ Edit</button>
       <button id="bRef" type="button">🔄 Refresh</button>
       <button class="grey" id="bCfg" type="button">⚙ Settings</button>
     </div>
     <div id="vMsg" class="msg"></div>
     <div id="meta" class="meta"></div>
+    <div class="zoom" id="zoomBar" style="display:none"><button id="zOut" type="button">−</button><button id="zFit" type="button">Fit</button><button id="zIn" type="button">+</button><span class="hint">Zoom and drag to read · looks exactly like the PDF</span></div>
     <div id="out"></div>
   </div>
 </main>
@@ -97,6 +108,17 @@ input[type=text],input[type=password],input:not([type]){width:100%;padding:11px;
   <button class="btn grey" id="pdfOpen" type="button">Open PDF</button>
   <div id="pdfMsg" class="msg"></div>
   <button class="btn grey" id="pdfClose" type="button" style="background:#fff;color:#153a2e;border:1.5px solid #ddd4c4">Close</button>
+</div></div>
+
+<!-- edit one cell -->
+<div class="ov" id="cellOv"><div class="box">
+  <h2 style="margin:0 0 4px;color:#153a2e">✏️ Edit cell</h2>
+  <div class="hint" id="cellInfo"></div>
+  <textarea id="cellIn"></textarea>
+  <button class="btn" id="cellSave" type="button">💾 Save to the sheet</button>
+  <div style="display:flex;gap:8px"><button class="btn blue" id="cellAdd" type="button">➕ Insert row below</button><button class="btn red" id="cellDel" type="button">🗑 Delete row</button></div>
+  <div id="cellMsg" class="msg"></div>
+  <button class="btn grey" id="cellClose" type="button" style="background:#fff;color:#153a2e;border:1.5px solid #ddd4c4">Cancel</button>
 </div></div>
 
 <!-- settings -->
@@ -132,6 +154,7 @@ const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.t
 async function refreshStatus(refresh){
   const d=await api("/api/reports/status"+(refresh?"?refresh=1":""));
   if(!d.ok&&!d.configured){say("vMsg",d.error||"Could not read the reports settings.","bad");}
+  else if(d.error){say("vMsg","⚠ "+d.error,"bad");}
   ST=d;
   if(!d.configured){$("setup").style.display="block";$("view").style.display="none";return;}
   $("setup").style.display="none";$("view").style.display="block";
@@ -163,13 +186,121 @@ $("sConnect").onclick=async()=>{
 };
 
 // ── load + show a report ───────────────────────────────────────────────────────────
+let PAGES=[],ZOOM=1,loadSeq=0;
+const ZS=[1,1.6,2.4,3.5];
+function applyZoom(){const box=$("out").querySelector(".paperbox");if(!box)return;const w=Math.max(0,box.clientWidth-16);box.querySelectorAll("img").forEach(i=>{i.style.width=Math.round(w*ZOOM)+"px";});}
+$("zIn").onclick=()=>{const i=ZS.indexOf(ZOOM);ZOOM=ZS[Math.min(ZS.length-1,i+1)];applyZoom();};
+$("zOut").onclick=()=>{const i=ZS.indexOf(ZOOM);ZOOM=ZS[Math.max(0,i-1)];applyZoom();};
+$("zFit").onclick=()=>{ZOOM=1;applyZoom();};
+function emptyBox(html){$("zoomBar").style.display="none";$("out").innerHTML='<div class="card"><div style="line-height:1.55">'+html+'</div></div>';}
+function pickerHtml(){
+  const all=(ST&&ST.allTabs)||[];if(!all.length)return '<button class="btn" type="button" onclick="runCheck()">🔍 Check connection</button>';
+  const sel=(ST.tabs&&ST.tabs[cur])||[];
+  return '<b>Choose the tab(s) of the '+esc(TYPES.find(t=>t[0]===cur)[1])+' report:</b>'+all.map(n=>'<label class="chk"><input type="checkbox" class="pk" value="'+esc(n)+'"'+(sel.includes(n)?" checked":"")+'> '+esc(n)+'</label>').join("")
+    +'<button class="btn" type="button" onclick="savePick()">Save and show</button><button class="btn grey" type="button" onclick="runCheck()">🔍 Check connection</button>';
+}
+async function savePick(){
+  const names=[...document.querySelectorAll(".pk:checked")].map(i=>i.value);if(!names.length){say("vMsg","Tick at least one tab.","bad");return;}
+  const body={};body[cur]=names;const d=await api("/api/reports/map",body);if(d.ok){ST=d;say("vMsg","");loadReport(true);}else say("vMsg",d.error||"Could not save.","bad");
+}
+async function runCheck(){
+  busy("Checking the connection…");const d=await api("/api/reports/check");busy("");
+  const steps=d.steps||[{ok:false,label:"Check",detail:d.error||"Could not run the check."}];
+  emptyBox('<h2 style="margin:0 0 6px;color:#153a2e">🔍 Connection check</h2><div class="diag">'+steps.map(s=>'<div><b class="'+(s.ok?"ok":"no")+'">'+(s.ok?"✅":"❌")+' '+esc(s.label)+'</b><small>'+esc(s.detail)+'</small></div>').join("")+'</div><button class="btn" type="button" onclick="refreshStatus(true)">Try again</button>');
+}
 async function loadReport(fresh){
-  say("vMsg","");$("meta").textContent="";$("out").innerHTML='<div class="empty">Loading…</div>';DATA=null;
+  const my=++loadSeq;
+  say("vMsg","");$("meta").textContent="";DATA=null;PAGES=[];$("zoomBar").style.display="none";$("out").innerHTML='<div class="empty">Loading…</div>';
   const d=await api("/api/reports/data?type="+cur+(fresh?"&fresh=1":""));
-  if(!d.ok){$("out").innerHTML='<div class="empty">'+esc(d.error||"Could not load the report.")+(d.code==="NO_TAB"?'<br><br><button class="btn" onclick="openCfg()">⚙ Choose tab(s)</button>':"")+'</div>';return;}
+  if(my!==loadSeq)return;
+  if(!d.ok){
+    if(d.code==="NO_TAB")return emptyBox('<h2 style="margin:0 0 6px;color:#153a2e">No tab chosen yet</h2><p class="hint">Pick the sheet tab that holds this report.</p>'+pickerHtml());
+    return emptyBox('<h2 style="margin:0 0 6px;color:#9a1d15">Could not load this report</h2><p>'+esc(d.error||"Unknown error.")+'</p><button class="btn" type="button" onclick="runCheck()">🔍 Check connection</button>');
+  }
+  const cells=d.tabs.reduce((a,t)=>a+t.rows.reduce((b,r)=>b+r.filter(c=>c[0]!=="").length,0),0);
+  if(!cells)return emptyBox('<h2 style="margin:0 0 6px;color:#9a1d15">The chosen tab is empty</h2><p class="hint">'+d.tabs.map(t=>esc(t.name)+": "+t.rows.length+" rows").join(" · ")+'<br>The script found no text in it. Choose the right tab:</p>'+pickerHtml());
   DATA=d;
   $("meta").textContent=d.title+" · "+(d.sheetName||"")+" · updated "+new Date(d.fetchedAt).toLocaleString();
-  $("out").innerHTML=d.tabs.map(t=>'<div class="tabname">'+esc(t.name)+'</div><div class="sheet">'+tableHtml(t)+'</div>').join("");
+  await showMode(my);
+}
+let MODE="view";
+async function showMode(my){
+  $("bEdit").textContent=MODE==="edit"?"👁 View":"✏️ Edit";
+  if(MODE==="edit"){
+    $("zoomBar").style.display="none";
+    $("out").innerHTML='<div class="editnote">✏️ Edit mode — tap a cell to change it. Changes are saved straight into the sheet. Cells with formulas are locked.</div>'
+      +DATA.tabs.map((t,ti)=>'<div class="tabname">'+esc(t.name)+'</div><div class="sheet" data-ti="'+ti+'">'+tableHtml(t)+'</div>').join("");
+    return;
+  }
+  if(!PAGES.length){
+    busy("Preparing the report…");
+    try{await buildPages();}catch(e){busy("");return emptyBox('<h2 style="margin:0 0 6px;color:#9a1d15">Could not draw the report</h2><p>'+esc(e.message||e)+'</p>');}
+    busy("");
+  }
+  if(my!==undefined&&my!==loadSeq)return;
+  $("out").innerHTML='<div class="paperbox">'+PAGES.map(p=>'<img alt="'+esc(p.label)+'" src="'+p.url+'">').join("")+'</div>';
+  $("zoomBar").style.display="flex";ZOOM=1;applyZoom();
+}
+$("bEdit").onclick=async()=>{if(!DATA)return;MODE=MODE==="edit"?"view":"edit";await showMode();};
+
+// ── edit a cell / insert row / delete row (saved into the sheet by the script) ──
+let EDIT=null;
+$("out").addEventListener("click",e=>{
+  const td=e.target.closest&&e.target.closest("td[data-r]");if(!td||MODE!=="edit"||!DATA)return;
+  const ti=+td.closest(".sheet").dataset.ti,r=+td.dataset.r,c=+td.dataset.c,t=DATA.tabs[ti];
+  if(td.classList.contains("lk")){(window.AppToast||alert)("This cell has a formula — it is calculated by the sheet.");return;}
+  if(!t.rowNo||!t.rowNo.length){(window.AppToast||alert)("Update the Google script (paste the new reports-sheet-script.gs) to edit here.");return;}
+  EDIT={ti,r,c,td};
+  const head=(t.rows[0]&&t.rows[0][c]&&t.rows[0][c][0])||"";
+  const first=(t.rows[r]||[]).map(x=>x[0]).find(x=>x!=="")||"";
+  $("cellInfo").textContent=t.name+" · row "+t.rowNo[r]+" · column "+(c+1)+(first?" · “"+first+"”":"");
+  $("cellIn").value=t.rows[r][c][0];say("cellMsg","");td.classList.add("hit");
+  $("cellOv").classList.add("on");setTimeout(()=>{try{$("cellIn").focus();}catch{}},150);
+});
+function closeCell(){$("cellOv").classList.remove("on");if(EDIT&&EDIT.td)EDIT.td.classList.remove("hit");}
+$("cellClose").onclick=closeCell;
+$("cellOv").addEventListener("click",e=>{if(e.target===$("cellOv"))closeCell();});
+async function sendEdit(path,body){
+  const t=DATA.tabs[EDIT.ti];
+  busy("Saving to the sheet…");const d=await api("/api/reports/"+path,{tab:t.name,...body});busy("");return d;
+}
+$("cellSave").onclick=async()=>{
+  if(!EDIT)return;const t=DATA.tabs[EDIT.ti],v=$("cellIn").value;
+  const d=await sendEdit("edit",{cells:[{r:t.rowNo[EDIT.r],c:t.colNo[EDIT.c],v}]});
+  if(!d.ok||(d.skipped&&d.skipped.length)){say("cellMsg",d.error||d.message,"bad");return;}
+  t.rows[EDIT.r][EDIT.c][0]=v;PAGES.forEach(p=>URL.revokeObjectURL(p.url));PAGES=[]; // preview/PDF are redrawn from the new data
+  EDIT.td.textContent=v;closeCell();(window.AppToast||alert)("✅ Saved to the sheet");
+};
+$("cellAdd").onclick=async()=>{
+  if(!EDIT)return;const t=DATA.tabs[EDIT.ti];
+  const d=await sendEdit("add-row",{row:t.rowNo[EDIT.r]});
+  if(!d.ok){say("cellMsg",d.error,"bad");return;}
+  closeCell();(window.AppToast||alert)("✅ Row inserted");await reloadKeepMode();
+};
+$("cellDel").onclick=async()=>{
+  if(!EDIT)return;const t=DATA.tabs[EDIT.ti];
+  if(!confirm("Delete row "+t.rowNo[EDIT.r]+" from the sheet? This cannot be undone."))return;
+  const d=await sendEdit("del-row",{row:t.rowNo[EDIT.r]});
+  if(!d.ok){say("cellMsg",d.error,"bad");return;}
+  closeCell();(window.AppToast||alert)("🗑 Row deleted");await reloadKeepMode();
+};
+async function reloadKeepMode(){const m=MODE;await loadReport(true);MODE=m;if(DATA)await showMode();}
+// Draw every page exactly as it will appear in the PDF (the preview IS the PDF pages).
+async function buildPages(){
+  PAGES.forEach(p=>URL.revokeObjectURL(p.url));PAGES=[];
+  const stamp=new Date().toLocaleString([], {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const cv=document.createElement("canvas");cv.width=PW;cv.height=PH;const ctx=cv.getContext("2d");
+  const plans=DATA.tabs.map(t=>planPages(t)),totalPages=plans.reduce((a,p)=>a+p.pages.length,0);let no=0;
+  for(let ti=0;ti<DATA.tabs.length;ti++){
+    const t=DATA.tabs[ti],plan=plans[ti];
+    for(const rows of plan.pages){
+      no++;busy("Preparing the report… page "+no+" / "+totalPages);
+      drawPage(ctx,DATA.title,t.name,t,plan,rows,no,totalPages,DATA.sheetName,stamp);
+      const u8=await jpegBytes(cv);
+      PAGES.push({u8,w:PW,h:PH,url:URL.createObjectURL(new Blob([u8],{type:"image/jpeg"})),label:DATA.title+" "+t.name+" page "+no});
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
 }
 function mergeMaps(t){
   const origin=new Map(),covered=new Set();
@@ -187,7 +318,7 @@ function tableHtml(t){
       const m=origin.get(r+","+ci);
       const st=[];if(c[1])st.push("background:"+c[1]);if(c[2])st.push("color:"+c[2]);if(c[3])st.push("font-weight:800");
       st.push("font-size:"+Math.max(9,Math.min(26,Math.round((c[4]||10)*1.25)))+"px","text-align:"+alignOf(c));
-      h+='<td'+(m&&m[0]>1?' rowspan="'+m[0]+'"':'')+(m&&m[1]>1?' colspan="'+m[1]+'"':'')+' style="'+st.join(";")+'">'+esc(c[0])+'</td>';
+      h+='<td data-r="'+r+'" data-c="'+ci+'" class="'+(c[6]?"lk":"ed")+'"'+(m&&m[0]>1?' rowspan="'+m[0]+'"':'')+(m&&m[1]>1?' colspan="'+m[1]+'"':'')+' style="'+st.join(";")+'">'+esc(c[0])+'</td>';
     });
     h+='</tr>';
   });
@@ -280,23 +411,12 @@ function buildPdf(imgs){
   return new Blob(chunks,{type:"application/pdf"});
 }
 $("bPdf").onclick=async()=>{
-  if(!DATA){say("vMsg","Nothing to export yet.","bad");return;}
+  if(!DATA){say("vMsg","Nothing to export yet. Choose a report with data first.","bad");return;}
   busy("Making the PDF…");
   try{
-    const stamp=new Date().toLocaleString([], {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
-    const cv=document.createElement("canvas");cv.width=PW;cv.height=PH;const ctx=cv.getContext("2d");
-    const plans=DATA.tabs.map(t=>planPages(t)),totalPages=plans.reduce((a,p)=>a+p.pages.length,0);
-    const imgs=[];let no=0;
-    for(let ti=0;ti<DATA.tabs.length;ti++){
-      const t=DATA.tabs[ti],plan=plans[ti];
-      for(const rows of plan.pages){
-        no++;busy("Making the PDF… page "+no+" / "+totalPages);
-        drawPage(ctx,DATA.title,t.name,t,plan,rows,no,totalPages,DATA.sheetName,stamp);
-        imgs.push({u8:await jpegBytes(cv),w:PW,h:PH});
-        await new Promise(r=>setTimeout(r,0));
-      }
-    }
-    pdfBlob=buildPdf(imgs);
+    if(!PAGES.length)await buildPages();
+    const totalPages=PAGES.length;
+    pdfBlob=buildPdf(PAGES.map(p=>({u8:p.u8,w:p.w,h:p.h})));
     pdfName="AMBAR-"+DATA.title.replace(/\s+/g,"-")+"-"+new Date().toISOString().slice(0,10)+".pdf";
     if(pdfUrl)URL.revokeObjectURL(pdfUrl);pdfUrl=URL.createObjectURL(pdfBlob);
     $("pdfDl").href=pdfUrl;$("pdfDl").setAttribute("download",pdfName);
@@ -325,7 +445,7 @@ function openCfg(){
   $("cfgBox").innerHTML='<h2 style="margin:0 0 4px;color:#153a2e">⚙ Reports settings</h2><div class="hint">Connected sheet: <b>'+esc(ST.sheetName||"")+'</b></div>'+sec
     +'<button class="btn" id="cfgSave" type="button">Save</button><button class="btn grey" id="cfgReload" type="button">🔄 Reload tab list</button>'
     +(ST.sheetUrl?'<button class="btn blue" id="cfgOpen" type="button">Open the reports sheet ↗</button>':'')
-    +'<button class="btn red" id="cfgOff" type="button">Disconnect reports sheet</button><div id="cfgMsg" class="msg"></div><button class="btn grey" id="cfgClose" type="button" style="background:#fff;color:#153a2e;border:1.5px solid #ddd4c4">Close</button>';
+    +'<button class="btn grey" id="cfgCheck" type="button">🔍 Check connection</button><button class="btn red" id="cfgOff" type="button">Disconnect reports sheet</button><div id="cfgMsg" class="msg"></div><button class="btn grey" id="cfgClose" type="button" style="background:#fff;color:#153a2e;border:1.5px solid #ddd4c4">Close</button>';
   $("cfgOv").classList.add("on");
 }
 $("cfgOv").addEventListener("click",async e=>{
@@ -338,6 +458,7 @@ $("cfgOv").addEventListener("click",async e=>{
     if(d.ok){ST=d;loadReport(true);}
   }
   if(id==="cfgReload"){say("cfgMsg","Reading the sheet…","info");const d=await api("/api/reports/status?refresh=1");if(d.error){say("cfgMsg",d.error,"bad");return;}ST=d;openCfg();say("cfgMsg","✅ "+(d.allTabs||[]).length+" tab(s) found.","ok");}
+  if(id==="cfgCheck"){$("cfgOv").classList.remove("on");runCheck();}
   if(id==="cfgOpen"){try{Telegram.WebApp.openLink(ST.sheetUrl);}catch{window.open(ST.sheetUrl,"_blank");}}
   if(id==="cfgOff"){if(!confirm("Disconnect the reports sheet? (The order Google Sheet is not affected.)"))return;const d=await api("/api/reports/disconnect",{});$("cfgOv").classList.remove("on");ST=d;refreshStatus(false);}
 });
