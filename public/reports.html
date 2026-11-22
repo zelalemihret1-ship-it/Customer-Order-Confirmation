@@ -62,7 +62,7 @@ h3.sec{margin:20px 2px 10px;font-size:13px;letter-spacing:1px;text-transform:upp
 .logrow .w{flex:1;line-height:1.35}.logrow small{display:block;color:var(--mute);font-size:11.5px}
 .foot{position:fixed;left:0;right:0;bottom:0;background:#fffffff0;backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;justify-content:center;z-index:50}
 .foot button{flex:1;max-width:260px;border:0;border-radius:14px;padding:13px 8px;font-weight:900;font-size:14px;color:#fff;cursor:pointer}
-.foot .pdf{background:var(--bad)}.foot .bk{background:var(--ink)}
+.foot .zero{background:#7a1410}.foot .pdf{background:var(--bad)}.foot .bk{background:var(--ink)}
 .card{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;border:1px solid var(--line);box-shadow:0 4px 16px #0000000d}
 .card h2{margin:0 0 10px;color:var(--ink);font-size:17px}
 label{font-weight:800;font-size:12.5px;display:block;margin-top:11px;color:var(--green)}
@@ -97,7 +97,7 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
   <div class="sub">Workflow · Stock · Material</div>
 </header>
 <main>
-  <div id="gate" class="card" style="display:none"><h2>🔒 Main admins only</h2><p id="gateMsg">Reports can only be opened by a main admin.</p></div>
+  <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg">Reports are only for admins the main admin gave this section.</p></div>
   <div id="view" style="display:none">
     <div class="seg" id="seg"></div>
     <div class="kpis" id="kpis"></div>
@@ -108,7 +108,7 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
     <div id="extra"></div>
   </div>
 </main>
-<div class="foot" id="foot" style="display:none"><button class="pdf" id="bPdf" type="button">📄 Make PDF</button><button class="bk" id="bBk" type="button">☁ Google Sheet backup</button></div>
+<div class="foot" id="foot" style="display:none"><button class="pdf" id="bPdf" type="button">📄 Make PDF</button><button class="bk" id="bBk" type="button">☁ Google Sheet backup</button><button class="zero" id="bZero" type="button" style="display:none">🗑 Start from 0</button></div>
 
 <!-- form sheet (add / edit / sell / add-cut) -->
 <div class="ov" id="fOv"><div class="box"><h2 id="fTitle"></h2><div class="hint" id="fInfo"></div><div id="fBody"></div><div id="fMsg" class="msg"></div><button class="btn" id="fOk" type="button">Save</button><button class="btn grey" id="fNo" type="button">Cancel</button></div></div>
@@ -155,14 +155,16 @@ async function api(path,body){
 }
 
 // ── start ──
+let IS_OWNER=false;
 (async()=>{
   let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
-  if(me.role!=="owner"){
+  IS_OWNER=me.role==="owner";
+  if(!(IS_OWNER||(me.perms||[]).includes("reports"))){
     $("gate").style.display="block";
-    $("gateMsg").textContent=me.viewer?"You are a view-only admin. Reports are only for main admins.":(me.role==="admin"?"Reports are only for main admins.":(me.error||"Access denied."));
+    $("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Reports section. Ask them to turn it on in Manage Admins.":(me.error||"Access denied.");
     return;
   }
-  $("view").style.display="block";$("foot").style.display="flex";
+  $("view").style.display="block";$("foot").style.display="flex";$("bZero").style.display=IS_OWNER?"block":"none";
   const d=await api("/api/reports/state");
   if(!d.ok){say("vMsg",d.error||"Could not open the reports.","bad");}
   render();
@@ -297,9 +299,20 @@ function showHist(t,h){$("hTitle").textContent=t;$("hBody").innerHTML=h;$("hOv")
 $("hNo").onclick=()=>$("hOv").classList.remove("on");
 $("hOv").addEventListener("click",e=>{if(e.target===$("hOv"))$("hOv").classList.remove("on");});
 
+
+// ── START FROM 0 (main admin): the old report is saved in the Google Sheet first, then everything is cleared ──
+$("bZero").onclick=()=>{
+  const b=S.backup||{},n=S.products.length+" product(s), "+S.materials.length+" material(s)";
+  openForm({title:"🗑 Start Reports from 0",info:"This clears <b>"+esc(n)+"</b> and all movements, so Workflow, Stock and Material start from <b>0</b>.<br><br>"+(b.configured?"✅ The Google Sheet is connected: the old report is first saved there (kept as <b>Archive …</b> tabs) — if that fails, nothing is deleted.":"⚠ The Google Sheet is NOT connected, so there will be <b>no backup</b>. Connect it first with ☁ Backup if you want to keep the old data.")+"<br><br>Type <b>ZERO</b> to confirm.",ok:"Start from 0",cls:"cut",
+    fields:[{k:"confirm",label:"Type ZERO",ph:"ZERO"}],submit:v=>api("/api/reports/reset",{confirm:String(v.confirm||"").trim().toUpperCase()})});
+};
+// A new day: "S.TODAY" becomes "SOLD" by itself (the server also refreshes the Google Sheet at midnight).
+setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/reports/state");if(d.ok)render();},60000);
+
 // ── Google Sheet BACKUP ──
 function openBackup(){
   const b=S.backup||{};
+  if(!IS_OWNER&&!b.configured){$("bkBox").innerHTML='<h2>☁ Google Sheet backup</h2><p class="hint">The backup sheet is not connected yet. Only a main admin can connect it.</p><button class="btn grey" data-x="1" type="button">Close</button>';$("bkOv").classList.add("on");return;}
   if(!b.configured){
     $("bkBox").innerHTML='<h2>☁ Google Sheet backup <span class="chip">optional</span></h2><p class="hint">Your work stays inside this app. The Google Sheet only keeps a <b>backup copy</b> — updated automatically after every change. Nothing is ever read back from the sheet.</p>'
       +'<ol><li>Open your reports Google Sheet → <b>Extensions → Apps Script</b>.</li><li>Tap <b>Copy script</b>, paste it there (replace everything) and Save.</li><li><b>Deploy → New deployment → Web app</b> → Execute as <b>Me</b> → Access <b>Anyone</b> → Deploy.</li><li>Paste the <b>Web app URL</b> (ends with <code>/exec</code>) below.</li></ol>'
@@ -308,7 +321,7 @@ function openBackup(){
     $("bkBox").innerHTML='<h2>☁ Google Sheet backup</h2><div class="card" style="margin-top:10px"><div class="meta">Sheet: <b>'+esc(b.sheetName||"connected")+'</b></div><div class="meta" style="margin-top:6px">'+(b.ok===false?'<b style="color:var(--bad)">⚠ Last backup failed:</b> '+esc(b.error):(b.at?'✅ Last backup <b>'+esc(fmtD(b.d))+' · '+esc(et(b.t))+'</b>'+(b.count?' · '+b.count+' records':''):'No backup sent yet.'))+'</div></div>'
       +'<p class="hint">For <b>every Ethiopian month</b> the sheet gets 3 tabs that look like your own sheets: <b>Workflow · Stock · Material</b>. When a new month starts, its 3 tabs are created automatically. They are overwritten on every backup — work in the app, not in the sheet. Your other tabs are never touched.</p>'
       +'<button class="btn" id="bkNow" type="button">🔄 Back up now</button>'+(b.sheetUrl?'<button class="btn blue" id="bkOpen" type="button">Open the Google Sheet ↗</button>':'')
-      +'<button class="btn red" id="bkOff" type="button">Disconnect</button><div id="bkMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
+      +(IS_OWNER?'<button class="btn red" id="bkOff" type="button">Disconnect</button>':'')+'<div id="bkMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
   }
   $("bkOv").classList.add("on");
 }
