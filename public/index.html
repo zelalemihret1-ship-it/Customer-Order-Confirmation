@@ -388,8 +388,35 @@ const api=async(p,b)=>{const r=await fetch(p,b?{method:"POST",headers:{"Content-
 const ov=document.getElementById("acOverlay"),box=document.getElementById("acBox");
 const say=(d)=>{const m=document.getElementById("acMsg");if(m){m.className="msg "+(d.ok?"ok":"bad");m.textContent=d.message||d.error||"";}};
 const val=id=>(document.getElementById(id)||{}).value||"";
-let editingId="";
-async function render(keepMsg){
+let editingId="",qrT=null,qrLastLink="";
+const stopQr=()=>{clearInterval(qrT);qrT=null;};
+function drawQr(link){
+  const img=document.getElementById("qrImg");if(!img||!link||link===qrLastLink)return;qrLastLink=link;img.innerHTML="";
+  const draw=()=>{try{new QRCode(img,{text:link,width:200,height:200,correctLevel:QRCode.CorrectLevel.L});}catch(e){img.textContent="Could not draw the QR.";}};
+  if(window.QRCode){draw();return;}
+  const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";sc.onload=draw;sc.onerror=()=>{img.textContent="Could not load the QR library. Check the internet connection and try again.";};document.head.appendChild(sc);
+}
+async function showQrView(id,name){
+  stopQr();qrLastLink="";
+  box.innerHTML='<h2 style="margin:0 0 6px">📱 Connect '+esc(name||id)+'</h2>'
+   +'<ol style="font-size:14px;line-height:1.55;padding-left:20px;margin:6px 0"><li><b>'+esc(name||"The admin")+'</b> opens <b>Telegram</b> on their phone (their own account, ID '+esc(id)+').</li><li>Go to <b>Settings → Devices → Link Desktop Device</b>.</li><li>Scan the QR below and confirm.</li></ol>'
+   +'<div style="text-align:center;margin:10px 0"><div id="qrImg" style="display:inline-block;background:#fff;padding:8px;border:1px solid #ddd;border-radius:10px;min-width:200px;min-height:200px;box-sizing:content-box;line-height:200px;color:#888;font-size:13px">Generating QR…</div><div style="font-size:12px;color:#666;margin-top:6px">The QR refreshes by itself. Only the Telegram account with ID '+esc(id)+' can finish this connection.</div></div>'
+   +'<div id="qrPw" style="display:none;background:#fff8e8;border-radius:10px;padding:8px"><small>This account uses 2-step verification — the admin types their own password:</small><input id="qrPwIn" type="password" placeholder="2-step password"><button data-a="qrpw" data-id="'+esc(id)+'">Verify &amp; connect</button></div>'
+   +'<button data-a="qr" data-id="'+esc(id)+'" data-name="'+esc(name||id)+'">🔄 New QR</button><button class="grey" data-a="qrback" data-id="'+esc(id)+'">← Back to admins</button><div id="acMsg" class="msg"></div>';
+  let d;try{d=await api("/api/setup/app-admins/qr-start",{telegramId:id});}catch(err){say({ok:false,error:err.message});return;}
+  if(!d.ok){const i=document.getElementById("qrImg");if(i)i.textContent="";say(d);return;}
+  drawQr(d.link);
+  qrT=setInterval(async()=>{
+    if(ov.style.display==="none"){stopQr();try{await api("/api/setup/app-admins/qr-cancel",{telegramId:id});}catch{}return;}
+    let r;try{r=await api("/api/setup/app-admins/qr-poll",{telegramId:id});}catch{return;}
+    if(r.status==="waiting"){drawQr(r.link);return;}
+    if(r.status==="password"){const w=document.getElementById("qrPw");if(w)w.style.display="block";say(r);return;}
+    stopQr();say(r);
+    if(r.status==="done")setTimeout(()=>{if(ov.style.display!=="none")render();say(r);},1500);
+  },3000);
+}
+window.AMBAR_adminQr=async()=>{const me=await api("/api/me");if(!me.telegramId){alert("Open the app from Telegram to connect your own account.");return;}ov.style.display="block";showQrView(String(me.telegramId),me.name||"My account");};
+async function render(keepMsg){stopQr();
   const me=await api("/api/me");
   if(me.role!=="owner"){
     box.innerHTML='<h2>⚙️ Admin Control</h2><p>Only a main admin can manage admins. Enter the owner key (ADMIN_SETUP_KEY):</p><input id="acKey" type="password" placeholder="Owner key"><button data-a="key">Enter</button><button class="grey" data-a="close">Close</button><div id="acMsg" class="msg"></div>';return;}
@@ -405,21 +432,25 @@ async function render(keepMsg){
       +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 2px;font-weight:700;color:#153a2e"><input id="eMain" type="checkbox" style="width:auto;margin:0"'+(p.main?' checked':'')+'> 👑 Assignee: main admin (full control, same as me)</label>'
       +'<small style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</small>'
       +'<div style="display:flex;gap:8px;margin-top:6px"><button data-a="saveedit" data-id="'+esc(p.telegramId)+'">Save</button><button class="grey" data-a="canceledit">Cancel</button></div></div>';
-    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b>'+(p.main?' <span style="background:#153a2e;color:#ffd877;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800">👑 MAIN ADMIN</span>':'')+'<br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — admin must tap Connect my Telegram account')+'</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="grey" style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:'+(p.main?'#8a5a00':'#153a2e')+'" data-a="setmain" data-main="'+(p.main?'0':'1')+'" data-id="'+esc(p.telegramId)+'">'+(p.main?'Remove main admin':'👑 Make main admin')+'</button><button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
+    return '<div class="row"><div><b>'+esc(p.name||"(no name)")+'</b>'+(p.main?' <span style="background:#153a2e;color:#ffd877;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800">👑 MAIN ADMIN</span>':'')+'<br><small>Telegram ID '+esc(p.telegramId)+(p.phone?' · '+esc(p.phone):'')+'</small>'+(p.note?'<br><small>'+esc(p.note)+'</small>':'')+'<br><small style="color:'+(p.connected?'#176b3a':'#a35b18')+';font-weight:700">'+(p.connected?'✓ Telegram account connected'+(p.accountLabel?' — '+esc(p.accountLabel):''):'Not connected — tap 📱 Generate connection QR, then the admin scans it')+'</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:#229ed9" data-a="qr" data-id="'+esc(p.telegramId)+'" data-name="'+esc(p.name||p.telegramId)+'">📱 '+(p.connected?'Reconnect QR':'Generate connection QR')+'</button><button class="grey" style="width:auto;padding:6px 10px;margin:0;font-size:12px;background:'+(p.main?'#8a5a00':'#153a2e')+'" data-a="setmain" data-main="'+(p.main?'0':'1')+'" data-id="'+esc(p.telegramId)+'">'+(p.main?'Remove main admin':'👑 Make main admin')+'</button><button class="edit" title="Edit this admin" aria-label="Edit '+esc(p.name||p.telegramId)+'" data-a="editperson" data-id="'+esc(p.telegramId)+'">✏️</button><button class="del" data-a="delperson" data-id="'+esc(p.telegramId)+'">Delete</button></div></div>';
   }).join("")||'<p><small>No admins assigned yet.</small></p>';
   box.innerHTML='<div class="row"><h2 style="margin:0">⚙️ Admin Control</h2><button class="grey" style="width:auto" data-a="close">Close</button></div>'
   +'<small>Access control is <b>'+(a.enforced?'ON — only assigned admins can use the app':'OFF — everyone can use the app until you assign someone')+'</b>.</small>'
   +(a.primaryOwners&&a.primaryOwners.length?'<div style="background:#f3efe6;border-radius:10px;padding:9px 11px;margin:8px 0;font-size:13px"><b>👑 Original main admin:</b> '+a.primaryOwners.map(esc).join(", ")+'<br><small>Set in Render. Extra main admins (below) have the same full control and can manage everything; only the original one can never be removed here.</small></div>':'')
+  +(me.telegramId?'<div style="background:#eef7fc;border:1px solid #b9dcef;border-radius:10px;padding:10px 12px;margin:10px 0"><b>📱 My own Telegram account</b><br><small>'+((a.accounts||[]).some(x=>String(x.ownerTelegramId)===String(me.telegramId)&&x.ready)?'✓ Connected':'Not connected')+' — generate a QR and scan it with your own Telegram.</small><button data-a="qr" data-id="'+esc(me.telegramId)+'" data-name="'+esc(me.name||'My account')+'" style="background:#229ed9;margin-top:6px">📱 Generate my connection QR</button></div>':'')
   +'<h3>👥 Admins who can use the app ('+(a.appAdmins||[]).length+')</h3><div style="max-height:240px;overflow:auto">'+people+'</div>'
-  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>Each assigned admin opens the Mini App from their own Telegram, taps Connect my Telegram account, and sends cards from their own account.</small></p><label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 2px;font-weight:600"><input id="nMain" type="checkbox" style="width:auto;margin:0"> 👑 Make them MAIN ADMINS too (full control, same as me)</label><button data-a="addperson">Assign admin</button>'
-  +'<h3>🔐 Access and bot connection</h3><p><small><b>Main admin:</b> assigns/removes users and connects the shared AMBAR bot in Telegram Settings → Telegram Business → Chatbots. Enable Business Mode for the bot in @BotFather first, then grant it access and Reply to messages. This shared bot connection does not use a personal login code. <b>Assigned admins:</b> can access AMBAR only after assignment; they may optionally connect their own Telegram account, and cannot use another admin’s account.</small></p>'
+  +'<h3>➕ Assign admins (unlimited)</h3><textarea id="nId" rows="4" style="font-size:15px;padding:9px;width:100%;box-sizing:border-box;border-radius:8px;border:1px solid #ccc" placeholder="One person per line:&#10;123456789 Abebe&#10;987654321 Sara"></textarea><p><small>After assigning, tap <b>📱 Generate connection QR</b> on the admin’s row. The admin scans it with their own Telegram (Settings → Devices → Link Desktop Device) and is connected — no phone number, SMS or login code.</small></p><label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 2px;font-weight:600"><input id="nMain" type="checkbox" style="width:auto;margin:0"> 👑 Make them MAIN ADMINS too (full control, same as me)</label><button data-a="addperson">Assign admin</button>'
+  +'<h3>🔐 Access and bot connection</h3><p><small><b>Main admin:</b> assigns/removes users and connects the shared AMBAR bot in Telegram Settings → Telegram Business → Chatbots. Enable Business Mode for the bot in @BotFather first, then grant it access and Reply to messages. <b>Assigned admins:</b> can access AMBAR only after assignment. Their Telegram account is connected <b>only by the QR code you generate</b> — it works only for the admin it was made for, and nobody can use another admin’s account.</small></p>'
   +'<div id="acMsg" class="msg"></div>';
 }
 ov.addEventListener("click",async e=>{
   const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
   const act=b.dataset.a;
   try{
-  if(act==="close"){ov.style.display="none";return;}
+  if(act==="close"){stopQr();ov.style.display="none";return;}
+  if(act==="qr"){await showQrView(String(b.dataset.id),b.dataset.name||"");return;}
+  if(act==="qrpw"){const d=await api("/api/setup/app-admins/qr-password",{telegramId:b.dataset.id,password:val("qrPwIn")});say(d);return;}
+  if(act==="qrback"){stopQr();try{await api("/api/setup/app-admins/qr-cancel",{telegramId:b.dataset.id});}catch{}await render();return;}
   if(act==="key"){try{localStorage.setItem("ownerKey",val("acKey"));}catch{}await render();const me=await api("/api/me");if(me.role!=="owner")say({ok:false,error:"Wrong owner key."});return;}
   if(act==="addperson"){const d=await api("/api/setup/app-admins/add",{telegramId:val("nId"),main:!!(document.getElementById("nMain")||{}).checked});await render();say(d);return;}
   if(act==="setmain"){const make=b.dataset.main==="1";if(!confirm(make?"Make this person a MAIN ADMIN?\n\nThey get the same full control as you: manage admins, Google Sheet, Start from ZERO, all stories, everything.":"Remove main-admin rights from this person? They stay a normal assigned admin."))return;const d=await api("/api/setup/app-admins/set-main",{telegramId:b.dataset.id,main:make});await render();say(d);return;}
@@ -525,63 +556,15 @@ async function refresh(){
   openBtn.style.display=(role&&!connected)?"block":"none";
   if(!ss)return;
   if(connected)ss.innerHTML='<span style="color:#176b3a;font-weight:700">✓ Connected: '+esc(s.label||"your account")+'</span> <a href="#" id="myDisc" style="font-size:12px">Disconnect</a>';
-  else ss.innerHTML='<span style="color:#9a3c26;font-weight:700">Your personal Telegram account is not connected.</span> <span class="small">The main admin manages the shared Telegram Business bot connection separately.</span>';
+  else ss.innerHTML='<span style="color:#9a3c26;font-weight:700">Your Telegram account is not connected.</span> <span class="small">'+(role==="owner"?'Open ⚙ Settings → Connect my Telegram (QR) and scan the QR with your Telegram.':'Ask the main admin to generate your connection QR, then scan it in Telegram → Settings → Devices → Link Desktop Device.')+'</span>';
   const d=document.getElementById("myDisc");if(d)d.onclick=async e=>{e.preventDefault();if(!confirm("Disconnect your Telegram account?"))return;await api("/api/my-account/disconnect",{});refresh();};
 }
-let qrMode=false,qrTimer=null,qrLastLink="";
-function showQr(link){
-  const w=document.getElementById("myQr"),img=document.getElementById("myQrImg"),a=document.getElementById("myQrLink");
-  if(!w||!link)return;w.style.display="block";a.href=link;
-  if(link===qrLastLink)return;qrLastLink=link;img.innerHTML="";
-  const draw=()=>{try{new QRCode(img,{text:link,width:190,height:190,correctLevel:QRCode.CorrectLevel.L});}catch(e){img.textContent="";}};
-  if(window.QRCode){draw();return;}
-  const sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";sc.onload=draw;sc.onerror=()=>{img.style.display="none";};document.head.appendChild(sc);
-}
-function startQrPoll(){
-  clearInterval(qrTimer);
-  qrTimer=setInterval(async()=>{
-    if(ov.style.display==="none"){clearInterval(qrTimer);return;}
-    let d;try{d=await api("/api/my-account/qr-poll",{});}catch{return;}
-    if(d.status==="waiting"){if(d.link)showQr(d.link);return;}
-    if(d.status==="password"){say({ok:true,message:d.message});return;}
-    clearInterval(qrTimer);qrMode=false;
-    say(d);
-    if(d.status==="done"){setTimeout(()=>{ov.style.display="none";refresh();},900);}
-  },3000);
-}
 async function render(){
-  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>This connects <b>only your own Telegram account</b>. The main admin manages the shared AMBAR bot connection. Assigned admins cannot connect or use another admin’s personal account.</p><div style="background:#fff7e8;border:1px solid #e8cf9e;border-radius:9px;padding:10px;font-size:13px;line-height:1.45;margin:10px 0"><b>Delivery:</b> Telegram controls login-code delivery. If Telegram reports in-app delivery, check the official Telegram service chat on another device logged into this exact account. SMS can be refused with SEND_CODE_UNAVAILABLE when no SMS route remains. AMBAR cannot force Telegram to send or forward a login code.</div>'
-  +'<input id="myPhone" style="'+st+'" placeholder="YOUR phone with country code, +2519..."><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 2px"><input id="myForceSMS" type="checkbox" style="width:auto;margin:0"> Ask Telegram to try SMS (Telegram may return SEND_CODE_UNAVAILABLE)</label><button style="'+btn+'" data-a="send">Request Telegram login code</button><button style="'+btn+';background:#e8710a;display:none" id="myResend" data-a="resend">Resend code (SMS / call)</button><button style="'+btn+';background:#0a7d2c" data-a="qr">Login without a code (QR / link)</button><div id="myQr" style="display:none;text-align:center;margin:8px 0;padding:10px;border:1px dashed #9db8e8;border-radius:10px"><div id="myQrImg" style="display:inline-block;background:#fff;padding:6px"></div><div style="margin:8px 0;font-size:13px;line-height:1.4">On a phone/desktop where this Telegram account is already logged in, scan this QR (Telegram → Settings → Devices → Link Desktop Device), <b>or</b> tap the button:</div><a id="myQrLink" href="#" style="display:block;padding:10px;border-radius:8px;background:#229ed9;color:#fff;text-decoration:none;font:600 15px system-ui">Open in Telegram &amp; confirm</a></div><input id="myCode" style="'+st+'" inputmode="numeric" autocomplete="one-time-code" placeholder="Latest code from Telegram or SMS"><input id="myPw" type="password" style="'+st+'" placeholder="2-step password (only if you have one)"><button style="'+btn+'" data-a="verify">Verify &amp; connect</button>'
-  +'<button style="'+btn+';background:#666" data-a="close">Close</button><div id="myMsg" style="margin-top:8px;font-size:14px;white-space:pre-wrap"></div>';
+  box.innerHTML='<h2 style="margin-top:0">🔗 Connect my Telegram account</h2><p>Your Telegram account is connected <b>by QR code only</b> — no phone number, SMS or login code.</p><ol style="font-size:14px;line-height:1.6;padding-left:20px"><li>Ask the <b>main admin</b> to open <b>👥 Manage Assigned Admins</b> and tap <b>📱 Generate connection QR</b> on your name.</li><li>On your phone open Telegram → <b>Settings → Devices → Link Desktop Device</b> and scan that QR.</li><li>Confirm in Telegram. This screen then shows <b>Connected</b>.</li></ol><button style="'+btn+';background:#666" data-a="close">Close</button>';
 }
-ov.addEventListener("click",async e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}
-  try{const a=b.dataset.a;
-  if(a==="close"){ov.style.display="none";return;}
-  if(a==="send"){
-    const sendButton=b;sendButton.disabled=true;sendButton.textContent="Contacting Telegram…";
-    try{const d=await api("/api/my-account/send-code",{phone:val("myPhone"),forceSMS:!!document.getElementById("myForceSMS")?.checked});say(d);const rb=document.getElementById("myResend");if(rb)rb.style.display=(d.ok&&d.canResend)?"block":"none";}
-    finally{sendButton.disabled=false;sendButton.textContent="Request Telegram login code";}
-    return;
-  }
-  if(a==="resend"){
-    b.disabled=true;
-    try{const d=await api("/api/my-account/resend",{});say(d);if(d.ok&&!d.canResend)b.style.display="none";}
-    finally{b.disabled=false;}
-    return;
-  }
-  if(a==="qr"){
-    b.disabled=true;
-    try{
-      const d=await api("/api/my-account/qr-start",{});
-      if(!d.ok){say(d);return;}
-      qrMode=true;showQr(d.link);say({ok:true,message:d.message});startQrPoll();
-    }finally{b.disabled=false;}
-    return;
-  }
-  if(a==="verify"&&qrMode){const d=await api("/api/my-account/qr-password",{password:val("myPw")});say(d);return;}
-  if(a==="verify"){const d=await api("/api/my-account/verify",{code:val("myCode"),password:val("myPw")});say(d);if(d.ok){setTimeout(()=>{ov.style.display="none";refresh();},900);}return;}
-  }catch(err){say({ok:false,error:err.message});}});
-openBtn.onclick=()=>{ov.style.display="block";render();};
+ov.addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b){if(e.target===ov)ov.style.display="none";return;}if(b.dataset.a==="close")ov.style.display="none";});
+// Main admin: opens the QR for their own account. Assigned admin: shows how to get connected by the main admin's QR.
+openBtn.onclick=()=>{if(role==="owner"&&window.AMBAR_adminQr){window.AMBAR_adminQr();return;}ov.style.display="block";render();};
 (async()=>{try{const m=await api("/api/me");if(m.role==="admin"||m.role==="owner"){role=m.role;await refresh();
   try{const a=await api("/api/admins");const wrap=document.getElementById("senderPickWrap"),sel=document.getElementById("senderAdminPick");if(role==="owner"&&wrap&&sel){wrap.style.display="block";const available=(a.admins||[]);sel.innerHTML='<option value="">Use my own account / Telegram Business</option>'+available.map(x=>'<option value="'+esc(x.id)+'" '+(!x.ready?'disabled':'')+'>'+esc(x.label)+(x.ready?' — connected':' — not connected')+'</option>').join("");const mine=available.find(x=>x.id==="u"+String(m.telegramId||""));if(mine&&mine.ready)sel.value=mine.id;}}catch(e){console.warn("Could not load sending admin choices",e);}
   {document.getElementById("pickWrap").style.display="block";try{const list=await api("/api/customers");const sel=document.getElementById("customerPick");if(sel&&Array.isArray(list)){sel.innerHTML='<option value="">— Choose a customer —</option>'+list.map(c=>'<option value="'+esc(c.id)+'" data-u="'+esc(c.username||"")+'">'+esc([c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||c.id)+(c.username?" (@"+esc(c.username)+")":"")+'</option>').join("");sel.onchange=()=>{const o=sel.selectedOptions[0];if(!o||!o.value)return;form.elements.telegramChatId.value=o.value;if(o.dataset.u&&form.elements.telegramUsername)form.elements.telegramUsername.value="@"+o.dataset.u;if(form.elements.customerName&&!form.elements.customerName.value){const t=o.textContent.replace(/\s*\(@.*\)$/,"").trim();if(t&&!/^\d+$/.test(t))form.elements.customerName.value=t;}};}}catch{}}}
@@ -621,7 +604,7 @@ const items=()=>{
     L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
   }
   L.push('<h4>My account</h4>');
-  L.push('<button data-c="connect">🔗 Connect my Telegram account</button>');
+  L.push('<button data-c="connect">🔗 Connect my Telegram (QR)</button>');
   return L.join("");
 };
 function show(){box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">Settings</h2><button data-c="close" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Close</button></div>'+items();ov.style.display="flex";}
@@ -713,7 +696,7 @@ let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.o
   const goHome=()=>{try{sessionStorage.removeItem("ambarGoHome");}catch{}location.href="/home.html"+location.hash;};
   try{const t=+sessionStorage.getItem("ambarGoHome")||0;if(t){sessionStorage.removeItem("ambarGoHome");if(!o&&!q.get("edit")&&Date.now()-t<120000){location.replace("/home.html"+location.hash);return;}}}catch{}
   if(!o||q.get("edit"))return;
-  const TITLE={connect:"🔗 Connect my Telegram account",admins:"👥 Manage Assigned Admins",cfg:"⚡ Connect Google Sheet",sheet:"📊 Google Sheet",zero:"🗑 Start from ZERO"},MAP={connect:"myOpen",admins:"acOpen",cfg:"shCfg",sheet:"shOpen"};
+  const TITLE={connect:"🔗 Connect my Telegram (QR)",admins:"👥 Manage Assigned Admins",cfg:"⚡ Connect Google Sheet",sheet:"📊 Google Sheet",zero:"🗑 Start from ZERO"},MAP={connect:"myOpen",admins:"acOpen",cfg:"shCfg",sheet:"shOpen"};
   if(!TITLE[o])return;
   document.body.classList.add("open-mode");document.getElementById("openTitle").textContent=TITLE[o];
   try{history.replaceState(null,"",location.pathname+location.hash);}catch{} // a reload must never re-run the action
