@@ -1,5 +1,5 @@
 <!doctype html><html data-notabs><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"><style>html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}</style><script>(function(){var p=function(e){e.preventDefault()};["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,p,{passive:false})});document.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1&&e.cancelable)e.preventDefault()},{passive:false});var l=0;document.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.cancelable)e.preventDefault();l=n},{passive:false});document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault()},{passive:false});document.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&["+","-","=","0"].indexOf(e.key)>-1)e.preventDefault()});})();</script><title>Ambar Furniture — Setup</title>
-<style>body{font-family:system-ui,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#222}input,button{font-size:16px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box}button{background:#1a73e8;color:#fff;border:0;border-radius:8px}h2{margin-top:28px}pre{background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style><link rel="stylesheet" href="/app.css?v=106">
+<style>body{font-family:system-ui,sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#222}input,button{font-size:16px;padding:10px;margin:4px 0;width:100%;box-sizing:border-box}button{background:#1a73e8;color:#fff;border:0;border-radius:8px}h2{margin-top:28px}pre{background:#f4f4f4;padding:10px;border-radius:8px;white-space:pre-wrap}.ok{color:#0a7d2c}.bad{color:#c62828}</style><link rel="stylesheet" href="/app.css?v=118">
 <meta name="theme-color" content="#0f3d30">
 </head><body>
 <a href="/home.html" id="homeLink" style="display:inline-block;text-decoration:none;color:#153a2e;font-weight:700;font-size:13px;border:1.5px solid #cfd8d3;border-radius:999px;padding:7px 13px;margin-bottom:10px">← Home</a>
@@ -34,5 +34,5 @@ async function rmApp(){show(await call("/api/setup/app-admins/remove",{telegramI
 async function test(){show(await call("/api/setup/test",{target:$("target").value}))}
 </script>
 <script>document.getElementById("homeLink").addEventListener("click",function(e){if(location.hash){e.preventDefault();location.href="/home.html"+location.hash;}});</script>
-<script src="/app.js?v=106"></script>
+<script src="/app.js?v=118"></script>
 </body></html>
