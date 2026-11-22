@@ -1,3 +1,14 @@
+# v119 — Reports work INSIDE the mini app · Google Sheet is only a BACKUP · modern look
+**The mini app is now the main source.** Open Home → Reports (main admins only). Nothing is read from the Google Sheet any more.
+- **🛠 Workflow:** ➕ New product → write the **product code** (empty = automatic P-0001, P-0002 …; a code can't be used twice) and name. Every product shows the date + time it was added.
+- **✅ Finished → In Stock:** one tap sends the product to the **📦 Stock** tab (finished date + time saved).
+- **💰 Sold:** in Stock press Sold (price, buyer, note optional). The sale is saved with the **Ethiopian date and Addis Ababa time** and moves to the **Sold** list. ↩ fixes a mistake (cancel sale → back to In Stock; In Stock → back to Workflow). Every product keeps a 📜 history.
+- **🧱 Material:** ➕ New material (name, unit, quantity now, low-stock alert) · ➕ **Add** when stock arrives · ✂️ **Cut** when you use it (you can't cut more than is in store). Each move is logged with Ethiopian date + time, who did it, a note and the balance after. Low / Out materials are marked.
+- **📄 Make PDF** (A4 landscape) for the open report — Workflow, Stock (In Stock + Sold with total), Material (balances + log). Download, open, or send to your Telegram.
+- **☁ Google Sheet backup:** after every change the app sends a full copy to the sheet (about 4 seconds later; also once after every deploy). The sheet gets 6 modern tabs: *Backup Overview · Backup Workflow · Backup In Stock · Backup Sold · Backup Materials · Backup Material Log* (KPI cards, banded rows, filters, coloured status). They are overwritten on each backup, so work in the app, not in the sheet. Other tabs in that sheet are never touched. The old order sheet is not involved.
+- **To apply:** redeploy the whole folder; paste the new `reports-sheet-script.gs` (version `reports-4`) in the reports Google Sheet (Extensions → Apps Script), Deploy → Manage deployments → ✏ → New version → Deploy. The saved link keeps working; then Reports → ☁ → Back up now. Data is stored in `reports-data.json` + Supabase `app_settings.reports_data`.
+- Files changed: `reports.js`, `reports-sheet-script.gs`, `public/reports.html`, `public/home.html`, `package.json`. Endpoints now: `/api/reports/state`, `product/add|edit|finish|sold|undo|delete`, `material/add|move|edit|delete`, `backup/connect|now|disconnect`, `send-pdf`, `script`.
+
 # v118 — Reports (Workflow · Stock · Material) from a NEW Google Sheet · View-only admins
 **Reports (main admins only)**
 - New **Reports** tile on Home (inside the main-admin area). Tabs **Workflow / Stock / Material** show the sheet exactly as it looks (colours, merged cells). **📄 Make PDF** builds an A4-landscape PDF (header, page numbers, date) in the phone; then **⬇ Download**, **Open**, or **✈ Send to my Telegram** (the bot sends the PDF to your own chat — the reliable way inside Telegram).
