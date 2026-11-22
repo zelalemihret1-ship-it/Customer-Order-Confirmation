@@ -1,3 +1,9 @@
+# v120 — Admin section access · Ratings end at "Delivered" + customer info · Reports from 0 · Stock sheet = your reference
+- **Manage Admins** (Home → Administration): each assigned admin gets a 🔑 *Section access* panel: Orders · Customers · First Greeting · Ratings · Weekly Story · **Reports**. Turn Reports on and the Reports section appears on that admin's Home page and its API opens for them. Existing admins keep their old access (everything except Reports). Backup connect/disconnect and Start from 0 stay main-admin only.
+- **Ratings**: stages are *Not delivered yet → Delivered → Rated* (no "sent" stage). Tap a rated order to see the customer's full info, the order details and all their orders.
+- **Reports → 🗑 Start from 0** (main admin): the current data is saved in the Google Sheet first (old tabs renamed "Archive …"), then everything is cleared. If the backup fails nothing is deleted. Paste the new reports-sheet-script.gs (version reports-7) and deploy a New version.
+- Sold type is S.TODAY on the sale day and SOLD from the next day; the server refreshes the sheet when the Ethiopian day changes.
+
 # v119 — Reports work INSIDE the app · Google Sheet = BACKUP in YOUR sheet layouts · Ethiopian date + clock · Rating sections
 **The mini app is the main source.** Home → Reports (main admins only). Nothing is read from the Google Sheet.
 - **🛠 Workflow** (WORKFLOW FOLLOW-UP columns): Prod Id · S.No · Model · Description · Order Type (READYMADE/CUSTOM) · Priority (LOW/MEDIUM/HIGH) · Start Date (automatic) · Status · Finished Date · Delivery Date · Sales Name · Location · Changes · Correction. A Prod Id can't be used twice (empty = P-0001, P-0002 …).
