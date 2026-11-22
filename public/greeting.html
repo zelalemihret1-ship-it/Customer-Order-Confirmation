@@ -130,7 +130,7 @@ async function load(){
   const firstLoad=!D;D=d;
   if(firstLoad)$("text").value=d.template;
   const w=$("warn");
-  if(!d.canSend){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected. Open <b>⚙ Settings → 🔗 Connect my Telegram account</b> on the main page, then come back.";}
+  if(!d.canSend){w.className="notice bad";w.innerHTML="⚠️ Your Telegram account is not connected. Ask the <b>main admin</b> to generate your connection QR (Manage Assigned Admins), scan it in Telegram → Settings → Devices → Link Desktop Device, then come back.";}
   else if(!d.accountReady){w.className="notice info";w.textContent="Your own Telegram account is not connected, so only people who opened the AMBAR bot can be greeted automatically (through the Business account).";}
   else{w.className="notice";w.textContent="";}
   drawAuto();preview();
