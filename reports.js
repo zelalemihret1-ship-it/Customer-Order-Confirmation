@@ -22,7 +22,8 @@ const TYPES = {
 const CACHE_MS = 45 * 1000;
 
 function register(app, ctx) {
-  const { requireAccess, supabase, baseDir, tgApi, helpers } = ctx;
+  const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
+  const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
   const FILE = path.join(baseDir, "reports-sheet.json");
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), tabs: { wf: [], st: [], mt: [] }, sheetName: "", sheetUrl: "", allTabs: [], savedAt: "" };
   const cache = new Map(); // tab name → { at, data }
@@ -88,7 +89,7 @@ function register(app, ctx) {
     const hit = cache.get(tab);
     if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.data;
     const d = await callScript({ action: "grid", tab });
-    const data = { name: tab, rows: d.rows || [], merges: d.merges || [], colW: d.colW || [], rowH: d.rowH || [] };
+    const data = { name: tab, rows: d.rows || [], merges: d.merges || [], colW: d.colW || [], rowH: d.rowH || [], rowNo: d.rowNo || [], colNo: d.colNo || [] };
     cache.set(tab, { at: Date.now(), data });
     return data;
   }
@@ -129,6 +130,28 @@ function register(app, ctx) {
     cfg = { ...cfg, scriptUrl: "", scriptKey: "", tabs: { wf: [], st: [], mt: [] }, sheetName: "", sheetUrl: "", allTabs: [] }; cache.clear(); await save();
     res.json({ ...statusJson(), message: "Reports sheet disconnected. The order Google Sheet was not touched." });
   });
+  // Step-by-step self check shown in the app: link → script → tabs → rows read from each chosen tab.
+  router.get("/check", async (req, res) => {
+    const steps = [], add = (ok, label, detail = "") => steps.push({ ok, label, detail });
+    if (!cfg.scriptUrl) { add(false, "Link saved", "No link yet. Put the /exec link in Render as REPORTS_SCRIPT_URL (or paste it on the Reports page) and redeploy."); return res.json({ ok: true, steps }); }
+    add(true, "Link saved", cfg.scriptUrl.replace(/^(.{38}).*(.{12})$/, "$1…$2"));
+    let ping;
+    try { ping = await callScript({ action: "ping" }); } catch (e) { add(false, "Google script answers", e.message); return res.json({ ok: true, steps }); }
+    add(true, "Google script answers", `Sheet "${ping.name}" · script ${ping.version || "?"}`);
+    cfg.allTabs = ping.tabs || []; cfg.sheetName = ping.name || cfg.sheetName; cfg.sheetUrl = ping.url || cfg.sheetUrl;
+    add(cfg.allTabs.length > 0, "Tabs found", cfg.allTabs.join(" · ") || "The sheet has no tabs.");
+    if (!Object.values(cfg.tabs).some(a => a.length)) { cfg.tabs = guessTabs(cfg.allTabs); }
+    await save();
+    for (const [k, v] of Object.entries(TYPES)) {
+      const names = cfg.tabs[k] || [];
+      if (!names.length) { add(false, v.title, "No tab chosen. Choose the tab on the Reports page."); continue; }
+      for (const n of names) {
+        try { const g = await getGrid(n, true); const cols = g.colW.length; add(g.rows.length > 0, `${v.title} → "${n}"`, g.rows.length ? `${g.rows.length} rows × ${cols} columns read` : "This tab is empty (no data and no colours were found). Choose another tab."); }
+        catch (e) { add(false, `${v.title} → "${n}"`, e.message); }
+      }
+    }
+    res.json({ ok: true, steps });
+  });
   router.get("/data", async (req, res) => {
     const type = String(req.query.type || "");
     if (!TYPES[type]) return res.status(400).json({ ok: false, error: "Unknown report." });
@@ -158,6 +181,28 @@ function register(app, ctx) {
       res.json({ ok: true, message: "✅ Sent to your Telegram chat with the bot. If you don't see it, open the AMBAR bot chat and press Start once." });
     } catch (e) { res.json({ ok: false, error: /chat not found|bot can't initiate|blocked/i.test(e.message) ? "Open the AMBAR bot chat once and press Start, then try again." : e.message }); }
   });
+  // ── EDIT inside the mini app (main admins only): change cells, insert a row, delete a row. Saved straight into the sheet. ──
+  const allowedTab = tab => Object.values(cfg.tabs).some(a => a.includes(tab));
+  const int = v => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 5000 ? n : 0; };
+  const editRoute = (name, build) => router.post("/" + name, async (req, res) => {
+    try {
+      const tab = String(req.body?.tab || "");
+      if (!allowedTab(tab)) return res.json({ ok: false, error: "That tab is not part of a report." });
+      const payload = build(req.body || {});
+      if (typeof payload === "string") return res.json({ ok: false, error: payload });
+      const d = await callScript({ ...payload, tab });
+      cache.delete(tab);
+      audit("Report edited", `${tab}: ${name}`, req.actor);
+      res.json({ ok: true, ...d, message: d.skipped?.length ? "⚠ Not saved: " + d.skipped.join(", ") : "✅ Saved to the sheet." });
+    } catch (e) { res.json({ ok: false, error: /Unknown action/i.test(e.message) ? "The Google script is the old version. Paste the new reports-sheet-script.gs and deploy a New version." : e.message }); }
+  });
+  editRoute("edit", b => {
+    const cells = (Array.isArray(b.cells) ? b.cells : []).slice(0, 100).map(c => ({ r: int(c.r), c: int(c.c), v: String(c.v == null ? "" : c.v).slice(0, 2000) })).filter(c => c.r && c.c);
+    return cells.length ? { action: "set", cells } : "Nothing to save.";
+  });
+  editRoute("add-row", b => int(b.row) ? { action: "addRow", row: int(b.row) } : "Choose a row.");
+  editRoute("del-row", b => int(b.row) ? { action: "delRow", row: int(b.row) } : "Choose a row.");
+
   // The Apps Script text, so it can be copied from the page.
   router.get("/script", (req, res) => {
     try { res.type("text/plain; charset=utf-8").send(fs.readFileSync(path.join(__dirname, "reports-sheet-script.gs"), "utf8")); }
