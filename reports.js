@@ -1,58 +1,64 @@
-// ── REPORTS (separate module + page: /reports.html) — MAIN ADMINS ONLY ───────────────────────
-// Workflow Follow-up · Stock · Material reports, read LIVE from a SECOND Google Sheet (not the order sheet).
-// The old order sheet / google-sheet-script.gs is not touched by this file at all.
+// ── REPORTS (module + page: /reports.html) — MAIN ADMINS ONLY ─────────────────────────────────
+// v119: the MINI APP is the main source. Workflow · Stock · Material are kept inside the app
+// (file data/reports-data.json + Supabase app_settings.reports_data). The Google Sheet is only a BACKUP:
+// after every change the app sends a full snapshot to the sheet (tabs "Backup …"). Nothing is ever read back from the sheet.
 //
-//  • reports-sheet-script.gs is pasted into the NEW sheet (read-only Apps Script web app).
-//  • The main admin pastes its /exec link + secret word once; the link is saved (file + Supabase) and restored on every start.
-//  • Each report (wf / st / mt) is mapped to one or more tabs of that sheet (auto-guessed from the tab names, changeable).
-//  • The page shows every tab exactly as it looks in the sheet (colours, merged cells) and makes the PDF in the phone.
-//  • The finished PDF can also be sent to the admin's own Telegram chat by the bot (the reliable way inside Telegram).
-//
-// Render: set ONLY REPORTS_SCRIPT_URL (the …/exec link). REPORTS_SCRIPT_KEY is optional.
-// Access: owner (main admin) only. Assigned admins and view-only admins get 403 on every endpoint.
+//  • Workflow: add a product with a PRODUCT CODE → "Finished" sends it to IN STOCK → "Sold" records the sale
+//    with the ETHIOPIAN date + time (Addis Ababa clock).
+//  • Material: add a new material, ➕ add more, ✂️ cut (use) — every movement is logged with Ethiopian date + time.
+//  • Backup: reports-sheet-script.gs (script version reports-4) is pasted in the reports Google Sheet; the /exec link is saved
+//    (file + Supabase) or set in Render as REPORTS_SCRIPT_URL. The old order sheet is never touched.
+// Access: owner (main admin) only. Assigned admins get 403 on every endpoint; view-only admins are refused on writes by requireAccess.
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 
-const TYPES = {
-  wf: { title: "Workflow Follow-up", guess: /work\s*-?\s*flow|follow/i },
-  st: { title: "Stock Report", guess: /stock|shelf|gadget|other|finished/i },
-  mt: { title: "Material Report", guess: /material/i }
-};
-const CACHE_MS = 45 * 1000;
+const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+const num = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "").trim()); return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : NaN; };
+const uid = () => crypto.randomBytes(6).toString("hex");
 
 function register(app, ctx) {
   const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
   const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
-  const FILE = path.join(baseDir, "reports-sheet.json");
-  let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), tabs: { wf: [], st: [], mt: [] }, sheetName: "", sheetUrl: "", allTabs: [], savedAt: "" };
-  const cache = new Map(); // tab name → { at, data }
+  const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
+  const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
+  let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
+  let db = { products: [], materials: [], log: [], savedAt: "" };
 
-  async function load() {
-    let d = null;
-    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "reports_sheet").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
-    if (!d) { try { d = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") cfg = { ...cfg, ...d, tabs: { wf: [], st: [], mt: [], ...(d.tabs || {}) } };
-    // Render variable REPORTS_SCRIPT_URL is the master link; the key is optional (like the old sheet).
-    if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
-    autoSetup().catch(() => {});
-  }
-  // Link only (e.g. from Render): read the tab list and guess which tab is which, once.
-  async function autoSetup() {
-    if (!cfg.scriptUrl) return;
-    if (cfg.allTabs?.length && Object.values(cfg.tabs).some(a => a.length)) return;
-    const p = await callScript({ action: "ping" });
-    cfg.allTabs = p.tabs || []; cfg.sheetName = p.name || ""; cfg.sheetUrl = p.url || "";
-    if (!Object.values(cfg.tabs).some(a => a.length)) cfg.tabs = guessTabs(cfg.allTabs);
-    await save();
-  }
-  async function save() {
-    cfg.savedAt = new Date().toISOString();
-    try { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(cfg)); } catch {}
+  // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
+  const nowEth = () => {
+    const g = new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }); // 2026-11-22 14:05:09
+    return { d: helpers.ethDate(g.slice(0, 10)), t: g.slice(11, 16) };
+  };
+  const who = req => clip(req.actor?.name || "Main admin", 60);
+
+  // ── storage (file + Supabase, restored on every start) ──────────────────────────────────────
+  let chain = Promise.resolve();
+  const persist = () => (chain = chain.then(async () => {
+    db.savedAt = new Date().toISOString();
+    try { fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true }); fs.writeFileSync(DATA_FILE, JSON.stringify(db)); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "reports_data", value: db, updated_at: new Date().toISOString() }); } catch {} }
+  }).catch(() => {}));
+  async function saveCfg() {
+    try { fs.mkdirSync(path.dirname(CFG_FILE), { recursive: true }); fs.writeFileSync(CFG_FILE, JSON.stringify(cfg)); } catch {}
     if (supabase) { try { await supabase.from("app_settings").upsert({ key: "reports_sheet", value: cfg, updated_at: new Date().toISOString() }); } catch {} }
   }
+  async function load() {
+    let d = null, c = null;
+    if (supabase) {
+      try { const { data } = await supabase.from("app_settings").select("value").eq("key", "reports_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {}
+      try { const { data } = await supabase.from("app_settings").select("value").eq("key", "reports_sheet").maybeSingle(); if (data?.value && typeof data.value === "object") c = data.value; } catch {}
+    }
+    if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
+    if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
+    if (d && typeof d === "object") db = { products: [], materials: [], log: [], savedAt: "", ...d };
+    if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
+    if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
+    if (cfg.scriptUrl) scheduleBackup(8000); // a restart / redeploy refreshes the backup once
+  }
 
-  // ── talk to the reports script (same redirect handling as the order script) ──────────────────
+  // ── Google Sheet BACKUP (one-way: app → sheet) ──────────────────────────────────────────────
   function scriptUrl(raw = cfg.scriptUrl) {
     let url = String(raw || "").replace(/["'`\s]/g, "");
     const found = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i);
@@ -65,104 +71,202 @@ function register(app, ctx) {
   async function callScript(payload, { url, key } = {}) {
     const start = scriptUrl(url);
     let at = start;
-    let r = await fetch(at, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: key != null ? key : (cfg.scriptKey || "") }), redirect: "manual", signal: AbortSignal.timeout(60000) });
-    for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual", signal: AbortSignal.timeout(60000) }); }
+    let r = await fetch(at, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: key != null ? key : (cfg.scriptKey || "") }), redirect: "manual", signal: AbortSignal.timeout(120000) });
+    for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual", signal: AbortSignal.timeout(120000) }); }
     const t = await r.text();
     let d;
     try { d = JSON.parse(t); } catch {
       const low = t.toLowerCase();
       if (low.includes("accounts.google.com") || low.includes("sign in") || r.status === 401 || r.status === 403) throw new Error("Google is asking visitors to sign in. Deploy the script again: Deploy → New deployment → Web app → Who has access: Anyone.");
       if (r.status === 404 || low.includes("page not found")) throw new Error("The Web app link was not found. Copy it again from Deploy → Manage deployments (it must end with /exec).");
-      throw new Error(`The Google script did not answer correctly (HTTP ${r.status}). Make sure reports-sheet-script.gs is pasted in the NEW sheet, saved, and deployed as a Web app.`);
+      throw new Error(`The Google script did not answer correctly (HTTP ${r.status}). Paste the newest reports-sheet-script.gs, save, and deploy a New version.`);
     }
-    if (!d.ok) throw new Error(String(d.error || "The Google script refused the request."));
+    if (!d.ok) throw new Error(/Unknown action/i.test(String(d.error || "")) ? "The Google script is the OLD version. Paste the new reports-sheet-script.gs in the reports sheet and deploy a New version." : String(d.error || "The Google script refused the request."));
     return d;
   }
-
-  function guessTabs(all) {
-    const used = new Set(), out = { wf: [], st: [], mt: [] };
-    for (const type of ["wf", "mt", "st"]) for (const name of all) if (!used.has(name) && TYPES[type].guess.test(name)) { out[type].push(name); used.add(name); }
-    return out;
+  const snapshot = () => ({ products: db.products, materials: db.materials, log: db.log.slice(0, 3000), app: "AMBAR Furniture mini app", now: nowEth() });
+  let backing = false, again = false, timer = null;
+  async function backupNow() {
+    if (!cfg.scriptUrl) return { ok: false, error: "The backup sheet is not connected yet." };
+    if (backing) { again = true; return { ok: true, queued: true }; }
+    backing = true;
+    try {
+      const d = await callScript({ action: "backup", data: snapshot() });
+      const n = nowEth();
+      cfg.backup = { at: new Date().toISOString(), d: n.d, t: n.t, ok: true, error: "", count: d.rows || 0 };
+      if (d.url) cfg.sheetUrl = d.url;
+      if (d.name) cfg.sheetName = d.name;
+      await saveCfg();
+      return { ok: true };
+    } catch (e) {
+      cfg.backup = { ...cfg.backup, ok: false, error: e.message };
+      await saveCfg();
+      return { ok: false, error: e.message };
+    } finally { backing = false; if (again) { again = false; scheduleBackup(2000); } }
+  }
+  function scheduleBackup(ms = 4000) {
+    if (!cfg.scriptUrl) return;
+    clearTimeout(timer); timer = setTimeout(() => { backupNow().catch(() => {}); }, ms);
   }
 
-  async function getGrid(tab, fresh) {
-    const hit = cache.get(tab);
-    if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.data;
-    const d = await callScript({ action: "grid", tab });
-    const data = { name: tab, rows: d.rows || [], merges: d.merges || [], colW: d.colW || [], rowH: d.rowH || [], rowNo: d.rowNo || [], colNo: d.colNo || [] };
-    cache.set(tab, { at: Date.now(), data });
-    return data;
-  }
+  // ── helpers on the data ─────────────────────────────────────────────────────────────────────
+  const stamp = req => ({ ...nowEth(), by: who(req) });
+  const hist = (p, ev, req, extra = {}) => { p.history = (p.history || []).concat({ ev, ...stamp(req), ...extra }).slice(-60); };
+  const findP = id => db.products.find(p => p.id === String(id || ""));
+  const findM = id => db.materials.find(m => m.id === String(id || ""));
+  const codeTaken = (code, exceptId) => db.products.some(p => p.id !== exceptId && p.code.toLowerCase() === code.toLowerCase());
+  const nextCode = () => {
+    let max = 0; for (const p of db.products) { const m = /^P-(\d+)$/i.exec(p.code); if (m) max = Math.max(max, +m[1]); }
+    return "P-" + String(max + 1).padStart(4, "0");
+  };
+  const addLog = (req, m, type, qty, balance, note) => {
+    db.log.unshift({ id: uid(), matId: m.id, material: m.name, unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
+    if (db.log.length > 6000) db.log.length = 6000;
+  };
+  const priceOf = v => (v === "" || v == null) ? "" : num(v);
+  const badPrice = p => p !== "" && (Number.isNaN(p) || p < 0);
+  const fail = (res, error) => res.json({ ok: false, error });
+  const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
+  const view = () => ({ products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
   router.use(requireAccess);
   router.use((req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Reports are for main admins only." }));
+  router.use(express.json({ limit: "200kb" }));
 
-  const statusJson = () => ({
-    ok: true, configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "",
-    tabs: cfg.tabs, allTabs: cfg.allTabs || [], types: Object.fromEntries(Object.entries(TYPES).map(([k, v]) => [k, v.title])), savedAt: cfg.savedAt || ""
+  router.get("/state", (req, res) => res.json({ ok: true, ...view() }));
+
+  // WORKFLOW → STOCK → SOLD
+  router.post("/product/add", (req, res) => {
+    const b = req.body || {}, name = clip(b.name, 120);
+    if (!name) return fail(res, "Write the product name.");
+    const code = clip(b.code, 30) || nextCode();
+    if (codeTaken(code)) return fail(res, `Product code “${code}” is already used. Choose another code.`);
+    const price = priceOf(b.price);
+    if (badPrice(price)) return fail(res, "The price must be a number.");
+    const p = { id: uid(), code, name, note: clip(b.note, 300), price, status: "workflow", added: stamp(req), history: [] };
+    hist(p, "Added to Workflow", req);
+    db.products.unshift(p);
+    audit("Report: product added", `${code} ${name}`, req.actor);
+    done(res, `✅ ${code} added to Workflow.`);
   });
-  router.get("/status", async (req, res) => {
-    if (cfg.scriptUrl && !cfg.allTabs?.length && !req.query.refresh) { try { await autoSetup(); } catch (e) { return res.json({ ...statusJson(), error: e.message }); } }
-    if (req.query.refresh && cfg.scriptUrl) {
-      try { const p = await callScript({ action: "ping" }); cfg.allTabs = p.tabs || []; cfg.sheetName = p.name || cfg.sheetName; cfg.sheetUrl = p.url || cfg.sheetUrl; await save(); } catch (e) { return res.json({ ...statusJson(), error: e.message }); }
-    }
-    res.json(statusJson());
+  router.post("/product/edit", (req, res) => {
+    const b = req.body || {}, p = findP(b.id);
+    if (!p) return fail(res, "Product not found.");
+    const name = clip(b.name, 120), code = clip(b.code, 30);
+    if (!name || !code) return fail(res, "Product code and name are needed.");
+    if (codeTaken(code, p.id)) return fail(res, `Product code “${code}” is already used.`);
+    const price = priceOf(b.price);
+    if (badPrice(price)) return fail(res, "The price must be a number.");
+    const changed = p.code !== code || p.name !== name;
+    p.code = code; p.name = name; p.note = clip(b.note, 300); p.price = price;
+    if (changed) hist(p, "Edited", req);
+    audit("Report: product edited", `${code} ${name}`, req.actor);
+    done(res, "✅ Saved.");
   });
-  router.post("/connect", async (req, res) => {
+  router.post("/product/finish", (req, res) => { // Workflow → In Stock
+    const p = findP(req.body?.id);
+    if (!p) return fail(res, "Product not found.");
+    if (p.status !== "workflow") return fail(res, "This product is not in Workflow.");
+    p.status = "stock"; p.finished = stamp(req); hist(p, "Finished → In Stock", req);
+    audit("Report: product finished", `${p.code} → In Stock`, req.actor);
+    done(res, `✅ ${p.code} is finished and now IN STOCK.`);
+  });
+  router.post("/product/sold", (req, res) => { // In Stock → Sold (Ethiopian date + time recorded)
+    const b = req.body || {}, p = findP(b.id);
+    if (!p) return fail(res, "Product not found.");
+    if (p.status !== "stock") return fail(res, "Only a product that is IN STOCK can be sold.");
+    const price = (b.price === "" || b.price == null) ? p.price : num(b.price);
+    if (badPrice(price)) return fail(res, "The price must be a number.");
+    p.status = "sold"; p.sold = { ...stamp(req), price, buyer: clip(b.buyer, 120), note: clip(b.note, 300) };
+    hist(p, "Sold", req);
+    audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
+    done(res, `💰 ${p.code} sold — ${p.sold.d} ${p.sold.t}.`);
+  });
+  router.post("/product/undo", (req, res) => { // fix a mistake: Sold → In Stock, In Stock → Workflow
+    const p = findP(req.body?.id);
+    if (!p) return fail(res, "Product not found.");
+    if (p.status === "sold") { p.status = "stock"; delete p.sold; hist(p, "Sale cancelled → In Stock", req); }
+    else if (p.status === "stock") { p.status = "workflow"; delete p.finished; hist(p, "Moved back → Workflow", req); }
+    else return fail(res, "Nothing to undo.");
+    audit("Report: product undo", `${p.code} → ${p.status}`, req.actor);
+    done(res, `↩ ${p.code} moved back to ${p.status === "stock" ? "In Stock" : "Workflow"}.`);
+  });
+  router.post("/product/delete", (req, res) => {
+    const p = findP(req.body?.id);
+    if (!p) return fail(res, "Product not found.");
+    db.products = db.products.filter(x => x !== p);
+    audit("Report: product deleted", `${p.code} ${p.name}`, req.actor);
+    done(res, `🗑 ${p.code} deleted.`);
+  });
+
+  // MATERIAL: new · add · cut
+  router.post("/material/add", (req, res) => {
+    const b = req.body || {}, name = clip(b.name, 100), unit = clip(b.unit, 20) || "pcs";
+    if (!name) return fail(res, "Write the material name.");
+    if (db.materials.some(m => m.name.toLowerCase() === name.toLowerCase())) return fail(res, `“${name}” already exists. Use ➕ Add on it.`);
+    const qty = (b.qty === "" || b.qty == null) ? 0 : num(b.qty), min = (b.min === "" || b.min == null) ? 0 : num(b.min);
+    if (Number.isNaN(qty) || qty < 0) return fail(res, "The opening quantity must be a number (0 or more).");
+    if (Number.isNaN(min) || min < 0) return fail(res, "The low-stock alert must be a number.");
+    const m = { id: uid(), name, unit, qty, min, created: stamp(req) };
+    db.materials.push(m);
+    addLog(req, m, "new", qty, qty, clip(b.note, 200) || "New material");
+    audit("Report: material added", `${name} ${qty} ${unit}`, req.actor);
+    done(res, `✅ ${name} added.`);
+  });
+  router.post("/material/move", (req, res) => {
+    const b = req.body || {}, m = findM(b.id), type = b.type === "cut" ? "cut" : "add";
+    if (!m) return fail(res, "Material not found.");
+    const qty = num(b.qty);
+    if (Number.isNaN(qty) || qty <= 0) return fail(res, "Write a quantity bigger than 0.");
+    if (type === "cut" && qty > m.qty) return fail(res, `Only ${m.qty} ${m.unit} left of ${m.name}. You cannot cut ${qty}.`);
+    m.qty = Math.round((type === "cut" ? m.qty - qty : m.qty + qty) * 1000) / 1000;
+    addLog(req, m, type, qty, m.qty, b.note);
+    audit("Report: material " + type, `${m.name} ${qty} ${m.unit} → ${m.qty}`, req.actor);
+    done(res, type === "cut" ? `✂️ Cut ${qty} ${m.unit} of ${m.name}. Left: ${m.qty}.` : `➕ Added ${qty} ${m.unit} of ${m.name}. Now: ${m.qty}.`);
+  });
+  router.post("/material/edit", (req, res) => {
+    const b = req.body || {}, m = findM(b.id);
+    if (!m) return fail(res, "Material not found.");
+    const name = clip(b.name, 100), unit = clip(b.unit, 20) || "pcs", min = (b.min === "" || b.min == null) ? 0 : num(b.min);
+    if (!name) return fail(res, "Write the material name.");
+    if (Number.isNaN(min) || min < 0) return fail(res, "The low-stock alert must be a number.");
+    if (db.materials.some(x => x.id !== m.id && x.name.toLowerCase() === name.toLowerCase())) return fail(res, `“${name}” already exists.`);
+    m.name = name; m.unit = unit; m.min = min;
+    db.log.forEach(l => { if (l.matId === m.id) { l.material = name; l.unit = unit; } });
+    done(res, "✅ Saved.");
+  });
+  router.post("/material/delete", (req, res) => {
+    const m = findM(req.body?.id);
+    if (!m) return fail(res, "Material not found.");
+    db.materials = db.materials.filter(x => x !== m);
+    audit("Report: material deleted", m.name, req.actor);
+    done(res, `🗑 ${m.name} deleted. Its movements stay in the log.`);
+  });
+
+  // BACKUP sheet
+  router.post("/backup/connect", async (req, res) => {
     try {
       const url = scriptUrl(req.body?.scriptUrl), key = String(req.body?.scriptKey || "").trim();
       const p = await callScript({ action: "ping" }, { url, key });
-      cfg.scriptUrl = url; cfg.scriptKey = key; cfg.sheetName = p.name || ""; cfg.sheetUrl = p.url || ""; cfg.allTabs = p.tabs || [];
-      cfg.tabs = guessTabs(cfg.allTabs); cache.clear();
-      await save();
-      res.json({ ...statusJson(), message: `✅ Connected to "${cfg.sheetName}". ${cfg.allTabs.length} tab(s) found.` });
+      cfg.scriptUrl = url; cfg.scriptKey = key; cfg.sheetName = p.name || ""; cfg.sheetUrl = p.url || "";
+      await saveCfg();
+      const r = await backupNow();
+      res.json({ ...(r.ok ? { ok: true, message: `✅ Connected to “${cfg.sheetName}”. Backup sent.` } : { ok: false, error: "Connected, but the first backup failed: " + r.error }), ...view() });
     } catch (e) { res.json({ ok: false, error: e.message }); }
   });
-  router.post("/map", async (req, res) => {
-    const known = new Set(cfg.allTabs || []);
-    for (const k of Object.keys(TYPES)) if (Array.isArray(req.body?.[k])) cfg.tabs[k] = req.body[k].map(String).filter(n => known.has(n));
-    cache.clear(); await save();
-    res.json({ ...statusJson(), message: "✅ Saved." });
+  router.post("/backup/now", async (req, res) => {
+    const r = await backupNow();
+    res.json({ ...(r.ok ? { ok: true, message: "✅ Backup saved in the Google Sheet." } : { ok: false, error: r.error }), ...view() });
   });
-  router.post("/disconnect", async (req, res) => {
-    cfg = { ...cfg, scriptUrl: "", scriptKey: "", tabs: { wf: [], st: [], mt: [] }, sheetName: "", sheetUrl: "", allTabs: [] }; cache.clear(); await save();
-    res.json({ ...statusJson(), message: "Reports sheet disconnected. The order Google Sheet was not touched." });
+  router.post("/backup/disconnect", async (req, res) => {
+    cfg = { ...cfg, scriptUrl: "", scriptKey: "", sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
+    await saveCfg();
+    res.json({ ok: true, message: "Backup sheet disconnected. The data stays in the app.", ...view() });
   });
-  // Step-by-step self check shown in the app: link → script → tabs → rows read from each chosen tab.
-  router.get("/check", async (req, res) => {
-    const steps = [], add = (ok, label, detail = "") => steps.push({ ok, label, detail });
-    if (!cfg.scriptUrl) { add(false, "Link saved", "No link yet. Put the /exec link in Render as REPORTS_SCRIPT_URL (or paste it on the Reports page) and redeploy."); return res.json({ ok: true, steps }); }
-    add(true, "Link saved", cfg.scriptUrl.replace(/^(.{38}).*(.{12})$/, "$1…$2"));
-    let ping;
-    try { ping = await callScript({ action: "ping" }); } catch (e) { add(false, "Google script answers", e.message); return res.json({ ok: true, steps }); }
-    add(true, "Google script answers", `Sheet "${ping.name}" · script ${ping.version || "?"}`);
-    cfg.allTabs = ping.tabs || []; cfg.sheetName = ping.name || cfg.sheetName; cfg.sheetUrl = ping.url || cfg.sheetUrl;
-    add(cfg.allTabs.length > 0, "Tabs found", cfg.allTabs.join(" · ") || "The sheet has no tabs.");
-    if (!Object.values(cfg.tabs).some(a => a.length)) { cfg.tabs = guessTabs(cfg.allTabs); }
-    await save();
-    for (const [k, v] of Object.entries(TYPES)) {
-      const names = cfg.tabs[k] || [];
-      if (!names.length) { add(false, v.title, "No tab chosen. Choose the tab on the Reports page."); continue; }
-      for (const n of names) {
-        try { const g = await getGrid(n, true); const cols = g.colW.length; add(g.rows.length > 0, `${v.title} → "${n}"`, g.rows.length ? `${g.rows.length} rows × ${cols} columns read` : "This tab is empty (no data and no colours were found). Choose another tab."); }
-        catch (e) { add(false, `${v.title} → "${n}"`, e.message); }
-      }
-    }
-    res.json({ ok: true, steps });
-  });
-  router.get("/data", async (req, res) => {
-    const type = String(req.query.type || "");
-    if (!TYPES[type]) return res.status(400).json({ ok: false, error: "Unknown report." });
-    if (!cfg.scriptUrl) return res.json({ ok: false, code: "NOT_CONNECTED", error: "The reports sheet is not connected yet." });
-    const names = cfg.tabs[type] || [];
-    if (!names.length) return res.json({ ok: false, code: "NO_TAB", error: `No tab is chosen for ${TYPES[type].title}. Open ⚙ and choose the tab(s).` });
-    try {
-      const tabs = await Promise.all(names.map(n => getGrid(n, !!req.query.fresh)));
-      res.json({ ok: true, type, title: TYPES[type].title, tabs, fetchedAt: new Date().toISOString(), sheetName: cfg.sheetName });
-    } catch (e) { res.json({ ok: false, error: e.message }); }
-  });
+
   // The PDF is built in the phone; this puts a copy into the admin's own Telegram chat.
   router.post("/send-pdf", express.raw({ type: ["application/pdf", "application/octet-stream"], limit: "30mb" }), async (req, res) => {
     try {
@@ -181,27 +285,6 @@ function register(app, ctx) {
       res.json({ ok: true, message: "✅ Sent to your Telegram chat with the bot. If you don't see it, open the AMBAR bot chat and press Start once." });
     } catch (e) { res.json({ ok: false, error: /chat not found|bot can't initiate|blocked/i.test(e.message) ? "Open the AMBAR bot chat once and press Start, then try again." : e.message }); }
   });
-  // ── EDIT inside the mini app (main admins only): change cells, insert a row, delete a row. Saved straight into the sheet. ──
-  const allowedTab = tab => Object.values(cfg.tabs).some(a => a.includes(tab));
-  const int = v => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 5000 ? n : 0; };
-  const editRoute = (name, build) => router.post("/" + name, async (req, res) => {
-    try {
-      const tab = String(req.body?.tab || "");
-      if (!allowedTab(tab)) return res.json({ ok: false, error: "That tab is not part of a report." });
-      const payload = build(req.body || {});
-      if (typeof payload === "string") return res.json({ ok: false, error: payload });
-      const d = await callScript({ ...payload, tab });
-      cache.delete(tab);
-      audit("Report edited", `${tab}: ${name}`, req.actor);
-      res.json({ ok: true, ...d, message: d.skipped?.length ? "⚠ Not saved: " + d.skipped.join(", ") : "✅ Saved to the sheet." });
-    } catch (e) { res.json({ ok: false, error: /Unknown action/i.test(e.message) ? "The Google script is the old version. Paste the new reports-sheet-script.gs and deploy a New version." : e.message }); }
-  });
-  editRoute("edit", b => {
-    const cells = (Array.isArray(b.cells) ? b.cells : []).slice(0, 100).map(c => ({ r: int(c.r), c: int(c.c), v: String(c.v == null ? "" : c.v).slice(0, 2000) })).filter(c => c.r && c.c);
-    return cells.length ? { action: "set", cells } : "Nothing to save.";
-  });
-  editRoute("add-row", b => int(b.row) ? { action: "addRow", row: int(b.row) } : "Choose a row.");
-  editRoute("del-row", b => int(b.row) ? { action: "delRow", row: int(b.row) } : "Choose a row.");
 
   // The Apps Script text, so it can be copied from the page.
   router.get("/script", (req, res) => {
