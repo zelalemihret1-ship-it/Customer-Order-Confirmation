@@ -74,7 +74,7 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 #gate h2{margin:0 0 10px;font-size:20px;color:var(--gold)}#gate p{margin:0;color:#c7d3ce;line-height:1.5}
 @media(min-width:620px){.admin .grid{grid-template-columns:repeat(4,1fr)}}
 </style>
-<link rel="stylesheet" href="/app.css?v=106">
+<link rel="stylesheet" href="/app.css?v=118">
 <meta name="theme-color" content="#0f3d30">
 </head>
 <body>
@@ -143,6 +143,10 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
   </div>
 
   <div class="own hide">
+    <div class="sec">Reports<span class="badge">Main admin only</span></div>
+    <div class="list">
+      <a class="row" href="/reports.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Reports</b><span class="d">Workflow · Stock · Material — view and PDF</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    </div>
     <div class="sec">Administration<span class="badge">Main admin only</span></div>
     <div class="admin"><div class="grid">
       <a class="at" href="/orders.html?open=cfg"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-bolt"/></svg><div><b>Connect Google Sheet</b><span class="d">One click · all data</span></div></a>
@@ -197,6 +201,6 @@ $("btnSh").addEventListener("click",async()=>{
   }catch(e){$("hello").textContent="Could not check your access — the areas below will check it when opened.";}
 })();
 </script>
-<script src="/app.js?v=106"></script>
+<script src="/app.js?v=118"></script>
 </body>
 </html>
