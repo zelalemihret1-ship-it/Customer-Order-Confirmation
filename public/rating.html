@@ -19,7 +19,7 @@ header a.back{position:absolute;left:12px;top:50%;transform:translateY(-50%);col
 main{max-width:920px;margin:auto;padding:14px}
 .tabs{display:flex;gap:8px;margin-bottom:14px}
 .tabs button{flex:1;border-radius:12px;padding:13px 8px;font-weight:700;font-size:14px;background:#fff;color:#153a2e;border:1.5px solid #ddd4c4;cursor:pointer}
-.fseg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}.fseg button{flex:1;min-width:46%;border:1.5px solid #ddd4c4;background:#fff;color:#153a2e;border-radius:12px;padding:10px 6px;font-weight:800;font-size:13px;cursor:pointer;line-height:1.25}.fseg button small{display:block;font-size:11px;font-weight:700;opacity:.75}.fseg button.on{background:#153a2e;color:#fff;border-color:#153a2e}.fseg button.on small{color:#ffd877;opacity:1}.fseg button.k-notsent.on{background:#8a5a00;border-color:#8a5a00}.fseg button.k-rated.on{background:#176b3a;border-color:#176b3a}
+.fseg{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}.fseg button{flex:1;min-width:30%;border:1.5px solid #ddd4c4;background:#fff;color:#153a2e;border-radius:12px;padding:10px 6px;font-weight:800;font-size:13px;cursor:pointer;line-height:1.25}.fseg button small{display:block;font-size:11px;font-weight:700;opacity:.75}.fseg button.on{background:#153a2e;color:#fff;border-color:#153a2e}.fseg button.on small{color:#ffd877;opacity:1}.fseg button.k-notsent.on{background:#8a5a00;border-color:#8a5a00}.fseg button.k-rated.on{background:#176b3a;border-color:#176b3a}
 .tabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
 .card{background:#fff;border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 6px 22px #00000012;border:1px solid #e4ded2}
 h2{margin:0 0 12px;color:#153a2e;font-size:17px}
@@ -63,6 +63,14 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
 #gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
 @media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}.stats{grid-template-columns:repeat(2,1fr)}}
+.ord.tap{cursor:pointer;border-color:#b9d9c4;background:linear-gradient(#fff,#f6fbf7)}.ord.tap:active{transform:scale(.99)}
+.ov{position:fixed;inset:0;background:#0009;z-index:200;display:none;align-items:flex-end;justify-content:center}.ov.on{display:flex}
+.ov .box{background:#f7f5ef;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:0 0 calc(22px + env(safe-area-inset-bottom,0px))}
+.ci-h{background:linear-gradient(135deg,#0f2f25,#1b4d3d);color:#f4efe3;padding:18px 16px 16px;border-bottom:3px solid #b89552;position:relative}
+.ci-av{width:54px;height:54px;border-radius:50%;background:#ffa939;color:#153a2e;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;float:left;margin-right:12px}
+.ci-h b{font-size:19px;display:block}.ci-h small{opacity:.8}.ci-x{position:absolute;right:12px;top:12px;border:0;background:#ffffff22;color:#fff;border-radius:999px;width:34px;height:34px;font-size:18px;cursor:pointer}
+.ci-sec{background:#fff;border:1px solid #e4ded2;border-radius:16px;margin:12px 14px 0;padding:12px 14px}.ci-sec h4{margin:0 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#6d675d}
+.ci-r{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #f0ece2;font-size:14px}.ci-r:last-child{border:0}.ci-r span{color:#6d675d;flex:none}.ci-r b{text-align:right;word-break:break-word}
 </style>
 <link rel="stylesheet" href="/app.css?v=118">
 <meta name="theme-color" content="#0f3d30">
@@ -85,7 +93,7 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
         <div><h2 style="margin:0">🤖 Automatic rating link</h2><div class="hint" id="autoState" style="margin-top:4px"></div></div>
         <button id="autoSw" class="sw" aria-label="Automatic rating link on/off" role="switch" aria-checked="false"><i></i></button>
       </div>
-      <p class="hint" style="margin:10px 0 0">When ON: as soon as an order's <b>Delivery Date</b> arrives, the customer gets the rating link automatically — once. When OFF: press <b>✅ Delivered · send link</b> on an order yourself. Only orders you created are used.</p>
+      <p class="hint" style="margin:10px 0 0">When ON: as soon as an order's <b>Delivery Date</b> arrives, the customer gets the rating link automatically — once. When OFF: press <b>✅ Mark delivered</b> on an order yourself. Only orders you created are used.</p>
     </div>
     <div class="card">
       <h2>Orders</h2>
@@ -109,6 +117,7 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
 
   <section id="vRes" style="display:none"></section>
 </main>
+<div class="ov" id="ciOv"><div class="box" id="ciBox"></div></div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -135,15 +144,15 @@ $("autoSw").onclick=async()=>{
   try{const d=await post("/api/ratings/auto",{on:want,text:$("text").value});say(d.ok?d.message:"❌ "+d.error,d.ok?"ok":"bad");if(d.ok)D.auto=d.on;}catch(e){say("❌ "+e.message,"bad");}
   $("autoSw").disabled=false;drawAuto();};
 
-const LABEL={waiting:"Not delivered yet",delivered:"Delivered",sent:"Link sent",rated:"Rated",failed:"Not sent"};
+const LABEL={waiting:"Not delivered yet",delivered:"Delivered",sent:"Delivered",rated:"Rated",failed:"Delivered"};
 const starsHtml=n=>`<span class="stars">${"★".repeat(n)}<i>${"★".repeat(5-n)}</i></span>`;
+// The last stage of an order is DELIVERED (then it gets rated). There is no "sent" stage any more.
 const GROUPS={
-  notsent:{label:"📤 Delivered · not sent",test:o=>o.state==="delivered"||o.state==="failed",empty:"No delivered order is waiting for its rating link. 🎉"},
   waiting:{label:"🚚 Not delivered yet",test:o=>o.state==="waiting",empty:"No order is waiting for delivery."},
-  sent:{label:"✉️ Link sent · waiting",test:o=>o.state==="sent",empty:"No link is waiting for a rating."},
+  delivered:{label:"✅ Delivered",test:o=>o.state==="delivered"||o.state==="sent"||o.state==="failed",empty:"No delivered order is waiting for a rating."},
   rated:{label:"⭐ Rated orders",test:o=>o.state==="rated",empty:"No order has been rated yet."}
 };
-let SEC="notsent";
+let SEC="delivered";
 function drawSeg(){
   $("fseg").innerHTML=Object.keys(GROUPS).map(k=>`<button type="button" class="k-${k}${k===SEC?" on":""}" data-k="${k}">${GROUPS[k].label}<small>${D.orders.filter(GROUPS[k].test).length} order${D.orders.filter(GROUPS[k].test).length===1?"":"s"}</small></button>`).join("");
 }
@@ -152,13 +161,13 @@ function drawOrders(){
   const rows=D.orders.filter(o=>GROUPS[SEC].test(o)&&(!q||[o.orderId,o.customer,o.product].some(x=>String(x).toLowerCase().includes(q))));
   $("list").innerHTML=rows.length?rows.map(o=>{
     let btn="";
-    if(o.state==="waiting"||o.state==="delivered"||o.state==="failed")btn=`<button class="send" data-id="${esc(o.id)}">✅ Delivered · send link</button>`;
+    if(o.state==="waiting"||o.state==="delivered"||o.state==="failed")btn=`<button class="send" data-id="${esc(o.id)}">✅ Mark delivered</button>`;
     else if(o.state==="sent")btn=`<button class="ghost" data-id="${esc(o.id)}" data-resend="1">↻ Send again</button>`;
-    return `<div class="ord"><div class="top"><span class="cid">${esc(o.orderId)}</span><span class="pill ${o.state}">${LABEL[o.state]}</span></div>
-      <div class="nm">${esc(o.customer)}</div>
-      <div class="meta">${esc(o.product)}${o.deliveryDate?" · delivery "+esc(o.deliveryDate):""}${D.people?" · by "+esc(o.owner||"Main admin"):""}${o.sentAt?"<br>Link sent "+esc(o.sentAt)+(o.via?" · "+esc(o.via):""):""}</div>
+    return `<div class="ord${o.stars?" tap":""}" ${o.stars?`data-open="${esc(o.id)}"`:""}><div class="top"><span class="cid">${esc(o.orderId)}</span><span class="pill ${o.state==="sent"||o.state==="failed"?"delivered":o.state}">${LABEL[o.state]}</span></div>
+      <div class="nm">${esc(o.customer)}${o.stars?' <span class="hint">· tap for customer info ›</span>':""}</div>
+      <div class="meta">${esc(o.product)}${o.deliveryDate?" · delivery "+esc(o.deliveryDate):""}${D.people?" · by "+esc(o.owner||"Main admin"):""}${o.sentAt?"<br>Rating link sent "+esc(o.sentAt)+(o.via?" · "+esc(o.via):""):""}</div>
       ${o.stars?`<div style="margin-top:6px">${starsHtml(o.stars)} <span class="hint">${o.stars}/5 · ${esc(o.ratedAt)}</span></div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}`:""}
-      ${o.error?`<div class="meta" style="color:#b3261e">${esc(o.error)}</div>`:""}
+      ${o.error?`<div class="meta" style="color:#b3261e">Rating link not sent: ${esc(o.error)}</div>`:""}
       ${btn?`<div class="row" style="margin-top:8px">${btn}</div>`:""}</div>`;
   }).join(""):`<div class="empty">${q?"No order matches your search.":GROUPS[SEC].empty}</div>`;
 }
@@ -174,12 +183,31 @@ $("list").addEventListener("click",e=>{
   });
 });
 function drawResults(){
-  const s=D.stats;let h=`<div class="card"><h2>Overview</h2><div class="stats"><div class="stat"><b>${s.orders}</b><span>Orders</span></div><div class="stat"><b>${s.sent}</b><span>Links sent</span></div><div class="stat"><b>${s.rated}</b><span>Rated</span></div><div class="stat"><b>${s.rated?s.avg+" ★":"—"}</b><span>Average</span></div></div></div>`;
+  const s=D.stats;let h=`<div class="card"><h2>Overview</h2><div class="stats"><div class="stat"><b>${s.orders}</b><span>Orders</span></div><div class="stat"><b>${s.sent}</b><span>Delivered</span></div><div class="stat"><b>${s.rated}</b><span>Rated</span></div><div class="stat"><b>${s.rated?s.avg+" ★":"—"}</b><span>Average</span></div></div></div>`;
   if(D.people)h+=`<div class="card"><h2>👑 All admins</h2>${D.people.length?`<div class="people">${D.people.map(p=>`<div class="person"><b>${esc(p.name)}</b><br>${p.avg} ★ average<br>${p.count} rating(s)</div>`).join("")}</div>`:`<div class="empty">No ratings yet.</div>`}</div>`;
   const rated=D.orders.filter(o=>o.stars).sort((a,b)=>String(b.ratedAt).localeCompare(String(a.ratedAt)));
-  h+=`<div class="card"><h2>${D.people?"All ratings":"My ratings"}</h2>${rated.length?rated.map(o=>`<div class="ord"><div class="top"><span class="cid">${esc(o.orderId)}</span>${starsHtml(o.stars)}</div><div class="nm">${esc(o.customer)}</div><div class="meta">${esc(o.product)} · ${esc(o.ratedAt)}${D.people?" · by "+esc(o.owner||"Main admin"):""}</div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}</div>`).join(""):`<div class="empty">No ratings received yet.</div>`}</div>`;
+  h+=`<div class="card"><h2>${D.people?"All ratings":"My ratings"}</h2>${rated.length?rated.map(o=>`<div class="ord tap" data-open="${esc(o.id)}"><div class="top"><span class="cid">${esc(o.orderId)}</span>${starsHtml(o.stars)}</div><div class="nm">${esc(o.customer)}</div><div class="meta">${esc(o.product)} · ${esc(o.ratedAt)}${D.people?" · by "+esc(o.owner||"Main admin"):""}</div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}</div>`).join(""):`<div class="empty">No ratings received yet.</div>`}</div>`;
   $("vRes").innerHTML=h;
 }
+
+// ── tap a RATED order → the customer's full info ──
+const closeCi=()=>$("ciOv").classList.remove("on");
+$("ciOv").addEventListener("click",e=>{if(e.target===$("ciOv")||e.target.closest("[data-x]"))closeCi();});
+const rowH=(l,v)=>v===""||v==null||v===0?"":`<div class="ci-r"><span>${esc(l)}</span><b>${esc(v)}</b></div>`;
+async function openCustomer(id){
+  $("ciBox").innerHTML='<div class="empty">Loading…</div>';$("ciOv").classList.add("on");
+  let d;try{d=await (await fetch("/api/ratings/customer/"+encodeURIComponent(id))).json();}catch(e){d={ok:false,error:"No connection."};}
+  if(!d.ok){$("ciBox").innerHTML=`<div class="empty">${esc(d.error||"Could not load.")}</div><div style="padding:0 14px"><button class="ghost" style="width:100%" data-x="1">Close</button></div>`;return;}
+  const c=d.customer||{},o=d.order||{},nm=c.name||o.customerName||"Customer",dim=[o.length,o.width,o.height].filter(Boolean).join(" × ");
+  const money=v=>v===""||v==null?"":Number(v).toLocaleString("en-US");
+  $("ciBox").innerHTML=`<div class="ci-h"><button class="ci-x" data-x="1" aria-label="Close">✕</button><div class="ci-av">${esc(nm.trim().charAt(0).toUpperCase()||"?")}</div><b>${esc(nm)}</b><small>${c.id?"Customer ID "+esc(c.id)+" · ":""}${esc(o.orderId||"")}</small></div>
+  <div class="ci-sec"><h4>⭐ Rating</h4><div>${starsHtml(d.rating.stars)} <span class="hint">${d.rating.stars}/5 · ${esc(d.rating.ratedAt)}</span></div>${d.rating.comment?`<div class="cmt">${esc(d.rating.comment)}</div>`:""}</div>
+  <div class="ci-sec"><h4>👤 Customer</h4>${rowH("Name",nm)}${rowH("Customer ID",c.id)}${rowH("Phone",c.phone||o.phone)}${rowH("Extra phone",c.additionalPhone)}${rowH("Telegram",c.username||o.telegramUsername)}${rowH("Location",c.location||o.location)}${rowH("Customer status",c.customerStatus)}${rowH("Source",c.source)}${rowH("Sales name",c.salesName)}${rowH("Total spend",money(c.totalSpend))}${rowH("Added",c.date?c.date+(c.time?" · "+c.time:""):"")}${rowH("Last conversation",c.lastConversation)}${c.id?"":'<div class="hint">This customer is not in Customers Data; showing what the order has.</div>'}</div>
+  <div class="ci-sec"><h4>📦 This order</h4>${rowH("Order",o.orderId)}${rowH("Product",o.product)}${rowH("Size",dim)}${rowH("Material",o.material)}${rowH("Color",o.color)}${rowH("Style",o.style)}${rowH("Design",o.design)}${rowH("Handle",o.handle)}${rowH("Door",o.door)}${rowH("Partition",o.partition)}${rowH("Drawer",o.drawer)}${rowH("Extra features",o.additionalFeatures)}${rowH("Payment",money(o.payment))}${rowH("Advance",money(o.advance))}${rowH("Order date",o.orderDate)}${rowH("Completion",o.completionDate)}${rowH("Delivery",o.deliveryType)}${rowH("Delivery service",o.deliveryService)}${rowH("Delivery fee",money(o.deliveryFee))}${rowH("Delivery date",o.deliveryDate)}${rowH("Status",o.status)}${rowH("Created by",o.createdByName)}</div>
+  ${(d.orders||[]).length>1?`<div class="ci-sec"><h4>🧾 All orders of this customer (${d.orders.length})</h4>${d.orders.map(x=>`<div class="ci-r"><span>${esc(x.orderId)}</span><b>${esc(x.product)} ${x.stars?starsHtml(x.stars):'<span class="hint">not rated</span>'}</b></div>`).join("")}</div>`:""}
+  <div style="padding:14px 14px 0"><button class="ghost" style="width:100%" data-x="1">Close</button></div>`;
+}
+document.addEventListener("click",e=>{const t=e.target.closest(".ord[data-open]");if(t&&!e.target.closest("button"))openCustomer(t.dataset.open);});
 async function load(){
   let d;
   try{d=await (await fetch("/api/ratings")).json();if(!d.ok){$("gate").style.display="flex";$("gateMsg").textContent=d.error||"No access.";return;}}
