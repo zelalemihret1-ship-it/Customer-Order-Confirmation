@@ -1,3 +1,18 @@
+# v118 — Reports (Workflow · Stock · Material) from a NEW Google Sheet · View-only admins
+**Reports (main admins only)**
+- New **Reports** tile on Home (inside the main-admin area). Tabs **Workflow / Stock / Material** show the sheet exactly as it looks (colours, merged cells). **📄 Make PDF** builds an A4-landscape PDF (header, page numbers, date) in the phone; then **⬇ Download**, **Open**, or **✈ Send to my Telegram** (the bot sends the PDF to your own chat — the reliable way inside Telegram).
+- Data comes LIVE from a **second Google Sheet**. The old order sheet and `google-sheet-script.gs` are unchanged and keep working. The new sheet uses its own read-only script: **`reports-sheet-script.gs`** (never writes to the sheet).
+- First time: Home → Reports → follow the steps on screen (copy script → paste in the NEW sheet's Apps Script → deploy as Web app → paste the `/exec` link → Connect). The link is saved permanently (file + Supabase) like the order sheet.
+- **Render:** set ONLY `REPORTS_SCRIPT_URL` = the `/exec` link and redeploy. No key needed (`REPORTS_SCRIPT_KEY` / `REPORT_KEY` are optional). The tab list and Workflow/Stock/Material tabs are detected automatically.
+- ⚙ Settings (on the Reports page): choose which sheet tab(s) belong to Workflow / Stock / Material (guessed from the tab names), reload the tab list, open the sheet, disconnect. A report can use several tabs (e.g. Stock = Shoe Shelf + Others + Gadgets); each tab starts a new PDF page.
+- Only main admins can open it. Assigned and view-only admins get "main admins only". Env var: `REPORTS_SCRIPT_URL`.
+- New files: `reports.js`, `reports-sheet-script.gs`, `public/reports.html`. Endpoints: `/api/reports/status|connect|map|disconnect|data|send-pdf|script`.
+
+**View-only admins**
+- ⚙ Manage Admins: tick **👁 View-only** when assigning or editing, or tap **👁 Make view-only / ✏️ Allow editing** on an admin's row. A main admin can't be view-only.
+- A view-only admin can **watch** everything (all orders, customers, stories, greeting and rating pages) but **cannot create, edit, send, delete or connect anything**. The server refuses every write for them (403 `VIEW_ONLY`), and the app shows a **👁 View only** badge and a clear message. The Administration area and Reports are hidden for them.
+- Files changed: `server.js`, `public/app.js`, `public/app.css`, `public/home.html`, `public/index.html`. No new packages. Redeploy the whole folder.
+
 # v117 — Telegram connection is QR-only (main admin generates, assigned admin scans)
 - The phone-number / SMS / login-code method is **removed** (endpoints `/api/my-account/send-code|verify|resend`, `/api/setup/send-code|verify` are gone).
 - **Main admin:** ⚙ Settings → 👥 Manage Assigned Admins → tap **📱 Generate connection QR** on an admin's row (or **Generate my connection QR** for your own account).
