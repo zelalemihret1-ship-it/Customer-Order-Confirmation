@@ -102,7 +102,7 @@ button:disabled{opacity:.5;cursor:default}
 
   <section id="viewForm">
     <div class="card">
-      <div class="idbox"><div><span>Customer ID</span><br><b id="cidShow">—</b></div><span id="cidHint" style="margin-left:auto;text-align:right">New customer</span></div>
+      <div class="idbox"><div><span>Customer ID</span><br><b id="cidShow">—</b></div><div style="margin-left:14px;min-width:0"><span>✈️ Telegram name</span><br><b id="tgShow" style="font-size:15px">—</b></div><span id="cidHint" style="margin-left:auto;text-align:right">New customer</span></div>
       <div id="notice" class="notice"></div>
       <form id="f" autocomplete="off">
         <div class="grid">
@@ -117,6 +117,9 @@ button:disabled{opacity:.5;cursor:default}
           </label>
           <label>Username
             <input id="username" placeholder="@customer_username">
+          </label>
+          <label>✈️ Telegram name <small style="font-weight:400">(linked to this Customer ID)</small>
+            <select id="telegramId"><option value="">— Not linked —</option></select>
           </label>
           <label>Location
             <input id="location">
@@ -194,7 +197,7 @@ button:disabled{opacity:.5;cursor:default}
 <script>
 const $=id=>document.getElementById(id);
 const REJ=["Price too high","Changed mind","Delivery problem","Found elsewhere","No response","Other"];
-let INT=[],SHEET="",ME={role:"",name:""},NOW={date:"",time:""},NEXT="0001",ALL=[],CUR=null,OPT={};
+let TG=[],INT=[],SHEET="",ME={role:"",name:""},NOW={date:"",time:""},NEXT="0001",ALL=[],CUR=null,OPT={};
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const say=(t,k)=>{const n=$("notice");n.className="notice "+(k||"info");n.textContent=t;};
 const clearSay=()=>{$("notice").className="notice";$("notice").textContent="";};
@@ -227,18 +230,30 @@ $("intSave").onclick=async()=>{
 function blank(){
   CUR=null;hideInt();
   $("f").reset();
-  $("cidShow").textContent=NEXT;$("cidHint").textContent="New customer";
+  $("cidShow").textContent=NEXT;$("cidHint").textContent="New customer";fillTg("");
   $("customerStatus").value="New Lead";$("source").value="Telegram";$("orderStatus").value="Pending";
   $("date").value=ethDateUI(NOW.date);$("time").value=NOW.time;
   $("salesName").value=ME.name||"";$("salesName").readOnly=ME.role!=="owner";
   $("rejWrap").style.display="none";$("delBtn").style.display="none";$("histCard").style.display="none";
   $("saveBtn").textContent="💾 Save Customer";clearSay();
 }
+// ✈️ the Telegram accounts the bot has seen (name · @username); choosing one links it to this Customer ID, and the same ID shows beside that Telegram name in Orders
+function tgLabel(t){return (t.customerId&&(!CUR||t.customerId!==CUR.id)?t.customerId+" · ":"")+(t.first_name||t.name||(t.username?"@"+t.username:t.id))+(t.username?" (@"+t.username+")":"");}
+function fillTg(sel){
+  const s=$("telegramId"),list=[...TG];
+  if(sel&&!list.some(t=>String(t.id)===String(sel)))list.push({id:sel,first_name:(CUR&&CUR.telegramName)||("Telegram "+sel)});
+  s.innerHTML='<option value="">— Not linked —</option>'+list.map(t=>'<option value="'+esc(t.id)+'" data-u="'+esc(t.username||"")+'" data-n="'+esc(t.first_name||t.name||"")+'">'+esc(tgLabel(t))+'</option>').join("");
+  s.value=sel||"";if(s.value!==String(sel||""))s.value="";
+  showTg();
+}
+function showTg(){const o=$("telegramId").selectedOptions[0];$("tgShow").textContent=o&&o.value?(o.dataset.n||(o.dataset.u?"@"+o.dataset.u:"linked")):"—";}
+$("telegramId").addEventListener("change",()=>{showTg();const o=$("telegramId").selectedOptions[0];if(!o||!o.value)return;if(o.dataset.u&&!$("username").value.trim())$("username").value="@"+o.dataset.u;if(o.dataset.n&&!$("name").value.trim())$("name").value=o.dataset.n;});
 function load(c){
   CUR=c;
   $("cidShow").textContent=c.id;$("cidHint").textContent="Existing customer — saving updates this ID";
   for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","orderStatus","orderId","rejectionReason"])$(k).value=c[k]||"";
   $("totalSpend").value=c.totalSpend||"";
+  fillTg(c.telegramId||"");
   hideInt();
   // a new conversation: keep the old text visible, but set date / time to now so the update is dated correctly
   $("date").value=ethDateUI(NOW.date);$("time").value=NOW.time;
@@ -266,16 +281,17 @@ async function refresh(){
     throw new Error(d.error||("Access denied (HTTP "+d.status+")."));
   }
   ME=d.me;SHEET=d.sheetUrl||"";NOW=d.now;NEXT=d.nextId;ALL=d.customers;OPT=d.options;
+  try{const t=await api("/api/customers");if(Array.isArray(t.data||t))TG=(t.data||t);else if(t&&t.parsed===undefined&&Array.isArray(t.list))TG=t.list;}catch{}
   $("cnt").textContent=ALL.length;$("starCnt").textContent=ALL.filter(c=>(c.interests||[]).length).length;
   if(!CUR)$("cidShow").textContent=NEXT;
 }
 function renderList(){
   const q=$("q").value.trim().toLowerCase(),st=$("fStatus").value,sl=$("fSales").value;
-  const fi=$("fInt").value;const rows=ALL.filter(c=>(!st||c.orderStatus===st)&&(!sl||c.salesName===sl)&&(!fi||(fi==="*"?(c.interests||[]).length>0:(c.interests||[]).includes(fi)))&&(!q||[c.id,c.name,c.phone,c.username,c.location,c.orderId].join(" ").toLowerCase().includes(q)));
+  const fi=$("fInt").value;const rows=ALL.filter(c=>(!st||c.orderStatus===st)&&(!sl||c.salesName===sl)&&(!fi||(fi==="*"?(c.interests||[]).length>0:(c.interests||[]).includes(fi)))&&(!q||[c.id,c.name,c.phone,c.username,c.telegramName,c.location,c.orderId].join(" ").toLowerCase().includes(q)));
   $("listCount").textContent=rows.length+" of "+ALL.length+" customers";
   $("list").innerHTML=rows.length?rows.map(c=>`<div class="cust" data-id="${esc(c.id)}"><div class="top"><span class="cid">${esc(c.id)}</span><span><span class="pill ${esc(c.customerStatus)}">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span>${(c.interests||[]).length?'<span class="pill star">⭐ Interested</span>':""}</span></div>
   <div class="nm">${esc(c.name)}</div>${(c.interests||[]).length?`<div class="meta" style="color:#8a5a00;font-weight:700">⭐ Wants: ${esc(c.interests.join(", "))}</div>`:""}
-  <div class="meta">📞 ${esc(c.phone)}${c.additionalPhone?" · "+esc(c.additionalPhone):""}${c.username?" · "+esc(c.username):""}${c.location?" · 📍 "+esc(c.location):""}<br>🗓 ${esc(c.date)} ${esc(c.time)} · ${esc(c.source)} · 👤 ${esc(c.salesName||"—")}${c.orderId?" · 🧾 "+esc(c.orderId):""}${c.totalSpend?" · 💰 "+Number(c.totalSpend).toLocaleString()+" Birr":""}</div>
+  <div class="meta">📞 ${esc(c.phone)}${c.additionalPhone?" · "+esc(c.additionalPhone):""}${c.username?" · "+esc(c.username):""}${c.telegramName?" · ✈️ "+esc(c.telegramName):""}${c.location?" · 📍 "+esc(c.location):""}<br>🗓 ${esc(c.date)} ${esc(c.time)} · ${esc(c.source)} · 👤 ${esc(c.salesName||"—")}${c.orderId?" · 🧾 "+esc(c.orderId):""}${c.totalSpend?" · 💰 "+Number(c.totalSpend).toLocaleString()+" Birr":""}</div>
   ${c.lastConversation?`<div class="conv">${esc(c.lastConversation.length>160?c.lastConversation.slice(0,160)+"…":c.lastConversation)}</div>`:""}
   ${c.rejectionReason?`<div class="meta" style="color:#b3261e">❌ ${esc(c.rejectionReason)}</div>`:""}</div>`).join(""):`<div class="empty">${SPECIAL?"No special customers yet.<br>After an order, tap the products the customer wants — they appear here.":"No customers found."}</div>`;
   const ik=$("fInt").value,prods=[...new Set(ALL.flatMap(c=>c.interests||[]))];
@@ -291,7 +307,7 @@ function openView(c){
   $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
   <div class="nm2">${esc(c.name)}</div>
   <div><span class="pill ${esc(c.customerStatus)}" style="margin-left:0">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></div>
-  <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("⭐ Wants",(c.interests||[]).join(", "))}${row("⭐ Note",c.interestNote)}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
+  <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("✈️ Telegram name",c.telegramName)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("⭐ Wants",(c.interests||[]).join(", "))}${row("⭐ Note",c.interestNote)}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
   <div class="acts2"><button class="mk" type="button" data-go="order">🧾 Make order</button><button class="ed" type="button" data-go="edit">✏️ Edit</button><button type="button" data-go="star" style="grid-column:1/-1;background:#ffd877;color:#153a2e">⭐ Interested in another product?</button></div>`;
   $("cvOv").classList.add("on");
 }
@@ -325,7 +341,7 @@ $("phone").addEventListener("input",()=>{clearTimeout(lookT);lookT=setTimeout(as
 
 $("f").addEventListener("submit",async e=>{
   e.preventDefault();$("saveBtn").disabled=true;
-  const body={};for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName"])body[k]=$(k).value;
+  const body={};for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName","telegramId"])body[k]=$(k).value;
   const d=CUR?await api("/api/callers/"+CUR.id,"PUT",body):await api("/api/callers","POST",body);
   $("saveBtn").disabled=false;
   if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);if(c){load(c);}say(d.message,d.sheet&&!d.sheet.ok?"info":"ok");if(c)showInt(c);}
