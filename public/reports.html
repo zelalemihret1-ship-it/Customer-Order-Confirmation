@@ -265,10 +265,10 @@ async function api(path,body){
 }
 
 // ── start ──
-let IS_OWNER=false,ME_NAME="";
+let IS_OWNER=false,ME_NAME="",ME_ID="";
 (async()=>{
   let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
-  IS_OWNER=me.role==="owner";ME_NAME=me.name||"";
+  IS_OWNER=me.role==="owner";ME_NAME=me.name||"";ME_ID=String(me.telegramId||"");
   if(!(IS_OWNER||(me.perms||[]).includes("reports"))){
     $("gate").style.display="block";
     $("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Reports section. Ask them to turn it on in Manage Admins.":(me.error||"Access denied.");
@@ -491,6 +491,12 @@ setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.d
 
 
 // ── DAILY STOCK → TELEGRAM (sent from the MAIN ADMIN's own Telegram account to every admin) ──
+function tgSenderPick(t){
+  const L=t.senders||[];if(!L.length)return'';
+  const cur=String(t.sendAs||"")||(L.some(x=>x.id===ME_ID&&x.ready)?ME_ID:(L.find(x=>x.ready)||L[0]).id);
+  return '<label>Send from <em>(a main admin\'s own Telegram account)</em></label><select id="tgSender">'+L.map(x=>'<option value="'+esc(x.id)+'" '+(x.id===cur?'selected':'')+'>'+esc(x.name)+(x.id===ME_ID?' (me)':'')+(x.ready?' — ✓ connected':' — not connected')+'</option>').join("")+'</select>';
+}
+const tgSender=()=>($("tgSender")||{}).value||"";
 function tgPicker(t){
   const c=t.candidates||[],sel=(t.to||[]).map(String),all=!sel.length;
   if(!c.length)return '<p class="hint">No other admin yet. Add admins in Manage Admins first.</p>';
@@ -508,13 +514,13 @@ function openTg(){
   const t=S.tg||{},ok=t.ok===true,bad=t.ok===false;
   const res=(t.results||[]).map(r=>'<div class="hrow">'+(r.ok?'✅':'⚠️')+' <b>'+esc(r.name)+'</b>'+(r.ok?' — '+r.count+' model(s) sent':'<small style="color:var(--bad)">'+esc(r.error||"")+'</small>')+'</div>').join("");
   $("tgBox").innerHTML='<h2>📨 Daily stock → Telegram</h2>'
-    +'<p class="hint">Every day the <b>Stock view</b> is sent to the <b>admins you select below</b>: one message per model with its <b>photo</b>, <b>size</b>, <b>shoe capacity</b>, <b>handle type</b> and Prod Ids. It is sent <b>from the main admin\'s own Telegram account</b> — not from the bot and not from the mini app.</p>'
+    +'<p class="hint">Every day the <b>Stock view</b> is sent to the <b>admins you select below</b>: one message per model with its <b>photo</b>, <b>size</b>, <b>shoe capacity</b>, <b>handle type</b> and Prod Ids. It is sent <b>from a main admin\'s own Telegram account</b> (choose which one below; by default the main admin who switches it on) — not from the bot and not from the mini app.</p>'
     +'<div class="card" style="margin-top:10px"><div class="meta">Status: <b>'+(t.on?'🟢 ON':'⚪ OFF')+'</b>'+(t.on?' · every day at <b>'+esc(t.time)+'</b> (Addis Ababa clock)':'')+'</div>'
     +'<div class="meta" style="margin-top:6px">Sent from: <b>'+esc(t.sendAsName||"— (switch it on to choose yourself)")+'</b>'+(t.sendAs?(t.senderReady?' · ✓ Telegram connected':' · <b style="color:var(--bad)">Telegram NOT connected</b>'):'')+'</div>'
     +'<div class="meta" style="margin-top:6px">Goes to: '+((t.recipients||[]).length?esc(t.recipients.join(", ")):"no other admin yet")+'</div>'
     +(t.lastAt?'<div class="meta" style="margin-top:6px">Last send: <b>'+esc(t.lastAt)+'</b> '+(ok?'✅':bad?'⚠️':'')+(t.error?'<br><span style="color:var(--bad)">'+esc(t.error)+'</span>':'')+'</div>':'')+'</div>'
     +(res?'<div class="card">'+res+'</div>':'')
-    +(IS_OWNER?tgPicker(t):'')
+    +(IS_OWNER?tgSenderPick(t)+tgPicker(t):'')
     +(IS_OWNER?'<label>Send every day at (Addis Ababa time)<input id="tgTime" type="time" value="'+esc(t.time||"08:00")+'"></label><button class="btn '+(t.on?'grey':'ok')+'" id="tgToggle" type="button">'+(t.on?'⚪ Switch OFF':'🟢 Switch ON (send from my Telegram)')+'</button>'+(t.on?'<button class="btn grey" id="tgSave" type="button">💾 Save the time</button>':'')+'<button class="btn" id="tgNow" type="button">📨 Send now</button>'
       :'<p class="hint">Only a main admin can change this. You receive the stock from the main admin\'s Telegram account.</p>')
     +'<div id="tgMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
@@ -526,8 +532,8 @@ $("tgOv").addEventListener("click",async e=>{
   if(e.target===$("tgOv")||e.target.dataset.x){$("tgOv").classList.remove("on");return;}
   if(id==="tgAll"||id==="tgNone"){document.querySelectorAll('#tgBox input[name=tgto]').forEach(b=>b.checked=id==="tgAll");return;}
   if((id==="tgToggle"||id==="tgSave"||id==="tgNow")&&tgNoneTicked()){say("tgMsg","Select at least one admin to send to.","bad");return;}
-  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value,to:tgChosen()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
-  if(id==="tgNow"){busy("Sending the stock to the selected admins… (this can take a minute)");await api("/api/reports/tg/to",{to:tgChosen()});const d=await api("/api/reports/tg/send",{});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
+  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value,to:tgChosen(),sendAs:tgSender()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
+  if(id==="tgNow"){busy("Sending the stock to the selected admins… (this can take a minute)");await api("/api/reports/tg/to",{to:tgChosen()});const d=await api("/api/reports/tg/send",{sendAs:tgSender()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
 });
 
 
