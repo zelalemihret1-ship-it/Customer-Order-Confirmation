@@ -118,6 +118,7 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
   <section id="vRes" style="display:none"></section>
 </main>
 <div class="ov" id="ciOv"><div class="box" id="ciBox"></div></div>
+<div class="ov" id="rmOv"><div class="box" id="rmBox"></div></div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -163,6 +164,7 @@ function drawOrders(){
     let btn="";
     if(o.state==="waiting"||o.state==="delivered"||o.state==="failed")btn=`<button class="send" data-id="${esc(o.id)}">✅ Mark delivered</button>`;
     else if(o.state==="sent")btn=`<button class="ghost" data-id="${esc(o.id)}" data-resend="1">↻ Send again</button>`;
+    if(D.people&&!o.stars&&!o.orphan)btn+=`<button class="ghost" data-rate="${esc(o.id)}" type="button">⭐ Add rating</button>`;
     return `<div class="ord${o.stars&&!o.orphan?" tap":""}" ${o.stars&&!o.orphan?`data-open="${esc(o.id)}"`:""}><div class="top"><span class="cid">${esc(o.orderId)}</span><span class="pill ${o.state==="sent"||o.state==="failed"?"delivered":o.state}">${LABEL[o.state]}</span></div>
       <div class="nm">${esc(o.customer)}${o.stars&&!o.orphan?' <span class="hint">· tap for customer info ›</span>':""}</div>
       <div class="meta">${esc(o.product)}${o.deliveryDate?" · delivery "+esc(o.deliveryDate):""}${D.people?" · by "+esc(o.owner||"Main admin"):""}${o.sentAt?"<br>Rating link sent "+esc(o.sentAt)+(o.via?" · "+esc(o.via):""):""}</div>
@@ -173,7 +175,28 @@ function drawOrders(){
 }
 $("q").addEventListener("input",drawOrders);
 $("fseg").addEventListener("click",e=>{const b=e.target.closest("button[data-k]");if(!b)return;SEC=b.dataset.k;drawOrders();});
+let RM=null,RMN=0;
+function drawRm(){
+  const o=RM;$("rmBox").innerHTML=`<h2 style="margin:0 0 4px">⭐ Add rating</h2><div class="hint" style="margin-bottom:10px">Order <b>${esc(o.orderId)}</b> · ${esc(o.customer)} — enter the rating the customer gave (see the bot's "⭐ New rating" Telegram message).</div>
+  <div style="display:flex;gap:6px;justify-content:center;margin:6px 0">${[1,2,3,4,5].map(n=>`<button type="button" data-n="${n}" style="border:0;background:none;font-size:42px;line-height:1;cursor:pointer;color:${n<=RMN?"#ffa939":"#d6d1c7"}">★</button>`).join("")}</div>
+  <textarea id="rmC" maxlength="1000" placeholder="Customer comment (optional)" style="width:100%;min-height:80px;border:1px solid #d6d1c7;border-radius:10px;padding:10px;font-family:inherit;font-size:15px"></textarea>
+  <input id="rmD" placeholder="Date (optional)" style="width:100%;margin-top:8px"><div id="rmM" class="hint" style="margin-top:8px"></div>
+  <div class="row" style="margin-top:10px"><button class="primary" type="button" id="rmS">💾 Save rating</button><button class="ghost" type="button" data-x="1">Cancel</button></div>`;
+}
+$("rmOv").addEventListener("click",async e=>{
+  if(e.target===$("rmOv")||e.target.closest("[data-x]")){$("rmOv").classList.remove("on");return;}
+  const n=e.target.closest("button[data-n]");if(n){const c=$("rmC").value,d=$("rmD").value;RMN=+n.dataset.n;drawRm();$("rmC").value=c;$("rmD").value=d;return;}
+  if(e.target.id==="rmS"){
+    if(!RMN){$("rmM").textContent="Choose 1 to 5 stars.";return;}
+    e.target.disabled=true;
+    try{const d=await post("/api/ratings/manual",{id:RM.id,stars:RMN,comment:$("rmC").value,ratedAt:$("rmD").value});
+      if(d.ok){$("rmOv").classList.remove("on");say(d.message,"ok");load();}else{$("rmM").textContent="❌ "+d.error;e.target.disabled=false;}
+    }catch(err){$("rmM").textContent="❌ "+err.message;e.target.disabled=false;}
+  }
+});
 $("list").addEventListener("click",e=>{
+  const r=e.target.closest("button[data-rate]");
+  if(r){RM=D.orders.find(x=>String(x.id)===r.dataset.rate);RMN=0;if(RM){drawRm();$("rmOv").classList.add("on");}return;}
   const b=e.target.closest("button[data-id]");if(!b)return;
   const o=D.orders.find(x=>String(x.id)===b.dataset.id),resend=!!b.dataset.resend;
   ask(resend?`Send the rating link again to ${o.customer}?`:`Order ${o.orderId} was delivered? The rating link will be sent to ${o.customer} now.`,async()=>{
