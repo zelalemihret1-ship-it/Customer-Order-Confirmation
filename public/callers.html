@@ -62,6 +62,11 @@ button:disabled{opacity:.5;cursor:default}
 .count{font-size:12px;color:#6d675d;margin:0 2px 10px}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
 #gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
+.starBtn{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:4px;border:1px solid #ffffff55;background:#ffffff1c;color:#ffd877;border-radius:999px;padding:6px 11px;font-size:15px;cursor:pointer;line-height:1}
+.starBtn b{font-size:12px;color:#fff;font-weight:800}
+.starBtn.on{background:#ffd877;color:#153a2e;border-color:#ffd877}.starBtn.on b{color:#153a2e}
+.spBar{display:none;align-items:center;justify-content:space-between;gap:8px;background:linear-gradient(135deg,#fff3d1,#ffe7a8);border:1px solid #e9c46a;color:#7a5600;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;font-size:14px}
+.spBar button{border:0;background:#153a2e;color:#fff;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer}
 .sheetOv{position:fixed;inset:0;background:#0009;z-index:150;display:none;align-items:flex-end;justify-content:center}
 .sheetOv.on{display:flex}
 .sheetBox{background:#fff;width:100%;max-width:560px;max-height:90vh;overflow:auto;border-radius:22px 22px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px #0004}
@@ -76,7 +81,7 @@ button:disabled{opacity:.5;cursor:default}
 .acts2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .acts2 button{border:0;border-radius:14px;padding:15px 10px;font-weight:800;font-size:15px;cursor:pointer;color:#fff}
 .acts2 .mk{background:#153a2e}.acts2 .ed{background:#b89552}
-@media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
+@media(max-width:640px){.starBtn{top:12px;transform:none}main{padding:10px}.card{padding:14px;border-radius:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
 </style>
 <link rel="stylesheet" href="/app.css?v=118">
 <meta name="theme-color" content="#0f3d30">
@@ -85,6 +90,7 @@ button:disabled{opacity:.5;cursor:default}
 <div id="gate"><div class="panel"><h2 style="color:#d7b36e">AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 <header>
   <a class="back" href="/home.html">← Home</a>
+  <button id="starBtn" class="starBtn" type="button" title="Special (interested) customers" aria-label="Special customers">⭐<b id="starCnt">0</b></button>
   <h1>👥 Customers Data</h1>
   <div class="sub">Customer list · filled by sales or by the customer · separate from order confirmation</div>
 </header>
@@ -164,6 +170,7 @@ button:disabled{opacity:.5;cursor:default}
   </section>
 
   <section id="viewList" style="display:none">
+    <div class="spBar" id="spBar"><span>⭐ Special customers only</span><button type="button" id="spOff">✕ Show all customers</button></div>
     <div class="tools">
       <input id="q" placeholder="Search ID, name, phone, @username…">
       <select id="fStatus"><option value="">All order statuses</option></select>
@@ -224,9 +231,12 @@ function load(c){
   $("hist").innerHTML=h.map(x=>`<div class="hist"><b>${esc(x.date)} ${esc(x.time)}</b> · ${esc(x.orderStatus)}${x.orderId?" · "+esc(x.orderId):""}${x.totalSpend?" · "+Number(x.totalSpend).toLocaleString()+" Birr":""}<br>${esc(x.lastConversation||"—")}${x.rejectionReason?"<br><i>Reason: "+esc(x.rejectionReason)+"</i>":""}</div>`).join("");
   setTab("form");window.scrollTo({top:0,behavior:"smooth"});
 }
+let SPECIAL=false;
+function setSpecial(on){SPECIAL=on;$("starBtn").classList.toggle("on",on);$("spBar").style.display=on?"flex":"none";$("fInt").value=on?"*":"";}
 function setTab(t){
   $("viewForm").style.display=t==="form"?"block":"none";$("viewList").style.display=t==="list"?"block":"none";
-  $("tabForm").classList.toggle("on",t==="form");$("tabList").classList.toggle("on",t==="list");
+  $("tabForm").classList.toggle("on",t==="form");$("tabList").classList.toggle("on",t==="list"&&!SPECIAL);
+  if(t==="form"&&SPECIAL)setSpecial(false);
   if(t==="list")renderList();
 }
 async function refresh(){
@@ -236,7 +246,7 @@ async function refresh(){
     throw new Error(d.error||("Access denied (HTTP "+d.status+")."));
   }
   ME=d.me;SHEET=d.sheetUrl||"";NOW=d.now;NEXT=d.nextId;ALL=d.customers;OPT=d.options;
-  $("cnt").textContent=ALL.length;
+  $("cnt").textContent=ALL.length;$("starCnt").textContent=ALL.filter(c=>(c.interests||[]).length).length;
   if(!CUR)$("cidShow").textContent=NEXT;
 }
 function renderList(){
@@ -247,7 +257,7 @@ function renderList(){
   <div class="nm">${esc(c.name)}</div>${(c.interests||[]).length?`<div class="meta" style="color:#8a5a00;font-weight:700">⭐ Wants: ${esc(c.interests.join(", "))}</div>`:""}
   <div class="meta">📞 ${esc(c.phone)}${c.additionalPhone?" · "+esc(c.additionalPhone):""}${c.username?" · "+esc(c.username):""}${c.location?" · 📍 "+esc(c.location):""}<br>🗓 ${esc(c.date)} ${esc(c.time)} · ${esc(c.source)} · 👤 ${esc(c.salesName||"—")}${c.orderId?" · 🧾 "+esc(c.orderId):""}${c.totalSpend?" · 💰 "+Number(c.totalSpend).toLocaleString()+" Birr":""}</div>
   ${c.lastConversation?`<div class="conv">${esc(c.lastConversation.length>160?c.lastConversation.slice(0,160)+"…":c.lastConversation)}</div>`:""}
-  ${c.rejectionReason?`<div class="meta" style="color:#b3261e">❌ ${esc(c.rejectionReason)}</div>`:""}</div>`).join(""):`<div class="empty">No customers found.</div>`;
+  ${c.rejectionReason?`<div class="meta" style="color:#b3261e">❌ ${esc(c.rejectionReason)}</div>`:""}</div>`).join(""):`<div class="empty">${SPECIAL?"No special customers yet.<br>After an order, tap the products the customer wants — they appear here.":"No customers found."}</div>`;
   const ik=$("fInt").value,prods=[...new Set(ALL.flatMap(c=>c.interests||[]))];
   $("fInt").innerHTML='<option value="">All customers</option><option value="*">⭐ Interested / special customers ('+ALL.filter(c=>(c.interests||[]).length).length+')</option>'+prods.map(p=>`<option value="${esc(p)}" ${p===ik?"selected":""}>⭐ Wants: ${esc(p)}</option>`).join("");$("fInt").value=ik;
   const sales=[...new Set(ALL.map(c=>c.salesName).filter(Boolean))];
@@ -276,7 +286,8 @@ $("cvOv").addEventListener("click",e=>{
 });
 $("list").addEventListener("click",e=>{const b=e.target.closest(".cust");if(!b)return;const c=ALL.find(x=>x.id===b.dataset.id);if(c)openView(c);});
 ["q","fStatus","fSales","fInt"].forEach(i=>$(i).addEventListener("input",renderList));
-$("tabForm").onclick=()=>setTab("form");$("tabList").onclick=()=>setTab("list");
+$("tabForm").onclick=()=>setTab("form");$("tabList").onclick=()=>{setSpecial(false);setTab("list");};
+$("starBtn").onclick=()=>{setSpecial(true);setTab("list");};$("spOff").onclick=()=>{setSpecial(false);setTab("list");};
 $("newBtn").onclick=()=>{blank();setTab("form");};
 $("date").addEventListener("input",()=>{$("date").value=ethSlash($("date").value);});
 $("orderStatus").addEventListener("change",()=>{$("rejWrap").style.display=$("orderStatus").value==="Rejected"?"block":"none";});
