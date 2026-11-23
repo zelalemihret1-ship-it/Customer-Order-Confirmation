@@ -149,8 +149,16 @@ function register(app, ctx) {
     });
     const log = (owner ? db.log : db.log.filter(l => l.byKey === key)).slice(-200).reverse();
     const out = { ok: true, me: { role: a.role, name: a.name || "" }, template: myTemplate(a), defaultTemplate: DEFAULT_TEXT, limits: { text: MAX_TEXT, batch: MAX_BATCH },
-      auto: autoOn(key), canSend: !!accountFor(a)?.ready || (owner && !!ownerConn()), accountReady: !!accountFor(a)?.ready, customers, log };
+      auto: autoOn(key), autoLocked: !owner, canSend: !!accountFor(a)?.ready || (owner && !!ownerConn()), accountReady: !!accountFor(a)?.ready, customers, log };
     if (owner) {
+      // v121: the main admin switches the automatic greeting ON / OFF for every admin (assigned admins cannot)
+      const seen = new Set(), team = [];
+      for (const id of [...ownerIds, ...(ctx.getAppAdmins() || []).map(x => x.telegramId)].map(String).filter(Boolean)) {
+        if (seen.has(id)) continue; seen.add(id);
+        const isMain = ownerIds.includes(id);
+        team.push({ key: id, name: ownerName(id) === "Ambar Furniture" && isMain ? "Main admin" : ownerName(id), main: isMain, on: autoOn(id), connected: !!accountFor({ role: isMain ? "owner" : "admin", telegramId: id })?.ready });
+      }
+      out.team = team;
       const by = {};
       for (const l of db.log) { const k = l.byKey || "?"; by[k] = by[k] || { name: l.by, sent: 0, failed: 0 }; by[k][l.status === "sent" ? "sent" : "failed"]++; by[k].name = l.by || by[k].name; }
       out.people = Object.values(by);
@@ -166,15 +174,20 @@ function register(app, ctx) {
   });
 
   router.post("/auto", async (req, res) => {
-    const a = req.actor, key = actorKey(a);
-    if (!key) return res.status(400).json({ ok: false, error: "Open the app from Telegram so your admin identity is known." });
+    const a = req.actor, own = actorKey(a);
+    if (!isOwner(a)) return res.status(403).json({ ok: false, error: "Only the main admin can switch the automatic greeting ON or OFF. Ask the main admin." });
+    const target = String(req.body?.target || own || "");
+    if (!target || target === "owner") return res.status(400).json({ ok: false, error: "Open the app from Telegram so your admin identity is known." });
+    const known = ownerIds.map(String).includes(target) || (ctx.getAppAdmins() || []).some(x => String(x.telegramId) === target);
+    if (!known) return res.status(400).json({ ok: false, error: "That admin was not found." });
     const on = req.body?.on === true || req.body?.on === "true";
     const t = clean(req.body?.text).slice(0, MAX_TEXT);
-    if (t) db.templates[key] = t;
-    if (on && !db.templates[key]) db.templates[key] = DEFAULT_TEXT;
-    if (on && !(accountFor(a)?.ready || (isOwner(a) && ownerConn()))) return res.status(400).json({ ok: false, error: "Connect your Telegram account first (⚙ Settings → Connect my Telegram account), then switch this on." });
-    db.auto[key] = on; await save();
-    res.json({ ok: true, on, message: on ? "🟢 Automatic greeting is ON. New people who message you get your greeting once." : "⚪ Automatic greeting is OFF." });
+    if (t && target === own) db.templates[own] = t;
+    if (on && !db.templates[target]) db.templates[target] = DEFAULT_TEXT;
+    if (on && target === own && !(accountFor(a)?.ready || ownerConn())) return res.status(400).json({ ok: false, error: "Connect your Telegram account first (⚙ Settings → Connect my Telegram account), then switch this on." });
+    db.auto[target] = on; await save();
+    const who = target === own ? "your" : ownerName(target) + "'s";
+    res.json({ ok: true, on, target, message: on ? `🟢 Automatic greeting is ON for ${target === own ? "you" : ownerName(target)}.` : `⚪ Automatic greeting is OFF for ${target === own ? "you" : ownerName(target)}.` });
   });
 
   router.post("/send", async (req, res) => {
