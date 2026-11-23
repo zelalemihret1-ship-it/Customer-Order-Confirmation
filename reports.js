@@ -30,7 +30,7 @@ function register(app, ctx) {
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
   const TG0 = { on: false, time: "08:00", sendAs: "", to: null, lastDate: "", lastAt: "", ok: null, error: "", results: [] };
-  let db = { products: [], materials: [], log: [], savedAt: "", tg: { ...TG0 } };
+  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
   const nowEth = () => {
@@ -64,6 +64,7 @@ function register(app, ctx) {
     db.tg = { ...TG0, ...(db.tg || {}) };
     for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
+    layoutMaterials();
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
     if (cfg.scriptUrl) scheduleBackup(8000);
@@ -101,7 +102,7 @@ function register(app, ctx) {
     if (!d.ok) throw new Error(/Unknown action/i.test(String(d.error || "")) ? "The Google script is the OLD version. Paste the new reports-sheet-script.gs in the reports sheet and deploy a New version." : String(d.error || "The Google script refused the request."));
     return d;
   }
-  const snapshot = () => ({ products: db.products, materials: db.materials, log: db.log.slice(0, 3000), app: "AMBAR Furniture mini app", now: nowEth() });
+  const snapshot = () => ({ products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 3000), app: "AMBAR Furniture mini app", now: nowEth() });
   let backing = false, again = false, timer = null;
   async function backupNow() {
     if (!cfg.scriptUrl) return { ok: false, error: "The backup sheet is not connected yet." };
@@ -143,7 +144,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -278,6 +279,51 @@ function register(app, ctx) {
     await sendDaily();
   }
 
+
+  // ── MATERIAL LAYOUT: two tables like the reference sheet, and the order can be changed by hold + drag ──
+  const MAT_G1 = "OAK & NORMAL MDF", MAT_G2 = "LAMINATE, PLYWOOD & OTHERS";
+  const MAT_REF = [ // [table, material, type, unit] — the arrangement of the reference Material Report
+    [MAT_G1, "OAK", "6", "244-122"], [MAT_G1, "OAK", "18", "244-122"],
+    [MAT_G1, "NORMAL MDF", "6", "244-122"], [MAT_G1, "NORMAL MDF", "10", "244-122"], [MAT_G1, "NORMAL MDF", "12", "244-122"], [MAT_G1, "NORMAL MDF", "18", "244-122"],
+    [MAT_G2, "LAMINATE", "18 GRAY", "244-122"], [MAT_G2, "LAMINATE", "18 RED/WOOD", "244-122"],
+    [MAT_G2, "plywood/suf", "6", "244-122"], [MAT_G2, "plywood/suf", "8", "244-122"], [MAT_G2, "plywood/suf", "12", "244-122"],
+    [MAT_G2, "chipped", "12", "244-122"], [MAT_G2, "LAMINATE", "6 white", "244-122"],
+    [MAT_G2, "LAMINATE WHITE/cream", "18", "244-122"], [MAT_G2, "LAMINATE WHITE", "18", "244-123"],
+    [MAT_G2, "AUSTRALIA", "4 BY 5", "4 BY 5"], [MAT_G2, "AUSTRALIA", "7 BY 5", "7 BY 5"],
+    [MAT_G2, "MORALE", "4 BY 5", "4 BY 5"], [MAT_G2, "MORALE", "7 BY 5", "7 BY 5"],
+    [MAT_G2, "uv", "black 18", "244-122"]
+  ];
+  // The tables in display order (saved order first, then any other table found on a material).
+  function groupsOrdered() {
+    const out = [];
+    for (const g of (db.matGroups || [])) if (g && !out.includes(g)) out.push(g);
+    for (const m of db.materials) { const g = m.group || "MATERIAL"; if (!out.includes(g)) out.push(g); }
+    return out;
+  }
+  // Materials as shown: table by table, inside a table in the saved (dragged) order.
+  function orderedMaterials() {
+    const gs = groupsOrdered();
+    return db.materials.map((m, i) => ({ m, i, g: gs.indexOf(m.group || "MATERIAL") })).sort((a, b) => a.g - b.g || a.i - b.i).map(o => o.m);
+  }
+  // Runs once (and again after "Start from 0"): puts the reference materials on top in the two tables; every other material stays, after them.
+  function layoutMaterials() {
+    if (db.matLayout === 2) return;
+    const key = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase(), have = new Map();
+    for (const m of db.materials) have.set(key(m.name, m.type), m);
+    const first = [], n = nowEth();
+    for (const [g, name, type, unit] of MAT_REF) {
+      let m = have.get(key(name, type));
+      if (!m) { m = { id: uid(), name, type, unit, group: g, qty: 0, min: 0, created: { ...n, by: "Reference layout" } }; db.materials.push(m); }
+      m.group = g; first.push(m);
+    }
+    const rest = db.materials.filter(m => !first.includes(m));
+    for (const m of rest) if (!m.group || m.group === "MATERIAL") m.group = MAT_G2;
+    db.materials = [...first, ...rest];
+    db.matGroups = [MAT_G1, MAT_G2];
+    db.matLayout = 2;
+    persist();
+  }
+
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
   router.use(requireAccess);
@@ -373,7 +419,7 @@ function register(app, ctx) {
   const matKey = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase();
   const matName = m => m.name + (m.type ? " " + m.type : "");
   router.post("/material/add", (req, res) => {
-    const b = req.body || {}, name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || "MATERIAL";
+    const b = req.body || {}, name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || (groupsOrdered()[1] || groupsOrdered()[0] || MAT_G2);
     if (!name) return fail(res, "Write the material name.");
     if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists. Use ➕ Add on it.`);
     const qty = (b.qty === "" || b.qty == null) ? 0 : num(b.qty), min = (b.min === "" || b.min == null) ? 0 : num(b.min);
@@ -407,6 +453,24 @@ function register(app, ctx) {
     db.log.forEach(l => { if (l.matId === m.id) { l.material = name; l.mtype = type; l.unit = unit; } });
     done(res, "✅ Saved.");
   });
+  // HOLD + DRAG: the app sends the new arrangement — the tables in order and, inside each table, the materials in order.
+  router.post("/material/arrange", (req, res) => {
+    const b = req.body || {}, list = Array.isArray(b.order) ? b.order : [], gl = Array.isArray(b.groups) ? b.groups : [];
+    const byId = new Map(db.materials.map(m => [m.id, m])), seen = new Set(), next = [];
+    for (const it of list) {
+      const m = it && byId.get(String(it.id || ""));
+      if (!m || seen.has(m.id)) continue;
+      seen.add(m.id);
+      const g = up(it.group, 30); if (g) m.group = g;
+      next.push(m);
+    }
+    for (const m of db.materials) if (!seen.has(m.id)) next.push(m); // anything the app did not know about keeps its place at the end
+    db.materials = next;
+    const gs = []; for (const g of gl.map(x => up(x, 30)).filter(Boolean)) if (!gs.includes(g)) gs.push(g);
+    db.matGroups = gs;
+    audit("Report: materials rearranged", `${next.length} material(s)`, req.actor);
+    done(res, "✅ Arrangement saved.");
+  });
   router.post("/material/delete", (req, res) => {
     const m = findM(req.body?.id);
     if (!m) return fail(res, "Material not found.");
@@ -430,7 +494,7 @@ function register(app, ctx) {
         note = ` The old report is kept in the Google Sheet (${a.archived || 0} tab${a.archived === 1 ? "" : "s"} saved as “Archive …”).`;
       }
       const oldPhotos = db.products.map(x => x.photo).filter(Boolean);
-      db.products = []; db.materials = []; db.log = [];
+      db.products = []; db.materials = []; db.log = []; db.matGroups = []; db.matLayout = 0; layoutMaterials();
       oldPhotos.forEach(id => dropPhoto(id).catch(() => {}));
       audit("Report: START FROM ZERO", `${had} record(s) cleared`, req.actor);
       persist();
