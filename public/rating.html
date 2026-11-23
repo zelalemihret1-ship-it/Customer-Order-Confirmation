@@ -187,7 +187,14 @@ function drawResults(){
   if(D.people)h+=`<div class="card"><h2>👑 All admins</h2>${D.people.length?`<div class="people">${D.people.map(p=>`<div class="person"><b>${esc(p.name)}</b><br>${p.avg} ★ average<br>${p.count} rating(s)</div>`).join("")}</div>`:`<div class="empty">No ratings yet.</div>`}</div>`;
   const rated=D.orders.filter(o=>o.stars).sort((a,b)=>String(b.ratedAt).localeCompare(String(a.ratedAt)));
   h+=`<div class="card"><h2>${D.people?"All ratings":"My ratings"}</h2>${rated.length?rated.map(o=>`<div class="ord tap" data-open="${esc(o.id)}"><div class="top"><span class="cid">${esc(o.orderId)}</span>${starsHtml(o.stars)}</div><div class="nm">${esc(o.customer)}</div><div class="meta">${esc(o.product)} · ${esc(o.ratedAt)}${D.people?" · by "+esc(o.owner||"Main admin"):""}</div>${o.comment?`<div class="cmt">${esc(o.comment)}</div>`:""}</div>`).join(""):`<div class="empty">No ratings received yet.</div>`}</div>`;
+  if(D.people)h+=`<div class="card"><h2>💾 Ratings backup</h2><div class="hint" style="margin-bottom:10px">Keep a copy of every rating. If ratings ever disappear, restore them from the file — nothing is deleted when you restore.</div><div class="row"><button class="ghost" id="rbDown" type="button">⬇ Download backup</button><button class="ghost" id="rbUp" type="button">⬆ Restore from file</button></div><input id="rbFile" type="file" accept=".json,application/json" style="display:none"><div id="rbMsg" class="hint" style="margin-top:8px"></div></div>`;
   $("vRes").innerHTML=h;
+  const dn=$("rbDown"),up=$("rbUp"),fi=$("rbFile"),ms=$("rbMsg");
+  if(dn){
+    dn.onclick=async()=>{try{const r=await fetch("/api/ratings/backup");if(!r.ok)throw Error("Not allowed");const b=await r.blob();const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="ratings-backup.json";document.body.appendChild(a);a.click();a.remove();ms.textContent="✅ Backup downloaded.";}catch(e){ms.textContent="❌ "+e.message;}};
+    up.onclick=()=>fi.click();
+    fi.onchange=async()=>{const f=fi.files[0];if(!f)return;ms.textContent="Restoring…";try{const d=await post("/api/ratings/restore",JSON.parse(await f.text()));ms.textContent=d.ok?d.message:"❌ "+d.error;if(d.ok)load();}catch(e){ms.textContent="❌ "+(e.message||"Could not read the file.");}fi.value="";};
+  }
 }
 
 // ── tap a RATED order → the customer's full info ──
