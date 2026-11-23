@@ -122,7 +122,7 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
 </head>
 <body>
 <header>
-  <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><button class="cloud" id="cloud" type="button">☁ Backup</button></div>
+  <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><button class="cloud" id="tgBtn" type="button">📨 Telegram</button><button class="cloud" id="cloud" type="button">☁ Backup</button></div>
   <div class="sub">Workflow · Stock · Material</div>
 </header>
 <main>
@@ -152,6 +152,8 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
   <div id="pdfMsg" class="msg"></div>
   <button class="btn grey" id="pdfClose" type="button">Close</button>
 </div></div>
+<!-- daily stock to Telegram -->
+<div class="ov" id="tgOv"><div class="box" id="tgBox"></div></div>
 <!-- backup sheet -->
 <div class="ov" id="bkOv"><div class="box" id="bkBox"></div></div>
 <div class="busy" id="busy"><span id="busyTx">Please wait…</span></div>
@@ -169,9 +171,11 @@ const dmy=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?m[3]+"/
 const lab=p=>[p.model,p.desc].filter(Boolean).join(" ")||p.code;
 const matLab=m=>m.name+(m.type?" "+m.type:"");
 const logMat=l=>l.material+(l.mtype?" "+l.mtype:"");
-const isCus=p=>p.orderType==="CUSTOM";
+const isCus=p=>p.orderType==="ORDER"||p.orderType==="CUSTOM";
+// Sales info = the real mini-app salesperson (older records kept S.R / S.O here)
+const realSales=p=>{const s=p.sold||{},v=String(s.salesInfo||"");return (v&&!/^S\.?[RO]$/i.test(v))?v:(s.salesName||p.salesName||s.by||"");};
 const nf=v=>(v===""||v==null)?"":Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
-let S={products:[],materials:[],log:[],handles:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",msub="list",q="",VM="cards";
+let S={products:[],materials:[],log:[],handles:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",msub="list",q="",VM="list";
 try{const s=localStorage.getItem("repTab2");if(["wf","st","sv","mt"].includes(s))tab=s;const v=localStorage.getItem("repView");if(v==="list"||v==="cards")VM=v;}catch{}
 const photoSrc=p=>p&&p.photo?"/api/reports-photo/"+p.photo+".jpg":"";
 const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
@@ -186,10 +190,10 @@ async function api(path,body){
 }
 
 // ── start ──
-let IS_OWNER=false;
+let IS_OWNER=false,ME_NAME="";
 (async()=>{
   let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
-  IS_OWNER=me.role==="owner";
+  IS_OWNER=me.role==="owner";ME_NAME=me.name||"";
   if(!(IS_OWNER||(me.perms||[]).includes("reports"))){
     $("gate").style.display="block";
     $("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Reports section. Ask them to turn it on in Manage Admins.":(me.error||"Access denied.");
@@ -207,7 +211,7 @@ const by=s=>S.products.filter(p=>p.status===s);
 const lowOf=m=>m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");
 function render(){
   const wf=by("workflow"),st=by("stock"),sd=by("sold");
-  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["sv","🖼 Stock view",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
+  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"],["sv","🖼 Stock view",st.length+" in stock"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
   const low=S.materials.filter(m=>lowOf(m)!=="ok").length,today=S.log.filter(l=>l.d===S.now.d).length,soldToday=sd.filter(p=>p.sold&&p.sold.d===S.now.d).length;
   const K=(l,n,s,c)=>'<div class="kpi" style="border-left-color:'+(c||"var(--green)")+'"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>';
   $("kpis").innerHTML=tab==="wf"?K("In workflow",wf.length,"products in progress","#d9a21b")+K("In stock",st.length,"finished","#1f8f55")+K("All products",S.products.length,"including sold","#14598f")
@@ -223,10 +227,10 @@ function render(){
   if(tab==="mt")$("sub2").innerHTML='<button type="button" data-m="list" class="'+(msub==="list"?"on":"")+'">🧱 Materials ('+S.materials.length+')</button><button type="button" data-m="moves" class="'+(msub==="moves"?"on":"")+'">🕘 Recent movements ('+S.log.length+')</button>';
   if(tab==="st")$("sub2").innerHTML='<button type="button" data-s="stock" class="'+(sub==="stock"?"on":"")+'">📦 In stock ('+st.length+')</button><button type="button" data-s="sold" class="'+(sub==="sold"?"on":"")+'">💰 Sold ('+sd.length+')</button>';
   const hit=t=>!q||String(t).toLowerCase().includes(q);
-  const text=p=>[p.code,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle].join(" ");
-  const facts=p=>{const f=[];if(p.handle)f.push("🔧 Handle <b>"+esc(p.handle)+"</b>");if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
+  const text=p=>[p.code,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle,p.capacity].join(" ");
+  const facts=p=>{const f=[];if(p.handle)f.push("🔧 Handle <b>"+esc(p.handle)+"</b>");if(p.capacity)f.push("👟 Capacity <b>"+esc(p.capacity)+"</b>");if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
   const prPill=p=>p.priority==="HIGH"?'<span class="pill hi">HIGH</span>':p.priority==="MEDIUM"?'<span class="pill med">MEDIUM</span>':'<span class="pill low2">LOW</span>';
-  const tyPill=p=>isCus(p)?'<span class="pill cus">CUSTOM</span>':'<span class="pill rdy">READYMADE</span>';
+  const tyPill=p=>isCus(p)?'<span class="pill cus">ORDER</span>':'<span class="pill rdy">READYMADE</span>';
   const thumbBig=p=>photoSrc(p)?'<img class="thumb" loading="lazy" src="'+photoSrc(p)+'" alt="">':'';
   const head=p=>(VM==="cards"?thumbBig(p):"")+'<div class="top"><span class="code">'+esc(p.code)+'</span><span style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">'+tyPill(p)+(tab==="wf"?prPill(p):"")+'</span></div><div class="nm">'+esc(lab(p))+'</div>'+(p.category&&tab!=="wf"?'<div class="meta">'+esc(p.category)+'</div>':"")+(p.note?'<div class="nt">Correction: '+esc(p.note)+'</div>':"")+facts(p);
   const group=(L,card)=>{const cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});return cats.map(c=>{const g=L.filter(p=>(p.category||"OTHERS")===c);return g.length?'<div class="gh"><span>'+esc(c)+'</span><span>'+g.length+'</span></div>'+g.map(card).join(""):"";}).join("");};
@@ -254,7 +258,7 @@ function render(){
       const L=sd.filter(p=>hit(text(p))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
       h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return LM?lrow(p,'<span class="pill sold">'+(td?"S.TODAY":"SOLD")+'</span> '+esc(fmtDT(s)),ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Cancel sale")+ic("del",p.id,"🗑 Delete","red"))
         :'<div class="item">'+head(p)
-        +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+(td?"S.TODAY":"SOLD")+'</b> · Sales info <b>'+esc(s.salesInfo||(isCus(p)?"S.O":"S.R"))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
+        +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+(td?"S.TODAY":"SOLD")+'</b> · Sales info <b>'+esc(realSales(p))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
         +'<div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';});
       if(!L.length)h='<div class="empty">'+(sd.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
@@ -262,11 +266,11 @@ function render(){
     // Stock view: in-stock products by PHOTO. Same model + same handle → ONE photo with ×2, ×3 …; same model with a different handle → separate photo.
     const G=stockGroups(st.filter(p=>hit(text(p))));
     h=G.map(g=>{
-      const descs=[...new Set(g.items.map(p=>p.desc).filter(Boolean))],d=descs.length===1?descs[0]:"";
+      const descs=[...new Set(g.items.map(p=>p.desc).filter(Boolean))],d=descs.length===1?descs[0]:"",caps=[...new Set(g.items.map(p=>p.capacity).filter(Boolean))],cp=caps.join(" / ");
       const codes=g.items.map(p=>'<span class="code">'+esc(p.code)+'</span>').join("");
       if(LM)return '<div class="lrow" data-g="'+esc(g.key)+'" style="cursor:pointer">'+(g.photo?'<img class="thumb sm" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg sm">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+(d?' · '+esc(d):'')+'</div><div class="meta">'+(g.handle?'🔧 '+esc(g.handle)+' · ':'')+esc(g.items.map(p=>p.code).join(", "))+'</div></div><div class="rt"><span class="chip" style="font-size:14px;padding:5px 12px">×'+g.items.length+'</span></div></div>';
       return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<span class="cnt">×'+g.items.length+'</span></div><div class="bd"><div class="nm">'+esc(g.model)+'</div>'
-        +'<div class="meta">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+'</div>'+(d?'<div class="meta">'+esc(d)+'</div>':'')+'<div class="codes">'+codes+'</div></div></div>';
+        +'<div class="meta">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+'</div>'+(d?'<div class="meta">📏 '+esc(d)+'</div>':'')+(cp?'<div class="meta">👟 '+esc(cp)+'</div>':'')+'<div class="codes">'+codes+'</div></div></div>';
     }).join("");
     if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Same model + same handle = one photo with <b>×2</b>, <b>×3</b>…")+'</div>';
   }else if(msub==="moves"){
@@ -338,7 +342,7 @@ function openForm(o){
   $("fBody").innerHTML=o.fields.map(f=>f.photo?photoBlock(f):'<label>'+esc(f.label)+opt(f)+(f.sel?'<select data-k="'+f.k+'">'+f.sel.map(x=>'<option'+(String(x)===String(f.val)?' selected':'')+'>'+esc(x)+'</option>').join("")+'</select>':f.area?'<textarea data-k="'+f.k+'" placeholder="'+esc(f.ph||"")+'">'+esc(f.val||"")+'</textarea>':'<input data-k="'+f.k+'" '+(f.num?'inputmode="decimal"':'')+(f.list?' list="'+f.list+'"':'')+' placeholder="'+esc(f.ph||"")+'" value="'+esc(f.val==null?"":f.val)+'" autocomplete="off">')+'</label>').join("")
     +'<datalist id="handles">'+(S.handles||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>'
     +'<datalist id="units"><option>pcs</option><option>244-122</option><option>m</option><option>kg</option><option>sheet</option><option>roll</option><option>liter</option><option>box</option></datalist>'
-    +'<datalist id="groups">'+[...new Set(S.materials.map(m=>m.group||"MATERIAL"))].map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="sinfo"><option>S.R</option><option>S.O</option></datalist>';
+    +'<datalist id="groups">'+[...new Set(S.materials.map(m=>m.group||"MATERIAL"))].map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="salesn">'+(S.sales||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>';
   wirePhoto();
   $("fOk").textContent=o.ok||"Save";$("fOk").className="btn "+(o.cls||"");$("fOk").disabled=false;
   $("fOv").classList.add("on");setTimeout(()=>{const i=$("fBody").querySelector("input,textarea");try{i&&i.focus();}catch{}},200);
@@ -360,10 +364,11 @@ const prodFields=(p,isNew)=>[
   {k:"code",label:"Prod Id",opt:isNew,val:p?p.code:"",ph:isNew?"Leave empty for "+S.nextCode:""},
   {k:"sno",label:"S.No (order number)",opt:1,val:p?p.sno:""},
   {k:"model",label:"Model",opt:1,val:p?p.model:"",ph:"e.g. M14"},
-  {k:"desc",label:"Description",opt:1,val:p?p.desc:"",ph:"e.g. L-90, W-35, H-120"},
+  {k:"desc",label:"Description / size",opt:1,val:p?p.desc:"",ph:"e.g. L-90, W-35, H-120"},
+  {k:"capacity",label:"Shoe capacity",opt:1,val:p?p.capacity:"",ph:"e.g. 24 pairs"},
   {k:"handle",label:"Handle type",opt:1,val:p?p.handle:"",ph:"e.g. Gold bar · Black round · Hidden",list:"handles"},
   {photo:1,cur:p?photoSrc(p):""},
-  {k:"orderType",label:"Order Type",sel:["READYMADE","CUSTOM"],val:p?p.orderType:"READYMADE"},
+  {k:"orderType",label:"Order Type",sel:["READYMADE","ORDER"],val:p?(p.orderType==="CUSTOM"?"ORDER":p.orderType):"READYMADE"},
   {k:"priority",label:"Priority",sel:["LOW","MEDIUM","HIGH"],val:p?p.priority:"LOW"},
   {k:"category",label:"Stock group (for the Stock report)",sel:S.cats,val:p?p.category:"OTHERS"},
   {k:"salesName",label:"Sales Name",opt:1,val:p?p.salesName:""},
@@ -387,8 +392,8 @@ document.addEventListener("click",e=>{
   if(a==="del"&&p)return act("/api/reports/product/delete",{id},"Delete “"+p.code+" · "+lab(p)+"” for good?");
   if(a==="hist"&&p)return showHist(p.code+" · "+lab(p),(p.history||[]).slice().reverse().map(h=>'<div class="hrow"><b>'+esc(h.ev)+'</b><small>'+esc(fmtDT(h))+(h.by?' · '+esc(h.by):'')+'</small></div>').join("")||'<div class="hint">No history.</div>');
   if(a==="edit"&&p)return openForm({title:"✏️ Edit product",ok:"Save changes",fields:prodFields(p,false),submit:v=>api("/api/reports/product/edit",{id,...v})});
-  if(a==="sold"&&p)return openForm({title:"💰 Sold — "+p.code,info:"<b>"+esc(lab(p))+"</b><br>🗓 Saved now: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b> (Ethiopian date and clock)<br>Sold type becomes <b>S.TODAY</b> today and <b>SOLD</b> from tomorrow.",ok:"Confirm sold",cls:"gold",
-    fields:[{k:"salesName",label:"Sales Name",opt:1,val:p.salesName},{k:"salesInfo",label:"Sales info",opt:1,list:"sinfo",ph:"empty = "+(isCus(p)?"S.O":"S.R")},{k:"note",label:"Correction",opt:1,area:1,val:p.note}],submit:v=>api("/api/reports/product/sold",{id,...v})});
+  if(a==="sold"&&p)return openForm({title:"💰 Sold — "+p.code,info:"<b>"+esc(lab(p))+"</b><br>🗓 Saved now: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b> (Ethiopian date and clock)<br>Sales info = the Sales Name below (a real salesperson of the mini app). Sold type becomes <b>S.TODAY</b> today and <b>SOLD</b> from tomorrow.",ok:"Confirm sold",cls:"gold",
+    fields:[{k:"salesName",label:"Sales Name (the mini-app salesperson)",opt:1,val:p.salesName,list:"salesn",ph:"empty = you ("+ME_NAME+")"},{k:"note",label:"Correction",opt:1,area:1,val:p.note}],submit:v=>api("/api/reports/product/sold",{id,...v})});
   if((a==="madd"||a==="mcut")&&m){const cut=a==="mcut";return openForm({title:(cut?"✂️ Cut — ":"➕ Add — ")+matLab(m),info:"Available now: <b>"+nf(m.qty)+"</b> (unit "+esc(m.unit)+")<br>🗓 Saved with "+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+" (Ethiopian date and clock)",ok:cut?"Cut from store":"Add to store",cls:cut?"cut":"ok",
     fields:[{k:"qty",label:cut?"Quantity to cut":"Quantity to add",num:1},{k:"note",label:cut?"Used for (product / order)":"Note (supplier, invoice…)",opt:1}],submit:v=>api("/api/reports/material/move",{id,type:cut?"cut":"add",...v})});}
   if(a==="mhist"&&m)return showHist(matLab(m)+" · movements",S.log.filter(l=>l.matId===id).map(logRow).join("")||'<div class="hint">No movement yet.</div>');
@@ -408,6 +413,31 @@ $("bZero").onclick=()=>{
 };
 // A new day: "S.TODAY" becomes "SOLD" by itself (the server also refreshes the Google Sheet at midnight).
 setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/reports/state");if(d.ok)render();},60000);
+
+
+// ── DAILY STOCK → TELEGRAM (sent from the MAIN ADMIN's own Telegram account to every admin) ──
+function openTg(){
+  const t=S.tg||{},ok=t.ok===true,bad=t.ok===false;
+  const res=(t.results||[]).map(r=>'<div class="hrow">'+(r.ok?'✅':'⚠️')+' <b>'+esc(r.name)+'</b>'+(r.ok?' — '+r.count+' model(s) sent':'<small style="color:var(--bad)">'+esc(r.error||"")+'</small>')+'</div>').join("");
+  $("tgBox").innerHTML='<h2>📨 Daily stock → Telegram</h2>'
+    +'<p class="hint">Every day the <b>Stock view</b> is sent to <b>every admin</b>: one message per model with its <b>photo</b>, <b>size</b>, <b>shoe capacity</b>, <b>handle type</b> and Prod Ids. It is sent <b>from the main admin\'s own Telegram account</b> — not from the bot and not from the mini app.</p>'
+    +'<div class="card" style="margin-top:10px"><div class="meta">Status: <b>'+(t.on?'🟢 ON':'⚪ OFF')+'</b>'+(t.on?' · every day at <b>'+esc(t.time)+'</b> (Addis Ababa clock)':'')+'</div>'
+    +'<div class="meta" style="margin-top:6px">Sent from: <b>'+esc(t.sendAsName||"— (switch it on to choose yourself)")+'</b>'+(t.sendAs?(t.senderReady?' · ✓ Telegram connected':' · <b style="color:var(--bad)">Telegram NOT connected</b>'):'')+'</div>'
+    +'<div class="meta" style="margin-top:6px">Goes to: '+((t.recipients||[]).length?esc(t.recipients.join(", ")):"no other admin yet")+'</div>'
+    +(t.lastAt?'<div class="meta" style="margin-top:6px">Last send: <b>'+esc(t.lastAt)+'</b> '+(ok?'✅':bad?'⚠️':'')+(t.error?'<br><span style="color:var(--bad)">'+esc(t.error)+'</span>':'')+'</div>':'')+'</div>'
+    +(res?'<div class="card">'+res+'</div>':'')
+    +(IS_OWNER?'<label>Send every day at (Addis Ababa time)<input id="tgTime" type="time" value="'+esc(t.time||"08:00")+'"></label><button class="btn '+(t.on?'grey':'ok')+'" id="tgToggle" type="button">'+(t.on?'⚪ Switch OFF':'🟢 Switch ON (send from my Telegram)')+'</button>'+(t.on?'<button class="btn grey" id="tgSave" type="button">💾 Save the time</button>':'')+'<button class="btn" id="tgNow" type="button">📨 Send now</button>'
+      :'<p class="hint">Only a main admin can change this. You receive the stock from the main admin\'s Telegram account.</p>')
+    +'<div id="tgMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
+  $("tgOv").classList.add("on");
+}
+$("tgBtn").onclick=openTg;
+$("tgOv").addEventListener("click",async e=>{
+  const id=e.target.id;
+  if(e.target===$("tgOv")||e.target.dataset.x){$("tgOv").classList.remove("on");return;}
+  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
+  if(id==="tgNow"){busy("Sending the stock to every admin… (this can take a minute)");const d=await api("/api/reports/tg/send",{});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
+});
 
 // ── Google Sheet BACKUP ──
 function openBackup(){
@@ -451,12 +481,12 @@ function pdfGrids(){
   if(tab==="wf"){const L=S.products.slice().sort((a,b)=>(a.added.d+a.added.t).localeCompare(b.added.d+b.added.t));
     return {title:"Workflow Follow-up",tabs:[grid("WORKFLOW FOLLOW-UP ("+L.length+")",["No","S.No","Prod Id","Model","Description","Handle","Order Type","Priority","Start Date","Status","Finished Date","Delivery Date","Sales Name","Location","Changes","Correction"],[40,50,70,70,190,110,100,80,110,90,110,90,110,100,110,110],
       L.map((p,i)=>[i+1,p.sno||"",p.code,p.model||"",p.desc||"",p.handle||"",p.orderType,p.priority,dt(p.added),p.finished?"FINISHED":"WORKING",dt(p.finished),p.deliveryDate?dmy(p.deliveryDate):"",p.salesName||"",p.location||"",p.changes||"",p.note||""]),
-      {al:["center","","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c)=>c===7?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===6?(v==="CUSTOM"?{bg:"#f4cccc"}:null):c===9?(v==="FINISHED"?{bg:"#e8eaed"}:null):null,empty:"No product yet."})]};}
+      {al:["center","","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c)=>c===7?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===6?(v==="ORDER"?{bg:"#f4cccc"}:null):c===9?(v==="FINISHED"?{bg:"#e8eaed"}:null):null,empty:"No product yet."})]};}
   if(tab==="st"||tab==="sv"){
     const L=S.products.filter(p=>p.finished).sort((a,b)=>(a.finished.d+a.finished.t).localeCompare(b.finished.d+b.finished.t)),cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});
     return {title:"Stock Report",tabs:cats.map(c=>{const G=L.filter(p=>(p.category||"OTHERS")===c),sold=G.filter(p=>p.status==="sold").length;
       return grid("Finished Product Stock Report FOR "+c+" — "+G.length+" products · "+sold+" sold · "+(G.length-sold)+" in stock",["No","PRODUCT ID","MODEL","DESCRIPTION","HANDLE","TYPE","STATUS","SELSE INFO","SOLD DATE","SOLD TYPE","CORRECTION"],[40,100,90,220,110,110,90,100,150,100,190],
-        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",p.handle||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?(s.salesInfo||(isCus(p)?"S.O":"S.R")):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
+        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",p.handle||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?realSales(p):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
         {al:["center","","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c)=>c===6?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===5?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===9?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null,empty:"Nothing here yet."});})};}
   const lg=S.log.slice(0,150);
   return {title:"Material Report",tabs:[
