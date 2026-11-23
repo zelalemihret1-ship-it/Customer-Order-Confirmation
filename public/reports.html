@@ -179,6 +179,11 @@ h3.sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(
 .srow .tx small{display:block;margin-top:2px;font-size:12px;color:var(--mute);line-height:1.35}
 .srow .ch{flex:none;font-size:24px;color:#b6ad96}
 .srow.danger .tx b{color:var(--bad)}.srow.danger{border-color:#f0c9c5}
+.tgpick{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.tgopt{display:flex;align-items:center;gap:11px;margin:0;background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:11px 13px;cursor:pointer;font-weight:700;color:var(--ink);font-size:14px}
+.tgopt input{width:20px;height:20px;margin:0;flex:none;accent-color:#1b4d3e}
+.tgopt .tn{flex:1;min-width:0}.tgopt small{color:var(--mute);font-weight:600;font-size:11px}
+.tgopt:has(input:checked){border-color:var(--gold);background:#fbf6e8}
 @media(max-width:520px){.seg{top:74px}.kpi .n{font-size:24px}}
 </style>
 </head>
@@ -486,16 +491,30 @@ setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.d
 
 
 // ── DAILY STOCK → TELEGRAM (sent from the MAIN ADMIN's own Telegram account to every admin) ──
+function tgPicker(t){
+  const c=t.candidates||[],sel=(t.to||[]).map(String),all=!sel.length;
+  if(!c.length)return '<p class="hint">No other admin yet. Add admins in Manage Admins first.</p>';
+  return '<label>Send the stock message to <em>(choose the admins)</em></label><div class="tgpick">'
+    +c.map(a=>'<label class="tgopt"><input type="checkbox" name="tgto" value="'+esc(a.id)+'" '+(all||sel.includes(String(a.id))?'checked':'')+'><span class="tn">'+esc(a.name)+'</span><small>'+esc(a.id)+'</small></label>').join("")+'</div>'
+    +'<div class="acts"><button class="b sm" type="button" id="tgAll">Select all</button><button class="b sm" type="button" id="tgNone">Clear</button></div>';
+}
+function tgChosen(){
+  const boxes=[...document.querySelectorAll('#tgBox input[name=tgto]')];if(!boxes.length)return[];
+  const on=boxes.filter(b=>b.checked).map(b=>b.value);
+  return on.length===boxes.length?[]:on; // every admin ticked = "everyone" (also new admins later)
+}
+const tgNoneTicked=()=>{const b=[...document.querySelectorAll('#tgBox input[name=tgto]')];return b.length>0&&!b.some(x=>x.checked);};
 function openTg(){
   const t=S.tg||{},ok=t.ok===true,bad=t.ok===false;
   const res=(t.results||[]).map(r=>'<div class="hrow">'+(r.ok?'✅':'⚠️')+' <b>'+esc(r.name)+'</b>'+(r.ok?' — '+r.count+' model(s) sent':'<small style="color:var(--bad)">'+esc(r.error||"")+'</small>')+'</div>').join("");
   $("tgBox").innerHTML='<h2>📨 Daily stock → Telegram</h2>'
-    +'<p class="hint">Every day the <b>Stock view</b> is sent to <b>every admin</b>: one message per model with its <b>photo</b>, <b>size</b>, <b>shoe capacity</b>, <b>handle type</b> and Prod Ids. It is sent <b>from the main admin\'s own Telegram account</b> — not from the bot and not from the mini app.</p>'
+    +'<p class="hint">Every day the <b>Stock view</b> is sent to the <b>admins you select below</b>: one message per model with its <b>photo</b>, <b>size</b>, <b>shoe capacity</b>, <b>handle type</b> and Prod Ids. It is sent <b>from the main admin\'s own Telegram account</b> — not from the bot and not from the mini app.</p>'
     +'<div class="card" style="margin-top:10px"><div class="meta">Status: <b>'+(t.on?'🟢 ON':'⚪ OFF')+'</b>'+(t.on?' · every day at <b>'+esc(t.time)+'</b> (Addis Ababa clock)':'')+'</div>'
     +'<div class="meta" style="margin-top:6px">Sent from: <b>'+esc(t.sendAsName||"— (switch it on to choose yourself)")+'</b>'+(t.sendAs?(t.senderReady?' · ✓ Telegram connected':' · <b style="color:var(--bad)">Telegram NOT connected</b>'):'')+'</div>'
     +'<div class="meta" style="margin-top:6px">Goes to: '+((t.recipients||[]).length?esc(t.recipients.join(", ")):"no other admin yet")+'</div>'
     +(t.lastAt?'<div class="meta" style="margin-top:6px">Last send: <b>'+esc(t.lastAt)+'</b> '+(ok?'✅':bad?'⚠️':'')+(t.error?'<br><span style="color:var(--bad)">'+esc(t.error)+'</span>':'')+'</div>':'')+'</div>'
     +(res?'<div class="card">'+res+'</div>':'')
+    +(IS_OWNER?tgPicker(t):'')
     +(IS_OWNER?'<label>Send every day at (Addis Ababa time)<input id="tgTime" type="time" value="'+esc(t.time||"08:00")+'"></label><button class="btn '+(t.on?'grey':'ok')+'" id="tgToggle" type="button">'+(t.on?'⚪ Switch OFF':'🟢 Switch ON (send from my Telegram)')+'</button>'+(t.on?'<button class="btn grey" id="tgSave" type="button">💾 Save the time</button>':'')+'<button class="btn" id="tgNow" type="button">📨 Send now</button>'
       :'<p class="hint">Only a main admin can change this. You receive the stock from the main admin\'s Telegram account.</p>')
     +'<div id="tgMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
@@ -505,8 +524,10 @@ $("tgBtn").onclick=openTg;
 $("tgOv").addEventListener("click",async e=>{
   const id=e.target.id;
   if(e.target===$("tgOv")||e.target.dataset.x){$("tgOv").classList.remove("on");return;}
-  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
-  if(id==="tgNow"){busy("Sending the stock to every admin… (this can take a minute)");const d=await api("/api/reports/tg/send",{});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
+  if(id==="tgAll"||id==="tgNone"){document.querySelectorAll('#tgBox input[name=tgto]').forEach(b=>b.checked=id==="tgAll");return;}
+  if((id==="tgToggle"||id==="tgSave"||id==="tgNow")&&tgNoneTicked()){say("tgMsg","Select at least one admin to send to.","bad");return;}
+  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value,to:tgChosen()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
+  if(id==="tgNow"){busy("Sending the stock to the selected admins… (this can take a minute)");await api("/api/reports/tg/to",{to:tgChosen()});const d=await api("/api/reports/tg/send",{});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
 });
 
 
