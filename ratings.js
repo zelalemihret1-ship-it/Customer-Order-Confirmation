@@ -30,15 +30,31 @@ function register(app, ctx) {
   let db = { templates: {}, auto: {}, links: {}, log: [], base: "" };
   const busy = new Set();
 
+  const BAK_FILE = path.join(baseDir, "ratings.bak.json");
+  const norm = d => ({ templates: d?.templates || {}, auto: d?.auto || {}, links: d?.links || {}, log: d?.log || [], base: d?.base || "" });
+  // Merge two copies of the data. A rated link always wins over an unrated one, so a rating can never be lost by an older / emptier copy.
+  function mergeDb(a, b) {
+    const out = norm(a), o = norm(b);
+    for (const [id, r] of Object.entries(o.links)) {
+      const cur = out.links[id];
+      if (!cur || (!cur.stars && r.stars) || (!cur.stars && !r.stars && String(r.sentAt || "") > String(cur.sentAt || ""))) out.links[id] = r;
+    }
+    out.templates = { ...o.templates, ...out.templates }; out.auto = { ...o.auto, ...out.auto };
+    out.base = out.base || o.base;
+    const seen = new Set(out.log.map(x => x.orderId + "|" + x.at + "|" + x.status));
+    for (const x of o.log) if (!seen.has(x.orderId + "|" + x.at + "|" + x.status)) out.log.push(x);
+    return out;
+  }
   async function load() {
-    let d = null;
-    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "ratings").maybeSingle(); if (data?.value && data.value.links) d = data.value; } catch {} }
-    if (!d) { try { const f = JSON.parse(fs.readFileSync(DB_FILE, "utf8")); if (f && f.links) d = f; } catch {} }
-    if (d) db = { templates: d.templates || {}, auto: d.auto || {}, links: d.links || {}, log: d.log || [], base: d.base || "" };
+    const parts = [];
+    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "ratings").maybeSingle(); if (data?.value && data.value.links) parts.push(data.value); } catch {} }
+    for (const f of [DB_FILE, BAK_FILE]) { try { const x = JSON.parse(fs.readFileSync(f, "utf8")); if (x && x.links) parts.push(x); } catch {} }
+    if (parts.length) db = parts.reduce((acc, x) => mergeDb(acc, x), norm(parts[0]));
+    if (parts.length > 1) save(); // write the merged result back everywhere
   }
   async function save() {
     db.log = db.log.slice(-2000);
-    try { fs.mkdirSync(path.dirname(DB_FILE), { recursive: true }); fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch {}
+    try { fs.mkdirSync(path.dirname(DB_FILE), { recursive: true }); if (fs.existsSync(DB_FILE)) { try { fs.copyFileSync(DB_FILE, BAK_FILE); } catch {} } fs.writeFileSync(DB_FILE, JSON.stringify(db)); } catch {}
     if (supabase) { try { await supabase.from("app_settings").upsert({ key: "ratings", value: db, updated_at: new Date().toISOString() }); } catch {} }
   }
 
@@ -122,7 +138,7 @@ function register(app, ctx) {
       const text = render(ensureLink(tpl), order, link, adminName);
       try {
         const r = await sendToCustomer(order, text, link);
-        Object.assign(rec, { sentAt: stamp(), by: adminName, byKey: opts.byKey || orderKeyOf(order), via: r.via + (opts.auto ? " · automatic" : ""), status: "sent", error: "", auto: !!opts.auto });
+        Object.assign(rec, { orderCode: order.orderId || "", sentAt: stamp(), by: adminName, byKey: opts.byKey || orderKeyOf(order), via: r.via + (opts.auto ? " · automatic" : ""), status: "sent", error: "", auto: !!opts.auto });
         db.log.push({ orderId: order.id, order: order.orderId, name: order.customerName, at: rec.sentAt, by: adminName, via: rec.via, status: "sent" });
         if (!order.goodsDelivered) { order.goodsDelivered = true; order.goodsDeliveredAt = new Date().toISOString(); try { await saveOrderRecord(order); } catch (e) { console.warn("Delivered flag not saved:", e.message); } }
         await save();
@@ -198,7 +214,7 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
       const stars = Math.round(Number(req.body?.stars));
       if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ ok: false, error: "Please tap 1 to 5 stars first." });
       const comment = clean(req.body?.comment).slice(0, MAX_COMMENT);
-      Object.assign(f.rec, { stars, comment, ratedAt: stamp() });
+      Object.assign(f.rec, { stars, comment, ratedAt: stamp(), orderCode: f.order?.orderId || f.rec.orderCode || "" });
       await save();
       const o = f.order || {};
       notifyAdminsText({ ...o, createdByTelegramId: o.createdByTelegramId }, `⭐ <b>New rating ${stars}/5</b> ${"★".repeat(stars)}${"☆".repeat(5 - stars)}\n<b>Order:</b> ${esc(o.orderId || "")}\n<b>Customer:</b> ${esc(o.customerName || "")}${comment ? "\n\n" + esc(comment) : ""}`).catch(() => {});
@@ -218,10 +234,24 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
     if (r?.status === "failed") return "failed";
     return o.goodsDelivered ? "delivered" : "waiting";
   };
+  // A rating is tied to its order. If the order record got a new internal id (restore / reset / re-import), find it again by its Order ID code.
+  function reattach() {
+    let n = 0; const orders = getOrders(), ids = new Set(orders.map(o => String(o.id)));
+    for (const [id, r] of Object.entries(db.links)) {
+      if (ids.has(String(id))) continue;
+      const code = r.orderCode || (db.log.find(x => String(x.orderId) === String(id) && x.order) || {}).order; // old data: the send log remembers the order code
+      if (!code) continue;
+      const o = orders.find(x => String(x.orderId || "") === String(code) && !db.links[x.id]);
+      if (o) { db.links[o.id] = r; delete db.links[id]; n++; }
+    }
+    if (n) save();
+  }
   router.get("/", async (req, res) => {
     const a = req.actor, key = actorKey(a), owner = isOwner(a);
     if (supabase) { try { await loadOrders(); } catch {} }
-    const rows = getOrders().filter(o => mine(o, a) && o.sent).sort((x, y) => (Number(y.id) || 0) - (Number(x.id) || 0)).map(o => {
+    try { reattach(); } catch {}
+    for (const o of getOrders()) { const r = db.links[o.id]; if (r && !r.orderCode && o.orderId) r.orderCode = o.orderId; }
+    const rows = getOrders().filter(o => mine(o, a) && (o.sent || db.links[o.id]?.stars)).sort((x, y) => (Number(y.id) || 0) - (Number(x.id) || 0)).map(o => {
       const r = db.links[o.id] || {};
       return { id: o.id, orderId: o.orderId, product: o.product || "", customer: o.customerName || "", deliveryDate: helpers.ethDate(o.deliveryDate) || "", status: o.status || "",
         state: stateOf(o), sentAt: r.sentAt || "", via: r.via || "", by: r.by || "", error: r.status === "failed" ? r.error : "", stars: r.stars || 0, comment: r.comment || "", ratedAt: r.ratedAt || "", owner: o.createdByName || "" };
@@ -278,6 +308,20 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
     const r = await deliverAndSend(order, { by: a.name || "Admin", byKey: key || orderKeyOf(order), resend: req.body?.resend === true });
     if (r.ok) return res.json({ ok: true, message: `✅ Marked delivered. Rating link sent to ${order.customerName || "the customer"} (${r.via}).` });
     res.status(r.skipped ? 200 : 400).json({ ok: false, error: r.error });
+  });
+
+  // Main admin: download every rating as a file, and restore (merge) from such a file. Restoring never deletes anything.
+  const ownerOnlyR = (req, res, next) => isOwner(req.actor) ? next() : res.status(403).json({ ok: false, error: "Only a main admin can do this." });
+  router.get("/backup", ownerOnlyR, (req, res) => {
+    res.set({ "Content-Type": "application/json", "Content-Disposition": `attachment; filename="ratings-backup-${stamp().slice(0, 10)}.json"` }).send(JSON.stringify(db));
+  });
+  router.post("/restore", ownerOnlyR, express.json({ limit: "20mb" }), async (req, res) => {
+    const x = req.body?.data && typeof req.body.data === "object" ? req.body.data : req.body;
+    if (!x || typeof x !== "object" || !x.links || typeof x.links !== "object") return res.status(400).json({ ok: false, error: "This is not a ratings backup file." });
+    const before = Object.values(db.links).filter(r => r.stars).length;
+    db = mergeDb(db, x); try { reattach(); } catch {} await save();
+    const after = Object.values(db.links).filter(r => r.stars).length;
+    res.json({ ok: true, message: `✅ Restored. Ratings: ${before} → ${after}.` });
   });
 
   app.use("/api/ratings", router);
