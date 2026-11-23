@@ -3420,7 +3420,8 @@ const storyPlanner = require("./stories").register(app, {
 // ── First Greeting (separate module + page: /greeting.html) ──
 const greetingModule = require("./greetings").register(app, {
   requireAccess, accountFor, resolveUser: resolveUserEntity, getCallers: () => callersDb, businessConnections, isUsable,
-  ownerIds: OWNER_IDS, telegram, resolveChatId, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR
+  ownerIds: OWNER_IDS, telegram, resolveChatId, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR,
+  getAppAdmins: () => appAdmins
 });
 // ── Customer Rating (separate module + page: /rating.html; public customer page: /rate/<token>) ──
 const ratingModule = require("./ratings").register(app, {
