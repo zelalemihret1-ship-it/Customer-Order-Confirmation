@@ -261,6 +261,7 @@ const fmtD=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?(+m[3]
 // Ethiopian clock: the day starts at sunrise. 13:15 → 7:15 ቀን · 21:00 → 3:00 ሌሊት · 06:00 → 12:00 ቀን
 const et=t=>{const m=/^(\d{1,2}):(\d{2})/.exec(t||"");if(!m)return t||"";const h=+m[1];return (((h+6)%12)||12)+":"+m[2]+" "+(h>=6&&h<18?"ቀን":"ሌሊት");};
 const fmtDT=o=>o&&o.d?fmtD(o.d)+" · "+et(o.t):"—";
+const soldTy=p=>{const s=(p&&p.sold)||{};return s.type||(s.d===S.now.d?"S.TODAY":"SOLD");}; // chosen by hand in the app, otherwise automatic
 const dmy=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):(d||"");};
 const lab=p=>[p.ptype,p.model,p.desc].filter(Boolean).join(" ")||p.code;
 const matLab=m=>m.name+(m.type?" "+m.type:"");
@@ -340,9 +341,9 @@ function render(){
   const lrow=(p,metaTxt,acts,cls)=>'<div class="lrow '+(cls||"")+'">'+th(p)+'<div class="mid"><div class="nm">'+esc(lab(p))+'</div><div class="meta">'+small(p,metaTxt)+'</div></div><div class="rt">'+acts+'</div></div>';
   if(tab==="wf"){
     const L=wf.filter(p=>hit(text(p)));
-    h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+" · "+esc(fmtDT(p.added)),'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>'+ic("edit",p.id,"✏️ Edit")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
+    h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+" · "+esc(fmtDT(p.added)),'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>'+ic("edit",p.id,"✏️ Edit")+ic("times",p.id,"🕒 Dates & times")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
       :'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+'</div>'
-      +'<div class="acts"><button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
+      +'<div class="acts"><button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="times" data-id="'+p.id+'" title="Dates & times">🕒</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
     if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b> and fill the Prod Id, model, handle type and photo.<br>When it is finished, press <b>Finished → In Stock</b> — it appears in <b>Stock</b> and <b>Stock view</b> at once.")+'</div>';
     // products that moved on to Stock this Ethiopian month stay here with RED text; next month they are gone
     const F=S.products.filter(p=>p.finished&&inM(p.finished)&&hit(text(p))).sort((a,b)=>((b.finished.d||"")+(b.finished.t||"")).localeCompare((a.finished.d||"")+(a.finished.t||"")));
@@ -355,17 +356,17 @@ function render(){
   }else if(tab==="st"){
     if(sub==="stock"){
       const L=st.filter(p=>hit(text(p))).sort((a,b)=>((a.finished||{}).d+(a.finished||{}).t).localeCompare((b.finished||{}).d+(b.finished||{}).t));
-      h=group(L,p=>LM?lrow(p,"Finished "+esc(fmtDT(p.finished)),'<button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button>'+ic("edit",p.id,"✏️ Edit")+ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Back to Workflow")+ic("del",p.id,"🗑 Delete","red"))
+      h=group(L,p=>LM?lrow(p,"Finished "+esc(fmtDT(p.finished)),'<button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button>'+ic("edit",p.id,"✏️ Edit")+ic("times",p.id,"🕒 Dates & times")+ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Back to Workflow")+ic("del",p.id,"🗑 Delete","red"))
         :'<div class="item">'+head(p)+'<div class="meta">Finished <b>'+esc(fmtDT(p.finished))+'</b></div>'
-        +'<div class="acts"><button class="b gold" data-a="sold" data-id="'+p.id+'">💰 Sold</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Back to Workflow">↩</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>');
+        +'<div class="acts"><button class="b gold" data-a="sold" data-id="'+p.id+'">💰 Sold</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="times" data-id="'+p.id+'" title="Dates & times">🕒</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Back to Workflow">↩</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>');
       if(!L.length)h='<div class="empty">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>A product appears here the moment you press <b>Finished → In Stock</b> in Workflow.")+'</div>';
     }else{
       const L=(showOld?sd:sdm).filter(p=>hit(text(p))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
       if(sd.length>sdm.length)extra='<div style="text-align:center;margin:14px 0"><button class="b" id="oldBtn" type="button">'+(showOld?"🙈 Hide earlier months":"📂 Show earlier months ("+(sd.length-sdm.length)+")")+'</button><div class="hint" style="margin-top:6px">A new Ethiopian month starts clean. Earlier sales stay saved in the Google Sheet month tabs.</div></div>';
-      h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return LM?lrow(p,'<span class="pill sold">'+(td?"S.TODAY":"SOLD")+'</span> '+esc(fmtDT(s)),ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Cancel sale")+ic("del",p.id,"🗑 Delete","red"),"fin")
+      h=group(L,p=>{const s=p.sold||{};return LM?lrow(p,'<span class="pill sold">'+soldTy(p)+'</span> '+esc(fmtDT(s)),ic("times",p.id,"🕒 Dates & times")+ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Cancel sale")+ic("del",p.id,"🗑 Delete","red"),"fin")
         :'<div class="item fin">'+head(p)
-        +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+(td?"S.TODAY":"SOLD")+'</b> · Sales info <b>'+esc(realSales(p))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
-        +'<div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';});
+        +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+soldTy(p)+'</b> · Sales info <b>'+esc(realSales(p))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
+        +'<div class="acts"><button class="b" data-a="times" data-id="'+p.id+'">🕒 Dates & times</button><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';});
       if(!L.length)h='<div class="empty">'+(sdm.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
   }else if(tab==="sv"){
@@ -514,8 +515,13 @@ document.addEventListener("click",e=>{
   if(a==="del"&&p)return act("/api/reports/product/delete",{id},"Delete “"+p.code+" · "+lab(p)+"” for good?");
   if(a==="hist"&&p)return showHist(p.code+" · "+lab(p),(p.history||[]).slice().reverse().map(h=>'<div class="hrow"><b>'+esc(h.ev)+'</b><small>'+esc(fmtDT(h))+(h.by?' · '+esc(h.by):'')+'</small></div>').join("")||'<div class="hint">No history.</div>');
   if(a==="edit"&&p)return openForm({title:"✏️ Edit product",ok:"Save changes",fields:prodFields(p,false),submit:v=>api("/api/reports/product/edit",{id,...v})});
+  if(a==="times"&&p){const f=[],row=(k,label,o)=>{f.push({k:k+"D",label:label+" — date (Ethiopian)",opt:1,val:o.d,ph:"2019/03/25"},{k:k+"T",label:label+" — time (24-hour Addis Ababa)",opt:1,val:o.t,ph:"14:30"});};
+    if(p.added)row("added","🛠 Started",p.added);if(p.finished)row("finished","✅ Finished → moved to Stock",p.finished);
+    if(p.sold){row("sold","💰 Sold",p.sold);f.push({k:"soldType",label:"Sold type",sel:["— Automatic (S.TODAY on the sale day, SOLD after) —","S.TODAY","SOLD"],val:p.sold.type||"— Automatic (S.TODAY on the sale day, SOLD after) —"});}
+    return openForm({title:"🕒 Dates & times — "+p.code,info:"<b>"+esc(lab(p))+"</b><br>Change the Ethiopian date (year/month/day) and the clock time (24-hour, e.g. 13:15 = 7:15 ቀን). Leave a box as it is to keep it. The Workflow, Stock and the Google Sheet follow the new dates.",ok:"Save dates & times",fields:f,
+      submit:v=>api("/api/reports/product/times",{id,...v,soldType:p.sold?(/^—/.test(v.soldType||"")?"":v.soldType):undefined})});}
   if(a==="sold"&&p)return openForm({title:"💰 Sold — "+p.code,info:"<b>"+esc(lab(p))+"</b><br>🗓 Saved now: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b> (Ethiopian date and clock)<br>Sales info = the Sales Name below (a real salesperson of the mini app). Sold type becomes <b>S.TODAY</b> today and <b>SOLD</b> from tomorrow.",ok:"Confirm sold",cls:"gold",
-    fields:[{k:"salesName",label:"Sales Name (the mini-app salesperson)",opt:1,val:p.salesName,list:"salesn",ph:"empty = you ("+ME_NAME+")"},{k:"note",label:"Correction",opt:1,area:1,val:p.note}],submit:v=>api("/api/reports/product/sold",{id,...v})});
+    fields:[{k:"soldType",label:"Sold type",sel:["— Automatic (S.TODAY today, SOLD from tomorrow) —","S.TODAY","SOLD"],val:"— Automatic (S.TODAY today, SOLD from tomorrow) —"},{k:"d",label:"Sold date (Ethiopian)",opt:1,ph:S.now.d+" (empty = today)"},{k:"t",label:"Sold time (24-hour, Addis Ababa)",opt:1,ph:S.now.t+" (empty = now)"},{k:"salesName",label:"Sales Name (the mini-app salesperson)",opt:1,val:p.salesName,list:"salesn",ph:"empty = you ("+ME_NAME+")"},{k:"note",label:"Correction",opt:1,area:1,val:p.note}],submit:v=>api("/api/reports/product/sold",{id,...v,soldType:/^—/.test(v.soldType||"")?"":v.soldType})});
   if((a==="madd"||a==="mcut")&&m){const cut=a==="mcut";return openForm({title:(cut?"✂️ Cut — ":"➕ Add — ")+matLab(m),info:"Available now: <b>"+nf(m.qty)+"</b> (unit "+esc(m.unit)+")<br>🗓 Saved with "+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+" (Ethiopian date and clock)",ok:cut?"Cut from store":"Add to store",cls:cut?"cut":"ok",
     fields:[{k:"qty",label:cut?"Quantity to cut":"Quantity to add",num:1},{k:"note",label:cut?"Used for (product / order)":"Note (supplier, invoice…)",opt:1}],submit:v=>api("/api/reports/material/move",{id,type:cut?"cut":"add",...v})});}
   if(a==="mhist"&&m)return showHist(matLab(m)+" · movements",S.log.filter(l=>l.matId===id).map(logRow).join("")||'<div class="hint">No movement yet.</div>');
@@ -701,7 +707,7 @@ function pdfGrids(){
     const L=S.products.filter(p=>p.finished&&(p.status!=="sold"||inM(p.sold))).sort((a,b)=>(a.finished.d+a.finished.t).localeCompare(b.finished.d+b.finished.t)),cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});
     return {title:"Stock Report",tabs:cats.map(c=>{const G=L.filter(p=>(p.category||"OTHERS")===c),sold=G.filter(p=>p.status==="sold").length;
       return grid("Finished Product Stock Report FOR "+c+" — "+G.length+" products · "+sold+" sold · "+(G.length-sold)+" in stock",["No","PRODUCT ID","MODEL","DESCRIPTION","HANDLE","TYPE","STATUS","SELSE INFO","SOLD DATE","SOLD TYPE","CORRECTION"],[40,100,90,220,110,110,90,100,150,100,190],
-        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",p.handle||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?realSales(p):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
+        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",p.handle||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?realSales(p):"",s?dt(s):"",s?soldTy(p):"",p.note||""];}),
         {al:["center","","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c,r)=>{const sold=r[6]==="SOLD";let o=c===6?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===5?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===9?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null;return (sold&&!(o&&o.fg))?{...(o||{}),fg:RED}:o;},empty:"Nothing here yet."});})};}
   const lg=S.log.slice(0,150);
   return {title:"Material Report",tabs:[
