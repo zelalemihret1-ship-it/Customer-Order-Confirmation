@@ -9,7 +9,7 @@
 try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
 (function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
 </script>
-<link rel="stylesheet" href="/app.css?v=119">
+<link rel="stylesheet" href="/app.css?v=121">
 <style>
 :root{--ink:#0f2e25;--green:#1b4d3e;--gold:#b89552;--cream:#f4efe3;--bg:#f2efe8;--card:#fff;--line:#e6e0d2;--tx:#1f2a26;--mute:#6d675d;--ok:#1f8f55;--okbg:#e3f4e8;--warn:#8a5a00;--warnbg:#fff1d6;--bad:#b3261e;--badbg:#fde7e5;--blue:#14598f;--bluebg:#e4f0fb}
 *{box-sizing:border-box}
@@ -88,7 +88,36 @@ textarea{min-height:70px;resize:vertical}
 ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
 .busy{position:fixed;inset:0;background:#fffc;z-index:300;display:none;align-items:center;justify-content:center;font-weight:800;color:var(--ink);font-size:16px}
 .busy.on{display:flex}
-@media(max-width:520px){.kpi .n{font-size:22px}.list{grid-template-columns:1fr}}
+
+.seg button{font-size:13px}
+.vt{display:flex;border:1.5px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+.vt button{border:0;background:#fff;color:var(--green);font-weight:800;font-size:13px;padding:0 12px;cursor:pointer;font-family:inherit}
+.vt button.on{background:var(--green);color:#fff}
+.thumb{width:100%;height:150px;object-fit:cover;border-radius:12px;background:#eee8da;display:block}
+.thumb.sm{width:54px;height:54px;border-radius:10px;flex:0 0 54px}
+.noimg{width:100%;height:150px;border-radius:12px;background:repeating-linear-gradient(45deg,#f1ecde,#f1ecde 10px,#ebe5d4 10px,#ebe5d4 20px);display:flex;align-items:center;justify-content:center;color:#a39a82;font-size:34px}
+.noimg.sm{width:54px;height:54px;flex:0 0 54px;font-size:22px;border-radius:10px}
+.list.rows{display:flex;flex-direction:column;gap:8px}
+.lrow{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:9px 10px;box-shadow:0 2px 8px #0000000a}
+.lrow .mid{flex:1;min-width:0}
+.lrow .mid .nm{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .mid .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .rt{display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:46%}
+.b.sm{padding:8px 10px;font-size:12.5px;border-radius:10px;flex:0 0 auto}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.sg{background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 4px 16px #0000000d;cursor:pointer;position:relative;display:flex;flex-direction:column}
+.sg .ph{position:relative}
+.sg .ph .thumb,.sg .ph .noimg{height:170px;border-radius:0}
+.sg .cnt{position:absolute;right:10px;top:10px;background:var(--ink);color:#ffd877;border-radius:999px;padding:5px 12px;font-weight:900;font-size:15px;box-shadow:0 3px 10px #0006}
+.sg .bd{padding:10px 12px 12px;display:flex;flex-direction:column;gap:4px}
+.sg .codes{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.sg .codes .code{font-size:10.5px;padding:2px 7px}
+.pv{display:flex;align-items:center;gap:10px;margin-top:6px}
+.pv img{width:84px;height:84px;object-fit:cover;border-radius:12px;border:1px solid var(--line)}
+.pv .ph0{width:84px;height:84px;border-radius:12px;background:#f1ecde;display:flex;align-items:center;justify-content:center;font-size:30px;color:#a39a82}
+.pv .b{padding:9px 12px}
+.pbig{width:100%;max-height:260px;object-fit:cover;border-radius:14px;margin:8px 0 4px}
+@media(max-width:520px){.kpi .n{font-size:22px}.list{grid-template-columns:1fr}.seg button{font-size:12px;padding:10px 2px}.seg button small{font-size:10px}.sgrid{grid-template-columns:repeat(2,1fr);gap:9px}.sg .ph .thumb,.sg .ph .noimg{height:130px}.lrow .rt{max-width:52%}}
 </style>
 </head>
 <body>
@@ -101,7 +130,7 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
   <div id="view" style="display:none">
     <div class="seg" id="seg"></div>
     <div class="kpis" id="kpis"></div>
-    <div class="tools"><input id="q" type="search" placeholder="🔍 Search…" autocomplete="off"><button class="add" id="addBtn" type="button"></button></div>
+    <div class="tools"><input id="q" type="search" placeholder="🔍 Search…" autocomplete="off"><div class="vt" id="vt"><button type="button" data-v="cards" title="Card view">▦</button><button type="button" data-v="list" title="List view">☰</button></div><button class="add" id="addBtn" type="button"></button></div>
     <div class="sub2" id="sub2" style="display:none"></div>
     <div id="vMsg" class="msg"></div>
     <div id="out" class="list"></div>
@@ -142,8 +171,10 @@ const matLab=m=>m.name+(m.type?" "+m.type:"");
 const logMat=l=>l.material+(l.mtype?" "+l.mtype:"");
 const isCus=p=>p.orderType==="CUSTOM";
 const nf=v=>(v===""||v==null)?"":Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
-let S={products:[],materials:[],log:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",q="";
-try{const s=localStorage.getItem("repTab2");if(["wf","st","mt"].includes(s))tab=s;}catch{}
+let S={products:[],materials:[],log:[],handles:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",msub="list",q="",VM="cards";
+try{const s=localStorage.getItem("repTab2");if(["wf","st","sv","mt"].includes(s))tab=s;const v=localStorage.getItem("repView");if(v==="list"||v==="cards")VM=v;}catch{}
+const photoSrc=p=>p&&p.photo?"/api/reports-photo/"+p.photo+".jpg":"";
+const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
 const toast=m=>{try{(window.AppToast||alert)(m);}catch{alert(m);}};
 const say=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"info");e.textContent=t;e.style.display=t?"block":"none";if(!t)e.className="msg";};
 const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
@@ -176,74 +207,139 @@ const by=s=>S.products.filter(p=>p.status===s);
 const lowOf=m=>m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");
 function render(){
   const wf=by("workflow"),st=by("stock"),sd=by("sold");
-  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
+  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["sv","🖼 Stock view",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
   const low=S.materials.filter(m=>lowOf(m)!=="ok").length,today=S.log.filter(l=>l.d===S.now.d).length,soldToday=sd.filter(p=>p.sold&&p.sold.d===S.now.d).length;
   const K=(l,n,s,c)=>'<div class="kpi" style="border-left-color:'+(c||"var(--green)")+'"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>';
   $("kpis").innerHTML=tab==="wf"?K("In workflow",wf.length,"products in progress","#d9a21b")+K("In stock",st.length,"finished","#1f8f55")+K("All products",S.products.length,"including sold","#14598f")
     :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold",sd.length,"products sold","#14598f")+K("Sold today",soldToday,fmtD(S.now.d),"#b3261e")
+    :tab==="sv"?K("Models",stockGroups(st).length,"model + handle groups","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
     :K("Materials",S.materials.length,"kinds in store","#8a5a00")+K("Low / out",low,low?"to re-order":"all good",low?"#b3261e":"#1f8f55")+K("Moves today",today,fmtD(S.now.d),"#6d675d");
   $("addBtn").textContent=tab==="mt"?"➕ New material":"➕ New product";
-  $("addBtn").style.display=tab==="st"?"none":"block";
-  $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search Prod Id, model, description…";
-  $("sub2").style.display=tab==="st"?"flex":"none";
+  $("addBtn").style.display=(tab==="st"||tab==="sv")?"none":"block";
+  document.querySelectorAll("#vt button").forEach(b=>b.classList.toggle("on",b.dataset.v===VM));
+  $("vt").style.display=(tab==="mt"&&msub==="moves")?"none":"flex";
+  $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search Prod Id, model, handle, description…";
+  $("sub2").style.display=(tab==="st"||tab==="mt")?"flex":"none";
+  if(tab==="mt")$("sub2").innerHTML='<button type="button" data-m="list" class="'+(msub==="list"?"on":"")+'">🧱 Materials ('+S.materials.length+')</button><button type="button" data-m="moves" class="'+(msub==="moves"?"on":"")+'">🕘 Recent movements ('+S.log.length+')</button>';
   if(tab==="st")$("sub2").innerHTML='<button type="button" data-s="stock" class="'+(sub==="stock"?"on":"")+'">📦 In stock ('+st.length+')</button><button type="button" data-s="sold" class="'+(sub==="sold"?"on":"")+'">💰 Sold ('+sd.length+')</button>';
   const hit=t=>!q||String(t).toLowerCase().includes(q);
-  const text=p=>[p.code,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes].join(" ");
-  const facts=p=>{const f=[];if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
+  const text=p=>[p.code,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle].join(" ");
+  const facts=p=>{const f=[];if(p.handle)f.push("🔧 Handle <b>"+esc(p.handle)+"</b>");if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
   const prPill=p=>p.priority==="HIGH"?'<span class="pill hi">HIGH</span>':p.priority==="MEDIUM"?'<span class="pill med">MEDIUM</span>':'<span class="pill low2">LOW</span>';
   const tyPill=p=>isCus(p)?'<span class="pill cus">CUSTOM</span>':'<span class="pill rdy">READYMADE</span>';
-  const head=p=>'<div class="top"><span class="code">'+esc(p.code)+'</span><span style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">'+tyPill(p)+(tab==="wf"?prPill(p):"")+'</span></div><div class="nm">'+esc(lab(p))+'</div>'+(p.category&&tab!=="wf"?'<div class="meta">'+esc(p.category)+'</div>':"")+(p.note?'<div class="nt">Correction: '+esc(p.note)+'</div>':"")+facts(p);
+  const thumbBig=p=>photoSrc(p)?'<img class="thumb" loading="lazy" src="'+photoSrc(p)+'" alt="">':'';
+  const head=p=>(VM==="cards"?thumbBig(p):"")+'<div class="top"><span class="code">'+esc(p.code)+'</span><span style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">'+tyPill(p)+(tab==="wf"?prPill(p):"")+'</span></div><div class="nm">'+esc(lab(p))+'</div>'+(p.category&&tab!=="wf"?'<div class="meta">'+esc(p.category)+'</div>':"")+(p.note?'<div class="nt">Correction: '+esc(p.note)+'</div>':"")+facts(p);
   const group=(L,card)=>{const cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});return cats.map(c=>{const g=L.filter(p=>(p.category||"OTHERS")===c);return g.length?'<div class="gh"><span>'+esc(c)+'</span><span>'+g.length+'</span></div>'+g.map(card).join(""):"";}).join("");};
   let h="",extra="";
+  const LM=VM==="list";
+  $("out").className=tab==="sv"&&!LM?"sgrid":(LM?"list rows":"list");
+  const th=p=>photoSrc(p)?'<img class="thumb sm" loading="lazy" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>';
+  const ic=(a,id,t,cls)=>'<button class="b sm '+(cls||"")+'" data-a="'+a+'" data-id="'+id+'" title="'+t+'">'+t.split(" ")[0]+'</button>';
+  const small=(p,extraTxt)=>'<span class="code" style="font-size:11px;padding:1px 6px">'+esc(p.code)+'</span> '+(p.handle?'🔧 '+esc(p.handle)+' · ':'')+extraTxt;
+  const lrow=(p,metaTxt,acts)=>'<div class="lrow">'+th(p)+'<div class="mid"><div class="nm">'+esc(lab(p))+'</div><div class="meta">'+small(p,metaTxt)+'</div></div><div class="rt">'+acts+'</div></div>';
   if(tab==="wf"){
     const L=wf.filter(p=>hit(text(p)));
-    h=L.map(p=>'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+'</div>'
+    h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+" · "+esc(fmtDT(p.added)),'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>'+ic("edit",p.id,"✏️ Edit")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
+      :'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+'</div>'
       +'<div class="acts"><button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
-    if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b> and fill the Prod Id, model and description.<br>When it is finished, press <b>Finished → In Stock</b>.")+'</div>';
+    if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b> and fill the Prod Id, model, handle type and photo.<br>When it is finished, press <b>Finished → In Stock</b> — it appears in <b>Stock</b> and <b>Stock view</b> at once.")+'</div>';
   }else if(tab==="st"){
     if(sub==="stock"){
       const L=st.filter(p=>hit(text(p))).sort((a,b)=>((a.finished||{}).d+(a.finished||{}).t).localeCompare((b.finished||{}).d+(b.finished||{}).t));
-      h=group(L,p=>'<div class="item">'+head(p)+'<div class="meta">Finished <b>'+esc(fmtDT(p.finished))+'</b></div>'
+      h=group(L,p=>LM?lrow(p,"Finished "+esc(fmtDT(p.finished)),'<button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button>'+ic("edit",p.id,"✏️ Edit")+ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Back to Workflow")+ic("del",p.id,"🗑 Delete","red"))
+        :'<div class="item">'+head(p)+'<div class="meta">Finished <b>'+esc(fmtDT(p.finished))+'</b></div>'
         +'<div class="acts"><button class="b gold" data-a="sold" data-id="'+p.id+'">💰 Sold</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Back to Workflow">↩</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>');
       if(!L.length)h='<div class="empty">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>A product appears here the moment you press <b>Finished → In Stock</b> in Workflow.")+'</div>';
     }else{
       const L=sd.filter(p=>hit(text(p))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
-      h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return '<div class="item">'+head(p)
+      h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return LM?lrow(p,'<span class="pill sold">'+(td?"S.TODAY":"SOLD")+'</span> '+esc(fmtDT(s)),ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Cancel sale")+ic("del",p.id,"🗑 Delete","red"))
+        :'<div class="item">'+head(p)
         +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+(td?"S.TODAY":"SOLD")+'</b> · Sales info <b>'+esc(s.salesInfo||(isCus(p)?"S.O":"S.R"))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
         +'<div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';});
       if(!L.length)h='<div class="empty">'+(sd.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
+  }else if(tab==="sv"){
+    // Stock view: in-stock products by PHOTO. Same model + same handle → ONE photo with ×2, ×3 …; same model with a different handle → separate photo.
+    const G=stockGroups(st.filter(p=>hit(text(p))));
+    h=G.map(g=>{
+      const descs=[...new Set(g.items.map(p=>p.desc).filter(Boolean))],d=descs.length===1?descs[0]:"";
+      const codes=g.items.map(p=>'<span class="code">'+esc(p.code)+'</span>').join("");
+      if(LM)return '<div class="lrow" data-g="'+esc(g.key)+'" style="cursor:pointer">'+(g.photo?'<img class="thumb sm" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg sm">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+(d?' · '+esc(d):'')+'</div><div class="meta">'+(g.handle?'🔧 '+esc(g.handle)+' · ':'')+esc(g.items.map(p=>p.code).join(", "))+'</div></div><div class="rt"><span class="chip" style="font-size:14px;padding:5px 12px">×'+g.items.length+'</span></div></div>';
+      return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<span class="cnt">×'+g.items.length+'</span></div><div class="bd"><div class="nm">'+esc(g.model)+'</div>'
+        +'<div class="meta">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+'</div>'+(d?'<div class="meta">'+esc(d)+'</div>':'')+'<div class="codes">'+codes+'</div></div></div>';
+    }).join("");
+    if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Same model + same handle = one photo with <b>×2</b>, <b>×3</b>…")+'</div>';
+  }else if(msub==="moves"){
+    const lg=S.log.filter(l=>!q||hit(logMat(l)+" "+(l.note||"")+" "+(l.by||"")));
+    let lastD="";
+    h=lg.map(l=>{const dh=l.d!==lastD?'<h3 class="sec" style="margin:14px 2px 6px">🗓 '+esc(fmtD(l.d))+'</h3>':"";lastD=l.d;return dh+logRow(l);}).join("");
+    $("out").className="";
+    if(!lg.length)h='<div class="empty">'+(S.log.length?"No movement matches your search.":"<b>No movement yet.</b><br>Every <b>➕ Add</b> and <b>✂️ Cut</b> of a material is listed here with its Ethiopian date and time.")+'</div>';
   }else{
     const L=S.materials.filter(m=>hit(matLab(m)+" "+m.group)).sort((a,b)=>(a.group||"").localeCompare(b.group||"")||a.name.localeCompare(b.name));
     let lastG="";
     h=L.map(m=>{const s=lowOf(m),pct=m.min>0?Math.min(100,Math.round(m.qty/(m.min*2)*100)):(m.qty>0?100:0);const last=S.log.find(l=>l.matId===m.id);
       const gh=(m.group||"MATERIAL")!==lastG?'<div class="gh"><span>'+esc(m.group||"MATERIAL")+'</span><span>'+L.filter(x=>(x.group||"MATERIAL")===(m.group||"MATERIAL")).length+'</span></div>':"";lastG=m.group||"MATERIAL";
-      return gh+'<div class="item"><div class="top"><div class="nm">'+esc(matLab(m))+'</div>'+(s==="ok"?'<span class="pill stock">OK</span>':'<span class="pill '+s+'">'+(s==="out"?"OUT":"LOW")+'</span>')+'</div>'
+      const pill=s==="ok"?'<span class="pill stock">OK</span>':'<span class="pill '+s+'">'+(s==="out"?"OUT":"LOW")+'</span>';
+      if(LM)return gh+'<div class="lrow"><div class="mid"><div class="nm">'+esc(matLab(m))+'</div><div class="meta"><b style="font-size:14px;color:var(--tx)">'+nf(m.qty)+'</b> '+esc(m.unit)+' · '+pill+(last?' · '+esc(fmtDT(last)):'')+'</div></div><div class="rt"><button class="b sm add2" data-a="madd" data-id="'+m.id+'" title="Add">➕</button><button class="b sm cut" data-a="mcut" data-id="'+m.id+'" title="Cut">✂️</button>'+ic("medit",m.id,"✏️ Edit")+ic("mhist",m.id,"📜 Movements")+ic("mdel",m.id,"🗑 Delete","red")+'</div></div>';
+      return gh+'<div class="item"><div class="top"><div class="nm">'+esc(matLab(m))+'</div>'+pill+'</div>'
         +'<div class="bal"><span class="n">'+nf(m.qty)+'</span><span class="u">available · unit '+esc(m.unit)+'</span></div><div class="bar"><i class="'+(s==="ok"?"":s)+'" style="width:'+pct+'%"></i></div>'
         +'<div class="meta">'+(m.min>0?'Low-stock alert at <b>'+nf(m.min)+'</b> · ':'')+(last?'Last move <b>'+esc(fmtDT(last))+'</b>':'No movement yet')+'</div>'
         +'<div class="acts"><button class="b add2" data-a="madd" data-id="'+m.id+'">➕ Add</button><button class="b cut" data-a="mcut" data-id="'+m.id+'">✂️ Cut</button><button class="b" data-a="mhist" data-id="'+m.id+'">📜</button><button class="b" data-a="medit" data-id="'+m.id+'">✏️</button><button class="b red" data-a="mdel" data-id="'+m.id+'">🗑</button></div></div>';}).join("");
-    if(!L.length)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Tap <b>➕ New material</b>, then use <b>➕ Add</b> when stock arrives and <b>✂️ Cut</b> when you use it.")+'</div>';
-    const lg=S.log.filter(l=>!q||hit(logMat(l))).slice(0,25);
-    extra=lg.length?'<h3 class="sec">Recent movements</h3>'+lg.map(logRow).join(""):"";
+    if(!L.length)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Tap <b>➕ New material</b>, then use <b>➕ Add</b> when stock arrives and <b>✂️ Cut</b> when you use it. Open <b>🕘 Recent movements</b> to see every add and cut.")+'</div>';
   }
   $("out").innerHTML=h;$("extra").innerHTML=extra;
   const b=S.backup||{};
   $("cloud").className="cloud"+(b.configured?(b.ok===false?" bad":" ok"):"");
   $("cloud").textContent=!b.configured?"☁ Backup off":(b.ok===false?"⚠ Backup failed":"☁ Backup ✓ "+(b.d?b.d.slice(5)+" "+et(b.t):""));
 }
+function stockGroups(L){
+  const m=new Map();
+  L.forEach(p=>{const k=norm(p.model||p.desc||p.code)+"|"+norm(p.handle);let g=m.get(k);if(!g){g={key:k,model:p.model||p.desc||p.code,handle:p.handle||"",items:[]};m.set(k,g);}g.items.push(p);});
+  return [...m.values()].map(g=>{g.photo=(g.items.find(p=>p.photo)||{}).photo||"";return g;}).sort((a,b)=>a.model.localeCompare(b.model,undefined,{numeric:true})||a.handle.localeCompare(b.handle));
+}
+function openGroup(key){
+  const g=stockGroups(by("stock")).find(x=>x.key===key);if(!g)return;
+  const bigPh=g.photo?'<img class="pbig" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':"";
+  showHist(g.model+" ×"+g.items.length,bigPh+'<div class="meta" style="margin-bottom:6px">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+' · same model + same handle</div>'
+    +g.items.map(p=>'<div class="lrow" style="margin-bottom:8px">'+(photoSrc(p)?'<img class="thumb sm" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>')+'<div class="mid"><div class="nm">'+esc(p.code)+(p.desc?' · '+esc(p.desc):'')+'</div><div class="meta">'+esc(p.category||"")+' · Finished '+esc(fmtDT(p.finished))+'</div></div><div class="rt"><button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button><button class="b sm" data-a="edit" data-id="'+p.id+'" title="Edit">✏️</button></div></div>').join(""));
+}
+$("out").addEventListener("click",e=>{if(e.target.closest("button"))return;const g=e.target.closest("[data-g]");if(g)openGroup(g.dataset.g);});
+$("vt").addEventListener("click",e=>{const b=e.target.closest("button[data-v]");if(!b)return;VM=b.dataset.v;try{localStorage.setItem("repView",VM);}catch{}render();});
 function logRow(l){const cut=l.type==="cut",nw=l.type==="new";return '<div class="logrow"><div class="q '+(cut?"m":"p")+'">'+(cut?"−":"+")+nf(l.qty)+'</div><div class="w"><b>'+esc(logMat(l))+'</b> · '+(nw?"New material":cut?"Cut":"Added")+(l.note&&!nw?' — '+esc(l.note):'')+'<small>'+esc(fmtDT(l))+' · available '+nf(l.balance)+(l.by?' · '+esc(l.by):'')+'</small></div></div>';}
 $("seg").addEventListener("click",e=>{const b=e.target.closest("button[data-t]");if(!b)return;tab=b.dataset.t;try{localStorage.setItem("repTab2",tab);}catch{}q="";$("q").value="";render();});
-$("sub2").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
+$("sub2").addEventListener("click",e=>{const m=e.target.closest("button[data-m]");if(m){msub=m.dataset.m;render();return;}const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
 $("q").addEventListener("input",()=>{q=$("q").value.trim().toLowerCase();render();});
 
 // ── forms ──
 let FORM=null;
+let PHOTO={data:"",remove:false};
+function photoBlock(f){
+  return '<label style="margin-top:11px">📷 Product photo <em>(optional)</em></label><div class="pv">'+(f.cur?'<img id="pvImg" src="'+esc(f.cur)+'" alt="">':'<div class="ph0" id="pvNo">📷</div><img id="pvImg" alt="" style="display:none">')
+    +'<div style="flex:1"><button type="button" class="b" id="pvPick">📷 '+(f.cur?"Change photo":"Choose photo")+'</button>'+(f.cur?'<button type="button" class="b red" id="pvDel" style="margin-top:6px;display:block">✕ Remove photo</button>':'')+'<input type="file" id="pvFile" accept="image/*" style="display:none"></div></div>';
+}
+function resizePhoto(file){
+  return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{try{const mx=900,sc=Math.min(1,mx/Math.max(im.naturalWidth,im.naturalHeight)),w=Math.max(1,Math.round(im.naturalWidth*sc)),h=Math.max(1,Math.round(im.naturalHeight*sc)),cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,w,h);c.drawImage(im,0,0,w,h);URL.revokeObjectURL(u);res(cv.toDataURL("image/jpeg",.82));}catch(e){rej(e);}};
+    im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});
+}
+function wirePhoto(){
+  const pick=$("pvPick");if(!pick)return;
+  pick.onclick=()=>$("pvFile").click();
+  $("pvFile").onchange=async()=>{const f=$("pvFile").files&&$("pvFile").files[0];if(!f)return;
+    try{const d=await resizePhoto(f);PHOTO={data:d,remove:false};$("pvImg").src=d;$("pvImg").style.display="block";const n=$("pvNo");if(n)n.style.display="none";say("fMsg","");}
+    catch(e){say("fMsg",e.message||"Could not read the photo.","bad");}};
+  const del=$("pvDel");if(del)del.onclick=()=>{PHOTO={data:"",remove:true};$("pvImg").style.display="none";del.style.display="none";const n=$("pvNo");if(n)n.style.display="flex";else{const d=document.createElement("div");d.className="ph0";d.textContent="📷";$("pvImg").parentNode.insertBefore(d,$("pvImg"));}};
+}
 function openForm(o){
+  PHOTO={data:"",remove:false};
   FORM=o;$("fTitle").textContent=o.title;$("fInfo").innerHTML=o.info||"";say("fMsg","");
   const opt=f=>f.opt?' <em>(optional)</em>':'';
-  $("fBody").innerHTML=o.fields.map(f=>'<label>'+esc(f.label)+opt(f)+(f.sel?'<select data-k="'+f.k+'">'+f.sel.map(x=>'<option'+(String(x)===String(f.val)?' selected':'')+'>'+esc(x)+'</option>').join("")+'</select>':f.area?'<textarea data-k="'+f.k+'" placeholder="'+esc(f.ph||"")+'">'+esc(f.val||"")+'</textarea>':'<input data-k="'+f.k+'" '+(f.num?'inputmode="decimal"':'')+(f.list?' list="'+f.list+'"':'')+' placeholder="'+esc(f.ph||"")+'" value="'+esc(f.val==null?"":f.val)+'" autocomplete="off">')+'</label>').join("")
+  $("fBody").innerHTML=o.fields.map(f=>f.photo?photoBlock(f):'<label>'+esc(f.label)+opt(f)+(f.sel?'<select data-k="'+f.k+'">'+f.sel.map(x=>'<option'+(String(x)===String(f.val)?' selected':'')+'>'+esc(x)+'</option>').join("")+'</select>':f.area?'<textarea data-k="'+f.k+'" placeholder="'+esc(f.ph||"")+'">'+esc(f.val||"")+'</textarea>':'<input data-k="'+f.k+'" '+(f.num?'inputmode="decimal"':'')+(f.list?' list="'+f.list+'"':'')+' placeholder="'+esc(f.ph||"")+'" value="'+esc(f.val==null?"":f.val)+'" autocomplete="off">')+'</label>').join("")
+    +'<datalist id="handles">'+(S.handles||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>'
     +'<datalist id="units"><option>pcs</option><option>244-122</option><option>m</option><option>kg</option><option>sheet</option><option>roll</option><option>liter</option><option>box</option></datalist>'
     +'<datalist id="groups">'+[...new Set(S.materials.map(m=>m.group||"MATERIAL"))].map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="sinfo"><option>S.R</option><option>S.O</option></datalist>';
+  wirePhoto();
   $("fOk").textContent=o.ok||"Save";$("fOk").className="btn "+(o.cls||"");$("fOk").disabled=false;
   $("fOv").classList.add("on");setTimeout(()=>{const i=$("fBody").querySelector("input,textarea");try{i&&i.focus();}catch{}},200);
 }
@@ -252,6 +348,7 @@ $("fNo").onclick=closeForm;
 $("fOv").addEventListener("click",e=>{if(e.target===$("fOv"))closeForm();});
 $("fOk").onclick=async()=>{
   if(!FORM)return;const v={};$("fBody").querySelectorAll("[data-k]").forEach(i=>{v[i.dataset.k]=i.value;});
+  if(FORM.fields.some(f=>f.photo)){if(PHOTO.data)v.photo=PHOTO.data;if(PHOTO.remove)v.removePhoto=true;}
   $("fOk").disabled=true;say("fMsg","Saving…","info");
   const d=await FORM.submit(v);$("fOk").disabled=false;
   if(!d||!d.ok){say("fMsg",(d&&d.error)||"Could not save.","bad");return;}
@@ -264,6 +361,8 @@ const prodFields=(p,isNew)=>[
   {k:"sno",label:"S.No (order number)",opt:1,val:p?p.sno:""},
   {k:"model",label:"Model",opt:1,val:p?p.model:"",ph:"e.g. M14"},
   {k:"desc",label:"Description",opt:1,val:p?p.desc:"",ph:"e.g. L-90, W-35, H-120"},
+  {k:"handle",label:"Handle type",opt:1,val:p?p.handle:"",ph:"e.g. Gold bar · Black round · Hidden",list:"handles"},
+  {photo:1,cur:p?photoSrc(p):""},
   {k:"orderType",label:"Order Type",sel:["READYMADE","CUSTOM"],val:p?p.orderType:"READYMADE"},
   {k:"priority",label:"Priority",sel:["LOW","MEDIUM","HIGH"],val:p?p.priority:"LOW"},
   {k:"category",label:"Stock group (for the Stock report)",sel:S.cats,val:p?p.category:"OTHERS"},
@@ -279,8 +378,9 @@ $("addBtn").onclick=()=>{
   openForm({title:"➕ New product",info:"It goes to <b>Workflow</b>. Start date + clock time (Ethiopian) are saved automatically: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b>",ok:"Add to Workflow",fields:prodFields(null,true),submit:v=>api("/api/reports/product/add",v)});
 };
 async function act(path,body,ask){if(ask&&!confirm(ask))return;busy("Saving…");const d=await api(path,body);busy("");if(d.ok){toast(d.message||"✅ Saved");render();}else say("vMsg",d.error||"Could not save.","bad");}
-$("view").addEventListener("click",e=>{
+document.addEventListener("click",e=>{
   const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a,id=b.dataset.id;say("vMsg","");
+  if(b.closest("#hOv")&&a!=="hist"&&a!=="mhist")$("hOv").classList.remove("on");
   const p=P(id),m=M(id);
   if(a==="finish"&&p)return act("/api/reports/product/finish",{id},"Product “"+p.code+" · "+lab(p)+"” is finished?\nIt will be sent to IN STOCK.");
   if(a==="undo"&&p)return act("/api/reports/product/undo",{id},p.status==="sold"?"Cancel the sale of “"+p.code+"”? It goes back to In Stock.":"Move “"+p.code+"” back to Workflow?");
@@ -349,15 +449,15 @@ function grid(name,heads,widths,rows,opt={}){
 function pdfGrids(){
   const dt=o=>o&&o.d?dmy(o.d)+" "+et(o.t):"";
   if(tab==="wf"){const L=S.products.slice().sort((a,b)=>(a.added.d+a.added.t).localeCompare(b.added.d+b.added.t));
-    return {title:"Workflow Follow-up",tabs:[grid("WORKFLOW FOLLOW-UP ("+L.length+")",["No","S.No","Prod Id","Model","Description","Order Type","Priority","Start Date","Status","Finished Date","Delivery Date","Sales Name","Location","Changes","Correction"],[40,50,70,70,190,100,80,110,90,110,90,110,100,110,110],
-      L.map((p,i)=>[i+1,p.sno||"",p.code,p.model||"",p.desc||"",p.orderType,p.priority,dt(p.added),p.finished?"FINISHED":"WORKING",dt(p.finished),p.deliveryDate?dmy(p.deliveryDate):"",p.salesName||"",p.location||"",p.changes||"",p.note||""]),
-      {al:["center","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c)=>c===6?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===5?(v==="CUSTOM"?{bg:"#f4cccc"}:null):c===8?(v==="FINISHED"?{bg:"#e8eaed"}:null):null,empty:"No product yet."})]};}
-  if(tab==="st"){
+    return {title:"Workflow Follow-up",tabs:[grid("WORKFLOW FOLLOW-UP ("+L.length+")",["No","S.No","Prod Id","Model","Description","Handle","Order Type","Priority","Start Date","Status","Finished Date","Delivery Date","Sales Name","Location","Changes","Correction"],[40,50,70,70,190,110,100,80,110,90,110,90,110,100,110,110],
+      L.map((p,i)=>[i+1,p.sno||"",p.code,p.model||"",p.desc||"",p.handle||"",p.orderType,p.priority,dt(p.added),p.finished?"FINISHED":"WORKING",dt(p.finished),p.deliveryDate?dmy(p.deliveryDate):"",p.salesName||"",p.location||"",p.changes||"",p.note||""]),
+      {al:["center","","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c)=>c===7?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===6?(v==="CUSTOM"?{bg:"#f4cccc"}:null):c===9?(v==="FINISHED"?{bg:"#e8eaed"}:null):null,empty:"No product yet."})]};}
+  if(tab==="st"||tab==="sv"){
     const L=S.products.filter(p=>p.finished).sort((a,b)=>(a.finished.d+a.finished.t).localeCompare(b.finished.d+b.finished.t)),cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});
     return {title:"Stock Report",tabs:cats.map(c=>{const G=L.filter(p=>(p.category||"OTHERS")===c),sold=G.filter(p=>p.status==="sold").length;
-      return grid("Finished Product Stock Report FOR "+c+" — "+G.length+" products · "+sold+" sold · "+(G.length-sold)+" in stock",["No","PRODUCT ID","MODEL","DESCRIPTION","TYPE","STATUS","SELSE INFO","SOLD DATE","SOLD TYPE","CORRECTION"],[40,100,90,230,110,90,100,150,100,200],
-        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?(s.salesInfo||(isCus(p)?"S.O":"S.R")):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
-        {al:["center","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c)=>c===5?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===4?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===8?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null,empty:"Nothing here yet."});})};}
+      return grid("Finished Product Stock Report FOR "+c+" — "+G.length+" products · "+sold+" sold · "+(G.length-sold)+" in stock",["No","PRODUCT ID","MODEL","DESCRIPTION","HANDLE","TYPE","STATUS","SELSE INFO","SOLD DATE","SOLD TYPE","CORRECTION"],[40,100,90,220,110,110,90,100,150,100,190],
+        G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",p.handle||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?(s.salesInfo||(isCus(p)?"S.O":"S.R")):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
+        {al:["center","","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c)=>c===6?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===5?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===9?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null,empty:"Nothing here yet."});})};}
   const lg=S.log.slice(0,150);
   return {title:"Material Report",tabs:[
     grid("Material Report — available now ("+S.materials.length+")",["No","Material","Type","Unit","Table","Available","Low-stock Alert","Status"],[40,260,110,110,140,110,130,100],S.materials.slice().sort((a,b)=>(a.group||"").localeCompare(b.group||"")||a.name.localeCompare(b.name)).map((m,i)=>[i+1,m.name,m.type||"",m.unit,m.group||"MATERIAL",nf(m.qty),m.min?nf(m.min):"",lowOf(m)==="ok"?"OK":lowOf(m)==="low"?"LOW":"OUT"]),{al:["center","","","center","","right","right","center"],bold:[1,5],fmt:(v,c)=>c===7?(v==="OK"?{bg:"#e3f4e8",fg:"#176b3a",b:1}:v==="LOW"?{bg:"#fff1d6",fg:"#8a5a00",b:1}:{bg:"#fde7e5",fg:"#9a1d15",b:1}):null,empty:"No material yet."}),
@@ -492,6 +592,6 @@ $("pdfTg").onclick=async()=>{
   b.disabled=false;
 };
 </script>
-<script src="/app.js?v=119"></script>
+<script src="/app.js?v=121"></script>
 </body>
 </html>
