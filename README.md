@@ -1,3 +1,13 @@
+# v133 — Reports: red text for finished / sold · new month starts clean · Material in two tables (reference order) · hold & drag to rearrange
+- **Workflow:** when a product is pressed **Finished → In Stock** it stays in Workflow for the rest of that Ethiopian month under **✅ Finished → In Stock**, with **red text** (app, PDF and Google Sheet row). In the new month it is gone from Workflow.
+- **Stock:** when a product is **Sold** its text turns **red** (app Sold list, PDF, Google Sheet row). The **Sold** list shows this Ethiopian month only; **📂 Show earlier months** brings the older sales back.
+- **New month sheet = available products only:** the new month's Workflow tab has only products still in progress; the Stock tab has only products still in stock. Finished and sold products stay in the tab of the month they happened in. (Nothing is deleted from the app.)
+- **Material:** two tables, in the reference order. Table 1 *OAK & NORMAL MDF*: OAK 6, OAK 18, NORMAL MDF 6 · 10 · 12 · 18. Table 2 *LAMINATE, PLYWOOD & OTHERS*: LAMINATE 18 GRAY, 18 RED/WOOD, plywood/suf 6 · 8 · 12, chipped 12, LAMINATE 6 white, LAMINATE WHITE/cream 18, LAMINATE WHITE 18, AUSTRALIA 4 BY 5 · 7 BY 5, MORALE 4 BY 5 · 7 BY 5, uv black 18. They are created once with quantity 0 (a material you already had with the same name + type keeps its quantity and just moves into place). New materials are added at the end of table 2 unless you choose another table. The Google Sheet Material tab and the PDF use the same two tables and order.
+- **✋ Hold and drag:** hold a material for about half a second, then drag it to a new place — inside its table or into the other table. The order is saved by itself and is used by the PDF and the Google Sheet. (Turned off while the search box is used.)
+- **Start from 0** now re-creates the two reference tables (all at 0).
+- To apply: redeploy the folder; paste the new `reports-sheet-script.gs` (version `reports-10`), Deploy → Manage deployments → ✏ → New version → Deploy.
+- Files changed: `reports.js`, `reports-sheet-script.gs`, `public/reports.html`, `package.json`.
+
 # v124 — Interested customers · Reports ⚙ settings · modern Reports & Weekly Story design
 - **Reports:** Make PDF, Google Sheet backup, Daily stock → Telegram and Start from 0 now live in the **⚙ gear** (top right). The bottom bar and the "☁ Backup ✓ date" chip are removed.
 - **Reports and Weekly Story** have a new, more professional look (header, tabs, cards, buttons, forms).
