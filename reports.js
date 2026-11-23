@@ -191,7 +191,8 @@ function register(app, ctx) {
   const uniq = a => [...new Set(a.map(x => clip(x, 80)).filter(Boolean))];
   function groupCaption(g) {
     const sizes = uniq(g.items.map(p => p.desc)), caps = uniq(g.items.map(p => p.capacity));
-    const L = [`🛋 ${g.model}  ×${g.items.length}`];
+    const pt = uniq(g.items.map(p => p.ptype)).join(" / ");
+    const L = [`🛋 ${pt ? pt + " · " : ""}${g.model}  ×${g.items.length}`];
     if (sizes.length) L.push("📏 Size: " + sizes.join(" / "));
     if (caps.length) L.push("👟 Shoe capacity: " + caps.join(" / "));
     L.push("🔧 Handle: " + (g.handle || "—"));
@@ -288,19 +289,21 @@ function register(app, ctx) {
 
   // WORKFLOW → STOCK → SOLD  (same columns as the Google Sheet: Prod Id · Model · Description · Order Type · Priority · Start Date · Status · Finished · Delivery · Sales Name · Location · Changes · Correction)
   const CATS = ["SHOE SHELF", "OTHERS", "GADGETS"];
-  const lab = p => [p.model, p.desc].filter(Boolean).join(" ") || p.code;
+  const lab = p => [p.ptype, p.model, p.desc].filter(Boolean).join(" ") || p.code;
   const up = (v, n) => clip(v, n).toUpperCase();
   const orderTypeOf = v => /CUS|ORD/i.test(String(v || "")) ? "ORDER" : "READYMADE"; // READYMADE or ORDER
   const priorityOf2 = v => { const x = String(v || "").toUpperCase(); return x.startsWith("H") ? "HIGH" : x.startsWith("M") ? "MEDIUM" : "LOW"; };
   const dateOk = v => !v || /^\d{4}\/\d{2}\/\d{2}$/.test(v);
   function readProduct(b) {
-    return { code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
+    const ptype = clip(String(b.ptype || "").toLowerCase() === "other" ? b.ptypeOther : b.ptype, 40);
+    return { ptype, code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
       category: up(b.category, 30) || "OTHERS", handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
   }
-  const readErr = f => (!f.model && !f.desc) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
+  const readErr = f => (!f.model && !f.desc && !f.ptype) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
   router.post("/product/add", async (req, res) => {
     const f = readProduct(req.body || {}), err = readErr(f);
     if (err) return fail(res, err);
+    if (!f.ptype) return fail(res, "Choose the product type.");
     f.code = f.code || nextCode();
     if (codeTaken(f.code)) return fail(res, `Prod ID “${f.code}” is already used. Choose another.`);
     let photo = "";
