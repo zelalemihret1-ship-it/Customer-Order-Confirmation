@@ -1,3 +1,9 @@
+# v134 — Customer ID ⇄ Telegram name · Material sheet: second table without the header
+- **Customers Data → add / edit:** new **✈️ Telegram name** field next to the Customer ID. Pick the Telegram account (name · @username) the bot has seen; the link is saved on the customer and the same Customer ID then shows beside that Telegram name in the customers list, the customer view and the **Orders → choose customer** list (choosing it also picks the Customer ID and creates the Order ID). A customer with the same @username is matched automatically; one Telegram account can belong to only one Customer ID. Orders of a linked Telegram account get that Customer ID and Telegram name.
+- **Google Sheet · Material tab:** only the first table keeps the weekday row and the heading (No · Material · Type · Unit · Avilable · Opening Stock · dates · Total Used · NOTE). The second table (LAMINATE, PLYWOOD & OTHERS) continues directly under the first, with no heading.
+- **Red text** for products moved to Stock and for sold products is in the script since v133 — paste the newest `reports-sheet-script.gs` (version `reports-11`), Deploy → Manage deployments → ✏ → New version → Deploy, then Reports → ☁ → Back up now.
+- Files changed: `server.js`, `public/callers.html`, `public/index.html`, `reports-sheet-script.gs`, `package.json`.
+
 # v133 — Reports: red text for finished / sold · new month starts clean · Material in two tables (reference order) · hold & drag to rearrange
 - **Workflow:** when a product is pressed **Finished → In Stock** it stays in Workflow for the rest of that Ethiopian month under **✅ Finished → In Stock**, with **red text** (app, PDF and Google Sheet row). In the new month it is gone from Workflow.
 - **Stock:** when a product is **Sold** its text turns **red** (app Sold list, PDF, Google Sheet row). The **Sold** list shows this Ethiopian month only; **📂 Show earlier months** brings the older sales back.
