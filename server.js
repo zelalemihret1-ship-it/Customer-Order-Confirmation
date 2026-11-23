@@ -1028,8 +1028,10 @@ function orderRow(o, created, updated) {
   set("Completion Date", ethDate(o.completionDate)); set("Delivery Service", o.deliveryService);
   // v91: Telegram name + Customer ID (last two columns). Filled from the order itself, else looked up in the customer lists.
   let who = {}; try { who = (nameResolver && nameResolver(o)) || {}; } catch { who = {}; }
-  set("Telegram Name", o.telegramName || who.name || o.telegramUsername || o.customerName || "");
-  set("Customer ID", o.customerId || who.customerId || "");
+  const cidShow = String(o.customerId || who.customerId || "");
+  const tgShow = String(who.name || o.telegramUsername || "");
+  set("Telegram Name", tgShow ? (cidShow ? cidShow + " \u00b7 " + tgShow : tgShow) : cidShow); // v135: Customer ID beside the Telegram account name
+  set("Customer ID", cidShow);
   return row;
 }
 let nameResolver = null; // set by the app once the customer lists are loaded: order -> { name, customerId }
@@ -1493,12 +1495,15 @@ function rememberCustomer(chat = {}, from = {}, businessConnectionId = "") {
 
 // v91: the customer's Telegram NAME (profile name seen by the bot) for an order, plus the Customer ID from Customers Data.
 function telegramNameFor(o) {
-  const tg = customers.get(String(o.telegramChatId || ""));
-  if (tg?.name) return tg.name;
-  const rec = (callersDb.list || []).find(c => c.id === String(o.customerId || ""));
-  const linked = rec && rec.telegramId ? customers.get(String(rec.telegramId)) : null; // v133: the Telegram account linked to this Customer ID
-  if (linked?.name) return linked.name;
-  return (rec?.name) || o.telegramName || o.customerName || String(o.telegramUsername || "");
+  // v135: ALWAYS the customer's real Telegram account name (the profile name the bot saw), never the name typed in Customers Data.
+  const label = t => t ? (t.name || [t.first_name, t.last_name].filter(Boolean).join(" ") || (t.username ? "@" + t.username : "")) : "";
+  let n = label(customers.get(String(o.telegramChatId || "")));
+  if (n) return n;
+  const rec = (callersDb.list || []).find(c => c.id === (String(o.customerId || "") || customerIdFor(o)));
+  if (rec) { n = label(tgOfCaller(rec)); if (n) return n; }
+  const un = String(o.telegramUsername || "").replace(/^@/, "").toLowerCase();
+  if (un) for (const c of customers.values()) if (String(c.username || "").toLowerCase() === un) { n = label(c); if (n) return n; }
+  return un ? "@" + un : "";
 }
 function customerIdFor(o) {
   if (o.customerId) return String(o.customerId);
