@@ -142,13 +142,6 @@ button:disabled{opacity:.5;cursor:default}
             <input id="rejectionReason" placeholder="Why did the customer reject?">
             <div class="chips" id="rejChips"></div>
           </label>
-          <div class="full" style="background:#fff8e6;border:1.5px solid #e9c46a;border-radius:14px;padding:12px">
-            <label style="margin:0">⭐ Interested in another product? <small style="font-weight:400;color:#7a5600">(special / interested customer — tap the products they want)</small></label>
-            <div class="chips" id="intChips"></div>
-            <input id="intOther" placeholder="Other product (type, then press Add)" maxlength="60" style="margin-top:8px">
-            <button class="ghost" type="button" id="intAdd" style="margin-top:6px;padding:8px 12px;font-size:13px">➕ Add product</button>
-            <textarea id="interestNote" placeholder="Note: size, colour, budget, when they want it… (optional)" style="min-height:60px;margin-top:8px"></textarea>
-          </div>
           <label>Total Spend (Birr)
             <input id="totalSpend" type="number" min="0" step="0.01" inputmode="decimal">
           </label>
@@ -162,6 +155,16 @@ button:disabled{opacity:.5;cursor:default}
           <button class="danger" type="button" id="delBtn" style="display:none">🗑 Delete</button>
         </div>
       </form>
+    </div>
+    <div class="card" id="intCard" style="display:none;background:#fff8e6;border-color:#e9c46a">
+      <h2 style="margin-bottom:4px">⭐ Interested in another product?</h2>
+      <div class="hint" style="font-size:12px;color:#7a5600;margin-bottom:6px">Customer <b id="intWho"></b> — tap the products they want. They are saved as a special / interested customer.</div>
+      <div class="chips" id="intChips"></div>
+      <input id="intOther" placeholder="Other product (type, then press Add)" maxlength="60" style="margin-top:8px">
+      <button class="ghost" type="button" id="intAdd" style="margin-top:6px;padding:8px 12px;font-size:13px">➕ Add product</button>
+      <textarea id="interestNote" placeholder="Note: size, colour, budget, when they want it… (optional)" style="min-height:60px;margin-top:8px"></textarea>
+      <div class="row" style="margin-top:10px"><button class="primary" type="button" id="intSave">⭐ Save as special customer</button><button class="ghost" type="button" id="intSkip">Not now</button></div>
+      <div id="intMsg" class="notice" style="margin-top:10px"></div>
     </div>
     <div class="card" id="histCard" style="display:none">
       <h2>Earlier conversations</h2>
@@ -204,8 +207,25 @@ const intAll=()=>[...new Set([...(OPT.products||[]),...INT])];
 function drawInt(){$("intChips").innerHTML=intAll().map(p=>`<button type="button" class="${INT.includes(p)?"sel":""}" data-p="${esc(p)}">${INT.includes(p)?"✓ ":""}${esc(p)}</button>`).join("");}
 $("intChips").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const p=b.dataset.p;INT=INT.includes(p)?INT.filter(x=>x!==p):[...INT,p];drawInt();});
 $("intAdd").onclick=()=>{const v=$("intOther").value.trim();if(v&&!INT.some(x=>x.toLowerCase()===v.toLowerCase()))INT=[...INT,v];$("intOther").value="";drawInt();};
+let INTC=null;
+function hideInt(){INTC=null;INT=[];$("intCard").style.display="none";$("intMsg").className="notice";}
+function showInt(c){
+  if(!c)return;INTC=c;INT=[...(c.interests||[])];$("interestNote").value=c.interestNote||"";$("intWho").textContent=c.id+" · "+c.name;
+  $("intMsg").className="notice";drawInt();$("intCard").style.display="block";
+  setTimeout(()=>$("intCard").scrollIntoView({behavior:"smooth",block:"center"}),150);
+}
+$("intSkip").onclick=hideInt;
+$("intSave").onclick=async()=>{
+  if(!INTC)return;const m=$("intMsg");
+  if(!INT.length){m.className="notice bad";m.textContent="Select at least one product.";return;}
+  $("intSave").disabled=true;
+  const d=await api("/api/callers/"+INTC.id+"/interest","POST",{products:INT,note:$("interestNote").value});
+  $("intSave").disabled=false;
+  if(d.ok){await refresh();m.className="notice ok";m.textContent=d.message;const c=ALL.find(x=>x.id===INTC.id);if(c)INTC=c;}
+  else{m.className="notice bad";m.textContent=d.error||"Could not save.";}
+};
 function blank(){
-  CUR=null;INT=[];$("interestNote").value="";drawInt();
+  CUR=null;hideInt();
   $("f").reset();
   $("cidShow").textContent=NEXT;$("cidHint").textContent="New customer";
   $("customerStatus").value="New Lead";$("source").value="Telegram";$("orderStatus").value="Pending";
@@ -219,7 +239,7 @@ function load(c){
   $("cidShow").textContent=c.id;$("cidHint").textContent="Existing customer — saving updates this ID";
   for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","orderStatus","orderId","rejectionReason"])$(k).value=c[k]||"";
   $("totalSpend").value=c.totalSpend||"";
-  INT=[...(c.interests||[])];$("interestNote").value=c.interestNote||"";drawInt();
+  hideInt();
   // a new conversation: keep the old text visible, but set date / time to now so the update is dated correctly
   $("date").value=ethDateUI(NOW.date);$("time").value=NOW.time;
   $("salesName").value=c.salesName||ME.name||"";$("salesName").readOnly=ME.role!=="owner";
@@ -272,7 +292,7 @@ function openView(c){
   <div class="nm2">${esc(c.name)}</div>
   <div><span class="pill ${esc(c.customerStatus)}" style="margin-left:0">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></div>
   <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("⭐ Wants",(c.interests||[]).join(", "))}${row("⭐ Note",c.interestNote)}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
-  <div class="acts2"><button class="mk" type="button" data-go="order">🧾 Make order</button><button class="ed" type="button" data-go="edit">✏️ Edit</button></div>`;
+  <div class="acts2"><button class="mk" type="button" data-go="order">🧾 Make order</button><button class="ed" type="button" data-go="edit">✏️ Edit</button><button type="button" data-go="star" style="grid-column:1/-1;background:#ffd877;color:#153a2e">⭐ Interested in another product?</button></div>`;
   $("cvOv").classList.add("on");
 }
 const closeView=()=>{$("cvOv").classList.remove("on");VIEWED=null;};
@@ -281,6 +301,7 @@ $("cvOv").addEventListener("click",e=>{
   const g=e.target.closest("[data-go]");if(!g||!VIEWED)return;
   const c=VIEWED;closeView();
   if(g.dataset.go==="edit"){load(c);return;}
+  if(g.dataset.go==="star"){load(c);showInt(c);return;}
   try{sessionStorage.removeItem("ambarGoHome");}catch{}
   location.href="/orders.html?customer="+encodeURIComponent(c.id)+(location.hash||"");
 });
@@ -304,11 +325,10 @@ $("phone").addEventListener("input",()=>{clearTimeout(lookT);lookT=setTimeout(as
 
 $("f").addEventListener("submit",async e=>{
   e.preventDefault();$("saveBtn").disabled=true;
-  const body={};for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName","interestNote"])body[k]=$(k).value;
-  body.interests=INT;
+  const body={};for(const k of ["phone","additionalPhone","name","username","location","customerStatus","source","lastConversation","date","time","orderStatus","orderId","rejectionReason","totalSpend","salesName"])body[k]=$(k).value;
   const d=CUR?await api("/api/callers/"+CUR.id,"PUT",body):await api("/api/callers","POST",body);
   $("saveBtn").disabled=false;
-  if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);if(c)load(c);say(d.message,d.sheet&&!d.sheet.ok?"info":"ok");}
+  if(d.ok){await refresh();const c=ALL.find(x=>x.id===d.customer.id);if(c){load(c);}say(d.message,d.sheet&&!d.sheet.ok?"info":"ok");if(c)showInt(c);}
   else if(d.duplicate&&d.customer){load(d.customer);say(d.error,"bad");}
   else say(d.error||"Could not save.","bad");
 });
