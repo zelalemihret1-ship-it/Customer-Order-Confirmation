@@ -340,6 +340,9 @@ function register(app, ctx) {
   const orderTypeOf = v => /CUS|ORD/i.test(String(v || "")) ? "ORDER" : "READYMADE"; // READYMADE or ORDER
   const priorityOf2 = v => { const x = String(v || "").toUpperCase(); return x.startsWith("H") ? "HIGH" : x.startsWith("M") ? "MEDIUM" : "LOW"; };
   const dateOk = v => !v || /^\d{4}\/\d{2}\/\d{2}$/.test(v);
+  const timeOk = v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(v || ""));
+  const hhmm = v => { const m = /^(\d{1,2}):(\d{2})/.exec(String(v || "")); return m ? String(m[1]).padStart(2, "0") + ":" + m[2] : ""; };
+  const soldTypeIn = v => { const x = String(v || "").toUpperCase().replace(/\s/g, ""); return x === "S.TODAY" || x === "STODAY" || x === "TODAY" ? "S.TODAY" : x === "SOLD" ? "SOLD" : ""; }; // "" = automatic
   function readProduct(b) {
     const ptype = clip(String(b.ptype || "").toLowerCase() === "other" ? b.ptypeOther : b.ptype, 40);
     return { ptype, code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
@@ -392,10 +395,35 @@ function register(app, ctx) {
     // Sales info = the REAL salesperson of the mini app (the Sales Name; empty = the admin who presses Sold)
     const seller = clip(b.salesName, 80) || p.salesName || who(req);
     p.salesName = seller;
-    p.status = "sold"; p.sold = { ...stamp(req), salesName: seller, salesInfo: seller, note: clip(b.note, 300) };
-    hist(p, "Sold", req);
+    const st = stamp(req);
+    if (b.d) { if (!dateOk(b.d)) return fail(res, "The sold date must look like 2019/03/25 (year/month/day, Ethiopian)."); st.d = b.d; }
+    if (b.t) { if (!timeOk(b.t)) return fail(res, "The sold time must look like 14:30 (24-hour Addis Ababa clock)."); st.t = hhmm(b.t); }
+    p.status = "sold"; p.sold = { ...st, salesName: seller, salesInfo: seller, note: clip(b.note, 300) };
+    const sty = soldTypeIn(b.soldType); if (sty) p.sold.type = sty; // empty = automatic (S.TODAY on the sale day, SOLD afterwards)
+    hist(p, "Sold", req, sty ? { soldType: sty } : {});
     audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
     done(res, `💰 ${p.code} sold — ${p.sold.d} · ${ethClock(p.sold.t)}.`);
+  });
+  router.post("/product/times", (req, res) => { // adjust the Ethiopian dates + clock times (Started · Finished/jumped to stock · Sold) and the Sold type
+    const b = req.body || {}, p = findP(b.id);
+    if (!p) return fail(res, "Product not found.");
+    const parts = [["added", "Start"], ["finished", "Finished (moved to Stock)"], ["sold", "Sold"]], applied = [];
+    for (const [k, label] of parts) {
+      if (!p[k]) continue;
+      const d = String(b[k + "D"] ?? "").trim(), t = String(b[k + "T"] ?? "").trim();
+      if (d && !dateOk(d)) return fail(res, `${label} date must look like 2019/03/25 (year/month/day, Ethiopian).`);
+      if (t && !timeOk(t)) return fail(res, `${label} time must look like 14:30 (24-hour Addis Ababa clock).`);
+      const nd = d || p[k].d, nt = t ? hhmm(t) : p[k].t;
+      if (nd !== p[k].d || nt !== p[k].t) { applied.push(`${label} ${p[k].d} ${p[k].t} → ${nd} ${nt}`); p[k] = { ...p[k], d: nd, t: nt }; }
+    }
+    if (p.sold) {
+      const sty = soldTypeIn(b.soldType), old = p.sold.type || "";
+      if (sty !== old) { if (sty) p.sold.type = sty; else delete p.sold.type; applied.push(`Sold type ${old || "auto"} → ${sty || "auto"}`); }
+    }
+    if (!applied.length) return done(res, "Nothing changed.");
+    hist(p, "Dates / times adjusted", req, { change: applied.join(" · ").slice(0, 300) });
+    audit("Report: dates adjusted", `${p.code} ${applied.join(" · ")}`, req.actor);
+    done(res, `🕒 ${p.code}: dates and times saved.`);
   });
   router.post("/product/undo", (req, res) => { // fix a mistake: Sold → In Stock, In Stock → Workflow
     const p = findP(req.body?.id);
