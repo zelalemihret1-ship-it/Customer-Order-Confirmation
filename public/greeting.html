@@ -81,6 +81,8 @@ button.sw.on{background:#2e9e4f}button.sw.on i{left:31px}
         <div><h2 style="margin:0">🤖 Automatic first greeting</h2><div class="hint" id="autoState" style="margin-top:4px"></div></div>
         <button id="autoSw" class="sw" aria-label="Automatic greeting on/off" role="switch" aria-checked="false"><i></i></button>
       </div>
+      <div id="teamBox" style="margin-top:12px"></div>
+      <p class="hint" id="lockHint" style="display:none;margin:10px 0 0;font-weight:700;color:#8a5a00">🔒 Only the main admin can switch this ON or OFF for you.</p>
       <p class="hint" style="margin:10px 0 0">When ON: the first time a new person writes to you in a private chat, your greeting text is sent to them automatically — plain text, once. This works for EVERYONE who messages you privately — saved in Customers Data or not, saved in your phone contacts or not. People you already chatted with, and anyone already greeted, get nothing.</p>
     </div>
     <div class="card">
@@ -116,8 +118,18 @@ document.querySelector(".chips").addEventListener("click",e=>{const b=e.target.c
 $("reset").onclick=()=>{$("text").value=D.defaultTemplate;preview();};
 $("save").onclick=async()=>{const d=await (await fetch("/api/greetings/template",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:$("text").value})})).json();say(d.ok?"✅ "+d.message:"❌ "+d.error,d.ok?"ok":"bad");};
 
-function drawAuto(){const on=!!D.auto;$("autoSw").classList.toggle("on",on);$("autoSw").setAttribute("aria-checked",on);$("autoState").textContent=on?"🟢 ON — greeting new private chats automatically":"⚪ OFF";}
+function drawAuto(){const on=!!D.auto;
+  const lock=!!D.autoLocked;$("autoSw").disabled=lock;$("autoSw").style.opacity=lock?".55":"1";$("lockHint").style.display=lock?"block":"none";
+  if(D.team){$("autoCard").querySelector("h2").textContent="🤖 Automatic first greeting — you";
+    $("teamBox").innerHTML='<div style="font-size:12px;font-weight:800;color:#153a2e;letter-spacing:.6px;text-transform:uppercase;margin-bottom:6px">Switch for each admin (only you can)</div>'+D.team.map(t=>`<div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:center;padding:8px 0;border-top:1px solid #eee8da"><div><b>${esc(t.name)}</b>${t.main?' <span class="pill">MAIN</span>':''}<div class="hint">${t.connected?'✓ Telegram connected':'Telegram not connected'}${t.on?' · 🟢 ON':' · ⚪ OFF'}</div></div><button class="sw${t.on?' on':''}" data-t="${esc(t.key)}" role="switch" aria-checked="${t.on}"><i></i></button></div>`).join("");}
+  else $("teamBox").innerHTML="";$("autoSw").classList.toggle("on",on);$("autoSw").setAttribute("aria-checked",on);$("autoState").textContent=on?"🟢 ON — greeting new private chats automatically":"⚪ OFF";}
+$("teamBox").addEventListener("click",async e=>{
+  const b=e.target.closest("button[data-t]");if(!b||b.disabled)return;const t=D.team.find(x=>x.key===b.dataset.t);if(!t)return;b.disabled=true;
+  try{const d=await (await fetch("/api/greetings/auto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({on:!t.on,target:t.key,text:$("text").value})})).json();
+    say(d.ok?d.message:"❌ "+d.error,d.ok?"ok":"bad");if(d.ok){t.on=d.on;if(d.target&&d.target===D.meKey)D.auto=d.on;}}catch(err){say("❌ "+err.message,"bad");}
+  await load();});
 $("autoSw").onclick=async()=>{
+  if(D.autoLocked){say("🔒 Only the main admin can switch the automatic greeting ON or OFF.","info");return;}
   const want=!D.auto;$("autoSw").disabled=true;
   try{const d=await (await fetch("/api/greetings/auto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({on:want,text:$("text").value})})).json();
     say(d.ok?d.message:"❌ "+d.error,d.ok?"ok":"bad");if(d.ok)D.auto=d.on;}catch(e){say("❌ "+e.message,"bad");}
