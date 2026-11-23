@@ -1496,11 +1496,16 @@ function telegramNameFor(o) {
   const tg = customers.get(String(o.telegramChatId || ""));
   if (tg?.name) return tg.name;
   const rec = (callersDb.list || []).find(c => c.id === String(o.customerId || ""));
+  const linked = rec && rec.telegramId ? customers.get(String(rec.telegramId)) : null; // v133: the Telegram account linked to this Customer ID
+  if (linked?.name) return linked.name;
   return (rec?.name) || o.telegramName || o.customerName || String(o.telegramUsername || "");
 }
 function customerIdFor(o) {
   if (o.customerId) return String(o.customerId);
-  const list = callersDb.list || [], pk = typeof phoneKey === "function" ? phoneKey(o.phone || o.telegramPhone) : "";
+  const list = callersDb.list || [];
+  const byTg = o.telegramChatId ? list.find(c => c.telegramId && c.telegramId === String(o.telegramChatId)) : null;
+  if (byTg) return byTg.id;
+  const pk = typeof phoneKey === "function" ? phoneKey(o.phone || o.telegramPhone) : "";
   const un = String(o.telegramUsername || "").replace(/^@/, "").toLowerCase();
   const hit = list.find(c => (pk.length >= 7 && (phoneKey(c.phone) === pk || phoneKey(c.additionalPhone) === pk)) || (un && String(c.username || "").replace(/^@/, "").toLowerCase() === un));
   return hit ? hit.id : "";
@@ -1767,7 +1772,7 @@ app.use("/api/business", ownerOnly);
 app.get("/api/customers", (req, res) => {
   const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || req.actor?.viewer || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
   const adminIds = new Set(allAdminChatIds({})); // admins are not customers
-  res.json([...customers.values()].filter(c => mine(c) && !adminIds.has(String(c.id))).map(c => ({ ...c, first_name: c.name || c.first_name || "" })).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
+  res.json([...customers.values()].filter(c => mine(c) && !adminIds.has(String(c.id))).map(c => { const r = callerOfTg(c); return { ...c, first_name: c.name || c.first_name || "", customerId: r ? r.id : "" }; }).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
 });
 
 function esc(value = "") {
@@ -3319,7 +3324,8 @@ function callerFields(b, actor, prev) {
     orderId: cH.clean(b.orderId).trim().slice(0, 300),
     source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram"),
     interests: b.interests === undefined ? (prev?.interests || []) : cleanInterests(b.interests), // ⭐ special / interested customer: products they want next
-    interestNote: b.interestNote === undefined ? (prev?.interestNote || "") : cH.clean(b.interestNote).trim().slice(0, 500)
+    interestNote: b.interestNote === undefined ? (prev?.interestNote || "") : cH.clean(b.interestNote).trim().slice(0, 500),
+    telegramId: b.telegramId === undefined ? (prev?.telegramId || "") : String(b.telegramId || "").replace(/\D/g, "").slice(0, 20) // v133: the customer's Telegram account (chat id) — linked to the Customer ID
   };
 }
 function callerError(f) {
@@ -3356,6 +3362,22 @@ async function linkOrderToCustomer(order) { // the customer's "Order id" column 
   await saveCallers();
   sheets.callerSave(callerSheetRow(rec)).then(sheetNote).catch(() => {});
 }
+// ── v133: Customer ID ⇄ Telegram account. A customer record can be linked to the Telegram account (name · @username · chat id) the bot saw;
+// the link is saved on both sides, and a customer with the same @username is matched automatically.
+const tgOfCaller = rec => {
+  if (rec.telegramId && customers.has(String(rec.telegramId))) return customers.get(String(rec.telegramId));
+  const un = String(rec.username || "").replace(/^@/, "").toLowerCase();
+  if (un) for (const c of customers.values()) if (String(c.username || "").toLowerCase() === un) return c;
+  return null;
+};
+const withTg = rec => { const t = tgOfCaller(rec); return { ...rec, telegramId: t ? String(t.id) : (rec.telegramId || ""), telegramName: t ? (t.name || (t.username ? "@" + t.username : "")) : "" }; };
+const callerOfTg = c => callersDb.list.find(r => r.telegramId && r.telegramId === String(c.id)) || (c.username ? callersDb.list.find(r => String(r.username || "").replace(/^@/, "").toLowerCase() === String(c.username).toLowerCase()) : null) || null;
+function syncTgLink(rec, oldId) { // keep the Telegram account's own record in step with the customer record
+  if (oldId && oldId !== rec.telegramId && customers.has(String(oldId))) { const o = customers.get(String(oldId)); if (o.customerId === rec.id) delete o.customerId; }
+  if (rec.telegramId && customers.has(String(rec.telegramId))) customers.get(String(rec.telegramId)).customerId = rec.id;
+  try { persistCustomers(); } catch {}
+}
+const tgTaken = (telegramId, exceptId) => telegramId ? callersDb.list.find(c => c.id !== exceptId && c.telegramId === telegramId) : null;
 app.use("/api/callers", requireAccess);
 app.get("/api/callers/order-id", (req, res) => {
   const cust = callersDb.list.find(c => c.id === String(req.query.customerId || "").trim());
@@ -3364,7 +3386,7 @@ app.get("/api/callers/order-id", (req, res) => {
 });
 app.get("/api/callers", (req, res) => {
   const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
-  res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), sheetUrl: callersSheetUrl || sheets.status().url || "", nextId: callerId(callersDb.nextSeq), customers: list,
+  res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), sheetUrl: callersSheetUrl || sheets.status().url || "", nextId: callerId(callersDb.nextSeq), customers: list.map(withTg),
     options: { customerStatus: CALLER_STATUS, orderStatus: CALL_ORDER_STATUS, source: CALLER_SOURCES, products: INTEREST_PRODUCTS } });
 });
 app.get("/api/callers/lookup", (req, res) => {
@@ -3376,13 +3398,14 @@ app.post("/api/callers", async (req, res) => {
   const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
   const dup = callersDb.list.find(c => phoneKey(c.phone) === phoneKey(f.phone) || (f.additionalPhone && phoneKey(c.additionalPhone) === phoneKey(f.additionalPhone)));
   if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
+  const tdup = tgTaken(f.telegramId, ""); if (tdup) return res.status(409).json({ ok: false, error: `This Telegram account is already linked to customer ${tdup.id} (${tdup.name}).` });
   // Sales Name = the logged-in admin's name. Only the owner may type another sales name.
   const sales = req.actor.role === "owner" && String(req.body?.salesName || "").trim() ? String(req.body.salesName).trim().slice(0, 80) : (req.actor.name || "");
   const seq = callersDb.nextSeq++;
   const rec = { id: callerId(seq), seq, ...f, salesName: sales, createdBy: req.actor.name || "", createdAt: cH.stamp(), updatedAt: cH.stamp(), history: [] };
-  callersDb.list.push(rec); await saveCallers();
+  callersDb.list.push(rec); await saveCallers(); syncTgLink(rec, "");
   const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
-  res.json({ ok: true, customer: rec, sheet, message: `Saved. Customer ID ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
+  res.json({ ok: true, customer: withTg(rec), sheet, message: `Saved. Customer ID ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
 });
 app.post("/api/callers/:id/interest", async (req, res) => { // after an order: the customer wants another product → ⭐ interested / special customer
   const rec = callersDb.list.find(c => c.id === req.params.id);
@@ -3403,15 +3426,17 @@ app.put("/api/callers/:id", async (req, res) => {
   const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
   const dup = callersDb.list.find(c => c.id !== rec.id && (phoneKey(c.phone) === phoneKey(f.phone) || (f.additionalPhone && phoneKey(c.additionalPhone) === phoneKey(f.additionalPhone))));
   if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
+  const tdup = tgTaken(f.telegramId, rec.id); if (tdup) return res.status(409).json({ ok: false, error: `This Telegram account is already linked to customer ${tdup.id} (${tdup.name}).` });
+  const oldTg = rec.telegramId || "";
   const watch = ["lastConversation", "date", "time", "orderStatus", "rejectionReason", "totalSpend", "orderId"];
   if (watch.some(k => String(rec[k] ?? "") !== String(f[k] ?? ""))) {
     rec.history = [{ date: rec.date, time: rec.time, lastConversation: rec.lastConversation, orderStatus: rec.orderStatus, rejectionReason: rec.rejectionReason, totalSpend: rec.totalSpend, orderId: rec.orderId, by: req.actor.name || "" }, ...(rec.history || [])].slice(0, 50);
   }
   Object.assign(rec, f); // the ID never changes
   if (req.actor.role === "owner" && String(req.body?.salesName || "").trim()) rec.salesName = String(req.body.salesName).trim().slice(0, 80);
-  rec.updatedAt = cH.stamp(); await saveCallers();
+  rec.updatedAt = cH.stamp(); await saveCallers(); syncTgLink(rec, oldTg);
   const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
-  res.json({ ok: true, customer: rec, sheet, message: `Updated customer ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
+  res.json({ ok: true, customer: withTg(rec), sheet, message: `Updated customer ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
 });
 app.post("/api/callers/sync", async (req, res) => { // owner only: write every customer to the "Callers" tab (back-fill / repair)
   if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
