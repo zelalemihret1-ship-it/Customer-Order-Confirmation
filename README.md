@@ -1,3 +1,9 @@
+# v124 — Interested customers · Reports ⚙ settings · modern Reports & Weekly Story design
+- **Reports:** Make PDF, Google Sheet backup, Daily stock → Telegram and Start from 0 now live in the **⚙ gear** (top right). The bottom bar and the "☁ Backup ✓ date" chip are removed.
+- **Reports and Weekly Story** have a new, more professional look (header, tabs, cards, buttons, forms).
+- **Interested / special customers** with product selection (order page after sending, Customers Data form, list filter).
+- Fix: First Greeting `getAppAdmins is not a function`.
+
 # v122 — First Greeting switch = main admin only · Reports: list view default, Stock view after Material, daily stock to Telegram, ORDER type, real sales name
 - **First Greeting → 🤖 Automatic first greeting:** only the **main admin** can switch it ON/OFF. The main admin sees one switch per admin (main admins + assigned admins) and sets each one; an assigned admin sees the state, the switch is locked (🔒) and the server refuses the change. Assigned admins can still write their own greeting text.
 - **Reports:** the **☰ List view is now the default** (▦ Cards still one tap away). **🖼 Stock view** now comes **after Material**.
