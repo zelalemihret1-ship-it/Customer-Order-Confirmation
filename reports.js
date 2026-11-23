@@ -8,6 +8,7 @@
 //  • Material: add a new material, ➕ add more, ✂️ cut (use) — every movement is logged with Ethiopian date + time.
 //  • Backup: one tab per section per ETHIOPIAN MONTH (Workflow · Stock · Material); a new month creates its tabs by itself. reports-sheet-script.gs (script version reports-5) is pasted in the reports Google Sheet; the /exec link is saved
 //    (file + Supabase) or set in Render as REPORTS_SCRIPT_URL. The old order sheet is never touched.
+// v121: products have a HANDLE TYPE and an uploaded PHOTO (stored as small JPEG files + Supabase app_settings rows "rphoto_<id>"); the app's Stock view groups in-stock products by model + handle.
 // Access: main admins, plus any assigned admin the main admin gave the "Reports" section (Manage Admins). View-only admins are refused on writes by requireAccess.
 // Connecting the backup sheet, disconnecting it and "Start from ZERO" stay main-admin only.
 const fs = require("fs");
@@ -56,7 +57,7 @@ function register(app, ctx) {
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
     if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
     if (d && typeof d === "object") db = { products: [], materials: [], log: [], savedAt: "", ...d };
-    for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; }
+    for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
@@ -134,8 +135,43 @@ function register(app, ctx) {
   };
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
-  const view = () => ({ cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
+
+  // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
+  const PHOTO_DIR = path.join(baseDir, "report-photos");
+  const photoFile = id => path.join(PHOTO_DIR, id + ".jpg");
+  async function savePhoto(dataUrl) {
+    const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
+    if (!m) throw new Error("The photo could not be read. Choose it again.");
+    const buf = Buffer.from(m[1], "base64");
+    if (buf.length < 200) throw new Error("The photo is empty. Choose it again.");
+    if (buf.length > 1.5 * 1024 * 1024) throw new Error("The photo is too big (max 1.5 MB after shrinking).");
+    const id = crypto.randomBytes(12).toString("hex");
+    try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); fs.writeFileSync(photoFile(id), buf); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "rphoto_" + id, value: { b64: m[1] }, updated_at: new Date().toISOString() }); } catch {} }
+    return id;
+  }
+  async function dropPhoto(id) {
+    if (!id || db.products.some(p => p.photo === id)) return;
+    try { fs.unlinkSync(photoFile(id)); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").delete().eq("key", "rphoto_" + id); } catch {} }
+  }
+  app.get("/api/reports-photo/:id.jpg", async (req, res) => {
+    const id = String(req.params.id || "");
+    if (!/^[a-f0-9]{24}$/.test(id)) return res.status(404).end();
+    let buf = null;
+    try { buf = fs.readFileSync(photoFile(id)); } catch {}
+    if (!buf && supabase) {
+      try {
+        const { data } = await supabase.from("app_settings").select("value").eq("key", "rphoto_" + id).maybeSingle();
+        if (data?.value?.b64) { buf = Buffer.from(data.value.b64, "base64"); try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); fs.writeFileSync(photoFile(id), buf); } catch {} }
+      } catch {}
+    }
+    if (!buf) return res.status(404).end();
+    res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=31536000, immutable" });
+    res.end(buf);
+  });
 
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
@@ -155,29 +191,35 @@ function register(app, ctx) {
   const dateOk = v => !v || /^\d{4}\/\d{2}\/\d{2}$/.test(v);
   function readProduct(b) {
     return { code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
-      category: up(b.category, 30) || "OTHERS", salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
+      category: up(b.category, 30) || "OTHERS", handle: clip(b.handle, 60), salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
   }
   const readErr = f => (!f.model && !f.desc) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
-  router.post("/product/add", (req, res) => {
+  router.post("/product/add", async (req, res) => {
     const f = readProduct(req.body || {}), err = readErr(f);
     if (err) return fail(res, err);
     f.code = f.code || nextCode();
     if (codeTaken(f.code)) return fail(res, `Prod ID “${f.code}” is already used. Choose another.`);
-    const p = { id: uid(), ...f, status: "workflow", added: stamp(req), history: [] };
+    let photo = "";
+    if (req.body?.photo) { try { photo = await savePhoto(req.body.photo); } catch (e) { return fail(res, e.message); } }
+    const p = { id: uid(), ...f, photo, status: "workflow", added: stamp(req), history: [] };
     hist(p, "Added to Workflow", req);
     db.products.unshift(p);
     audit("Report: product added", `${p.code} ${lab(p)}`, req.actor);
     done(res, `✅ ${p.code} added to Workflow.`);
   });
-  router.post("/product/edit", (req, res) => {
+  router.post("/product/edit", async (req, res) => {
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
     const f = readProduct(b), err = readErr(f);
     if (err) return fail(res, err);
     if (!f.code) return fail(res, "The Prod ID is needed.");
     if (codeTaken(f.code, p.id)) return fail(res, `Prod ID “${f.code}” is already used.`);
-    const changed = p.code !== f.code || lab(p) !== lab({ ...f });
+    let newPhoto = null, oldPhoto = p.photo || "";
+    if (b.photo) { try { newPhoto = await savePhoto(b.photo); } catch (e) { return fail(res, e.message); } }
+    else if (b.removePhoto) newPhoto = "";
+    const changed = p.code !== f.code || lab(p) !== lab({ ...f }) || (p.handle || "") !== f.handle;
     Object.assign(p, f);
+    if (newPhoto !== null) { p.photo = newPhoto; hist(p, newPhoto ? "Photo changed" : "Photo removed", req); await dropPhoto(oldPhoto); }
     if (changed) hist(p, "Edited", req);
     audit("Report: product edited", `${p.code} ${lab(p)}`, req.actor);
     done(res, "✅ Saved.");
@@ -213,6 +255,7 @@ function register(app, ctx) {
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     db.products = db.products.filter(x => x !== p);
+    dropPhoto(p.photo).catch(() => {});
     audit("Report: product deleted", `${p.code} ${lab(p)}`, req.actor);
     done(res, `🗑 ${p.code} deleted.`);
   });
@@ -277,7 +320,9 @@ function register(app, ctx) {
         const a = await callScript({ action: "archive", data: { now: nowEth() } });
         note = ` The old report is kept in the Google Sheet (${a.archived || 0} tab${a.archived === 1 ? "" : "s"} saved as “Archive …”).`;
       }
+      const oldPhotos = db.products.map(x => x.photo).filter(Boolean);
       db.products = []; db.materials = []; db.log = [];
+      oldPhotos.forEach(id => dropPhoto(id).catch(() => {}));
       audit("Report: START FROM ZERO", `${had} record(s) cleared`, req.actor);
       persist();
       if (cfg.scriptUrl) scheduleBackup(1500);
