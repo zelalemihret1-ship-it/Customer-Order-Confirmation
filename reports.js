@@ -470,6 +470,19 @@ function register(app, ctx) {
     audit("Report: material " + type, `${matName(m)} ${qty} → ${m.qty}`, req.actor);
     done(res, type === "cut" ? `✂️ Cut ${qty} of ${matName(m)}. Left: ${m.qty}.` : `➕ Added ${qty} to ${matName(m)}. Now: ${m.qty}.`);
   });
+  // STOCK EDIT (correction): wrong quantity typed by mistake → set the real quantity. Recorded as a "fix" movement (signed difference) with the reason.
+  router.post("/material/correct", (req, res) => {
+    const b = req.body || {}, m = findM(b.id);
+    if (!m) return fail(res, "Material not found.");
+    const to = num(b.qty);
+    if (b.qty === "" || b.qty == null || Number.isNaN(to) || to < 0) return fail(res, "Write the correct quantity (0 or more).");
+    const old = m.qty, diff = Math.round((to - old) * 1000) / 1000;
+    if (diff === 0) return fail(res, `The quantity is already ${old}. Nothing to correct.`);
+    m.qty = to;
+    addLog(req, m, "fix", diff, m.qty, clip(b.note, 160) ? `Correction ${old} → ${to}: ${clip(b.note, 160)}` : `Correction ${old} → ${to}`);
+    audit("Report: material corrected", `${matName(m)} ${old} → ${to}`, req.actor);
+    done(res, `✏️ ${matName(m)} corrected: ${old} → ${to}.`);
+  });
   router.post("/material/edit", (req, res) => {
     const b = req.body || {}, m = findM(b.id);
     if (!m) return fail(res, "Material not found.");
