@@ -118,11 +118,73 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
 .pv .b{padding:9px 12px}
 .pbig{width:100%;max-height:260px;object-fit:cover;border-radius:14px;margin:8px 0 4px}
 @media(max-width:520px){.kpi .n{font-size:22px}.list{grid-template-columns:1fr}.seg button{font-size:12px;padding:10px 2px}.seg button small{font-size:10px}.sgrid{grid-template-columns:repeat(2,1fr);gap:9px}.sg .ph .thumb,.sg .ph .noimg{height:130px}.lrow .rt{max-width:52%}}
+
+/* ═══ v124 professional polish ═══ */
+:root{--ink:#0c2a21;--green:#17493a;--gold:#c0a05c;--bg:#f5f2eb;--line:#e8e2d4;--shadow:0 1px 2px #0c2a210d,0 6px 20px #0c2a2110;--shadow2:0 2px 4px #0c2a2112,0 14px 34px #0c2a2124}
+body{background:var(--bg);-webkit-font-smoothing:antialiased;letter-spacing:.1px}
+header{background:radial-gradient(120% 140% at 0% 0%,#1d5a48 0%,#0c2a21 62%);border-bottom:0;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 18px;box-shadow:0 8px 24px #0c2a2133;position:sticky;top:0;z-index:40}
+header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+header h1{font-size:19px;font-weight:800;letter-spacing:.8px}
+header .sub{font-size:10.5px;letter-spacing:2.2px;opacity:.7;margin-top:6px}
+header a.back{background:#ffffff14;border-color:#ffffff33;backdrop-filter:blur(6px)}
+.gear{width:40px;height:40px;border-radius:50%;border:1px solid #ffffff3d;background:#ffffff17;color:var(--cream);font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .25s,background .2s}
+.gear:hover,.gear:active{background:#ffffff2e;transform:rotate(60deg)}
+main{padding:16px 14px calc(30px + env(safe-area-inset-bottom,0px))}
+.seg{background:#fff;border:1px solid var(--line);border-radius:18px;padding:5px;box-shadow:var(--shadow);gap:4px;position:sticky;top:78px;z-index:30}
+.seg button{border-radius:14px;padding:11px 4px;transition:background .2s,color .2s,box-shadow .2s}
+.seg button.on{background:linear-gradient(160deg,#1d5a48,var(--ink));box-shadow:0 6px 16px #0c2a214d}
+.kpis{gap:10px}
+.kpi{border:1px solid var(--line);border-left:0;border-radius:18px;padding:14px 14px 12px;box-shadow:var(--shadow);position:relative;overflow:hidden;background:linear-gradient(180deg,#fff,#fbf9f4)}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(var(--gold),var(--green))}
+.kpi .l{font-size:10px;letter-spacing:1.2px}
+.kpi .n{font-size:28px;font-weight:800;color:var(--ink);letter-spacing:-.5px}
+.tools input{border-radius:16px;border:1px solid var(--line);box-shadow:var(--shadow);padding:13px 16px}
+.tools input:focus,input:focus,textarea:focus,select:focus{outline:0;border-color:var(--gold);box-shadow:0 0 0 4px #c0a05c2b}
+.vt{border-radius:16px;border-color:var(--line);box-shadow:var(--shadow)}
+.add{border-radius:16px;background:linear-gradient(160deg,#1d5a48,var(--ink));box-shadow:0 6px 16px #0c2a2140;transition:transform .15s}
+.add:active,.b:active,.btn:active,.srow:active{transform:scale(.97)}
+.sub2 button{border-color:var(--line);box-shadow:0 1px 2px #0c2a210d;transition:all .2s}
+.item,.sg,.lrow,.card,.logrow{border:1px solid var(--line);box-shadow:var(--shadow);transition:box-shadow .2s,transform .2s}
+.item,.sg{border-radius:20px}
+.item:hover,.sg:hover{box-shadow:var(--shadow2);transform:translateY(-2px)}
+.code{background:#f6f1e3;border-color:#e2d6b5;border-radius:9px}
+.pill{letter-spacing:.3px;padding:5px 11px}
+.nm{font-weight:700;letter-spacing:.1px}
+.b{border-color:var(--line);border-radius:13px;transition:transform .15s,box-shadow .15s}
+.b.main,.b.add2,.b.gold,.b.cut{box-shadow:0 4px 10px #0000001f}
+.empty{border-radius:20px;background:linear-gradient(180deg,#fff,#faf7f0);border:1.5px dashed #d8cfb6}
+h3.sec{display:flex;align-items:center;gap:10px;color:var(--green);font-size:12px;letter-spacing:1.6px}
+h3.sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+.gh{border-bottom:0;position:relative;color:var(--ink)}
+.gh::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--gold),transparent)}
+.stamp{border-radius:12px;border:1px solid #cfe2f3}
+.bar{height:7px}
+.ov{backdrop-filter:blur(3px);background:#0c2a2199}
+.ov .box{border-radius:26px 26px 0 0;box-shadow:0 -12px 40px #0c2a2133}
+.ov.on .box{animation:rise .25s ease-out}
+@keyframes rise{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+.btn{border-radius:15px;background:linear-gradient(160deg,#1d5a48,var(--ink));box-shadow:0 5px 14px #0c2a2133}
+.btn.grey{background:#fff;box-shadow:none}.btn.red{background:var(--bad)}.btn.blue{background:#229ed9}.btn.ok{background:var(--ok)}.btn.gold{background:#a5782a}.btn.cut{background:var(--bad)}
+/* settings sheet */
+.setHd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+.setHd h2{font-size:19px}
+.setX{border:0;background:#f1ede2;color:var(--green);border-radius:50%;width:36px;height:36px;font-size:17px;font-weight:800;cursor:pointer;flex:none}
+.setList{display:flex;flex-direction:column;gap:10px}
+.srow{display:flex;align-items:center;gap:13px;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:18px;padding:13px 14px;cursor:pointer;font-family:inherit;box-shadow:var(--shadow);transition:transform .15s,box-shadow .2s}
+.srow:hover{box-shadow:var(--shadow2)}
+.srow .ic{flex:none;width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:21px}
+.srow .ic.pdf{background:#fde7e5}.srow .ic.bk{background:#e4f0fb}.srow .ic.tg{background:#e0f3fb}.srow .ic.zr{background:#fde7e5}
+.srow .tx{flex:1;min-width:0}
+.srow .tx b{display:block;font-size:15px;color:var(--ink);font-weight:800}
+.srow .tx small{display:block;margin-top:2px;font-size:12px;color:var(--mute);line-height:1.35}
+.srow .ch{flex:none;font-size:24px;color:#b6ad96}
+.srow.danger .tx b{color:var(--bad)}.srow.danger{border-color:#f0c9c5}
+@media(max-width:520px){.seg{top:74px}.kpi .n{font-size:24px}}
 </style>
 </head>
 <body>
 <header>
-  <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><button class="cloud" id="tgBtn" type="button">📨 Telegram</button><button class="cloud" id="cloud" type="button">☁ Backup</button></div>
+  <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><button class="gear" id="gearBtn" type="button" aria-label="Settings">⚙</button></div>
   <div class="sub">Workflow · Stock · Material</div>
 </header>
 <main>
@@ -137,7 +199,15 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
     <div id="extra"></div>
   </div>
 </main>
-<div class="foot" id="foot" style="display:none"><button class="pdf" id="bPdf" type="button">📄 Make PDF</button><button class="bk" id="bBk" type="button">☁ Google Sheet backup</button><button class="zero" id="bZero" type="button" style="display:none">🗑 Start from 0</button></div>
+<div class="ov" id="setOv"><div class="box" id="setBox">
+  <div class="setHd"><div><h2>⚙ Report settings</h2><div class="hint">Export, back up and manage your reports.</div></div><button class="setX" type="button" data-x="1" aria-label="Close">✕</button></div>
+  <div class="setList">
+    <button class="srow" id="bPdf" type="button"><span class="ic pdf">📄</span><span class="tx"><b>Make PDF</b><small>Build a printable A4 report of the current view</small></span><span class="ch">›</span></button>
+    <button class="srow" id="cloud" type="button"><span class="ic bk">☁</span><span class="tx"><b>Google Sheet backup</b><small id="bkState">Backup copy in your Google Sheet</small></span><span class="ch">›</span></button>
+    <button class="srow" id="tgBtn" type="button"><span class="ic tg">📨</span><span class="tx"><b>Daily stock → Telegram</b><small>Send the Stock view to every admin each day</small></span><span class="ch">›</span></button>
+    <button class="srow danger" id="bZero" type="button" style="display:none"><span class="ic zr">🗑</span><span class="tx"><b>Start from 0</b><small>Save the old report to the sheet, then clear everything</small></span><span class="ch">›</span></button>
+  </div>
+</div></div>
 
 <!-- form sheet (add / edit / sell / add-cut) -->
 <div class="ov" id="fOv"><div class="box"><h2 id="fTitle"></h2><div class="hint" id="fInfo"></div><div id="fBody"></div><div id="fMsg" class="msg"></div><button class="btn" id="fOk" type="button">Save</button><button class="btn grey" id="fNo" type="button">Cancel</button></div></div>
@@ -199,7 +269,7 @@ let IS_OWNER=false,ME_NAME="";
     $("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Reports section. Ask them to turn it on in Manage Admins.":(me.error||"Access denied.");
     return;
   }
-  $("view").style.display="block";$("foot").style.display="flex";$("bZero").style.display=IS_OWNER?"block":"none";
+  $("view").style.display="block";$("bZero").style.display=IS_OWNER?"flex":"none";
   const d=await api("/api/reports/state");
   if(!d.ok){say("vMsg",d.error||"Could not open the reports.","bad");}
   render();
@@ -294,8 +364,8 @@ function render(){
   }
   $("out").innerHTML=h;$("extra").innerHTML=extra;
   const b=S.backup||{};
-  $("cloud").className="cloud"+(b.configured?(b.ok===false?" bad":" ok"):"");
-  $("cloud").textContent=!b.configured?"☁ Backup off":(b.ok===false?"⚠ Backup failed":"☁ Backup ✓ "+(b.d?b.d.slice(5)+" "+et(b.t):""));
+  $("bkState").textContent=!b.configured?"Not connected — tap to set up":(b.ok===false?"⚠ Last backup failed — tap for details":"Connected · backup copy in your Google Sheet");
+  $("bkState").style.color=b.configured&&b.ok===false?"var(--bad)":"";
 }
 function stockGroups(L){
   const m=new Map();
@@ -439,6 +509,12 @@ $("tgOv").addEventListener("click",async e=>{
   if(id==="tgNow"){busy("Sending the stock to every admin… (this can take a minute)");const d=await api("/api/reports/tg/send",{});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
 });
 
+
+// ⚙ settings sheet: PDF · Google Sheet backup · Telegram · Start from 0
+$("gearBtn").onclick=()=>$("setOv").classList.add("on");
+$("setOv").addEventListener("click",e=>{if(e.target===$("setOv")||e.target.closest("[data-x]"))$("setOv").classList.remove("on");},false);
+$("setBox").addEventListener("click",e=>{if(e.target.closest(".srow"))$("setOv").classList.remove("on");},true);
+
 // ── Google Sheet BACKUP ──
 function openBackup(){
   const b=S.backup||{};
@@ -455,7 +531,7 @@ function openBackup(){
   }
   $("bkOv").classList.add("on");
 }
-$("cloud").onclick=openBackup;$("bBk").onclick=openBackup;
+$("cloud").onclick=openBackup;
 $("bkOv").addEventListener("click",async e=>{
   const id=e.target.id;
   if(e.target===$("bkOv")||e.target.dataset.x){$("bkOv").classList.remove("on");return;}
