@@ -118,7 +118,7 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 
 <div class="card"><h2>Card Preview</h2><div id="preview" class="preview">Fill the form to preview the customer card.</div></div>
 <div class="row"><button class="primary" type="submit">📨 Create & Send Order Card</button><button class="gold" type="button" onclick="previewCard()">Preview</button></div>
-<p id="result"></p>
+<p id="result"></p><div id="interestBox"></div>
 </form>
 </main>
 <script>
@@ -327,8 +327,8 @@ syncDelivery();
 form.addEventListener("input",e=>{if(e.target!==photoInput)previewCard();});
 form.addEventListener("submit",async e=>{
  e.preventDefault();if(productSelect.value==="__other"){const n=productOther.value.trim();if(n){addProductOption(n);saveCustomProduct(n);}}syncProduct();if(!productValue.value){result.textContent="❌ Please choose the product (or type it if you chose Other).";(productSelect.value==="__other"?productOther:productSelect).focus();return;}const f=photoInput.files?.[0],v=vals();if(!String(v.orderId||"").trim()){result.textContent="❌ Choose the Customer ID first (the Order ID is made automatically).";form.elements.orderId.focus();return;}if(!f){result.textContent="❌ Please select the product photo.";photoInput.focus();return;}if(!v.telegramChatId?.trim()&&!v.telegramUsername?.trim()&&!(v.telegramPhone||v.phone||"").replace(/\D/g,"").match(/\d{8,}/)){result.textContent="❌ Enter the customer\u2019s Telegram @username or phone number.";form.elements.telegramUsername.focus();return;}
- const btn=form.querySelector('button[type="submit"]');btn.disabled=true;result.textContent="Generating image card…";
- try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.jpg`);btn.textContent="Sending order card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||("Order card sent to the customer from "+(d.sentFrom||"your Telegram account")+"."))+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but the card was not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
+ const btn=form.querySelector('button[type="submit"]');const custId=(document.getElementById("customerIdField")||{}).value||"";const interestBox0=document.getElementById("interestBox");if(interestBox0)interestBox0.innerHTML="";btn.disabled=true;result.textContent="Generating image card…";
+ try{const png=await makeCard(v,f),fd=new FormData(form);fd.append("cardImage",png,`ambar-order-${v.orderId||"card"}.jpg`);btn.textContent="Sending order card…";const r=await fetch("/api/orders",{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||"Delivery failed.");result.innerHTML=d.delivered?("✅ "+esc(d.warning||("Order card sent to the customer from "+(d.sentFrom||"your Telegram account")+"."))+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:"")):("⚠️ "+esc(d.warning||"Order saved, but the card was not delivered.")+(d.cardUrl?` <a href="${d.cardUrl}" target="_blank" download>Download card</a>`:""));showInterestBox(custId);form.reset();if(photoUrl)URL.revokeObjectURL(photoUrl);photoUrl=null;photoPreview.hidden=true;photoPreview.style.display="none";photoPreview.removeAttribute("src");photoStatus.textContent="Choose any photo format supported by your browser (image/*).";photoName.textContent="No photo selected";previewCard();}catch(err){result.textContent="❌ "+err.message;}finally{btn.disabled=false;btn.textContent="📨 Create & Send Order Card";}
 });
 previewCard();
 </script>
@@ -784,5 +784,27 @@ let lastDate="";setInterval(()=>{const d=form.elements.orderDate?form.elements.o
 </script>
 
 <script src="/app.js?v=118"></script>
+<script>
+// ⭐ After an order is sent: does the customer want another product? → saved as an interested / special customer with the chosen products.
+function showInterestBox(custId){
+  const box=document.getElementById("interestBox");if(!box||!custId)return;
+  const P=["Shoe Shelf","Console Table","Chest Drawer","Center Table","TV Stand","Dining Table","Mirror"];let sel=[];
+  const e=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const draw=()=>{box.innerHTML='<div style="background:#fff8e6;border:1.5px solid #e9c46a;border-radius:14px;padding:12px;margin-top:10px"><b>⭐ Does this customer want another product?</b><div style="font-size:12px;color:#7a5600;margin:3px 0 8px">Tap the products they are interested in — the customer is saved as an interested / special customer.</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+[...new Set([...P,...sel])].map(p=>'<button type="button" data-p="'+e(p)+'" style="border:1px solid #d6d1c7;border-radius:999px;padding:7px 12px;font-size:13px;cursor:pointer;'+(sel.includes(p)?'background:#b89552;color:#fff;font-weight:800':'background:#fff;color:#153a2e')+'">'+(sel.includes(p)?'✓ ':'')+e(p)+'</button>').join("")+'</div><div style="display:flex;gap:6px;margin-top:8px"><input id="intO" placeholder="Other product…" maxlength="60" style="flex:1;margin:0"><button type="button" id="intA" style="border:0;border-radius:10px;padding:0 12px;background:#fff;border:1px solid #d6d1c7">➕</button></div><input id="intN" placeholder="Note (optional)" maxlength="300" style="margin-top:8px"><button type="button" id="intS" style="width:100%;margin-top:8px;border:0;border-radius:11px;padding:12px;background:#153a2e;color:#fff;font-weight:700;font-size:15px">⭐ Save as interested customer</button><div id="intM" style="font-size:13px;margin-top:6px"></div></div>';};
+  draw();
+  box.onclick=async ev=>{
+    const b=ev.target.closest("button");if(!b)return;
+    if(b.dataset.p){const p=b.dataset.p;sel=sel.includes(p)?sel.filter(x=>x!==p):[...sel,p];const n=box.querySelector("#intN").value;draw();box.querySelector("#intN").value=n;return;}
+    if(b.id==="intA"){const v=box.querySelector("#intO").value.trim();if(v&&!sel.some(x=>x.toLowerCase()===v.toLowerCase()))sel.push(v);const n=box.querySelector("#intN").value;draw();box.querySelector("#intN").value=n;return;}
+    if(b.id==="intS"){
+      const m=box.querySelector("#intM");if(!sel.length){m.textContent="❌ Select at least one product.";return;}
+      b.disabled=true;m.textContent="Saving…";
+      try{const r=await fetch("/api/callers/"+encodeURIComponent(custId)+"/interest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({products:sel,note:box.querySelector("#intN").value})}),d=await r.json();
+        if(d.ok){box.innerHTML='<div style="background:#eaf6ee;border:1px solid #2e9e4f;color:#176b3a;border-radius:12px;padding:11px;margin-top:10px;font-weight:700">'+e(d.message)+'</div>';}else{m.textContent="❌ "+(d.error||"Could not save.");b.disabled=false;}
+      }catch{m.textContent="❌ Connection problem.";b.disabled=false;}
+    }
+  };
+}
+</script>
 </body>
 </html>
