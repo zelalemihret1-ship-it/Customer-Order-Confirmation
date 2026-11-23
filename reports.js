@@ -14,6 +14,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
 const express = require("express");
 
 const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
@@ -22,11 +23,14 @@ const uid = () => crypto.randomBytes(6).toString("hex");
 
 function register(app, ctx) {
   const { requireAccess, hasPerm, supabase, baseDir, tgApi, helpers, log } = ctx;
+  const ownerIdsLive = () => (ctx.ownerIds || []).map(String);
+  const appAdminsLive = () => (ctx.getAppAdmins ? ctx.getAppAdmins() : []) || [];
   const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
   const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-  let db = { products: [], materials: [], log: [], savedAt: "" };
+  const TG0 = { on: false, time: "08:00", sendAs: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
+  let db = { products: [], materials: [], log: [], savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
   const nowEth = () => {
@@ -57,11 +61,14 @@ function register(app, ctx) {
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
     if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
     if (d && typeof d === "object") db = { products: [], materials: [], log: [], savedAt: "", ...d };
-    for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; }
+    db.tg = { ...TG0, ...(db.tg || {}) };
+    for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
-    if (cfg.scriptUrl) scheduleBackup(8000); // a restart / redeploy refreshes the backup once
+    if (cfg.scriptUrl) scheduleBackup(8000);
+    const tg = setInterval(() => { tgTick().catch(() => {}); }, 60 * 1000); if (tg.unref) tg.unref();
+    setTimeout(() => { tgTick().catch(() => {}); }, 20000); // a restart / redeploy refreshes the backup once
     // New Ethiopian month → the backup runs by itself so the next month's Workflow / Stock / Material tabs appear (checked every 20 minutes)
     // New Ethiopian day → S.TODAY turns into SOLD in the sheet (checked every 5 minutes); a new month also creates its tabs.
     const t = setInterval(() => { if (cfg.scriptUrl && cfg.backup.d !== nowEth().d) backupNow().catch(() => {}); }, 5 * 60 * 1000);
@@ -135,7 +142,8 @@ function register(app, ctx) {
   };
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
-  const view = () => ({ handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
+  const view = () => ({ tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: db.materials, log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -160,18 +168,95 @@ function register(app, ctx) {
   app.get("/api/reports-photo/:id.jpg", async (req, res) => {
     const id = String(req.params.id || "");
     if (!/^[a-f0-9]{24}$/.test(id)) return res.status(404).end();
-    let buf = null;
-    try { buf = fs.readFileSync(photoFile(id)); } catch {}
-    if (!buf && supabase) {
-      try {
-        const { data } = await supabase.from("app_settings").select("value").eq("key", "rphoto_" + id).maybeSingle();
-        if (data?.value?.b64) { buf = Buffer.from(data.value.b64, "base64"); try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); fs.writeFileSync(photoFile(id), buf); } catch {} }
-      } catch {}
-    }
+    const buf = await photoBuf(id);
     if (!buf) return res.status(404).end();
     res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=31536000, immutable" });
     res.end(buf);
   });
+
+
+  // ── DAILY STOCK → TELEGRAM (every day, to every admin, sent FROM the main admin's own Telegram account — not the bot, not the mini app) ──
+  async function photoBuf(id) {
+    if (!/^[a-f0-9]{24}$/.test(String(id || ""))) return null;
+    try { return fs.readFileSync(photoFile(id)); } catch {}
+    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "rphoto_" + id).maybeSingle(); if (data?.value?.b64) return Buffer.from(data.value.b64, "base64"); } catch {} }
+    return null;
+  }
+  const normK = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+  function stockGroups(L) {
+    const m = new Map();
+    for (const p of L) { const k = normK(p.model || p.desc || p.code) + "|" + normK(p.handle); let g = m.get(k); if (!g) { g = { key: k, model: p.model || p.desc || p.code, handle: p.handle || "", items: [] }; m.set(k, g); } g.items.push(p); }
+    return [...m.values()].map(g => { g.photo = (g.items.find(p => p.photo) || {}).photo || ""; return g; }).sort((a, b) => a.model.localeCompare(b.model, undefined, { numeric: true }) || a.handle.localeCompare(b.handle));
+  }
+  const uniq = a => [...new Set(a.map(x => clip(x, 80)).filter(Boolean))];
+  function groupCaption(g) {
+    const sizes = uniq(g.items.map(p => p.desc)), caps = uniq(g.items.map(p => p.capacity));
+    const L = [`🛋 ${g.model}  ×${g.items.length}`];
+    if (sizes.length) L.push("📏 Size: " + sizes.join(" / "));
+    if (caps.length) L.push("👟 Shoe capacity: " + caps.join(" / "));
+    L.push("🔧 Handle: " + (g.handle || "—"));
+    L.push("🏷 " + g.items.map(p => p.code).join(", "));
+    return L.join("\n").slice(0, 1000);
+  }
+  const todayAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(0, 10);
+  const timeAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(11, 16);
+  const senderAcc = () => db.tg.sendAs ? ctx.accountFor({ role: "owner", telegramId: String(db.tg.sendAs) }) : null;
+  const nameOfAdmin = id => { const a = appAdminsLive().find(x => String(x.telegramId) === String(id)); return clip(a?.name, 60) || (ownerIdsLive().includes(String(id)) ? "Main admin" : "Admin " + id); };
+  function recipients() {
+    const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
+    return ids.filter(id => id !== String(db.tg.sendAs)).map(id => ({ id, name: nameOfAdmin(id) }));
+  }
+  function tgInfo() {
+    const t = db.tg, acc = senderAcc();
+    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: recipients().map(r => r.name) };
+  }
+  const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. It will try again tomorrow."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The main admin's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The main admin's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
+  let tgBusy = false;
+  async function sendDaily() {
+    if (tgBusy) return { ok: false, error: "A send is already running." };
+    tgBusy = true;
+    const t = db.tg;
+    try {
+      const acc = senderAcc();
+      if (!t.sendAs || !acc?.ready) throw new Error("The sender (main admin) Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then switch Daily Telegram on again.");
+      const to = recipients();
+      if (!to.length) throw new Error("There is no other admin to send to.");
+      const stock = db.products.filter(p => p.status === "stock"), groups = stockGroups(stock).slice(0, 60), n = nowEth();
+      const head = `📦 AMBAR STOCK — ${n.d}\n${stock.length} product${stock.length === 1 ? "" : "s"} in stock · ${groups.length} model${groups.length === 1 ? "" : "s"}` + (stock.length ? "" : "\nNothing is in stock today.");
+      const photos = new Map();
+      for (const g of groups) if (g.photo) { const b = await photoBuf(g.photo); if (b) photos.set(g.key, b); }
+      const results = [];
+      for (const r of to) {
+        try {
+          let entity; try { entity = await acc.client.getEntity(BigInt(r.id)); } catch { entity = await acc.client.getInputEntity(BigInt(r.id)); }
+          await acc.client.sendMessage(entity, { message: head });
+          for (const g of groups) {
+            await new Promise(x => setTimeout(x, 800));
+            const buf = photos.get(g.key);
+            if (buf) {
+              const f = path.join(os.tmpdir(), "stk-" + uid() + ".jpg");
+              fs.writeFileSync(f, buf);
+              try { await acc.client.sendFile(entity, { file: f, caption: groupCaption(g), forceDocument: false }); } finally { try { fs.unlinkSync(f); } catch {} }
+            } else await acc.client.sendMessage(entity, { message: groupCaption(g) });
+          }
+          results.push({ name: r.name, ok: true, count: groups.length });
+        } catch (e) { results.push({ name: r.name, ok: false, error: tgFriendly(e) }); }
+      }
+      const okN = results.filter(x => x.ok).length;
+      Object.assign(t, { lastDate: todayAddis(), lastAt: n.d + " " + n.t, results, ok: okN > 0, error: okN ? (okN < results.length ? "Some admins could not be reached." : "") : (results[0]?.error || "Nobody could be reached.") });
+      persist();
+      return { ok: okN > 0, results, error: t.error };
+    } catch (e) {
+      Object.assign(t, { lastDate: todayAddis(), lastAt: nowEth().d + " " + nowEth().t, ok: false, error: e.message, results: [] });
+      persist();
+      return { ok: false, error: e.message };
+    } finally { tgBusy = false; }
+  }
+  async function tgTick() {
+    const t = db.tg;
+    if (!t.on || !t.sendAs || tgBusy || t.lastDate === todayAddis() || timeAddis() < (t.time || "08:00")) return;
+    await sendDaily();
+  }
 
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
@@ -186,12 +271,12 @@ function register(app, ctx) {
   const CATS = ["SHOE SHELF", "OTHERS", "GADGETS"];
   const lab = p => [p.model, p.desc].filter(Boolean).join(" ") || p.code;
   const up = (v, n) => clip(v, n).toUpperCase();
-  const orderTypeOf = v => /CUS|ORD/i.test(String(v || "")) ? "CUSTOM" : "READYMADE";
+  const orderTypeOf = v => /CUS|ORD/i.test(String(v || "")) ? "ORDER" : "READYMADE"; // READYMADE or ORDER
   const priorityOf2 = v => { const x = String(v || "").toUpperCase(); return x.startsWith("H") ? "HIGH" : x.startsWith("M") ? "MEDIUM" : "LOW"; };
   const dateOk = v => !v || /^\d{4}\/\d{2}\/\d{2}$/.test(v);
   function readProduct(b) {
     return { code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
-      category: up(b.category, 30) || "OTHERS", handle: clip(b.handle, 60), salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
+      category: up(b.category, 30) || "OTHERS", handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
   }
   const readErr = f => (!f.model && !f.desc) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
   router.post("/product/add", async (req, res) => {
@@ -236,8 +321,10 @@ function register(app, ctx) {
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
     if (p.status !== "stock") return fail(res, "Only a product that is IN STOCK can be sold.");
-    if (clip(b.salesName, 80)) p.salesName = clip(b.salesName, 80);
-    p.status = "sold"; p.sold = { ...stamp(req), salesInfo: up(b.salesInfo, 12), note: clip(b.note, 300) };
+    // Sales info = the REAL salesperson of the mini app (the Sales Name; empty = the admin who presses Sold)
+    const seller = clip(b.salesName, 80) || p.salesName || who(req);
+    p.salesName = seller;
+    p.status = "sold"; p.sold = { ...stamp(req), salesName: seller, salesInfo: seller, note: clip(b.note, 300) };
     hist(p, "Sold", req);
     audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
     done(res, `💰 ${p.code} sold — ${p.sold.d} · ${ethClock(p.sold.t)}.`);
@@ -328,6 +415,27 @@ function register(app, ctx) {
       if (cfg.scriptUrl) scheduleBackup(1500);
       res.json({ ok: true, message: "✅ Reports started from 0." + note, ...view() });
     } catch (e) { fail(res, "Could not start from zero: " + e.message + " — nothing was deleted."); }
+  });
+
+  // DAILY STOCK → TELEGRAM (main admin only)
+  router.post("/tg/config", ownerOnly, async (req, res) => {
+    const b = req.body || {}, t = db.tg, on = b.on === true || b.on === "true";
+    const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.time || "")) ? String(b.time) : (t.time || "08:00");
+    if (on) {
+      const id = String(req.actor?.telegramId || "");
+      if (!id) return fail(res, "Open the app from Telegram so the sender is known.");
+      const acc = ctx.accountFor({ role: "owner", telegramId: id });
+      if (!acc?.ready) return fail(res, "Your own Telegram account is not connected. Connect it first (Settings → Connect my Telegram account) — the daily stock is sent from YOUR account.");
+      t.sendAs = id;
+    }
+    t.on = on; t.time = time; persist();
+    done(res, on ? `🟢 Daily stock is ON — every day at ${time} (Addis Ababa clock), sent from your Telegram account.` : "⚪ Daily stock is OFF.");
+  });
+  router.post("/tg/send", ownerOnly, async (req, res) => {
+    const t = db.tg;
+    if (!t.sendAs) { const id = String(req.actor?.telegramId || ""); if (id) t.sendAs = id; }
+    const r = await sendDaily();
+    res.json({ ...(r.ok ? { ok: true, message: "✅ Stock sent to the admins' Telegram." + (r.error ? " " + r.error : "") } : { ok: false, error: r.error || "Could not send." }), ...view() });
   });
 
   // BACKUP sheet
