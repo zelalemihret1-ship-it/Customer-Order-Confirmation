@@ -338,6 +338,21 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
     res.json({ ok: true, message: `✅ Restored. Ratings: ${before} → ${after}.` });
   });
 
+  // Main admin: re-enter a rating by hand (for example from the bot's "⭐ New rating" Telegram message) when a rating was lost.
+  router.post("/manual", ownerOnlyR, async (req, res) => {
+    if (supabase) { try { await loadOrders(); } catch {} }
+    const order = findOrder(req.body?.id);
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
+    const stars = Math.round(Number(req.body?.stars));
+    if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ ok: false, error: "Choose 1 to 5 stars." });
+    const comment = clean(req.body?.comment).slice(0, MAX_COMMENT);
+    const rec = db.links[order.id] || (db.links[order.id] = { token: crypto.randomBytes(12).toString("hex"), status: "sent", sentAt: stamp(), by: req.actor.name || "Admin", byKey: orderKeyOf(order), via: "restored by admin" });
+    Object.assign(rec, { stars, comment, ratedAt: clean(req.body?.ratedAt).slice(0, 20) || stamp(), orderCode: order.orderId || "", customerName: order.customerName || "", product: order.product || "", manual: true });
+    if (!order.goodsDelivered) { order.goodsDelivered = true; order.goodsDeliveredAt = new Date().toISOString(); try { await saveOrderRecord(order); } catch {} }
+    await save();
+    res.json({ ok: true, message: `⭐ Rating ${stars}/5 saved for ${order.orderId || "the order"}.` });
+  });
+
   app.use("/api/ratings", router);
   return { load, start, autoTick };
 }
