@@ -131,12 +131,12 @@ function register(app, ctx) {
     const key = ownerIds.find(autoOn);
     if (!key || !isNewChat || !m?.chat || m.chat.type !== "private" || m.from?.is_bot) return;
     const id = String(m.chat.id);
-    if (ownerIds.includes(id) || (ctx.getAppAdmins() || []).some(a => String(a.telegramId) === id)) return; // never greet the admins themselves
+    if (ownerIds.includes(id) || ((ctx.getAppAdmins?.() || []) || []).some(a => String(a.telegramId) === id)) return; // never greet the admins themselves
     const name = [m.chat.first_name, m.chat.last_name].filter(Boolean).join(" ");
     await autoSend({ key, adminName: ownerName(key), tgId: id, name, username: m.chat.username ? "@" + m.chat.username : "", via: "AMBAR bot",
       send: text => telegram("sendMessage", { chat_id: id, text }, { retry: false }) });
   }
-  const ownerName = key => { const a = (ctx.getAppAdmins() || []).find(x => String(x.telegramId) === String(key)); return a?.name || "Ambar Furniture"; };
+  const ownerName = key => { const a = ((ctx.getAppAdmins?.() || []) || []).find(x => String(x.telegramId) === String(key)); return a?.name || "Ambar Furniture"; };
 
   const router = express.Router();
   router.use(requireAccess);
@@ -153,7 +153,7 @@ function register(app, ctx) {
     if (owner) {
       // v121: the main admin switches the automatic greeting ON / OFF for every admin (assigned admins cannot)
       const seen = new Set(), team = [];
-      for (const id of [...ownerIds, ...(ctx.getAppAdmins() || []).map(x => x.telegramId)].map(String).filter(Boolean)) {
+      for (const id of [...ownerIds, ...((ctx.getAppAdmins?.() || []) || []).map(x => x.telegramId)].map(String).filter(Boolean)) {
         if (seen.has(id)) continue; seen.add(id);
         const isMain = ownerIds.includes(id);
         team.push({ key: id, name: ownerName(id) === "Ambar Furniture" && isMain ? "Main admin" : ownerName(id), main: isMain, on: autoOn(id), connected: !!accountFor({ role: isMain ? "owner" : "admin", telegramId: id })?.ready });
@@ -178,7 +178,7 @@ function register(app, ctx) {
     if (!isOwner(a)) return res.status(403).json({ ok: false, error: "Only the main admin can switch the automatic greeting ON or OFF. Ask the main admin." });
     const target = String(req.body?.target || own || "");
     if (!target || target === "owner") return res.status(400).json({ ok: false, error: "Open the app from Telegram so your admin identity is known." });
-    const known = ownerIds.map(String).includes(target) || (ctx.getAppAdmins() || []).some(x => String(x.telegramId) === target);
+    const known = ownerIds.map(String).includes(target) || ((ctx.getAppAdmins?.() || []) || []).some(x => String(x.telegramId) === target);
     if (!known) return res.status(400).json({ ok: false, error: "That admin was not found." });
     const on = req.body?.on === true || req.body?.on === "true";
     const t = clean(req.body?.text).slice(0, MAX_TEXT);
