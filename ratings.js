@@ -138,7 +138,7 @@ function register(app, ctx) {
       const text = render(ensureLink(tpl), order, link, adminName);
       try {
         const r = await sendToCustomer(order, text, link);
-        Object.assign(rec, { orderCode: order.orderId || "", sentAt: stamp(), by: adminName, byKey: opts.byKey || orderKeyOf(order), via: r.via + (opts.auto ? " · automatic" : ""), status: "sent", error: "", auto: !!opts.auto });
+        Object.assign(rec, { orderCode: order.orderId || "", customerName: order.customerName || "", product: order.product || "", sentAt: stamp(), by: adminName, byKey: opts.byKey || orderKeyOf(order), via: r.via + (opts.auto ? " · automatic" : ""), status: "sent", error: "", auto: !!opts.auto });
         db.log.push({ orderId: order.id, order: order.orderId, name: order.customerName, at: rec.sentAt, by: adminName, via: rec.via, status: "sent" });
         if (!order.goodsDelivered) { order.goodsDelivered = true; order.goodsDeliveredAt = new Date().toISOString(); try { await saveOrderRecord(order); } catch (e) { console.warn("Delivered flag not saved:", e.message); } }
         await save();
@@ -214,7 +214,7 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
       const stars = Math.round(Number(req.body?.stars));
       if (!(stars >= 1 && stars <= 5)) return res.status(400).json({ ok: false, error: "Please tap 1 to 5 stars first." });
       const comment = clean(req.body?.comment).slice(0, MAX_COMMENT);
-      Object.assign(f.rec, { stars, comment, ratedAt: stamp(), orderCode: f.order?.orderId || f.rec.orderCode || "" });
+      Object.assign(f.rec, { stars, comment, ratedAt: stamp(), orderCode: f.order?.orderId || f.rec.orderCode || "", customerName: f.order?.customerName || f.rec.customerName || "", product: f.order?.product || f.rec.product || "" });
       await save();
       const o = f.order || {};
       notifyAdminsText({ ...o, createdByTelegramId: o.createdByTelegramId }, `⭐ <b>New rating ${stars}/5</b> ${"★".repeat(stars)}${"☆".repeat(5 - stars)}\n<b>Order:</b> ${esc(o.orderId || "")}\n<b>Customer:</b> ${esc(o.customerName || "")}${comment ? "\n\n" + esc(comment) : ""}`).catch(() => {});
@@ -244,6 +244,8 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
       const o = orders.find(x => String(x.orderId || "") === String(code) && !db.links[x.id]);
       if (o) { db.links[o.id] = r; delete db.links[id]; n++; }
     }
+    const live = new Set(Object.entries(db.links).filter(([id]) => ids.has(String(id))).map(([, r]) => r.token));
+    for (const [id, r] of Object.entries(db.links)) if (!ids.has(String(id)) && live.has(r.token)) { delete db.links[id]; n++; }
     if (n) save();
   }
   router.get("/", async (req, res) => {
@@ -256,6 +258,18 @@ go.addEventListener("click",async()=>{go.disabled=true;try{const r=await fetch("
       return { id: o.id, orderId: o.orderId, product: o.product || "", customer: o.customerName || "", deliveryDate: helpers.ethDate(o.deliveryDate) || "", status: o.status || "",
         state: stateOf(o), sentAt: r.sentAt || "", via: r.via || "", by: r.by || "", error: r.status === "failed" ? r.error : "", stars: r.stars || 0, comment: r.comment || "", ratedAt: r.ratedAt || "", owner: o.createdByName || "" };
     });
+    // Ratings whose order record no longer exists (orders cleared / re-imported) are still shown, from what the rating itself remembers.
+    const have = new Set(getOrders().map(o => String(o.id)));
+    const tokens = new Set(Object.entries(db.links).filter(([id]) => have.has(String(id))).map(([, r]) => r.token));
+    for (const [id, r] of Object.entries(db.links)) {
+      if (!r.stars || have.has(String(id))) continue;
+      if (tokens.has(r.token)) continue; // same rating already shown under its order
+      tokens.add(r.token);
+      if (!owner && String(r.byKey || "") !== key) continue;
+      const lg = db.log.find(x => String(x.orderId) === String(id)) || {};
+      rows.push({ id, orderId: r.orderCode || lg.order || "—", product: r.product || "", customer: r.customerName || lg.name || "Customer", deliveryDate: "", status: "", state: "rated", sentAt: r.sentAt || "", via: r.via || "", by: r.by || "",
+        error: "", stars: r.stars, comment: r.comment || "", ratedAt: r.ratedAt || "", owner: r.by || "", orphan: true });
+    }
     const rated = rows.filter(r => r.stars);
     const out = { ok: true, me: { role: a.role, name: a.name || "" }, template: myTemplate(a), defaultTemplate: DEFAULT_TEXT, auto: autoOn(key), https: !!baseUrl(),
       stats: { orders: rows.length, sent: rows.filter(r => r.state === "sent" || r.state === "rated").length, rated: rated.length, avg: rated.length ? Math.round(rated.reduce((s, r) => s + r.stars, 0) / rated.length * 10) / 10 : 0 }, orders: rows };
