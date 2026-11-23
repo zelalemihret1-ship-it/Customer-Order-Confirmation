@@ -243,7 +243,7 @@ const fmtD=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?(+m[3]
 const et=t=>{const m=/^(\d{1,2}):(\d{2})/.exec(t||"");if(!m)return t||"";const h=+m[1];return (((h+6)%12)||12)+":"+m[2]+" "+(h>=6&&h<18?"ቀን":"ሌሊት");};
 const fmtDT=o=>o&&o.d?fmtD(o.d)+" · "+et(o.t):"—";
 const dmy=d=>{const m=/^(\d{4})\/(\d{2})\/(\d{2})$/.exec(d||"");return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):(d||"");};
-const lab=p=>[p.model,p.desc].filter(Boolean).join(" ")||p.code;
+const lab=p=>[p.ptype,p.model,p.desc].filter(Boolean).join(" ")||p.code;
 const matLab=m=>m.name+(m.type?" "+m.type:"");
 const logMat=l=>l.material+(l.mtype?" "+l.mtype:"");
 const isCus=p=>p.orderType==="ORDER"||p.orderType==="CUSTOM";
@@ -302,7 +302,7 @@ function render(){
   if(tab==="mt")$("sub2").innerHTML='<button type="button" data-m="list" class="'+(msub==="list"?"on":"")+'">🧱 Materials ('+S.materials.length+')</button><button type="button" data-m="moves" class="'+(msub==="moves"?"on":"")+'">🕘 Recent movements ('+S.log.length+')</button>';
   if(tab==="st")$("sub2").innerHTML='<button type="button" data-s="stock" class="'+(sub==="stock"?"on":"")+'">📦 In stock ('+st.length+')</button><button type="button" data-s="sold" class="'+(sub==="sold"?"on":"")+'">💰 Sold ('+sd.length+')</button>';
   const hit=t=>!q||String(t).toLowerCase().includes(q);
-  const text=p=>[p.code,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle,p.capacity].join(" ");
+  const text=p=>[p.code,p.ptype,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle,p.capacity].join(" ");
   const facts=p=>{const f=[];if(p.handle)f.push("🔧 Handle <b>"+esc(p.handle)+"</b>");if(p.capacity)f.push("👟 Capacity <b>"+esc(p.capacity)+"</b>");if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
   const prPill=p=>p.priority==="HIGH"?'<span class="pill hi">HIGH</span>':p.priority==="MEDIUM"?'<span class="pill med">MEDIUM</span>':'<span class="pill low2">LOW</span>';
   const tyPill=p=>isCus(p)?'<span class="pill cus">ORDER</span>':'<span class="pill rdy">READYMADE</span>';
@@ -419,6 +419,8 @@ function openForm(o){
     +'<datalist id="units"><option>pcs</option><option>244-122</option><option>m</option><option>kg</option><option>sheet</option><option>roll</option><option>liter</option><option>box</option></datalist>'
     +'<datalist id="groups">'+[...new Set(S.materials.map(m=>m.group||"MATERIAL"))].map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="salesn">'+(S.sales||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>';
   wirePhoto();
+  const pts=$("fBody").querySelector('[data-k="ptype"]'),cat=$("fBody").querySelector('[data-k="category"]');
+  if(pts&&cat)pts.addEventListener("change",()=>{if(pts.value==="Shoe Shelf")cat.value="SHOE SHELF";else if(cat.value==="SHOE SHELF")cat.value="OTHERS";});
   $("fOk").textContent=o.ok||"Save";$("fOk").className="btn "+(o.cls||"");$("fOk").disabled=false;
   $("fOv").classList.add("on");setTimeout(()=>{const i=$("fBody").querySelector("input,textarea");try{i&&i.focus();}catch{}},200);
 }
@@ -426,7 +428,7 @@ const closeForm=()=>{$("fOv").classList.remove("on");FORM=null;};
 $("fNo").onclick=closeForm;
 $("fOv").addEventListener("click",e=>{if(e.target===$("fOv"))closeForm();});
 $("fOk").onclick=async()=>{
-  if(!FORM)return;const v={};$("fBody").querySelectorAll("[data-k]").forEach(i=>{v[i.dataset.k]=i.value;});
+  if(!FORM)return;const v={};$("fBody").querySelectorAll("[data-k]").forEach(i=>{v[i.dataset.k]=/^—/.test(i.value)?"":i.value;});
   if(FORM.fields.some(f=>f.photo)){if(PHOTO.data)v.photo=PHOTO.data;if(PHOTO.remove)v.removePhoto=true;}
   $("fOk").disabled=true;say("fMsg","Saving…","info");
   const d=await FORM.submit(v);$("fOk").disabled=false;
@@ -435,7 +437,10 @@ $("fOk").onclick=async()=>{
 };
 const P=id=>S.products.find(p=>p.id===id),M=id=>S.materials.find(m=>m.id===id);
 // the same columns as the Google Sheet: Prod Id · S.No · Model · Description · Order Type · Priority · Sales Name · Location · Delivery Date · Changes · Correction
-const prodFields=(p,isNew)=>[
+const PTYPES=["Shoe Shelf","Console Table","Chest Drawer","Center Table","TV Stand","Dining Table","Mirror"];
+const prodFields=(p,isNew)=>{const pt=p&&p.ptype?p.ptype:"",known=PTYPES.includes(pt);return [
+  {k:"ptype",label:"Product type",sel:["— Choose the product type —",...PTYPES,"Other"],val:pt?(known?pt:"Other"):"— Choose the product type —"},
+  {k:"ptypeOther",label:"If Other: type the product type",opt:1,val:pt&&!known?pt:"",ph:"e.g. Bookshelf"},
   {k:"code",label:"Prod Id",opt:isNew,val:p?p.code:"",ph:isNew?"Leave empty for "+S.nextCode:""},
   {k:"sno",label:"S.No (order number)",opt:1,val:p?p.sno:""},
   {k:"model",label:"Model",opt:1,val:p?p.model:"",ph:"e.g. M14"},
@@ -450,7 +455,7 @@ const prodFields=(p,isNew)=>[
   {k:"location",label:"Location",opt:1,val:p?p.location:""},
   {k:"deliveryDate",label:"Delivery Date (Ethiopian)",opt:1,val:p?p.deliveryDate:"",ph:"2019/03/25"},
   {k:"changes",label:"Changes",opt:1,val:p?p.changes:""},
-  {k:"note",label:"Correction",opt:1,area:1,val:p?p.note:""}];
+  {k:"note",label:"Correction",opt:1,area:1,val:p?p.note:""}];};
 $("addBtn").onclick=()=>{
   if(tab==="mt")return openForm({title:"➕ New material",info:"Write the material once. Then use ➕ Add when stock arrives and ✂️ Cut when you use it.",ok:"Save material",
     fields:[{k:"name",label:"Material",ph:"e.g. NORMAL MDF"},{k:"type",label:"Type",opt:1,ph:"e.g. 18"},{k:"unit",label:"Unit",val:"244-122",list:"units"},{k:"group",label:"Table (group)",opt:1,val:"MATERIAL",list:"groups"},{k:"qty",label:"Available now",num:1,val:"0",opt:1},{k:"min",label:"Low-stock alert at",num:1,opt:1,ph:"e.g. 2"},{k:"note",label:"Note",opt:1,area:1}],
