@@ -60,6 +60,20 @@ button:disabled{opacity:.5;cursor:default}
 .count{font-size:12px;color:#6d675d;margin:0 2px 10px}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;text-align:center}
 #gate .panel{max-width:420px;border:1px solid #b89552;border-radius:18px;padding:26px;background:#18140f}
+.sheetOv{position:fixed;inset:0;background:#0009;z-index:150;display:none;align-items:flex-end;justify-content:center}
+.sheetOv.on{display:flex}
+.sheetBox{background:#fff;width:100%;max-width:560px;max-height:90vh;overflow:auto;border-radius:22px 22px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px #0004}
+.sheetBox .hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.sheetBox .x{border:0;background:#f1ede2;color:#153a2e;border-radius:999px;width:34px;height:34px;font-size:18px;font-weight:800;cursor:pointer}
+.sheetBox .nm2{font-size:20px;font-weight:800;margin:6px 0 2px;color:#153a2e}
+.dl{margin:12px 0 4px;border:1px solid #e4ded2;border-radius:14px;overflow:hidden}
+.dl div{display:flex;gap:10px;padding:9px 12px;font-size:13.5px;border-bottom:1px solid #eee8da;line-height:1.4}
+.dl div:last-child{border-bottom:0}
+.dl span{flex:0 0 112px;color:#6d675d;font-weight:700}
+.dl b{flex:1;font-weight:600;color:#18382e;word-break:break-word;white-space:pre-wrap}
+.acts2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.acts2 button{border:0;border-radius:14px;padding:15px 10px;font-weight:800;font-size:15px;cursor:pointer;color:#fff}
+.acts2 .mk{background:#153a2e}.acts2 .ed{background:#b89552}
 @media(max-width:640px){main{padding:10px}.card{padding:14px;border-radius:14px}.grid{grid-template-columns:1fr}.full{grid-column:auto}header a.back{position:static;transform:none;display:inline-block;margin-bottom:8px}}
 </style>
 <link rel="stylesheet" href="/app.css?v=118">
@@ -156,6 +170,7 @@ button:disabled{opacity:.5;cursor:default}
     <div id="list"></div>
   </section>
 </main>
+<div class="sheetOv" id="cvOv"><div class="sheetBox" id="cvBox"></div></div>
 <script>
 const $=id=>document.getElementById(id);
 const REJ=["Price too high","Changed mind","Delivery problem","Found elsewhere","No response","Other"];
@@ -221,7 +236,28 @@ function renderList(){
   const sales=[...new Set(ALL.map(c=>c.salesName).filter(Boolean))];
   const keep=$("fSales").value;$("fSales").innerHTML='<option value="">All sales names</option>'+sales.map(s=>`<option ${s===keep?"selected":""}>${esc(s)}</option>`).join("");
 }
-$("list").addEventListener("click",e=>{const b=e.target.closest(".cust");if(!b)return;const c=ALL.find(x=>x.id===b.dataset.id);if(c)load(c);});
+// Tap a customer → a VIEW opens with two buttons: 🧾 Make order · ✏️ Edit
+let VIEWED=null;
+function openView(c){
+  VIEWED=c;
+  const row=(l,v)=>v?`<div><span>${l}</span><b>${esc(v)}</b></div>`:"";
+  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
+  <div class="nm2">${esc(c.name)}</div>
+  <div><span class="pill ${esc(c.customerStatus)}" style="margin-left:0">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></div>
+  <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
+  <div class="acts2"><button class="mk" type="button" data-go="order">🧾 Make order</button><button class="ed" type="button" data-go="edit">✏️ Edit</button></div>`;
+  $("cvOv").classList.add("on");
+}
+const closeView=()=>{$("cvOv").classList.remove("on");VIEWED=null;};
+$("cvOv").addEventListener("click",e=>{
+  if(e.target===$("cvOv")||e.target.closest("[data-x]")){closeView();return;}
+  const g=e.target.closest("[data-go]");if(!g||!VIEWED)return;
+  const c=VIEWED;closeView();
+  if(g.dataset.go==="edit"){load(c);return;}
+  try{sessionStorage.removeItem("ambarGoHome");}catch{}
+  location.href="/orders.html?customer="+encodeURIComponent(c.id)+(location.hash||"");
+});
+$("list").addEventListener("click",e=>{const b=e.target.closest(".cust");if(!b)return;const c=ALL.find(x=>x.id===b.dataset.id);if(c)openView(c);});
 ["q","fStatus","fSales"].forEach(i=>$(i).addEventListener("input",renderList));
 $("tabForm").onclick=()=>setTab("form");$("tabList").onclick=()=>setTab("list");
 $("newBtn").onclick=()=>{blank();setTab("form");};
