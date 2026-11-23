@@ -185,6 +185,25 @@ h3.sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(
 .tgopt .tn{flex:1;min-width:0}.tgopt small{color:var(--mute);font-weight:600;font-size:11px}
 .tgopt:has(input:checked){border-color:var(--gold);background:#fbf6e8}
 @media(max-width:520px){.seg{top:74px}.kpi .n{font-size:24px}}
+
+/* v133 — red text for finished / sold products, material tables + hold & drag */
+.fin{border-left:4px solid #d00000!important}
+.fin .nm,.fin .meta,.fin .meta b,.fin .nt,.fin .facts,.fin .facts b,.fin .code{color:#d00000!important}
+.fin .code{background:#fff3f2;border-color:#f0b4b0}
+.fin .stamp{color:#d00000;background:#fdeceb}
+.mgroup{margin-bottom:20px}.mgroup .gh{margin:8px 2px 10px}
+.mlist.rows{display:flex;flex-direction:column;gap:8px}
+.mlist.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.lrow.mrow .mid .nm{white-space:normal;overflow:visible}
+.lrow.mrow .mid .meta{white-space:normal}
+.mrow{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.grip{display:inline-block;color:#b3a77f;font-weight:900;margin-right:7px;letter-spacing:-1px;cursor:grab}
+.mdrop{display:none;text-align:center;color:var(--mute);font-size:13px;padding:16px 10px;border:2px dashed #d9d2bf;border-radius:14px;background:#fff}
+.mghost{position:fixed;z-index:9999;pointer-events:none;margin:0!important;transform:scale(1.03);box-shadow:0 16px 36px #00000055;opacity:.96}
+.mdrag{opacity:.25}
+body.dragging{-webkit-user-select:none;user-select:none;overscroll-behavior:contain}
+body.dragging .mgroup .mlist{outline:2px dashed #cdbf95;outline-offset:6px;border-radius:12px;min-height:46px}
+@media(max-width:520px){.mlist.cards{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -250,7 +269,8 @@ const isCus=p=>p.orderType==="ORDER"||p.orderType==="CUSTOM";
 // Sales info = the real mini-app salesperson (older records kept S.R / S.O here)
 const realSales=p=>{const s=p.sold||{},v=String(s.salesInfo||"");return (v&&!/^S\.?[RO]$/i.test(v))?v:(s.salesName||p.salesName||s.by||"");};
 const nf=v=>(v===""||v==null)?"":Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
-let S={products:[],materials:[],log:[],handles:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",msub="list",q="",VM="list";
+let showOld=false;
+let S={products:[],materials:[],log:[],matGroups:[],handles:[],backup:{},now:{d:"",t:""},nextCode:"P-0001",cats:["SHOE SHELF","OTHERS","GADGETS"]},tab="wf",sub="stock",msub="list",q="",VM="list";
 try{const s=localStorage.getItem("repTab2");if(["wf","st","sv","mt"].includes(s))tab=s;const v=localStorage.getItem("repView");if(v==="list"||v==="cards")VM=v;}catch{}
 const photoSrc=p=>p&&p.photo?"/api/reports-photo/"+p.photo+".jpg":"";
 const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
@@ -279,7 +299,7 @@ let IS_OWNER=false,ME_NAME="",ME_ID="";
   if(!d.ok){say("vMsg",d.error||"Could not open the reports.","bad");}
   render();
 })();
-document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/reports/state");if(d.ok)render();}});
+document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")&&!document.body.classList.contains("dragging")){const d=await api("/api/reports/state");if(d.ok)render();}});
 
 // ── screens ──
 const by=s=>S.products.filter(p=>p.status===s);
@@ -288,9 +308,11 @@ function render(){
   const wf=by("workflow"),st=by("stock"),sd=by("sold");
   $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"],["sv","🖼 Stock view",st.length+" in stock"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
   const low=S.materials.filter(m=>lowOf(m)!=="ok").length,today=S.log.filter(l=>l.d===S.now.d).length,soldToday=sd.filter(p=>p.sold&&p.sold.d===S.now.d).length;
+  // a new Ethiopian month starts clean: finished (Workflow) and sold (Stock) products of earlier months are not listed any more
+  const cm=String(S.now.d||"").slice(0,7),inM=o=>!!(o&&o.d&&String(o.d).slice(0,7)===cm),sdm=sd.filter(p=>inM(p.sold));
   const K=(l,n,s,c)=>'<div class="kpi" style="border-left-color:'+(c||"var(--green)")+'"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>';
   $("kpis").innerHTML=tab==="wf"?K("In workflow",wf.length,"products in progress","#d9a21b")+K("In stock",st.length,"finished","#1f8f55")+K("All products",S.products.length,"including sold","#14598f")
-    :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold",sd.length,"products sold","#14598f")+K("Sold today",soldToday,fmtD(S.now.d),"#b3261e")
+    :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold this month",sdm.length,"products sold","#14598f")+K("Sold today",soldToday,fmtD(S.now.d),"#b3261e")
     :tab==="sv"?K("Models",stockGroups(st).length,"model + handle groups","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
     :K("Materials",S.materials.length,"kinds in store","#8a5a00")+K("Low / out",low,low?"to re-order":"all good",low?"#b3261e":"#1f8f55")+K("Moves today",today,fmtD(S.now.d),"#6d675d");
   $("addBtn").textContent=tab==="mt"?"➕ New material":"➕ New product";
@@ -300,7 +322,7 @@ function render(){
   $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search Prod Id, model, handle, description…";
   $("sub2").style.display=(tab==="st"||tab==="mt")?"flex":"none";
   if(tab==="mt")$("sub2").innerHTML='<button type="button" data-m="list" class="'+(msub==="list"?"on":"")+'">🧱 Materials ('+S.materials.length+')</button><button type="button" data-m="moves" class="'+(msub==="moves"?"on":"")+'">🕘 Recent movements ('+S.log.length+')</button>';
-  if(tab==="st")$("sub2").innerHTML='<button type="button" data-s="stock" class="'+(sub==="stock"?"on":"")+'">📦 In stock ('+st.length+')</button><button type="button" data-s="sold" class="'+(sub==="sold"?"on":"")+'">💰 Sold ('+sd.length+')</button>';
+  if(tab==="st")$("sub2").innerHTML='<button type="button" data-s="stock" class="'+(sub==="stock"?"on":"")+'">📦 In stock ('+st.length+')</button><button type="button" data-s="sold" class="'+(sub==="sold"?"on":"")+'">💰 Sold ('+sdm.length+')</button>';
   const hit=t=>!q||String(t).toLowerCase().includes(q);
   const text=p=>[p.code,p.ptype,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle,p.capacity].join(" ");
   const facts=p=>{const f=[];if(p.handle)f.push("🔧 Handle <b>"+esc(p.handle)+"</b>");if(p.capacity)f.push("👟 Capacity <b>"+esc(p.capacity)+"</b>");if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
@@ -315,13 +337,21 @@ function render(){
   const th=p=>photoSrc(p)?'<img class="thumb sm" loading="lazy" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>';
   const ic=(a,id,t,cls)=>'<button class="b sm '+(cls||"")+'" data-a="'+a+'" data-id="'+id+'" title="'+t+'">'+t.split(" ")[0]+'</button>';
   const small=(p,extraTxt)=>'<span class="code" style="font-size:11px;padding:1px 6px">'+esc(p.code)+'</span> '+(p.handle?'🔧 '+esc(p.handle)+' · ':'')+extraTxt;
-  const lrow=(p,metaTxt,acts)=>'<div class="lrow">'+th(p)+'<div class="mid"><div class="nm">'+esc(lab(p))+'</div><div class="meta">'+small(p,metaTxt)+'</div></div><div class="rt">'+acts+'</div></div>';
+  const lrow=(p,metaTxt,acts,cls)=>'<div class="lrow '+(cls||"")+'">'+th(p)+'<div class="mid"><div class="nm">'+esc(lab(p))+'</div><div class="meta">'+small(p,metaTxt)+'</div></div><div class="rt">'+acts+'</div></div>';
   if(tab==="wf"){
     const L=wf.filter(p=>hit(text(p)));
     h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+" · "+esc(fmtDT(p.added)),'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>'+ic("edit",p.id,"✏️ Edit")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
       :'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+'</div>'
       +'<div class="acts"><button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
     if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b> and fill the Prod Id, model, handle type and photo.<br>When it is finished, press <b>Finished → In Stock</b> — it appears in <b>Stock</b> and <b>Stock view</b> at once.")+'</div>';
+    // products that moved on to Stock this Ethiopian month stay here with RED text; next month they are gone
+    const F=S.products.filter(p=>p.finished&&inM(p.finished)&&hit(text(p))).sort((a,b)=>((b.finished.d||"")+(b.finished.t||"")).localeCompare((a.finished.d||"")+(a.finished.t||"")));
+    if(F.length){
+      const stx=p=>p.status==="sold"?"💰 SOLD":"📦 IN STOCK";
+      h=(L.length?h:"")+'<div class="gh"><span>✅ Finished → In Stock · '+esc(fmtD(S.now.d).split(" ").slice(1).join(" "))+'</span><span>'+F.length+'</span></div>'
+        +F.map(p=>LM?lrow(p,tyPill(p)+" "+stx(p)+" · Finished "+esc(fmtDT(p.finished)),ic("hist",p.id,"📜 History"),"fin")
+          :'<div class="item fin">'+head(p)+'<div class="meta">Finished <b>'+esc(fmtDT(p.finished))+'</b> · <b>'+stx(p)+'</b></div><div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button></div></div>').join("");
+    }
   }else if(tab==="st"){
     if(sub==="stock"){
       const L=st.filter(p=>hit(text(p))).sort((a,b)=>((a.finished||{}).d+(a.finished||{}).t).localeCompare((b.finished||{}).d+(b.finished||{}).t));
@@ -330,12 +360,13 @@ function render(){
         +'<div class="acts"><button class="b gold" data-a="sold" data-id="'+p.id+'">💰 Sold</button><button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="undo" data-id="'+p.id+'" title="Back to Workflow">↩</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>');
       if(!L.length)h='<div class="empty">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>A product appears here the moment you press <b>Finished → In Stock</b> in Workflow.")+'</div>';
     }else{
-      const L=sd.filter(p=>hit(text(p))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
-      h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return LM?lrow(p,'<span class="pill sold">'+(td?"S.TODAY":"SOLD")+'</span> '+esc(fmtDT(s)),ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Cancel sale")+ic("del",p.id,"🗑 Delete","red"))
-        :'<div class="item">'+head(p)
+      const L=(showOld?sd:sdm).filter(p=>hit(text(p))).sort((a,b)=>((b.sold||{}).d+(b.sold||{}).t).localeCompare((a.sold||{}).d+(a.sold||{}).t));
+      if(sd.length>sdm.length)extra='<div style="text-align:center;margin:14px 0"><button class="b" id="oldBtn" type="button">'+(showOld?"🙈 Hide earlier months":"📂 Show earlier months ("+(sd.length-sdm.length)+")")+'</button><div class="hint" style="margin-top:6px">A new Ethiopian month starts clean. Earlier sales stay saved in the Google Sheet month tabs.</div></div>';
+      h=group(L,p=>{const s=p.sold||{},td=s.d===S.now.d;return LM?lrow(p,'<span class="pill sold">'+(td?"S.TODAY":"SOLD")+'</span> '+esc(fmtDT(s)),ic("hist",p.id,"📜 History")+ic("undo",p.id,"↩ Cancel sale")+ic("del",p.id,"🗑 Delete","red"),"fin")
+        :'<div class="item fin">'+head(p)
         +'<div class="stamp">🗓 Sold <b>'+esc(fmtDT(s))+'</b> (Ethiopian)<br>Sold type <b>'+(td?"S.TODAY":"SOLD")+'</b> · Sales info <b>'+esc(realSales(p))+'</b>'+(s.by?'<br>By '+esc(s.by):'')+'</div>'
         +'<div class="acts"><button class="b" data-a="hist" data-id="'+p.id+'">📜 History</button><button class="b" data-a="undo" data-id="'+p.id+'">↩ Cancel sale</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>';});
-      if(!L.length)h='<div class="empty">'+(sd.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
+      if(!L.length)h='<div class="empty">'+(sdm.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
   }else if(tab==="sv"){
     // Stock view: in-stock products by PHOTO. Same model + same handle → ONE photo with ×2, ×3 …; same model with a different handle → separate photo.
@@ -355,19 +386,30 @@ function render(){
     $("out").className="";
     if(!lg.length)h='<div class="empty">'+(S.log.length?"No movement matches your search.":"<b>No movement yet.</b><br>Every <b>➕ Add</b> and <b>✂️ Cut</b> of a material is listed here with its Ethiopian date and time.")+'</div>';
   }else{
-    const L=S.materials.filter(m=>hit(matLab(m)+" "+m.group)).sort((a,b)=>(a.group||"").localeCompare(b.group||"")||a.name.localeCompare(b.name));
-    let lastG="";
-    h=L.map(m=>{const s=lowOf(m),pct=m.min>0?Math.min(100,Math.round(m.qty/(m.min*2)*100)):(m.qty>0?100:0);const last=S.log.find(l=>l.matId===m.id);
-      const gh=(m.group||"MATERIAL")!==lastG?'<div class="gh"><span>'+esc(m.group||"MATERIAL")+'</span><span>'+L.filter(x=>(x.group||"MATERIAL")===(m.group||"MATERIAL")).length+'</span></div>':"";lastG=m.group||"MATERIAL";
+    // two tables like the reference sheet; every row can be moved by HOLD + DRAG (also into the other table)
+    const grps=(S.matGroups&&S.matGroups.length?S.matGroups:[]).slice();
+    S.materials.forEach(m=>{const g=m.group||"MATERIAL";if(!grps.includes(g))grps.push(g);});
+    const canDrag=!q;
+    const rowOf=m=>{const s=lowOf(m),pct=m.min>0?Math.min(100,Math.round(m.qty/(m.min*2)*100)):(m.qty>0?100:0);const last=S.log.find(l=>l.matId===m.id);
       const pill=s==="ok"?'<span class="pill stock">OK</span>':'<span class="pill '+s+'">'+(s==="out"?"OUT":"LOW")+'</span>';
-      if(LM)return gh+'<div class="lrow"><div class="mid"><div class="nm">'+esc(matLab(m))+'</div><div class="meta"><b style="font-size:14px;color:var(--tx)">'+nf(m.qty)+'</b> '+esc(m.unit)+' · '+pill+(last?' · '+esc(fmtDT(last)):'')+'</div></div><div class="rt"><button class="b sm add2" data-a="madd" data-id="'+m.id+'" title="Add">➕</button><button class="b sm cut" data-a="mcut" data-id="'+m.id+'" title="Cut">✂️</button>'+ic("medit",m.id,"✏️ Edit")+ic("mhist",m.id,"📜 Movements")+ic("mdel",m.id,"🗑 Delete","red")+'</div></div>';
-      return gh+'<div class="item"><div class="top"><div class="nm">'+esc(matLab(m))+'</div>'+pill+'</div>'
+      const grip=canDrag?'<span class="grip" title="Hold and drag">⠿</span>':'';
+      if(LM)return '<div class="lrow mrow" data-mid="'+m.id+'"><div class="mid"><div class="nm">'+grip+esc(matLab(m))+'</div><div class="meta"><b style="font-size:14px;color:var(--tx)">'+nf(m.qty)+'</b> '+esc(m.unit)+' · '+pill+(last?' · '+esc(fmtDT(last)):'')+'</div></div><div class="rt"><button class="b sm add2" data-a="madd" data-id="'+m.id+'" title="Add">➕</button><button class="b sm cut" data-a="mcut" data-id="'+m.id+'" title="Cut">✂️</button>'+ic("medit",m.id,"✏️ Edit")+ic("mhist",m.id,"📜 Movements")+ic("mdel",m.id,"🗑 Delete","red")+'</div></div>';
+      return '<div class="item mrow" data-mid="'+m.id+'"><div class="top"><div class="nm">'+grip+esc(matLab(m))+'</div>'+pill+'</div>'
         +'<div class="bal"><span class="n">'+nf(m.qty)+'</span><span class="u">available · unit '+esc(m.unit)+'</span></div><div class="bar"><i class="'+(s==="ok"?"":s)+'" style="width:'+pct+'%"></i></div>'
         +'<div class="meta">'+(m.min>0?'Low-stock alert at <b>'+nf(m.min)+'</b> · ':'')+(last?'Last move <b>'+esc(fmtDT(last))+'</b>':'No movement yet')+'</div>'
-        +'<div class="acts"><button class="b add2" data-a="madd" data-id="'+m.id+'">➕ Add</button><button class="b cut" data-a="mcut" data-id="'+m.id+'">✂️ Cut</button><button class="b" data-a="mhist" data-id="'+m.id+'">📜</button><button class="b" data-a="medit" data-id="'+m.id+'">✏️</button><button class="b red" data-a="mdel" data-id="'+m.id+'">🗑</button></div></div>';}).join("");
-    if(!L.length)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Tap <b>➕ New material</b>, then use <b>➕ Add</b> when stock arrives and <b>✂️ Cut</b> when you use it. Open <b>🕘 Recent movements</b> to see every add and cut.")+'</div>';
+        +'<div class="acts"><button class="b add2" data-a="madd" data-id="'+m.id+'">➕ Add</button><button class="b cut" data-a="mcut" data-id="'+m.id+'">✂️ Cut</button><button class="b" data-a="mhist" data-id="'+m.id+'">📜</button><button class="b" data-a="medit" data-id="'+m.id+'">✏️</button><button class="b red" data-a="mdel" data-id="'+m.id+'">🗑</button></div></div>';};
+    h=grps.map(g=>{
+      const L=S.materials.filter(m=>(m.group||"MATERIAL")===g&&hit(matLab(m)+" "+g));
+      if(q&&!L.length)return "";
+      return '<div class="mgroup" data-grp="'+esc(g)+'"><div class="gh"><span>'+esc(g)+'</span><span>'+L.length+'</span></div><div class="mlist '+(LM?"rows":"cards")+'">'+L.map(rowOf).join("")+'<div class="mdrop">Hold a material and drop it here</div></div></div>';
+    }).join("");
+    if(h&&canDrag)h='<div class="hint" style="margin:0 2px 10px">✋ Hold a material for a moment, then drag it to a new place — also into the other table. The order is saved by itself.</div>'+h;
+    $("out").className="";
+    if(!S.materials.length||!h)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Tap <b>➕ New material</b>, then use <b>➕ Add</b> when stock arrives and <b>✂️ Cut</b> when you use it. Open <b>🕘 Recent movements</b> to see every add and cut.")+'</div>';
   }
   $("out").innerHTML=h;$("extra").innerHTML=extra;
+  const ob=$("oldBtn");if(ob)ob.onclick=()=>{showOld=!showOld;render();};
+  if(tab==="mt"&&msub==="list")syncDrops();
   const b=S.backup||{};
   $("bkState").textContent=!b.configured?"Not connected — tap to set up":(b.ok===false?"⚠ Last backup failed — tap for details":"Connected · backup copy in your Google Sheet");
   $("bkState").style.color=b.configured&&b.ok===false?"var(--bad)":"";
@@ -417,7 +459,7 @@ function openForm(o){
   $("fBody").innerHTML=o.fields.map(f=>f.photo?photoBlock(f):'<label>'+esc(f.label)+opt(f)+(f.sel?'<select data-k="'+f.k+'">'+f.sel.map(x=>'<option'+(String(x)===String(f.val)?' selected':'')+'>'+esc(x)+'</option>').join("")+'</select>':f.area?'<textarea data-k="'+f.k+'" placeholder="'+esc(f.ph||"")+'">'+esc(f.val||"")+'</textarea>':'<input data-k="'+f.k+'" '+(f.num?'inputmode="decimal"':'')+(f.list?' list="'+f.list+'"':'')+' placeholder="'+esc(f.ph||"")+'" value="'+esc(f.val==null?"":f.val)+'" autocomplete="off">')+'</label>').join("")
     +'<datalist id="handles">'+(S.handles||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>'
     +'<datalist id="units"><option>pcs</option><option>244-122</option><option>m</option><option>kg</option><option>sheet</option><option>roll</option><option>liter</option><option>box</option></datalist>'
-    +'<datalist id="groups">'+[...new Set(S.materials.map(m=>m.group||"MATERIAL"))].map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="salesn">'+(S.sales||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>';
+    +'<datalist id="groups">'+(S.matGroups&&S.matGroups.length?S.matGroups:[...new Set(S.materials.map(m=>m.group||"MATERIAL"))]).map(g=>'<option>'+esc(g)+'</option>').join("")+'</datalist><datalist id="salesn">'+(S.sales||[]).map(x=>'<option>'+esc(x)+'</option>').join("")+'</datalist>';
   wirePhoto();
   const pts=$("fBody").querySelector('[data-k="ptype"]'),cat=$("fBody").querySelector('[data-k="category"]');
   if(pts&&cat)pts.addEventListener("change",()=>{if(pts.value==="Shoe Shelf")cat.value="SHOE SHELF";else if(cat.value==="SHOE SHELF")cat.value="OTHERS";});
@@ -458,7 +500,7 @@ const prodFields=(p,isNew)=>{const pt=p&&p.ptype?p.ptype:"",known=PTYPES.include
   {k:"note",label:"Correction",opt:1,area:1,val:p?p.note:""}];};
 $("addBtn").onclick=()=>{
   if(tab==="mt")return openForm({title:"➕ New material",info:"Write the material once. Then use ➕ Add when stock arrives and ✂️ Cut when you use it.",ok:"Save material",
-    fields:[{k:"name",label:"Material",ph:"e.g. NORMAL MDF"},{k:"type",label:"Type",opt:1,ph:"e.g. 18"},{k:"unit",label:"Unit",val:"244-122",list:"units"},{k:"group",label:"Table (group)",opt:1,val:"MATERIAL",list:"groups"},{k:"qty",label:"Available now",num:1,val:"0",opt:1},{k:"min",label:"Low-stock alert at",num:1,opt:1,ph:"e.g. 2"},{k:"note",label:"Note",opt:1,area:1}],
+    fields:[{k:"name",label:"Material",ph:"e.g. NORMAL MDF"},{k:"type",label:"Type",opt:1,ph:"e.g. 18"},{k:"unit",label:"Unit",val:"244-122",list:"units"},{k:"group",label:"Table (group)",opt:1,val:(S.matGroups||[])[1]||(S.matGroups||[])[0]||"MATERIAL",list:"groups"},{k:"qty",label:"Available now",num:1,val:"0",opt:1},{k:"min",label:"Low-stock alert at",num:1,opt:1,ph:"e.g. 2"},{k:"note",label:"Note",opt:1,area:1}],
     submit:v=>api("/api/reports/material/add",v)});
   openForm({title:"➕ New product",info:"It goes to <b>Workflow</b>. Start date + clock time (Ethiopian) are saved automatically: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b>",ok:"Add to Workflow",fields:prodFields(null,true),submit:v=>api("/api/reports/product/add",v)});
 };
@@ -574,6 +616,70 @@ $("bkOv").addEventListener("click",async e=>{
   if(id==="bkOff"){if(!confirm("Disconnect the backup sheet? Your data stays in the app."))return;const d=await api("/api/reports/backup/disconnect",{});render();openBackup();if(d.message)say("bkMsg",d.message,"ok");}
 });
 
+
+// ── hold + drag to rearrange the materials (works with a finger and with a mouse) ──
+const syncDrops=()=>{document.querySelectorAll("#out .mlist").forEach(l=>{const d=l.querySelector(".mdrop");if(d)d.style.display=l.querySelector("[data-mid]")?"none":"block";});document.querySelectorAll("#out .mgroup").forEach(g=>{const c=g.querySelectorAll("[data-mid]").length,sp=g.querySelector(".gh span:last-child");if(sp)sp.textContent=c;});};
+(function(){
+  const out=$("out"),HOLD=380;
+  let timer=null,pend=null,drag=null,raf=0;
+  const clearPend=()=>{clearTimeout(timer);timer=null;pend=null;};
+  out.addEventListener("contextmenu",e=>{if(tab==="mt"&&e.target.closest("[data-mid]"))e.preventDefault();});
+  out.addEventListener("pointerdown",e=>{
+    if(tab!=="mt"||msub!=="list"||q||drag)return;
+    if(e.pointerType==="mouse"&&e.button!==0)return;
+    if(e.target.closest("button,input,select,textarea,a"))return;
+    const el=e.target.closest("[data-mid]");if(!el)return;
+    pend={el,x:e.clientX,y:e.clientY};
+    timer=setTimeout(()=>begin(),HOLD);
+  });
+  function begin(){
+    timer=null;if(!pend)return;
+    const el=pend.el,r=el.getBoundingClientRect(),ghost=el.cloneNode(true);
+    ghost.classList.add("mghost");ghost.style.width=r.width+"px";ghost.style.left=r.left+"px";ghost.style.top=r.top+"px";
+    document.body.appendChild(ghost);el.classList.add("mdrag");document.body.classList.add("dragging");
+    drag={el,ghost,dx:pend.x-r.left,dy:pend.y-r.top,x:pend.x,y:pend.y};pend=null;
+    try{if(navigator.vibrate)navigator.vibrate(18);}catch{}
+    const tick=()=>{if(!drag)return;const h=window.innerHeight;if(drag.y<90)window.scrollBy(0,-14);else if(drag.y>h-90)window.scrollBy(0,14);place();raf=requestAnimationFrame(tick);};
+    raf=requestAnimationFrame(tick);
+  }
+  function place(){
+    const d=drag;if(!d)return;
+    d.ghost.style.left=(d.x-d.dx)+"px";d.ghost.style.top=(d.y-d.dy)+"px";
+    const t=document.elementFromPoint(d.x,d.y);if(!t)return;
+    const over=t.closest("[data-mid]");
+    if(over&&over!==d.el){
+      const r=over.getBoundingClientRect(),par=over.parentNode,cols=(getComputedStyle(par).gridTemplateColumns||"").split(" ").filter(Boolean).length;
+      const before=(over.classList.contains("item")&&cols>1)?(d.x<r.left+r.width/2):(d.y<r.top+r.height/2);
+      par.insertBefore(d.el,before?over:over.nextSibling);syncDrops();return;
+    }
+    if(over)return;
+    const g=t.closest(".mgroup");if(!g)return;
+    const list=g.querySelector(".mlist"),rows=[...list.querySelectorAll("[data-mid]")].filter(x=>x!==d.el),lr=list.getBoundingClientRect();
+    if(!rows.length||d.y>rows[rows.length-1].getBoundingClientRect().bottom){list.insertBefore(d.el,list.querySelector(".mdrop"));syncDrops();}
+    else if(d.y<rows[0].getBoundingClientRect().top||d.y<lr.top){list.insertBefore(d.el,rows[0]);syncDrops();}
+  }
+  window.addEventListener("pointermove",e=>{
+    if(drag){drag.x=e.clientX;drag.y=e.clientY;e.preventDefault();return;}
+    if(pend&&Math.hypot(e.clientX-pend.x,e.clientY-pend.y)>9)clearPend(); // the finger moved before the hold finished → it is a normal scroll
+  },{passive:false});
+  document.addEventListener("touchmove",e=>{if(drag)e.preventDefault();},{passive:false});
+  async function finish(save){
+    clearPend();if(!drag)return;
+    const d=drag;drag=null;cancelAnimationFrame(raf);
+    d.ghost.remove();d.el.classList.remove("mdrag");document.body.classList.remove("dragging");
+    if(!save){render();return;}
+    const order=[],groups=[];
+    out.querySelectorAll(".mgroup").forEach(g=>{const gn=g.dataset.grp;groups.push(gn);g.querySelectorAll("[data-mid]").forEach(r=>order.push({id:r.dataset.mid,group:gn}));});
+    busy("Saving the arrangement…");
+    const res=await api("/api/reports/material/arrange",{order,groups});
+    busy("");
+    if(!res.ok)toast(res.error||"The arrangement could not be saved.");
+    render();
+  }
+  window.addEventListener("pointerup",()=>{if(drag)finish(true);else clearPend();});
+  window.addEventListener("pointercancel",()=>{if(drag)finish(false);else clearPend();});
+})();
+
 // ── PDF (built in the phone from the app data: A4 landscape, same look as the app) ──
 let pdfBlob=null,pdfUrl="",pdfName="";
 const cell=(v,o={})=>[String(v==null?"":v),o.bg||"",o.fg||"",o.b?1:0,o.sz||10,o.al||"",0];
@@ -586,19 +692,21 @@ function grid(name,heads,widths,rows,opt={}){
 }
 function pdfGrids(){
   const dt=o=>o&&o.d?dmy(o.d)+" "+et(o.t):"";
-  if(tab==="wf"){const L=S.products.slice().sort((a,b)=>(a.added.d+a.added.t).localeCompare(b.added.d+b.added.t));
+  const cm=String(S.now.d||"").slice(0,7),inM=o=>!!(o&&o.d&&String(o.d).slice(0,7)===cm),RED="#d00000";
+  if(tab==="wf"){const L=S.products.filter(p=>!p.finished||inM(p.finished)).sort((a,b)=>(a.added.d+a.added.t).localeCompare(b.added.d+b.added.t));
     return {title:"Workflow Follow-up",tabs:[grid("WORKFLOW FOLLOW-UP ("+L.length+")",["No","S.No","Prod Id","Model","Description","Handle","Order Type","Priority","Start Date","Status","Finished Date","Delivery Date","Sales Name","Location","Changes","Correction"],[40,50,70,70,190,110,100,80,110,90,110,90,110,100,110,110],
       L.map((p,i)=>[i+1,p.sno||"",p.code,p.model||"",p.desc||"",p.handle||"",p.orderType,p.priority,dt(p.added),p.finished?"FINISHED":"WORKING",dt(p.finished),p.deliveryDate?dmy(p.deliveryDate):"",p.salesName||"",p.location||"",p.changes||"",p.note||""]),
-      {al:["center","","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c)=>c===7?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===6?(v==="ORDER"?{bg:"#f4cccc"}:null):c===9?(v==="FINISHED"?{bg:"#e8eaed"}:null):null,empty:"No product yet."})]};}
+      {al:["center","","","","","","center","center","center","center","center","center","","","",""],bold:[2],fmt:(v,c,r)=>{const fin=r[9]==="FINISHED";let o=c===7?(v==="HIGH"?{bg:"#f4cccc",b:1}:null):c===6?(v==="ORDER"?{bg:"#f4cccc"}:null):c===9?(v==="FINISHED"?{bg:"#e8eaed"}:null):null;return fin?{...(o||{}),fg:RED}:o;},empty:"No product yet."})]};}
   if(tab==="st"||tab==="sv"){
-    const L=S.products.filter(p=>p.finished).sort((a,b)=>(a.finished.d+a.finished.t).localeCompare(b.finished.d+b.finished.t)),cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});
+    const L=S.products.filter(p=>p.finished&&(p.status!=="sold"||inM(p.sold))).sort((a,b)=>(a.finished.d+a.finished.t).localeCompare(b.finished.d+b.finished.t)),cats=[...S.cats];L.forEach(p=>{const c=p.category||"OTHERS";if(!cats.includes(c))cats.push(c);});
     return {title:"Stock Report",tabs:cats.map(c=>{const G=L.filter(p=>(p.category||"OTHERS")===c),sold=G.filter(p=>p.status==="sold").length;
       return grid("Finished Product Stock Report FOR "+c+" — "+G.length+" products · "+sold+" sold · "+(G.length-sold)+" in stock",["No","PRODUCT ID","MODEL","DESCRIPTION","HANDLE","TYPE","STATUS","SELSE INFO","SOLD DATE","SOLD TYPE","CORRECTION"],[40,100,90,220,110,110,90,100,150,100,190],
         G.map((p,i)=>{const s=p.sold;return [i+1,p.code,p.model||"",p.desc||"",p.handle||"",isCus(p)?"ORDER":"READYMADE",s?"SOLD":"STOCK",s?realSales(p):"",s?dt(s):"",s?(s.d===S.now.d?"S.TODAY":"SOLD"):"",p.note||""];}),
-        {al:["center","","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c)=>c===6?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===5?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===9?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null,empty:"Nothing here yet."});})};}
+        {al:["center","","","","","center","center","center","center","center",""],bold:[1],fmt:(v,c,r)=>{const sold=r[6]==="SOLD";let o=c===6?(v==="SOLD"?{bg:"#b30000",fg:"#ffffff",b:1}:{bg:"#783f04",fg:"#ffffff",b:1}):c===5?(v==="ORDER"?{bg:"#f4cccc"}:{bg:"#0b53a9",fg:"#ffffff"}):c===9?(v==="SOLD"?{bg:"#ff0000",fg:"#ffffff",b:1}:v==="S.TODAY"?{bg:"#cfe2f3",fg:"#0b5394",b:1}:null):null;return (sold&&!(o&&o.fg))?{...(o||{}),fg:RED}:o;},empty:"Nothing here yet."});})};}
   const lg=S.log.slice(0,150);
   return {title:"Material Report",tabs:[
-    grid("Material Report — available now ("+S.materials.length+")",["No","Material","Type","Unit","Table","Available","Low-stock Alert","Status"],[40,260,110,110,140,110,130,100],S.materials.slice().sort((a,b)=>(a.group||"").localeCompare(b.group||"")||a.name.localeCompare(b.name)).map((m,i)=>[i+1,m.name,m.type||"",m.unit,m.group||"MATERIAL",nf(m.qty),m.min?nf(m.min):"",lowOf(m)==="ok"?"OK":lowOf(m)==="low"?"LOW":"OUT"]),{al:["center","","","center","","right","right","center"],bold:[1,5],fmt:(v,c)=>c===7?(v==="OK"?{bg:"#e3f4e8",fg:"#176b3a",b:1}:v==="LOW"?{bg:"#fff1d6",fg:"#8a5a00",b:1}:{bg:"#fde7e5",fg:"#9a1d15",b:1}):null,empty:"No material yet."}),
+    ...(S.matGroups&&S.matGroups.length?S.matGroups:[...new Set(S.materials.map(m=>m.group||"MATERIAL"))]).map(g=>({g,L:S.materials.filter(m=>(m.group||"MATERIAL")===g)})).filter(x=>x.L.length).map(x=>
+      grid("Material Report — "+x.g+" ("+x.L.length+")",["No","Material","Type","Unit","Available","Low-stock Alert","Status"],[40,260,130,110,110,130,100],x.L.map((m,i)=>[i+1,m.name,m.type||"",m.unit,nf(m.qty),m.min?nf(m.min):"",lowOf(m)==="ok"?"OK":lowOf(m)==="low"?"LOW":"OUT"]),{al:["center","","","center","right","right","center"],bold:[1,4],fmt:(v,c)=>c===6?(v==="OK"?{bg:"#e3f4e8",fg:"#176b3a",b:1}:v==="LOW"?{bg:"#fff1d6",fg:"#8a5a00",b:1}:{bg:"#fde7e5",fg:"#9a1d15",b:1}):null,empty:"No material yet."})),
     grid("Material movements — last "+lg.length,["No","Date (Ethiopian)","Clock time","Material","Action","Quantity","Available After","Note","By"],[40,120,110,260,90,100,120,240,130],lg.map((l,i)=>[i+1,dmy(l.d),et(l.t),logMat(l),l.type==="cut"?"CUT":l.type==="new"?"NEW":"ADDED",(l.type==="cut"?"-":"+")+nf(l.qty),nf(l.balance),l.note||"",l.by||""]),{al:["center","center","center","","center","right","right","",""],bold:[3],fmt:(v,c)=>c===4?(v==="CUT"?{bg:"#fde7e5",fg:"#9a1d15",b:1}:v==="NEW"?{bg:"#e4f0fb",fg:"#14598f",b:1}:{bg:"#e3f4e8",fg:"#176b3a",b:1}):null,empty:"No movement yet."})]};
 }
 function mergeMaps(t){
