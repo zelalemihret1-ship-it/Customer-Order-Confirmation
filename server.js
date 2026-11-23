@@ -3293,6 +3293,8 @@ const callerId = n => String(n).padStart(4, "0");
 const phoneKey = p => { let d = String(p || "").replace(/\D/g, "").replace(/^0+/, ""); if (d.startsWith("251") && d.length >= 11) d = d.slice(3); return d; };
 const CALLER_STATUS = ["New Lead", "Interested", "Customer", "Not Interested"];
 const CALL_ORDER_STATUS = ["Pending", "Confirmed", "Rejected", "Follow-up"];
+const INTEREST_PRODUCTS = ["Shoe Shelf", "Console Table", "Chest Drawer", "Center Table", "TV Stand", "Dining Table", "Mirror"]; // same list as the order page; "Other" products are typed
+const cleanInterests = v => { const arr = Array.isArray(v) ? v : String(v || "").split(","); const out = []; for (const x of arr) { const t = cH.clean(x).trim().slice(0, 60); if (t && !out.some(o => o.toLowerCase() === t.toLowerCase())) out.push(t); } return out.slice(0, 20); };
 const CALLER_SOURCES = ["Telegram", "Facebook", "Instagram", "TikTok", "Phone Call", "Walk-in", "Referral", "Other"];
 const callerNow = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: cH.TZ }); return { date: cH.ethDate(g.slice(0, 10)), time: g.slice(11, 16) }; };
 const callerPick = (v, list, fallback) => list.includes(String(v)) ? String(v) : fallback;
@@ -3315,7 +3317,9 @@ function callerFields(b, actor, prev) {
     rejectionReason: orderStatus === "Rejected" ? cH.clean(b.rejectionReason).trim().slice(0, 300) : "",
     totalSpend: Number.isFinite(spend) && spend > 0 ? spend : 0,
     orderId: cH.clean(b.orderId).trim().slice(0, 300),
-    source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram")
+    source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram"),
+    interests: b.interests === undefined ? (prev?.interests || []) : cleanInterests(b.interests), // ⭐ special / interested customer: products they want next
+    interestNote: b.interestNote === undefined ? (prev?.interestNote || "") : cH.clean(b.interestNote).trim().slice(0, 500)
   };
 }
 function callerError(f) {
@@ -3361,7 +3365,7 @@ app.get("/api/callers/order-id", (req, res) => {
 app.get("/api/callers", (req, res) => {
   const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
   res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), sheetUrl: callersSheetUrl || sheets.status().url || "", nextId: callerId(callersDb.nextSeq), customers: list,
-    options: { customerStatus: CALLER_STATUS, orderStatus: CALL_ORDER_STATUS, source: CALLER_SOURCES } });
+    options: { customerStatus: CALLER_STATUS, orderStatus: CALL_ORDER_STATUS, source: CALLER_SOURCES, products: INTEREST_PRODUCTS } });
 });
 app.get("/api/callers/lookup", (req, res) => {
   const k = phoneKey(req.query.phone);
@@ -3379,6 +3383,18 @@ app.post("/api/callers", async (req, res) => {
   callersDb.list.push(rec); await saveCallers();
   const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
   res.json({ ok: true, customer: rec, sheet, message: `Saved. Customer ID ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
+});
+app.post("/api/callers/:id/interest", async (req, res) => { // after an order: the customer wants another product → ⭐ interested / special customer
+  const rec = callersDb.list.find(c => c.id === req.params.id);
+  if (!rec) return res.status(404).json({ ok: false, error: "Customer not found." });
+  const add = cleanInterests(req.body?.products);
+  if (!add.length) return res.status(400).json({ ok: false, error: "Select at least one product." });
+  rec.interests = cleanInterests([...(rec.interests || []), ...add]);
+  const note = cH.clean(req.body?.note).trim().slice(0, 500);
+  if (note) rec.interestNote = note;
+  const now = callerNow(); rec.interestDate = now.date + " " + now.time; rec.interestBy = req.actor.name || "";
+  rec.updatedAt = cH.stamp(); await saveCallers();
+  res.json({ ok: true, customer: rec, message: `⭐ ${rec.name} saved as an interested customer: ${rec.interests.join(", ")}` });
 });
 app.put("/api/callers/:id", async (req, res) => {
   const rec = callersDb.list.find(c => c.id === req.params.id);
