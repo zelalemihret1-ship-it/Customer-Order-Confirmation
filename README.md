@@ -1,3 +1,11 @@
+# v135 — Sheet: black text · black line between 10-DAY blocks · wrapped text · Sold type + dates/times in the app
+- **Google Sheet (all tabs):** every text is **black**. Only red: **sold products** (Stock tab) and **products moved to Stock** (Workflow tab). Cells that had white/red text on a dark fill now use a lighter fill so the black text is readable.
+- **Material tab:** a solid **black line** now separates **10 DAY 1 · 2 · 3** (and stays at the end).
+- **Long text:** every cell wraps and the row grows to fit, so nothing is hidden or runs outside its box.
+- **Mini app → Reports:** **💰 Sold** has *Sold type* (Automatic / S.TODAY / SOLD), sold date and sold time. New **🕒 Dates & times** button (Workflow, Stock, Sold; list and card) edits the Started, Finished (moved to Stock) and Sold date + clock time and the Sold type. Saved in the history and in the Google Sheet.
+- To apply: redeploy the folder; paste the new `reports-sheet-script.gs` (version `reports-12`), Deploy → Manage deployments → ✏ → New version → Deploy, then Reports → ☁ → Back up now.
+- Files changed: `reports.js`, `public/reports.html`, `reports-sheet-script.gs`, `package.json`.
+
 # v134 — Customer ID ⇄ Telegram name · Material sheet: second table without the header
 - **Customers Data → add / edit:** new **✈️ Telegram name** field next to the Customer ID. Pick the Telegram account (name · @username) the bot has seen; the link is saved on the customer and the same Customer ID then shows beside that Telegram name in the customers list, the customer view and the **Orders → choose customer** list (choosing it also picks the Customer ID and creates the Order ID). A customer with the same @username is matched automatically; one Telegram account can belong to only one Customer ID. Orders of a linked Telegram account get that Customer ID and Telegram name.
 - **Google Sheet · Material tab:** only the first table keeps the weekday row and the heading (No · Material · Type · Unit · Avilable · Opening Stock · dates · Total Used · NOTE). The second table (LAMINATE, PLYWOOD & OTHERS) continues directly under the first, with no heading.
