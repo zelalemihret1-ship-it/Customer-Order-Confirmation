@@ -1,3 +1,13 @@
+# v137 — Sheet: one-line texts · Workflow columns removed · black line after every stock · red low material · Fix stock · confirmations
+- **Google Sheet (all tabs):** texts run **horizontally on one line** (no more wrapping downwards); every column is widened to fit its longest text.
+- **Workflow tab:** removed *Delivery Date · Sales Name · LOCATION · CHANGES · COR.* (the app still keeps these fields).
+- **Stock tab:** a **black line** at the end of every stock table (SHOE SHELF · OTHERS · GADGETS).
+- **Material tab:** **10 DAY 1 · 2 · 3** is bigger and bolder; a material with quantity **below 5** has its whole row in **red** (also in the app list/cards and the PDF).
+- **Mini app → Material:** new **🛠 Fix stock** button — type the real quantity when a wrong one was inserted. It is saved in *Recent movements* as a correction (who, date, time, reason) and the sheet follows.
+- **Confirmation for all movements:** ➕ Add · ✂️ Cut · 🛠 Fix stock · 💰 Sold · new product / material · edits · date changes now ask "are you sure?" (showing before → after) before saving. Finished · Undo · Delete already asked.
+- To apply: redeploy the folder; paste the new `reports-sheet-script.gs` (version `reports-13`), Deploy → Manage deployments → ✏ → New version → Deploy, then Reports → ☁ → Back up now.
+- Files changed: `reports.js`, `public/reports.html`, `reports-sheet-script.gs`, `package.json`.
+
 # v135 — Sheet: black text · black line between 10-DAY blocks · wrapped text · Sold type + dates/times in the app
 - **Google Sheet (all tabs):** every text is **black**. Only red: **sold products** (Stock tab) and **products moved to Stock** (Workflow tab). Cells that had white/red text on a dark fill now use a lighter fill so the black text is readable.
 - **Material tab:** a solid **black line** now separates **10 DAY 1 · 2 · 3** (and stays at the end).
