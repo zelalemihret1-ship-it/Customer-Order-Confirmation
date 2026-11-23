@@ -3429,7 +3429,7 @@ const ratingModule = require("./ratings").register(app, {
   publicBaseUrl: PUBLIC_BASE_URL, noZoomHead: NOZOOM_HEAD, getAppAdmins: () => appAdmins, getCallers: () => callersDb
 });
 // ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
-const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log });
+const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
