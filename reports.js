@@ -232,7 +232,11 @@ function register(app, ctx) {
     tgBusy = true;
     const t = db.tg;
     try {
-      const acc = senderAcc();
+      let acc = senderAcc();
+      if (!t.sendAs || !acc?.ready) { // the chosen sender is not connected: use any main admin whose own Telegram account is connected
+        const alt = senders().find(x => x.ready);
+        if (alt) { t.sendAs = alt.id; acc = senderAcc(); persist(); }
+      }
       if (!t.sendAs || !acc?.ready) throw new Error("The sender (main admin) Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then switch Daily Telegram on again.");
       const to = recipients();
       if (!to.length) throw new Error("There is no other admin to send to.");
