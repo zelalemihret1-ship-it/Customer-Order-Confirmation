@@ -29,7 +29,7 @@ function register(app, ctx) {
   const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-  const TG0 = { on: false, time: "08:00", sendAs: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
+  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, lastDate: "", lastAt: "", ok: null, error: "", results: [] };
   let db = { products: [], materials: [], log: [], savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
@@ -204,11 +204,17 @@ function register(app, ctx) {
   const nameOfAdmin = id => { const a = appAdminsLive().find(x => String(x.telegramId) === String(id)); return clip(a?.name, 60) || (ownerIdsLive().includes(String(id)) ? "Main admin" : "Admin " + id); };
   function recipients() {
     const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
+    const sel = Array.isArray(db.tg.to) && db.tg.to.length ? db.tg.to.map(String) : null; // null = every admin; otherwise only the admins the main admin picked
+    return ids.filter(id => id !== String(db.tg.sendAs) && (!sel || sel.includes(id))).map(id => ({ id, name: nameOfAdmin(id) }));
+  }
+  function candidates() {
+    const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
     return ids.filter(id => id !== String(db.tg.sendAs)).map(id => ({ id, name: nameOfAdmin(id) }));
   }
+  const cleanTo = v => Array.isArray(v) ? [...new Set(v.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 100) : null;
   function tgInfo() {
     const t = db.tg, acc = senderAcc();
-    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: recipients().map(r => r.name) };
+    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: recipients().map(r => r.name), candidates: candidates(), to: Array.isArray(t.to) ? t.to : [] };
   }
   const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. It will try again tomorrow."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The main admin's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The main admin's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
   let tgBusy = false;
@@ -428,8 +434,13 @@ function register(app, ctx) {
       if (!acc?.ready) return fail(res, "Your own Telegram account is not connected. Connect it first (Settings → Connect my Telegram account) — the daily stock is sent from YOUR account.");
       t.sendAs = id;
     }
+    if (b.to !== undefined) { const to = cleanTo(b.to); t.to = to && to.length ? to : null; }
     t.on = on; t.time = time; persist();
     done(res, on ? `🟢 Daily stock is ON — every day at ${time} (Addis Ababa clock), sent from your Telegram account.` : "⚪ Daily stock is OFF.");
+  });
+  router.post("/tg/to", ownerOnly, (req, res) => { // choose which admins receive the stock message
+    const to = cleanTo(req.body?.to); db.tg.to = to && to.length ? to : null; persist();
+    done(res, db.tg.to ? `✅ The stock goes to ${recipients().length} selected admin(s).` : "✅ The stock goes to every admin.");
   });
   router.post("/tg/send", ownerOnly, async (req, res) => {
     const t = db.tg;
