@@ -1,3 +1,9 @@
+# v145 — Stock → Telegram: add / remove groups & channels · pick the topic (also several)
+- **➕ Add from my Telegram groups & channels** lists the groups and channels of the sender's own Telegram account (public or private). A group with topics shows a **topic list with tick boxes** — tick one or several topics (or "General / whole group") and press **Add**. Channels and groups without topics are added directly.
+- Every added group shows **🗂 Topic** (change / choose the topic later) and **✕ Remove**. Main admins: add / remove / topic changes are saved immediately; other admins use them for their own send.
+- Still possible: paste `@username` or a topic link. Private sending to admins stays optional.
+- Files changed: `reports.js`, `public/reports.html`, `package.json`.
+
 # v144 — Stock → Telegram: private sending OPTIONAL · Telegram group (also private) + TOPIC
 - **Reports → ⚙ → Stock → Telegram:** new **📣 Telegram group / channel** section. **🔎 Choose from my Telegram groups** lists the groups the sending person's own Telegram account is in (private ones too); if the group has topics, pick the **topic** and the stock goes into that topic. You can also paste a link/username (`@mygroup`, or a topic link like `https://t.me/c/1234567890/5`).
 - **Sending privately to admins is now optional** — tick/untick **Also send privately to admins**; with it off only the group/topic gets the stock.
