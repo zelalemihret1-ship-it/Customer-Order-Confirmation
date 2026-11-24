@@ -1,5 +1,5 @@
 // ── WORKSHOP (module + page: /workshop.html) ───────────────────────────────────────────────────
-// v153: the whole production chain, connected to Reports and to the orders
+// v154: synchronized production, stock and workshop message formats, connected to Reports and to the orders
 //   • each admin picks TWO places in his own Telegram groups: the WORKSHOP topic and the FINISHING topic (a real group list + a real topic list)
 //   • only orders that are CONFIRMED by the customer and whose card was DELIVERED are orderable here (rejected / undelivered orders are removed from the list)
 //   • an order / readymade product sent to the workshop = a JOB. The BOT posts it in the WORKSHOP topic with the button  🛠 Finished workshop
@@ -179,20 +179,9 @@ function register(app, ctx) {
   const sizeOfOrder = o => [o.length, o.width, o.height].map(x => clip(x, 20)).filter(Boolean).join(" × ");
   const line = (icon, label, v) => { v = clip(v, 120); return v ? `${icon} ${label}: ${v}` : ""; };
   function jobCaption(j, stage, extra) {
-    const head = stage === "finishing" ? "🪚 FINISHING" : "🛠 WORKSHOP";
-    const kind = j.custom ? "NEW DESIGN" : j.kind === "order" ? "ORDER" : "READYMADE";
-    const L = [
-      `${head} — ${kind}${j.orderLabel ? " — " + clip(j.orderLabel, 40) : ""}`,
-      `🪑 Product: ${clip(j.name, 100)}`,
-      j.qty ? `🔢 Quantity: ×${j.qty}` : "",
-      j.size ? `📏 Measurement: ${clip(j.size, 80)}` : "",
-      ...(j.details || []),
-      (j.codes || []).length ? `🏷 Prod ID: ${j.codes.join(", ")}` : "",
-      j.orderLabel ? `🆔 Order ID: ${clip(j.orderLabel, 40)}` : "",
-      j.note ? `📝 Notes: ${clip(j.note, 400)}` : "",
-      `👤 From: ${clip(j.by, 60)}`,
-      extra || ""
-    ];
+    const head = "_________ AMBAR FURNITURE _________";
+    const ordered = j.kind === "order" || !!j.orderLabel;
+    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID- " + ((j.codes || []).join(", ") || "Pending"), ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
     return L.filter(Boolean).join("\n");
   }
   const orderDetails = o => [line("🧱", "Material", o.material), line("🎨", "Color", o.color), line("✨", "Style", o.style), line("🖌", "Design", o.design), line("🔧", "Handle", o.handle), line("🚪", "Door", o.door), line("🗂", "Partition", o.partition), line("🧰", "Drawer", o.drawer), line("➕", "Extra", o.additionalFeatures), line("📅", "Completion date", o.completionDate), line("🚚", "Delivery date", o.deliveryDate)].filter(Boolean);
@@ -320,12 +309,12 @@ function register(app, ctx) {
       ok: true, me: { key, name: clip(actor?.name, 60) },
       settings: { workshop: s.workshop, finishing: s.finishing, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing) },
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
-      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
+      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && (!orderJob(o.id) || orderJob(o.id).stage !== "finished")).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
       readymade: inProg,
       jobs: mine.filter(j => j.stage !== "finished").slice(0, 100).map(compactJob),
       doneJobs: mine.filter(j => j.stage === "finished").slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
-      log: db.log.filter(l => l.key === key).slice(-15).reverse()
+      log: db.log.filter(l => l.key === key).slice(-100).reverse()
     };
   };
   router.get("/state", (req, res) => res.json(view(req.actor)));
@@ -510,9 +499,19 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v153" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v154" }));
   app.use("/api/workshop", router);
 
-  return { load, onOrderCreated, onOrderConfirmed, onButton };
+  function deleteReportProducts(ids) {
+    const gone = new Set((Array.isArray(ids) ? ids : [ids]).map(String));
+    for (const [id, j] of Object.entries(db.jobs)) {
+      const pairs = (j.productIds || []).map((pid, i) => ({ pid: String(pid), code: (j.codes || [])[i] || "" })).filter(x => !gone.has(x.pid));
+      j.productIds = pairs.map(x => x.pid);
+      j.codes = pairs.map(x => x.code);
+      if (!j.productIds.length) delete db.jobs[id];
+    }
+    persist();
+  }
+  return { load, onOrderCreated, onOrderConfirmed, onButton, deleteReportProducts };
 }
 module.exports = { register };
