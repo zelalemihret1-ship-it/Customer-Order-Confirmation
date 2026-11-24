@@ -29,7 +29,7 @@ function register(app, ctx) {
   const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
+  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
   let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
@@ -62,6 +62,9 @@ function register(app, ctx) {
     if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
     if (d && typeof d === "object") db = { products: [], materials: [], log: [], savedAt: "", ...d };
     db.tg = { ...TG0, ...(db.tg || {}) };
+    if (!Array.isArray(db.tg.targets)) db.tg.targets = [];
+    if (Array.isArray(db.tg.channels) && db.tg.channels.length) { for (const u of db.tg.channels) if (!db.tg.targets.some(x => x.chat === u)) db.tg.targets.push({ chat: u, title: "@" + u, topic: 0, topicTitle: "" }); db.tg.channels = []; }
+    db.tg.dm = db.tg.dm !== false;
     for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     layoutMaterials();
@@ -225,15 +228,42 @@ function register(app, ctx) {
     if (!accFor(id)?.ready) return nameOfAdmin(id) + "'s Telegram account is not connected. Connect it first (Settings → Connect my Telegram account).";
     db.tg.sendAs = id; return "";
   };
-  const cleanChannels = v => { const arr = Array.isArray(v) ? v : String(v || "").split(/[\s,;\n]+/); const out = []; for (const x of arr) { const u = String(x || "").trim().replace(/^https?:\/\/(www\.)?(t|telegram)\.me\//i, "").replace(/^@+/, "").split(/[/?]/)[0]; if (/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(u) && !out.some(o => o.toLowerCase() === u.toLowerCase())) out.push(u); } return out.slice(0, 20); };
+  // group / channel targets: a public @username, a private group id (-100…), or a link — plus an optional forum TOPIC inside it
+  function parseTgLink(x) {
+    let t = String(x || "").trim(); if (!t) return null;
+    t = t.replace(/^(https?:\/\/)?(www\.)?(t|telegram)\.me\//i, "");
+    const parts = t.split(/[/?#]/).filter(Boolean); if (!parts.length) return null;
+    if (parts[0] === "c" && /^\d+$/.test(parts[1] || "")) return { chat: "-100" + parts[1], topic: /^\d+$/.test(parts[2] || "") ? Number(parts[2]) : 0 };
+    const u = parts[0].replace(/^@+/, "");
+    if (/^-100\d{5,15}$/.test(u)) return { chat: u, topic: /^\d+$/.test(parts[1] || "") ? Number(parts[1]) : 0 };
+    if (/^-\d{5,20}$/.test(u)) return { chat: u, topic: 0 };
+    if (/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(u)) return { chat: u, topic: /^\d+$/.test(parts[1] || "") ? Number(parts[1]) : 0 };
+    return null;
+  }
+  const cleanTargets = v => {
+    const arr = Array.isArray(v) ? v : String(v || "").split(/[\s,;\n]+/), out = [];
+    for (const x of arr) {
+      let o = null;
+      if (x && typeof x === "object") { const pl = parseTgLink(x.chat); if (pl) o = { chat: pl.chat, title: clip(x.title, 80), topic: Number.isInteger(Number(x.topic)) && Number(x.topic) > 0 ? Number(x.topic) : pl.topic, topicTitle: clip(x.topicTitle, 80) }; }
+      else { const pl = parseTgLink(x); if (pl) o = { chat: pl.chat, title: /^\d/.test(pl.chat) || pl.chat[0] === "-" ? "" : "@" + pl.chat, topic: pl.topic, topicTitle: "" }; }
+      if (o && !out.some(y => y.chat.toLowerCase() === o.chat.toLowerCase() && y.topic === o.topic)) out.push(o);
+    }
+    return out.slice(0, 20);
+  };
+  const targetName = g => (g.title || (/^-/.test(g.chat) ? "Group " + g.chat : "@" + g.chat)) + (g.topic ? " › " + (g.topicTitle || "topic " + g.topic) : "");
+  async function resolveTarget(acc, g) {
+    const key = /^-?\d+$/.test(g.chat) ? BigInt(g.chat) : "@" + g.chat;
+    try { return await acc.client.getEntity(key); }
+    catch (e) { if (typeof key === "bigint") { await acc.client.getDialogs({ limit: 500 }); return await acc.client.getEntity(key); } throw e; }
+  }
   const cleanTo = v => Array.isArray(v) ? [...new Set(v.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 100) : null;
   function tgInfo() {
     const t = db.tg, acc = senderAcc();
-    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [], channels: Array.isArray(t.channels) ? t.channels : [], lastBy: t.lastBy || "" };
+    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: t.dm === false ? [] : recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [], dm: t.dm !== false, targets: (t.targets || []).map(g => ({ ...g, name: targetName(g) })), lastBy: t.lastBy || "" };
   }
   const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. Try again in a few minutes."; if (/USERNAME_NOT_OCCUPIED|USERNAME_INVALID/i.test(m)) return "No Telegram group or channel with this username exists. Check the spelling."; if (/CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED|USER_BANNED_IN_CHANNEL|CHANNEL_PRIVATE|CHAT_SEND_PHOTOS_FORBIDDEN|CHAT_SEND_MEDIA_FORBIDDEN/i.test(m)) return "This Telegram account is not allowed to post there. Join the group/channel with this account (as admin for a channel) and try again."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The sender's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The sender's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
   let tgBusy = false;
-  async function sendDaily(opt = {}) { // opt.by = { id, name, acc } → sent from THAT person's own Telegram account; opt.to / opt.channels override the saved choice for this send only
+  async function sendDaily(opt = {}) { // opt.by = { id, name, acc } → sent from THAT person's own Telegram account; opt.to / opt.targets / opt.dm override the saved choice for this send only
     if (tgBusy) return { ok: false, error: "A send is already running." };
     tgBusy = true;
     const t = db.tg;
@@ -251,9 +281,10 @@ function register(app, ctx) {
       }
       const selTo = Array.isArray(opt.to) ? (opt.to.length ? opt.to.map(String) : null) : (Array.isArray(t.to) && t.to.length ? t.to.map(String) : null);
       const allIds = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
-      const to = allIds.filter(id => id !== senderId && (!selTo || selTo.includes(id))).map(id => ({ id, name: nameOfAdmin(id) }));
-      const chans = (Array.isArray(opt.channels) ? cleanChannels(opt.channels) : (t.channels || [])).map(u => ({ id: null, user: u, name: "@" + u }));
-      if (!to.length && !chans.length) throw new Error("There is no other admin or group/channel to send to.");
+      const dm = opt.dm !== undefined ? !!opt.dm : t.dm !== false;
+      const to = dm ? allIds.filter(id => id !== senderId && (!selTo || selTo.includes(id))).map(id => ({ id, name: nameOfAdmin(id) })) : [];
+      const chans = (Array.isArray(opt.targets) ? cleanTargets(opt.targets) : (t.targets || [])).map(g => ({ id: null, tg: g, name: targetName(g) }));
+      if (!to.length && !chans.length) throw new Error(dm ? "There is no other admin to send to. Add a Telegram group (and topic) below, or add admins." : "Add a Telegram group (and topic) to send to, or switch on sending to admins.");
       const stock = db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || ""))), groups = stockGroups(stock).slice(0, 60), n = nowEth();
       const head = `📦 AMBAR STOCK — ${n.d}\n${stock.length} readymade product${stock.length === 1 ? "" : "s"} in stock · ${groups.length} model${groups.length === 1 ? "" : "s"}` + (stock.length ? "" : "\nNothing is in stock today.");
       const photos = new Map();
@@ -262,17 +293,18 @@ function register(app, ctx) {
       for (const r of [...to, ...chans]) {
         try {
           let entity;
-          if (r.user) entity = await acc.client.getEntity("@" + r.user);
+          const reply = r.tg && r.tg.topic ? { replyTo: r.tg.topic } : {};
+          if (r.tg) entity = await resolveTarget(acc, r.tg);
           else { try { entity = await acc.client.getEntity(BigInt(r.id)); } catch { entity = await acc.client.getInputEntity(BigInt(r.id)); } }
-          await acc.client.sendMessage(entity, { message: head });
+          await acc.client.sendMessage(entity, { message: head, ...reply });
           for (const g of groups) {
             await new Promise(x => setTimeout(x, 800));
             const buf = photos.get(g.key);
             if (buf) {
               const f = path.join(os.tmpdir(), "stk-" + uid() + ".jpg");
               fs.writeFileSync(f, buf);
-              try { await acc.client.sendFile(entity, { file: f, caption: groupCaption(g), forceDocument: false }); } finally { try { fs.unlinkSync(f); } catch {} }
-            } else await acc.client.sendMessage(entity, { message: groupCaption(g) });
+              try { await acc.client.sendFile(entity, { file: f, caption: groupCaption(g), forceDocument: false, ...reply }); } finally { try { fs.unlinkSync(f); } catch {} }
+            } else await acc.client.sendMessage(entity, { message: groupCaption(g), ...reply });
           }
           results.push({ name: r.name, ok: true, count: groups.length });
         } catch (e) { results.push({ name: r.name, ok: false, error: tgFriendly(e) }); }
@@ -569,16 +601,39 @@ function register(app, ctx) {
       if (er) return fail(res, er);
     }
     if (b.to !== undefined) { const to = cleanTo(b.to); t.to = to && to.length ? to : null; }
-    if (b.channels !== undefined) t.channels = cleanChannels(b.channels);
+    if (b.targets !== undefined) t.targets = cleanTargets(b.targets);
+    if (b.dm !== undefined) t.dm = b.dm === true || b.dm === "true";
     t.on = on; t.time = time; persist();
     done(res, on ? `🟢 Daily stock is ON — every day at ${time} (Addis Ababa clock), sent from ${nameOfAdmin(t.sendAs)}'s Telegram account.` : "⚪ Daily stock is OFF.");
   });
   router.post("/tg/to", ownerOnly, (req, res) => { // choose which admins receive the stock message
     if (req.body?.sendAs) { const er = setSender(req, req.body.sendAs); if (er) return fail(res, er); }
     const to = cleanTo(req.body?.to); db.tg.to = to && to.length ? to : null;
-    if (req.body?.channels !== undefined) db.tg.channels = cleanChannels(req.body.channels);
+    if (req.body?.targets !== undefined) db.tg.targets = cleanTargets(req.body.targets);
+    if (req.body?.dm !== undefined) db.tg.dm = req.body.dm === true || req.body.dm === "true";
     persist();
-    done(res, (db.tg.to ? `✅ The stock goes to ${recipients().length} selected admin(s).` : "✅ The stock goes to every admin.") + (db.tg.channels.length ? ` + ${db.tg.channels.length} group/channel(s).` : ""));
+    done(res, (db.tg.dm === false ? "✅ Not sent privately to admins." : db.tg.to ? `✅ The stock goes to ${recipients().length} selected admin(s).` : "✅ The stock goes to every admin.") + (db.tg.targets.length ? ` + ${db.tg.targets.length} group(s).` : ""));
+  });
+  // The groups / channels the person's OWN Telegram account is in (so a private group can be picked without typing anything) + the topics of a forum group
+  router.get("/tg/groups", async (req, res) => {
+    try {
+      const acc = accFor(req.actor?.telegramId);
+      if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account." });
+      const ds = await acc.client.getDialogs({ limit: 300 });
+      const list = ds.filter(d => d.isGroup || d.isChannel).map(d => ({ id: String(d.id), title: clip(d.title || d.name, 80), username: d.entity?.username || "", forum: !!d.entity?.forum, mega: !!(d.entity?.megagroup || d.entity?.forum), broadcast: !!d.entity?.broadcast })).filter(x => /^-?\d+$/.test(x.id));
+      res.json({ ok: true, groups: list });
+    } catch (e) { res.json({ ok: false, error: tgFriendly(e) }); }
+  });
+  router.get("/tg/topics", async (req, res) => {
+    try {
+      const acc = accFor(req.actor?.telegramId);
+      if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected." });
+      const g = parseTgLink(String(req.query.chat || "")); if (!g) return res.json({ ok: false, error: "Unknown group." });
+      const { Api } = require("telegram");
+      const ent = await resolveTarget(acc, g);
+      const r = await acc.client.invoke(new Api.channels.GetForumTopics({ channel: ent, offsetDate: 0, offsetId: 0, offsetTopic: 0, limit: 100 }));
+      res.json({ ok: true, topics: (r.topics || []).filter(t => t.className === "ForumTopic").map(t => ({ id: Number(t.id), title: clip(t.title, 80) })) });
+    } catch (e) { res.json({ ok: false, error: /CHANNEL_FORUM_MISSING|not a forum/i.test(String(e?.errorMessage || e?.message)) ? "This group has no topics." : tgFriendly(e) }); }
   });
   // SEND NOW — any admin who may open Reports (main admin, assigned main admin or assigned admin) sends FROM HIS OWN Telegram account.
   router.post("/tg/send", async (req, res) => {
@@ -587,7 +642,7 @@ function register(app, ctx) {
     const acc = accFor(me);
     if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then press Send now again.", ...view() });
     const b = req.body || {};
-    const r = await sendDaily({ by: { id: me, name: clip(req.actor?.name, 60) || nameOfAdmin(me), acc }, to: Array.isArray(b.to) ? (cleanTo(b.to) || []) : undefined, channels: b.channels !== undefined ? cleanChannels(b.channels) : undefined });
+    const r = await sendDaily({ by: { id: me, name: clip(req.actor?.name, 60) || nameOfAdmin(me), acc }, to: Array.isArray(b.to) ? (cleanTo(b.to) || []) : undefined, targets: b.targets !== undefined ? cleanTargets(b.targets) : undefined, dm: b.dm !== undefined ? (b.dm === true || b.dm === "true") : undefined });
     res.json({ ...(r.ok ? { ok: true, message: "✅ Stock sent from your Telegram account." + (r.error ? " " + r.error : "") } : { ok: false, error: r.error || "Could not send." }), ...view() });
   });
 
