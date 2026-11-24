@@ -22,7 +22,11 @@ const num = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "")
 const uid = () => crypto.randomBytes(6).toString("hex");
 
 function register(app, ctx) {
-  const { requireAccess, hasPerm, supabase, baseDir, tgApi, helpers, log } = ctx;
+  const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
+  // v145b: never crash with "hasPerm is not a function" — if server.js did not pass it (older server.js), use the same rule here
+  const hasPerm = typeof ctx.hasPerm === "function"
+    ? ctx.hasPerm
+    : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const ownerIdsLive = () => (ctx.ownerIds || []).map(String);
   const appAdminsLive = () => (ctx.getAppAdmins ? ctx.getAppAdmins() : []) || [];
   const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
@@ -371,6 +375,7 @@ function register(app, ctx) {
   }
 
   // ── routes ─────────────────────────────────────────────────────────────────────────────────
+  app.get("/api/reports-version", (req, res) => res.json({ ok: true, reports: "v145b-hasPerm-fix", hasPermFromServer: typeof ctx.hasPerm === "function" })); // open check: shows which reports.js is really running
   const router = express.Router();
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "reports") ? next() : res.status(403).json({ ok: false, error: "Reports are only for admins the main admin gave the Reports section." }));
