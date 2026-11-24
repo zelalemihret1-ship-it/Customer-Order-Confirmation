@@ -1,3 +1,22 @@
+# v141 — Stock view: tap a product → big photo + description, handle, capacity
+- Opening a product in **Reports → Stock view** now shows the large photo (whole picture, not cropped), the **Description**, handle, shoe capacity, type and group, then every Prod Id with its own photo, description and note.
+- Files changed: `public/reports.html`, `package.json`.
+
+# v140 — Stock view: same model + same handle + same measurement = one product
+- **Reports → 🖼 Stock view** (and the daily Telegram stock message): products count as the SAME product only when the **model name, handle type and measurement (Description)** are all the same (×2, ×3 …). A different handle **or** a different measurement makes a separate product with its own photo.
+- Files changed: `public/reports.html`, `reports.js`, `package.json`.
+
+# v139 — Interested customers in the Google Sheet: golden shiny text
+- **Google Sheet → Customers Data:** new column **⭐ Interested In** (products + note). Every interested customer row (something in that column, or Status = Interested) shows in **bold shiny gold text (#FFD700) on a deep dark background** so it glows. It follows the data automatically (conditional format).
+- To apply: redeploy; paste the new `google-sheet-script.gs` (version `v94`), Deploy → Manage deployments → ✏ → New version → Deploy, then Customers Data → sync all.
+- Files changed: `server.js`, `google-sheet-script.gs`, `README.md`.
+
+# v138 — Reports: clean, modern, less crowded design
+- **Look only — every function is the same.** Calmer colours, more space, one summary strip, simple tabs, softer cards.
+- **One main button per product / material** (✅ Finished · 💰 Sold · ➕ Add · ✂️ Cut). Edit, Dates & times, History, Undo, Fix stock and Delete are inside a **⋯** menu with clear names.
+- Smaller headings, no all-capital labels, and the red text for finished / sold products is kept.
+- Files changed: `public/reports.html`, `package.json`.
+
 # v137 — Sheet: one-line texts · Workflow columns removed · black line after every stock · red low material · Fix stock · confirmations
 - **Google Sheet (all tabs):** texts run **horizontally on one line** (no more wrapping downwards); every column is widened to fit its longest text.
 - **Workflow tab:** removed *Delivery Date · Sales Name · LOCATION · CHANGES · COR.* (the app still keeps these fields).
