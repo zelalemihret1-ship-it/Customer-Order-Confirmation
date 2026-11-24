@@ -680,11 +680,13 @@ setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.d
 
 // ── STOCK → TELEGRAM: sent from the account of the admin who presses it · private chats to admins are OPTIONAL · Telegram groups (public or private) with an optional TOPIC ──
 function tgSenderPick(t){
-  const L=t.senders||[];if(!L.length)return'';
-  const cur=String(t.sendAs||"")||(L.some(x=>x.id===ME_ID&&x.ready)?ME_ID:(L.find(x=>x.ready)||L[0]).id);
-  return '<label>Send the <b>daily</b> message from <em>(an admin\'s own Telegram account)</em></label><select id="tgSender">'+L.map(x=>'<option value="'+esc(x.id)+'" '+(x.id===cur?'selected':'')+'>'+esc(x.name)+(x.id===ME_ID?' (me)':'')+(x.ready?' — ✓ connected':' — not connected')+'</option>').join("")+'</select>';
+  const L=t.senders||[],A=t.assigned||[];if(!L.length)return'';
+  const def=(A[0]&&A[0].time)||t.time||"08:00";
+  return '<div class="card" style="margin-top:10px"><b>⏰ Admin accounts that send the stock every day</b><p class="hint" style="margin:4px 0 6px">Tick every admin whose <b>own Telegram account</b> should send the stock, and set the <b>time</b> each one sends (Addis Ababa clock). Every day, at that time, the stock is sent <b>from that admin\'s account</b>.</p><div class="tgpick">'
+    +L.map(x=>{const a=A.find(z=>z.id===x.id);return '<div class="tgopt" style="flex-wrap:wrap"><label style="display:flex;align-items:center;gap:8px;flex:1;min-width:150px;margin:0"><input type="checkbox" name="tgsd" value="'+esc(x.id)+'" '+(a?'checked':'')+'><span class="tn">'+esc(x.name)+(x.id===ME_ID?' (me)':'')+'</span></label><small>'+(x.ready?'✓ connected':'<b style="color:var(--bad)">not connected</b>')+'</small><input type="time" data-sdt="'+esc(x.id)+'" value="'+esc(a?a.time:def)+'" style="width:110px;margin:0">'+(a&&a.lastAt?'<small style="flex-basis:100%">Last: '+esc(a.lastAt)+(a.ok===true?' ✅':a.ok===false?' ⚠️ '+esc(a.error||""):'')+'</small>':'')+'</div>';}).join("")
+    +'</div><div class="acts"><button class="b sm" type="button" id="tgSdAll">Select all admins</button><button class="b sm" type="button" id="tgSdNone">Clear</button></div></div>';
 }
-const tgSender=()=>($("tgSender")||{}).value||"";
+const tgSendersVal=()=>[...document.querySelectorAll('#tgBox input[name=tgsd]:checked')].map(c=>({id:c.value,time:(document.querySelector('#tgBox input[data-sdt="'+c.value+'"]')||{}).value||"08:00"}));
 let TGT=[],TGDM=true,TGG=[];
 function tgPicker(t){
   const c=t.candidates||[],sel=(t.to||[]).map(String),all=!sel.length;
@@ -732,13 +734,13 @@ function openTg(){
   $("tgBox").innerHTML='<h2>📨 Stock → Telegram</h2>'
     +'<p class="hint">Press <b>📨 Send now</b> and the <b>Stock view</b> (readymade products: photo, size, shoe capacity, handle, Prod Ids) is sent <b>from YOUR OWN Telegram account</b> — each admin sends from his own account. Send it to a <b>Telegram group (and a topic in it)</b> and/or privately to admins — <b>private sending is optional</b>. Never from the bot or the mini app.</p>'
     +'<div class="card" style="margin-top:10px"><div class="meta">Daily send: <b>'+(t.on?'🟢 ON':'⚪ OFF')+'</b>'+(t.on?' · every day at <b>'+esc(t.time)+'</b> (Addis Ababa clock)':'')+'</div>'
-    +'<div class="meta" style="margin-top:6px">Daily sent from: <b>'+esc(t.sendAsName||"— (switch it on to choose yourself)")+'</b>'+(t.sendAs?(t.senderReady?' · ✓ Telegram connected':' · <b style="color:var(--bad)">Telegram NOT connected</b>'):'')+'</div>'
+    +'<div class="meta" style="margin-top:6px">Daily sent from: '+((t.assigned||[]).length?(t.assigned||[]).map(a=>'<b>'+esc(a.name)+'</b> at '+esc(a.time)+(a.ready?' ✓':' <b style="color:var(--bad)">(not connected)</b>')).join(" · "):'<i>no admin assigned yet</i>')+'</div>'
     +'<div class="meta" style="margin-top:6px">Goes to: '+(t.dm===false?'<i>no private chats</i>':((t.recipients||[]).length?esc(t.recipients.join(", ")):"no other admin yet"))+((t.targets||[]).length?' · 📣 '+esc(t.targets.map(x=>x.name).join(", ")):"")+'</div>'
     +(t.lastAt?'<div class="meta" style="margin-top:6px">Last send: <b>'+esc(t.lastAt)+'</b>'+(t.lastBy?' by <b>'+esc(t.lastBy)+'</b>':'')+' '+(ok?'✅':bad?'⚠️':'')+(t.error?'<br><span style="color:var(--bad)">'+esc(t.error)+'</span>':'')+'</div>':'')+'</div>'
     +(res?'<div class="card">'+res+'</div>':'')
     +tgGroupBox()
     +'<div class="card" style="margin-top:10px"><label class="tgopt" style="margin:0"><input type="checkbox" id="tgDm" '+(TGDM?'checked':'')+'><span class="tn"><b>Also send privately to admins</b> <em style="font-weight:400">(optional)</em></span></label><div id="tgPrivate" style="'+(TGDM?'':'display:none')+'"><label>Which admins</label>'+tgPicker(t)+'</div></div>'
-    +(IS_OWNER?tgSenderPick(t)+'<label>Send every day at (Addis Ababa time)<input id="tgTime" type="time" value="'+esc(t.time||"08:00")+'"></label><button class="btn '+(t.on?'grey':'ok')+'" id="tgToggle" type="button">'+(t.on?'⚪ Switch OFF the daily send':'🟢 Switch ON the daily send')+'</button>'+(t.on?'<button class="btn grey" id="tgSave" type="button">💾 Save the time</button>':'')
+    +(IS_OWNER?tgSenderPick(t)+'<button class="btn '+(t.on?'grey':'ok')+'" id="tgToggle" type="button">'+(t.on?'⚪ Switch OFF the daily send':'🟢 Switch ON the daily send')+'</button>'+(t.on?'<button class="btn grey" id="tgSave" type="button">💾 Save the admins &amp; times</button>':'<button class="btn grey" id="tgSave" type="button">💾 Save only (keep OFF)</button>')
       :'<p class="hint">Only a main admin can switch the daily send on/off. You can still send the stock now from your own Telegram account.</p>')
     +'<button class="btn" id="tgNow" type="button">📨 Send now (from my Telegram)</button>'
     +'<div id="tgMsg" class="msg"></div><button class="btn grey" data-x="1" type="button">Close</button>';
@@ -773,11 +775,12 @@ $("tgOv").addEventListener("click",async e=>{
     ch.forEach(f=>{const t=Number(f.value);if(!TGT.some(x=>String(x.chat)===String(c.chat)&&(x.topic||0)===t))TGT.push({chat:c.chat,title:c.title,topic:t,topicTitle:t?f.dataset.t||"":""});});tgDrawTargets();tgPersist();box.innerHTML="";const gs=$("tgGsel");if(gs)gs.value="";say("tgMsg","✅ Added "+c.title+" ("+ch.length+" selection"+(ch.length>1?"s":"")+").","ok");return;}
   if(id==="tgAll"||id==="tgNone"){document.querySelectorAll('#tgBox input[name=tgto]').forEach(b=>b.checked=id==="tgAll");return;}
   if(id==="tgLoad"){tgPickGroups();return;}
+  if(id==="tgSdAll"||id==="tgSdNone"){document.querySelectorAll('#tgBox input[name=tgsd]').forEach(b=>b.checked=id==="tgSdAll");return;}
   if(id==="tgLinkAdd"){const v=$("tgLink").value.trim();if(!v)return;const m=/^(?:(?:https?:\/\/)?(?:www\.)?(?:t|telegram)\.me\/)?(c\/\d+|[A-Za-z][A-Za-z0-9_]{3,31}|@[A-Za-z][A-Za-z0-9_]{3,31}|-100\d+)(?:\/(\d+))?/.exec(v);if(!m){say("tgMsg","This link cannot be read. Use the group list above, a @username, or a topic link like https://t.me/c/1234567890/5","bad");return;}
     let chat=m[1].replace(/^@/,"");if(chat.startsWith("c/"))chat="-100"+chat.slice(2);tgAddTarget({chat,title:/^-/.test(chat)?"Group "+chat:"@"+chat,topic:m[2]?Number(m[2]):0,topicTitle:m[2]?"topic "+m[2]:""});$("tgLink").value="";say("tgMsg","✅ Added.","ok");return;}
   if((id==="tgToggle"||id==="tgSave"||id==="tgNow")&&tgNothing()){say("tgMsg","Add a Telegram group, or tick “Also send privately to admins” and choose at least one admin.","bad");return;}
   const pl=tgPayload;
-  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value,sendAs:tgSender(),...pl()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
+  if(id==="tgToggle"||id==="tgSave"){const on=id==="tgToggle"?!(S.tg&&S.tg.on):!!(S.tg&&S.tg.on);if(on&&!tgSendersVal().length){say("tgMsg","Tick at least one admin account that sends every day.","bad");return;}busy("Saving…");const d=await api("/api/reports/tg/config",{on,senders:tgSendersVal(),...pl()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
   if(id==="tgNow"){busy("Sending the stock from your Telegram account… (this can take a minute)");if(IS_OWNER)await api("/api/reports/tg/to",pl());const d=await api("/api/reports/tg/send",pl());busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
 });
 
