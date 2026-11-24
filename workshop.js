@@ -48,6 +48,8 @@ function register(app, ctx) {
     return acc;
   }
   const mineOnly = (actor, o) => actor?.role === "owner" || actor?.role === "open" || actor?.viewer || String(o.createdByTelegramId || "") === String(actor?.telegramId || "");
+  // v152: only orders that are IN PROGRESS — not failed (rejected by the customer) and not completed (paid in full)
+  const isActive = o => o.status !== "Rejected" && !o.paidFull;
   const nowEth = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }); return { d: helpers.ethDate(g.slice(0, 10)), t: g.slice(11, 16) }; };
   const stamp = () => { const n = nowEth(); return n.d + " " + n.t; };
 
@@ -174,6 +176,7 @@ function register(app, ctx) {
 
   // ── readymade products (the in-stock Stock view of Reports) ──────────────────────────────────
   const readyData = () => ctx.reports && typeof ctx.reports.readymade === "function" ? ctx.reports.readymade() : { groups: [], photoBuf: async () => null, caption: () => "" };
+  const inProgressReady = () => ctx.reports && typeof ctx.reports.inProgress === "function" ? ctx.reports.inProgress() : [];
   const compactGroup = g => ({ key: g.key, model: g.model, handle: g.handle || "", desc: g.desc || "", count: g.items.length, codes: g.items.map(p => p.code), photo: g.photo || "" });
 
   // ── STANDARD PRODUCTS (a catalogue made once, then chosen when sending: photo + name + standard measurements) ──
@@ -213,11 +216,11 @@ function register(app, ctx) {
   function itemCaption(it, p, order, actor) {
     const isOrder = it.kind === "order";
     const L = [
-      isOrder ? `🛠 WORKSHOP ORDER — ${clip(order.orderId, 40)}` : "🛋 WORKSHOP — READYMADE PRODUCT",
+      it.custom ? (order ? `🆕 NEW DESIGN — CUSTOM ORDER — ${clip(order.orderId, 40)}` : "🆕 NEW DESIGN — CUSTOM PRODUCT") : isOrder ? `🛠 WORKSHOP ORDER — ${clip(order.orderId, 40)}` : "🛋 WORKSHOP — READYMADE PRODUCT",
       `🪑 Product: ${clip(p.name, 100)}`,
       `🔢 Quantity: ×${it.qty}`,
       `📏 Measurement: ${clip(it.size, 80)}`,
-      isOrder ? `🆔 Order ID: ${clip(order.orderId, 40)}` : "",
+      order ? `🆔 Order ID: ${clip(order.orderId, 40)}` : "",
       it.note ? `📝 Notes: ${clip(it.note, 400)}` : "",
       `👤 From: ${clip(actor?.name || "Admin", 60)}`
     ];
@@ -228,14 +231,14 @@ function register(app, ctx) {
   const router = express.Router();
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
-  router.use(express.json({ limit: "3mb" }));
+  router.use(express.json({ limit: "25mb" }));
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor), R = readyData();
     return {
       ok: true, me: { key, name: clip(actor?.name, 60) }, settings: { ...s, targetNames: s.targets.map(targetName) },
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
-      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 80).map(o => compactOrder(o, actor)),
-      readymade: R.groups.map(compactGroup),
+      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isActive(o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 80).map(o => compactOrder(o, actor)),
+      readymade: inProgressReady(),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
       log: db.log.filter(l => l.key === key).slice(-15).reverse()
     };
@@ -261,7 +264,7 @@ function register(app, ctx) {
     const o = (ctx.getOrders() || []).find(x => String(x.id) === String(req.body?.id));
     if (!o || !mineOnly(req.actor, o)) return res.json({ ok: false, error: "Order not found." });
     const r = await sendOrder(o, req.actor, { force: !!req.body?.force });
-    res.json({ ...r, ...view(req.actor), message: r.ok ? `✅ Order ${o.orderId || o.id} sent to the workshop.` : undefined });
+    res.json({ ...view(req.actor), ...r, message: r.ok ? `✅ Order ${o.orderId || o.id} sent to the workshop.` : undefined });
   });
   router.post("/send-readymade", async (req, res) => {
     const key = keyOf(req.actor), s = settingsOf(key);
@@ -278,7 +281,7 @@ function register(app, ctx) {
     const okN = results.filter(x => x.ok).length;
     db.log.push({ at: stamp(), key, by: clip(req.actor?.name || "Admin", 60), what: `Readymade · ${groups.length} model(s)`, ok: okN > 0, error: okN ? "" : (results[0]?.error || "") }); if (db.log.length > 200) db.log.splice(0, db.log.length - 200);
     persist();
-    res.json({ ok: okN > 0, results, error: okN ? (okN < results.length ? "Some groups could not be reached." : "") : (results[0]?.error || "Could not send."), message: okN ? `✅ ${groups.length} readymade model(s) sent to the workshop.` : undefined, ...view(req.actor) });
+    res.json({ ...view(req.actor), ok: okN > 0, results, error: okN ? (okN < results.length ? "Some groups could not be reached." : "") : (results[0]?.error || "Could not send."), message: okN ? `✅ ${groups.length} readymade model(s) sent to the workshop.` : undefined });
   });
   router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
     if (!canManage(req.actor)) return res.json({ ok: false, error: "Only a main admin can change the standard products." });
@@ -310,16 +313,30 @@ function register(app, ctx) {
     if (!s.targets.length) return res.json({ ok: false, error: "First choose the workshop Telegram group (Settings above)." });
     const acc = accountOf(req.actor);
     if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it first (Settings → Connect my Telegram account), then try again." });
-    const raw = Array.isArray(req.body?.items) ? req.body.items.slice(0, 30) : [];
+    const raw = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : [];
     if (!raw.length) return res.json({ ok: false, error: "Add at least one product to the list." });
     const items = [], mineOrders = (ctx.getOrders() || []).filter(o => mineOnly(req.actor, o));
     for (let i = 0; i < raw.length; i++) {
-      const r = raw[i] || {}, p = db.catalog.find(x => x.id === String(r.pid));
-      if (!p) return res.json({ ok: false, error: `Line ${i + 1}: the standard product no longer exists.` });
+      const r = raw[i] || {};
       const qty = Math.floor(Number(r.qty));
       if (!(qty >= 1 && qty <= 9999)) return res.json({ ok: false, error: `Line ${i + 1}: choose a quantity (1 – 9999).` });
       const size = clip(r.size, 80);
       if (!size) return res.json({ ok: false, error: `Line ${i + 1}: choose or type the measurement.` });
+      if (r.custom) { // NEW DESIGN: a one-off product made in the page (own photo + name) — it is not saved in the standard products
+        const name = clip(r.name, 100);
+        if (!name) return res.json({ ok: false, error: `Line ${i + 1}: type the name of the new design.` });
+        const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(r.photoData || ""));
+        if (!m) return res.json({ ok: false, error: `Line ${i + 1}: the photo of the new design could not be read. Choose it again.` });
+        const buf = Buffer.from(m[1], "base64");
+        if (buf.length < 200 || buf.length > 6 * 1024 * 1024) return res.json({ ok: false, error: `Line ${i + 1}: the photo is empty or too big.` });
+        let order = null;
+        if (r.orderId) { order = mineOrders.find(o => String(o.id) === String(r.orderId)); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: the chosen order was not found.` }); }
+        const it = { kind: "order", custom: true, qty, size, note: clip(r.note, 400) };
+        items.push({ buf, caption: itemCaption(it, { name }, order, req.actor), what: `New design${order ? " · " + (order.orderId || order.id) : ""} · ${name} ×${qty}` });
+        continue;
+      }
+      const p = db.catalog.find(x => x.id === String(r.pid));
+      if (!p) return res.json({ ok: false, error: `Line ${i + 1}: the standard product no longer exists.` });
       const kind = r.kind === "order" ? "order" : r.kind === "readymade" ? "readymade" : "";
       if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
       let order = null;
@@ -332,7 +349,7 @@ function register(app, ctx) {
     for (const it of items) db.log.push({ at: stamp(), key, by: clip(req.actor?.name || "Admin", 60), what: it.what, ok: okN > 0, error: okN ? "" : (results[0]?.error || "") });
     if (db.log.length > 200) db.log.splice(0, db.log.length - 200);
     persist();
-    res.json({ ok: okN > 0, results, error: okN ? (okN < results.length ? "Some groups could not be reached." : "") : (results[0]?.error || "Could not send."), message: okN ? `✅ ${items.length} product${items.length === 1 ? "" : "s"} sent to the workshop.` : undefined, ...view(req.actor) });
+    res.json({ ...view(req.actor), ok: okN > 0, results, error: okN ? (okN < results.length ? "Some groups could not be reached." : "") : (results[0]?.error || "Could not send."), message: okN ? `✅ ${items.length} product${items.length === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
   router.post("/test", async (req, res) => {
     const s = settingsOf(keyOf(req.actor));
@@ -343,7 +360,7 @@ function register(app, ctx) {
     const okN = results.filter(x => x.ok).length;
     res.json({ ok: okN > 0, results, error: okN ? "" : (results[0]?.error || "Could not send."), message: okN ? "✅ Test message sent." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v151" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v152" }));
   app.use("/api/workshop", router);
 
   return { load, onOrderCreated, onOrderConfirmed };
