@@ -75,7 +75,7 @@ function register(app, ctx) {
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
     if (cfg.scriptUrl) scheduleBackup(8000);
-    try { console.log("[reports] module build v148 loaded"); } catch {}
+    try { console.log("[reports] module build v149 loaded"); } catch {}
     const tg = setInterval(() => { tgTick().catch(() => {}); }, 60 * 1000); if (tg.unref) tg.unref();
     setTimeout(() => { tgTick().catch(() => {}); }, 20000); // a restart / redeploy refreshes the backup once
     // New Ethiopian month → the backup runs by itself so the next month's Workflow / Stock / Material tabs appear (checked every 20 minutes)
@@ -152,7 +152,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v148", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ appBuild: "v149", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -709,6 +709,8 @@ function register(app, ctx) {
   });
   app.use("/api/reports", router);
 
-  return { load };
+  // v150: the Workshop module reads the readymade (in-stock, not ORDER) products from here
+  const readymade = () => ({ groups: stockGroups(db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || "")))), photoBuf, caption: groupCaption });
+  return { load, readymade };
 }
 module.exports = { register };
