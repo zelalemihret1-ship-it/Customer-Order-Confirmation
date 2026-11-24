@@ -1,3 +1,7 @@
+# v147 — Fix: “hasPerm is not a function” when opening Reports
+- `reports.js` no longer depends on `server.js` passing `hasPerm` (older `server.js` files did not): it has its own safe check. If you still see an error after redeploying, make sure the **whole folder** (including `server.js`) from this zip is deployed, not only some files.
+- Files changed: `reports.js`, `package.json`.
+
 # v146 — Stock → Telegram: assign ALL sender admin accounts · each sends daily at its own time
 - **Reports → ⚙ → Stock → Telegram → ⏰ Admin accounts that send the stock every day:** tick any admins (or **Select all admins**) and set a **time for each**. Every day, at its time, the stock is sent **from that admin's own Telegram account** (main admins, assigned main admins and assigned admins). The list shows who is connected and the last result of each sender.
 - All senders use the same destinations (group / topic and the optional private admins). An admin whose Telegram account is not connected is skipped that day and shows ⚠️.
