@@ -23,6 +23,7 @@ const uid = () => crypto.randomBytes(6).toString("hex");
 
 function register(app, ctx) {
   const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
+  let workshopDeleteProducts = null;
   // safe even when an older server.js does not pass hasPerm: main admin / open mode = yes, otherwise the admin must have the section in his list
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const ownerIdsLive = () => (ctx.ownerIds || []).map(String);
@@ -152,7 +153,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v149", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ appBuild: "v154", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -465,6 +466,17 @@ function register(app, ctx) {
     audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
     done(res, `💰 ${p.code} sold — ${p.sold.d} · ${ethClock(p.sold.t)}.`);
   });
+  router.post("/product/restock", (req, res) => {
+    const p = findP(req.body?.id);
+    if (!p) return fail(res, "Product not found.");
+    if (p.status !== "sold") return fail(res, "Only a Sold Out product can be restocked.");
+    const previous = p.sold ? { ...p.sold } : null;
+    p.status = "stock"; delete p.sold;
+    hist(p, "Restocked → In Stock", req, { previousSale: previous ? previous.d + " " + previous.t : "" });
+    audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
+    done(res, `♻️ ${p.code} restocked and returned to In Stock.`);
+  });
+
   router.post("/product/times", (req, res) => { // adjust the Ethiopian dates + clock times (Started · Finished/jumped to stock · Sold) and the Sold type
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
@@ -495,10 +507,11 @@ function register(app, ctx) {
     audit("Report: product undo", `${p.code} → ${p.status}`, req.actor);
     done(res, `↩ ${p.code} moved back to ${p.status === "stock" ? "In Stock" : "Workflow"}.`);
   });
-  router.post("/product/delete", (req, res) => {
+  router.post("/product/delete", ownerOnly, (req, res) => {
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     db.products = db.products.filter(x => x !== p);
+    if (typeof workshopDeleteProducts === "function") workshopDeleteProducts([p.id]);
     dropPhoto(p.photo).catch(() => {});
     audit("Report: product deleted", `${p.code} ${lab(p)}`, req.actor);
     done(res, `🗑 ${p.code} deleted.`);
@@ -745,6 +758,6 @@ function register(app, ctx) {
     for (const g of gone) dropPhoto(g.photo).catch(() => {});
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, wsAddProduct, wsFinish, wsRemove, wsStatus };
+  return { load, readymade, inProgress, wsAddProduct, wsFinish, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
