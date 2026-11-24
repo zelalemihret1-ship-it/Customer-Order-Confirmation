@@ -55,6 +55,22 @@ input[type=text],input[type=number]{width:100%;border:1px solid var(--line);bord
 .ov.on{display:flex}
 .box{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:560px;max-height:80vh;overflow:auto;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))}
 .gi{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin:7px 0;font-weight:700;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.pc{position:relative;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;cursor:pointer;box-shadow:0 3px 12px #0000000a}
+.pc img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#ece7da}
+.pc .pn{padding:8px 10px 10px;font-weight:800;font-size:13px;color:var(--ink);line-height:1.3}
+.pc .ed{position:absolute;top:6px;right:6px;border:0;border-radius:10px;background:#ffffffdd;font-size:15px;padding:5px 8px;cursor:pointer}
+textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:15px;background:#fff;color:var(--tx);min-height:70px;resize:vertical;font-family:inherit}
+select{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:15px;background:#fff;color:var(--tx)}
+.lab{display:block;font-size:12px;font-weight:800;color:var(--green);margin:12px 0 5px;letter-spacing:.3px;text-transform:uppercase}
+.szs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.sz{border:2px solid var(--line);background:#fff;border-radius:999px;padding:8px 12px;font-size:13px;font-weight:800;color:var(--green);cursor:pointer}
+.sz.on{border-color:var(--green);background:#f1f8f4}
+.tog{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tog button{border:2px solid var(--line);background:#fff;border-radius:14px;padding:12px 6px;font-weight:800;font-size:14px;color:var(--green);cursor:pointer}
+.tog button.on{border-color:var(--green);background:#f1f8f4}
+.qty{display:flex;align-items:center;gap:8px}.qty button{width:44px;height:44px;border:0;border-radius:12px;background:#e7e2d6;font-size:22px;font-weight:800;color:var(--green);cursor:pointer}.qty input{text-align:center;font-weight:800}
+.pv{width:100%;max-height:220px;object-fit:contain;border-radius:12px;background:#ece7da;display:none;margin:8px 0}
 .busy{position:fixed;inset:0;background:#fffc;display:none;align-items:center;justify-content:center;z-index:99;font-weight:800;color:var(--ink)}.busy.on{display:flex}
 </style>
 </head>
@@ -89,15 +105,39 @@ input[type=text],input[type=number]{width:100%;border:1px solid var(--line);bord
     <div id="out"></div>
     <div id="rbar" style="display:none" class="btns"><button class="btn" id="rSend" type="button">📨 Send selected to workshop</button><button class="btn sec" id="rAll" type="button">Select all</button></div>
 
+    <div id="basket"></div>
     <div class="card" style="margin-top:14px"><h2>🕘 My last sends</h2><div id="log" class="log"></div></div>
   </div>
 </main>
 <div class="ov" id="pickOv"><div class="box"><h2 style="margin:0 0 6px">📂 My Telegram groups</h2><div class="hint">Groups your own Telegram account is a member of. Tap one to use it.</div><div id="pickList"></div><div class="btns"><button class="btn sec" id="pickClose" type="button">Close</button></div></div></div>
+<div class="ov" id="addOv"><div class="box">
+  <div style="display:flex;gap:10px;align-items:center"><img id="aImg" alt="" style="width:72px;height:72px;border-radius:12px;object-fit:cover;background:#ece7da"><div><h2 id="aName" style="margin:0">Product</h2><div class="hint" style="margin:2px 0 0">Choose quantity, measurement and type</div></div></div>
+  <label class="lab">Type</label>
+  <div class="tog"><button type="button" id="kOrder" data-k="order">📦 Order</button><button type="button" id="kReady" data-k="readymade">🛋 Readymade</button></div>
+  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select></div>
+  <label class="lab">Quantity</label>
+  <div class="qty"><button type="button" id="qMinus">−</button><input type="number" id="aQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="qPlus">+</button></div>
+  <label class="lab">Measurement</label>
+  <div class="szs" id="aSizes"></div>
+  <input type="text" id="aSize" placeholder="Choose above or type the measurement (e.g. 120 × 40 × 90)" autocomplete="off">
+  <label class="lab">Additional notes (optional)</label>
+  <textarea id="aNote" placeholder="Anything the workshop must know…"></textarea>
+  <div id="aMsg" class="msg" style="margin-top:10px"></div>
+  <div class="btns"><button class="btn" id="aAdd" type="button">➕ Add to list</button><button class="btn sec" id="aClose" type="button">Cancel</button></div>
+</div></div>
+<div class="ov" id="catOv"><div class="box">
+  <h2 id="cTitle" style="margin:0 0 6px">New standard product</h2>
+  <label class="lab">Product name</label><input type="text" id="cName" placeholder="e.g. Shoe shelf 4 doors" autocomplete="off">
+  <label class="lab">Photo</label><img id="cImg" class="pv" alt=""><input type="file" id="cFile" accept="image/*" style="display:none"><button class="btn sec sm" id="cPick" type="button">📷 Choose photo</button>
+  <label class="lab">Standard measurements (one per line)</label><textarea id="cSizes" placeholder="120 × 40 × 90&#10;100 × 35 × 80"></textarea>
+  <div id="cMsg" class="msg" style="margin-top:10px"></div>
+  <div class="btns"><button class="btn" id="cSave" type="button">💾 Save</button><button class="btn sec" id="cClose" type="button">Cancel</button><button class="btn sm" id="cDel" type="button" style="background:var(--bad);display:none">🗑 Delete</button></div>
+</div></div>
 <div class="busy" id="busy"><span id="busyTx">Please wait…</span></div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let S={settings:{targets:[],mode:"manual"},orders:[],readymade:[],log:[],sender:{}},tab="o",targets=[],mode="manual",picked=new Set();
+let S={settings:{targets:[],mode:"manual"},orders:[],readymade:[],catalog:[],log:[],sender:{}},tab="o",targets=[],mode="manual",picked=new Set(),basket=[],curP=null,editId="",newPhoto="";
 const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
 const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
 async function api(path,body){
@@ -116,7 +156,7 @@ function renderSettings(){
 const stPill=o=>o.status==="Confirmed"?'<span class="pill ok">✅ Confirmed</span>':o.status==="Rejected"?'<span class="pill bad">❌ Rejected</span>':'<span class="pill wait">⏳ '+esc(o.status||"Pending")+'</span>';
 function render(){
   renderSettings();
-  const seg=$("seg");seg.innerHTML='<button type="button" data-t="o" class="'+(tab==="o"?"on":"")+'">📦 Orders ('+S.orders.length+')</button><button type="button" data-t="r" class="'+(tab==="r"?"on":"")+'">🛋 Readymade ('+S.readymade.length+')</button>';
+  const seg=$("seg");seg.innerHTML='<button type="button" data-t="o" class="'+(tab==="o"?"on":"")+'">📦 Orders ('+S.orders.length+')</button><button type="button" data-t="r" class="'+(tab==="r"?"on":"")+'">🛋 Readymade ('+S.readymade.length+')</button><button type="button" data-t="s" class="'+(tab==="s"?"on":"")+'">🧰 Standard ('+S.catalog.length+')</button>';
   let h="";
   if(tab==="o"){
     h=S.orders.map(o=>{
@@ -125,11 +165,17 @@ function render(){
       return '<div class="item">'+(o.photo?'<img loading="lazy" src="'+esc(o.photo)+'" alt="">':'<div class="noimg">🛋</div>')+'<div class="mid"><div class="nm">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+'</div><div class="meta">'+stPill(o)+' '+esc(o.customerName||"")+'<br>'+info+'</div></div><button class="btn sm" type="button" data-send="'+o.id+'">'+(sent?"Send again":"Send to workshop")+'</button></div>';
     }).join("")||'<div class="empty"><b>No orders yet.</b><br>Orders you create will appear here.</div>';
     $("rbar").style.display="none";
+  }else if(tab==="s"){
+    h=(S.canManage?'<div class="btns" style="margin:0 0 10px"><button class="btn gold sm" type="button" id="newStd">➕ New standard product</button></div>':"")
+      +(S.catalog.length?'<div class="hint">Tap a product → choose quantity, measurement and Order / Readymade → it goes into your list below → send the whole list to the workshop.</div><div class="grid">'+S.catalog.map(p=>'<div class="pc" data-pid="'+esc(p.id)+'"><img loading="lazy" src="/api/workshop-photo/'+esc(p.photo)+'.jpg" alt="">'+(S.canManage?'<button class="ed" type="button" data-edit="'+esc(p.id)+'">✏️</button>':"")+'<div class="pn">'+esc(p.name)+'</div></div>').join("")+'</div>'
+        :'<div class="empty"><b>No standard products yet.</b><br>'+(S.canManage?"Press ➕ New standard product and add the photo, name and standard measurements.":"The main admin makes the standard products. Ask them to add some.")+'</div>');
+    $("rbar").style.display="none";
   }else{
     h=S.readymade.map(g=>'<label class="item"><input type="checkbox" data-k="'+esc(g.key)+'"'+(picked.has(g.key)?" checked":"")+'>'+(g.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(g.photo)+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+' ×'+g.count+'</div><div class="meta">'+(g.desc?"📏 "+esc(g.desc)+"<br>":"")+(g.handle?"🔧 "+esc(g.handle)+" · ":"")+esc((g.codes||[]).join(", "))+'</div></div></label>').join("")||'<div class="empty"><b>No readymade product in stock.</b><br>Products finished in Reports → Workflow (readymade, not ORDER) appear here.</div>';
     $("rbar").style.display=S.readymade.length?"flex":"none";
   }
   $("out").innerHTML=h;
+  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px"><h2>📋 List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item"><img src="/api/workshop-photo/'+esc(l.photo)+'.jpg" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">📏 '+esc(l.size)+'<br>'+(l.kind==="order"?'<span class="pill ok">📦 ORDER '+esc(l.orderLabel)+'</span>':'<span class="pill wait">🛋 READYMADE</span>')+(l.note?'<br>📝 '+esc(l.note):"")+'</div></div><button class="btn sec sm" type="button" data-del="'+i+'">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">📨 Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
   $("log").innerHTML=(S.log||[]).map(l=>'<div>'+(l.ok?"✅":"❌")+' <b>'+esc(l.what)+'</b> · '+esc(l.at)+(l.error?' — '+esc(l.error):"")+'</div>').join("")||"Nothing sent yet.";
 }
 function results(d){const bad=(d.results||[]).filter(x=>!x.ok);return bad.length?bad.map(x=>x.name+": "+x.error).join(" · "):"";}
@@ -180,6 +226,72 @@ $("testBtn").onclick=async()=>{
   busy("Sending a test message…");await api("/api/workshop/settings",{targets,mode}).then(d=>{if(d.ok){targets=(S.settings.targets||[]).slice();mode=S.settings.mode;}});
   const d=await api("/api/workshop/test",{});busy("");render();
   say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
+};
+// ── standard products: choose → quantity + measurement + order/readymade → list → send ──
+let aKind="readymade";
+function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";}
+function openAdd(id){
+  const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
+  $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aQty").value=1;$("aSize").value="";$("aNote").value="";say2("aMsg","");
+  $("aSizes").innerHTML=(p.sizes||[]).map(z=>'<button type="button" class="sz" data-z="'+esc(z)+'">'+esc(z)+'</button>').join("")||'<div class="hint">No standard measurement saved — type it below.</div>';
+  $("aOrder").innerHTML='<option value="">— choose the order —</option>'+S.orders.filter(o=>o.status!=="Rejected").map(o=>'<option value="'+o.id+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+'</option>').join("");
+  setKind("readymade");$("addOv").classList.add("on");
+}
+const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
+$("kOrder").onclick=()=>setKind("order");$("kReady").onclick=()=>setKind("readymade");
+$("qMinus").onclick=()=>{$("aQty").value=Math.max(1,(Number($("aQty").value)||1)-1);};
+$("qPlus").onclick=()=>{$("aQty").value=Math.min(9999,(Number($("aQty").value)||0)+1);};
+$("aSizes").addEventListener("click",e=>{const b=e.target.closest("button[data-z]");if(!b)return;$("aSize").value=b.dataset.z;document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x===b));});
+$("aSize").addEventListener("input",()=>document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x.dataset.z===$("aSize").value.trim())));
+$("aOrder").onchange=()=>{const o=S.orders.find(x=>String(x.id)===$("aOrder").value);if(o&&o.size&&!$("aSize").value.trim())$("aSize").value=o.size;};
+$("aClose").onclick=()=>$("addOv").classList.remove("on");
+$("aAdd").onclick=()=>{
+  const qty=Math.floor(Number($("aQty").value)),size=$("aSize").value.trim(),note=$("aNote").value.trim(),oid=$("aOrder").value;
+  if(!(qty>=1))return say2("aMsg","Choose the quantity.");
+  if(!size)return say2("aMsg","Choose or type the measurement.");
+  let o=null;if(aKind==="order"){o=S.orders.find(x=>String(x.id)===oid);if(!o)return say2("aMsg","Choose which order this product belongs to.");}
+  basket.push({pid:curP.id,name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,orderId:o?o.id:"",orderLabel:o?(o.orderId||("#"+o.id)):""});
+  $("addOv").classList.remove("on");render();say("Added to your list — add more, or press 📨 Send list to workshop.","info");
+};
+$("basket").addEventListener("click",async e=>{
+  const d=e.target.closest("button[data-del]");if(d){basket.splice(Number(d.dataset.del),1);render();return;}
+  if(e.target.closest("#bClear")){basket=[];render();return;}
+  if(e.target.closest("#bSend")){
+    busy("Sending to the workshop…");const r=await api("/api/workshop/send-items",{items:basket.map(l=>({pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,orderId:l.orderId,note:l.note}))});busy("");
+    say(r.ok?(r.message||"✅ Sent.")+(results(r)?" ⚠ "+results(r):""):(r.error||"Could not send."),r.ok?"ok":"bad");if(r.ok)basket=[];render();
+  }
+});
+$("out").addEventListener("click",e=>{
+  if(e.target.closest("#newStd"))return openCat("");
+  const ed=e.target.closest("button[data-edit]");if(ed){e.stopPropagation();return openCat(ed.dataset.edit);}
+  const pc=e.target.closest(".pc[data-pid]");if(pc)openAdd(pc.dataset.pid);
+});
+// ── main admin: make / change standard products ──
+function resizePhoto(file){
+  return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{try{const mx=900,sc=Math.min(1,mx/Math.max(im.naturalWidth,im.naturalHeight)),w=Math.max(1,Math.round(im.naturalWidth*sc)),h=Math.max(1,Math.round(im.naturalHeight*sc)),cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,w,h);c.drawImage(im,0,0,w,h);URL.revokeObjectURL(u);res(cv.toDataURL("image/jpeg",.82));}catch(e){rej(e);}};
+    im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});
+}
+function openCat(id){
+  editId=id||"";newPhoto="";const p=id?S.catalog.find(x=>x.id===id):null;
+  $("cTitle").textContent=p?"Change standard product":"New standard product";$("cName").value=p?p.name:"";$("cSizes").value=p?(p.sizes||[]).join("\n"):"";
+  $("cImg").style.display=p?"block":"none";if(p)$("cImg").src="/api/workshop-photo/"+p.photo+".jpg";
+  $("cDel").style.display=p?"inline-block":"none";say2("cMsg","");$("catOv").classList.add("on");
+}
+$("cPick").onclick=()=>$("cFile").click();
+$("cFile").onchange=async()=>{const f=$("cFile").files&&$("cFile").files[0];if(!f)return;try{newPhoto=await resizePhoto(f);$("cImg").src=newPhoto;$("cImg").style.display="block";say2("cMsg","");}catch(e){say2("cMsg",e.message||"Could not read the photo.");}$("cFile").value="";};
+$("cClose").onclick=()=>$("catOv").classList.remove("on");
+$("cSave").onclick=async()=>{
+  const name=$("cName").value.trim();if(!name)return say2("cMsg","Type the product name.");
+  busy("Saving…");const d=await api("/api/workshop/catalog/save",{id:editId||undefined,name,sizes:$("cSizes").value,photo:newPhoto||undefined});busy("");
+  if(!d.ok)return say2("cMsg",d.error||"Could not save.");
+  $("catOv").classList.remove("on");basket=basket.filter(l=>S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
+};
+$("cDel").onclick=async()=>{
+  if(!editId||!confirm("Delete this standard product?"))return;
+  busy("Deleting…");const d=await api("/api/workshop/catalog/delete",{id:editId});busy("");
+  if(!d.ok)return say2("cMsg",d.error||"Could not delete.");
+  $("catOv").classList.remove("on");basket=basket.filter(l=>S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
 };
 (async()=>{
   let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
