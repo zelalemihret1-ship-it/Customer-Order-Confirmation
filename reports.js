@@ -711,6 +711,11 @@ function register(app, ctx) {
 
   // v150: the Workshop module reads the readymade (in-stock, not ORDER) products from here
   const readymade = () => ({ groups: stockGroups(db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || "")))), photoBuf, caption: groupCaption });
-  return { load, readymade };
+  // v152: UNFINISHED readymade products (still in Workflow, not ORDER) — shown (not sent) on the Workshop page
+  const inProgress = () => db.products
+    .filter(p => p.status === "workflow" && !/CUS|ORD/i.test(String(p.orderType || "")))
+    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", photo: p.photo || "" }))
+    .sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.priority] ?? 2) - ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[b.priority] ?? 2));
+  return { load, readymade, inProgress };
 }
 module.exports = { register };
