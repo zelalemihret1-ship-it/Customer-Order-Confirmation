@@ -1,3 +1,13 @@
+# v153 — Workshop → Finishing → Stock chain, orderable confirmed orders, fixed Telegram group picker
+- **Orders tab:** only orders the customer **CONFIRMED** and whose card was **DELIVERED** are listed and can be sent (button **Send** per order). Rejected, still-waiting and undelivered ("failed") orders are removed from the list, and the server refuses them too.
+- **Telegram group selection fixed:** two places per admin — **Workshop** and **Finishing** — each a group or one topic of a group. Pick from "My groups" (groups with topics are marked), then pick the topic **by name** from a real topic list (no more typing a topic number). A pasted link is checked: a message number in a normal link is no longer mistaken for a topic. New **Check the bot** and a test message that goes to both places.
+- **The chain:** a job (order / readymade / standard product / new design) is posted by the **AMBAR bot** in the **Workshop** topic with the button **🛠 Finished workshop** → it is posted in the **Finishing** topic with the button **✅ Finished** → the product moves to **Stock** in Reports. The same two buttons exist in the mini app (**Progress** tab).
+- **Connected to Reports:** every job creates its product(s) in **Reports → Workflow** (ORDER or READYMADE, with the photo and a Prod ID); **✅ Finished** moves them to **Stock** (Ethiopian date + time, history line, Google Sheet backup). Readymade products already in Workflow can be sent from the **Readymade** tab.
+- **Connected to the orders:** the order keeps `workshop` = stage (In workshop / In finishing / Finished · in stock) with who and when; the Orders tab shows it.
+- The bot must be a member (best: admin) of the group — a Telegram user account cannot send buttons. Browsing groups/topics still uses the admin's own Telegram account.
+- The old mode "without confirmation" was removed (only confirmed + delivered orders are orderable); an admin who had it is treated as "after the customer confirms".
+- Files changed: `workshop.js`, `reports.js`, `server.js` (button callback + 2 context items), `public/workshop.html`. Check: `/api/workshop-version` → v153.
+
 # v152 — Workshop: progress-only views, Custom product tab, Telegram sending fixed, modern look
 - **Orders** tab now shows only orders IN PROGRESS (rejected by the customer and paid-in-full/completed orders are hidden). It is a view only — nothing is sent from it.
 - **Readymade** tab now shows only UNFINISHED readymade products (still in Reports → Workflow). Finished (in stock) products are hidden. View only — no send.
