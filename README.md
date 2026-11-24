@@ -1,3 +1,8 @@
+# v142 — Stock view shows ORDER products · Telegram sends READYMADE only
+- **Reports → 🖼 Stock view** shows every product in stock, READYMADE and ORDER; ORDER products carry an **ORDER** tag (card, list and the opened product).
+- **📨 Daily stock → Telegram** (and Send now) sends **READYMADE products only** — ORDER products are never sent.
+- Files changed: `public/reports.html`, `reports.js`, `package.json`.
+
 # v141 — Stock view: tap a product → big photo + description, handle, capacity
 - Opening a product in **Reports → Stock view** now shows the large photo (whole picture, not cropped), the **Description**, handle, shoe capacity, type and group, then every Prod Id with its own photo, description and note.
 - Files changed: `public/reports.html`, `package.json`.
