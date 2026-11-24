@@ -29,7 +29,7 @@ function register(app, ctx) {
   const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, lastDate: "", lastAt: "", ok: null, error: "", results: [] };
+  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
   let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
@@ -202,7 +202,10 @@ function register(app, ctx) {
   }
   const todayAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(0, 10);
   const timeAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(11, 16);
-  const senderAcc = () => db.tg.sendAs ? ctx.accountFor({ role: "owner", telegramId: String(db.tg.sendAs) }) : null;
+  const isOwnerId = id => ownerIdsLive().includes(String(id));
+  // the Telegram account that belongs to this person (a main admin, an assigned main admin or an assigned admin) — never someone else's
+  const accFor = id => id ? ctx.accountFor({ role: isOwnerId(id) ? "owner" : "admin", telegramId: String(id) }) : null;
+  const senderAcc = () => accFor(db.tg.sendAs);
   const nameOfAdmin = id => { const a = appAdminsLive().find(x => String(x.telegramId) === String(id)); return clip(a?.name, 60) || (ownerIdsLive().includes(String(id)) ? "Main admin" : "Admin " + id); };
   function recipients() {
     const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
@@ -211,45 +214,56 @@ function register(app, ctx) {
   }
   function candidates() {
     const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
-    return ids.filter(id => id !== String(db.tg.sendAs)).map(id => ({ id, name: nameOfAdmin(id) }));
+    return ids.map(id => ({ id, name: nameOfAdmin(id) }));
   }
   // main admins whose OWN Telegram account is connected: the stock can be sent from any of them
-  const senders = () => ownerIdsLive().filter(x => /^\d+$/.test(String(x))).map(id => ({ id: String(id), name: nameOfAdmin(id), ready: !!ctx.accountFor({ role: "owner", telegramId: String(id) })?.ready }));
+  const senders = () => [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(String(x))))].map(id => ({ id: String(id), name: nameOfAdmin(id), ready: !!accFor(id)?.ready }));
   const setSender = (req, wanted) => { // returns an error text or ""
     const id = String(wanted || "");
     if (!id) return "";
-    if (!senders().some(x => x.id === id)) return "That sender is not a main admin.";
-    if (!ctx.accountFor({ role: "owner", telegramId: id })?.ready) return nameOfAdmin(id) + "'s Telegram account is not connected. Connect it first (Settings → Connect my Telegram account).";
+    if (!senders().some(x => x.id === id)) return "That sender is not an admin of this app.";
+    if (!accFor(id)?.ready) return nameOfAdmin(id) + "'s Telegram account is not connected. Connect it first (Settings → Connect my Telegram account).";
     db.tg.sendAs = id; return "";
   };
+  const cleanChannels = v => { const arr = Array.isArray(v) ? v : String(v || "").split(/[\s,;\n]+/); const out = []; for (const x of arr) { const u = String(x || "").trim().replace(/^https?:\/\/(www\.)?(t|telegram)\.me\//i, "").replace(/^@+/, "").split(/[/?]/)[0]; if (/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(u) && !out.some(o => o.toLowerCase() === u.toLowerCase())) out.push(u); } return out.slice(0, 20); };
   const cleanTo = v => Array.isArray(v) ? [...new Set(v.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 100) : null;
   function tgInfo() {
     const t = db.tg, acc = senderAcc();
-    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [] };
+    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [], channels: Array.isArray(t.channels) ? t.channels : [], lastBy: t.lastBy || "" };
   }
-  const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. It will try again tomorrow."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The main admin's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The main admin's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
+  const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. Try again in a few minutes."; if (/USERNAME_NOT_OCCUPIED|USERNAME_INVALID/i.test(m)) return "No Telegram group or channel with this username exists. Check the spelling."; if (/CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED|USER_BANNED_IN_CHANNEL|CHANNEL_PRIVATE|CHAT_SEND_PHOTOS_FORBIDDEN|CHAT_SEND_MEDIA_FORBIDDEN/i.test(m)) return "This Telegram account is not allowed to post there. Join the group/channel with this account (as admin for a channel) and try again."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The sender's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The sender's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
   let tgBusy = false;
-  async function sendDaily() {
+  async function sendDaily(opt = {}) { // opt.by = { id, name, acc } → sent from THAT person's own Telegram account; opt.to / opt.channels override the saved choice for this send only
     if (tgBusy) return { ok: false, error: "A send is already running." };
     tgBusy = true;
     const t = db.tg;
     try {
-      let acc = senderAcc();
-      if (!t.sendAs || !acc?.ready) { // the chosen sender is not connected: use any main admin whose own Telegram account is connected
-        const alt = senders().find(x => x.ready);
-        if (alt) { t.sendAs = alt.id; acc = senderAcc(); persist(); }
+      let acc, senderId, senderName;
+      if (opt.by) { acc = opt.by.acc; senderId = String(opt.by.id || ""); senderName = opt.by.name || nameOfAdmin(senderId); if (!acc?.ready) throw new Error("Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then press Send now again."); }
+      else {
+        acc = senderAcc();
+        if (!t.sendAs || !acc?.ready) { // the chosen sender is not connected: use any admin whose own Telegram account is connected
+          const alt = senders().find(x => x.ready);
+          if (alt) { t.sendAs = alt.id; acc = senderAcc(); persist(); }
+        }
+        if (!t.sendAs || !acc?.ready) throw new Error("The sender's Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then switch Daily Telegram on again.");
+        senderId = String(t.sendAs); senderName = nameOfAdmin(senderId);
       }
-      if (!t.sendAs || !acc?.ready) throw new Error("The sender (main admin) Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then switch Daily Telegram on again.");
-      const to = recipients();
-      if (!to.length) throw new Error("There is no other admin to send to.");
+      const selTo = Array.isArray(opt.to) ? (opt.to.length ? opt.to.map(String) : null) : (Array.isArray(t.to) && t.to.length ? t.to.map(String) : null);
+      const allIds = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
+      const to = allIds.filter(id => id !== senderId && (!selTo || selTo.includes(id))).map(id => ({ id, name: nameOfAdmin(id) }));
+      const chans = (Array.isArray(opt.channels) ? cleanChannels(opt.channels) : (t.channels || [])).map(u => ({ id: null, user: u, name: "@" + u }));
+      if (!to.length && !chans.length) throw new Error("There is no other admin or group/channel to send to.");
       const stock = db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || ""))), groups = stockGroups(stock).slice(0, 60), n = nowEth();
       const head = `📦 AMBAR STOCK — ${n.d}\n${stock.length} readymade product${stock.length === 1 ? "" : "s"} in stock · ${groups.length} model${groups.length === 1 ? "" : "s"}` + (stock.length ? "" : "\nNothing is in stock today.");
       const photos = new Map();
       for (const g of groups) if (g.photo) { const b = await photoBuf(g.photo); if (b) photos.set(g.key, b); }
       const results = [];
-      for (const r of to) {
+      for (const r of [...to, ...chans]) {
         try {
-          let entity; try { entity = await acc.client.getEntity(BigInt(r.id)); } catch { entity = await acc.client.getInputEntity(BigInt(r.id)); }
+          let entity;
+          if (r.user) entity = await acc.client.getEntity("@" + r.user);
+          else { try { entity = await acc.client.getEntity(BigInt(r.id)); } catch { entity = await acc.client.getInputEntity(BigInt(r.id)); } }
           await acc.client.sendMessage(entity, { message: head });
           for (const g of groups) {
             await new Promise(x => setTimeout(x, 800));
@@ -264,7 +278,7 @@ function register(app, ctx) {
         } catch (e) { results.push({ name: r.name, ok: false, error: tgFriendly(e) }); }
       }
       const okN = results.filter(x => x.ok).length;
-      Object.assign(t, { lastDate: todayAddis(), lastAt: n.d + " " + n.t, results, ok: okN > 0, error: okN ? (okN < results.length ? "Some admins could not be reached." : "") : (results[0]?.error || "Nobody could be reached.") });
+      Object.assign(t, { lastDate: todayAddis(), lastAt: n.d + " " + n.t, lastBy: senderName, results, ok: okN > 0, error: okN ? (okN < results.length ? "Some admins / groups could not be reached." : "") : (results[0]?.error || "Nobody could be reached.") });
       persist();
       return { ok: okN > 0, results, error: t.error };
     } catch (e) {
@@ -555,21 +569,26 @@ function register(app, ctx) {
       if (er) return fail(res, er);
     }
     if (b.to !== undefined) { const to = cleanTo(b.to); t.to = to && to.length ? to : null; }
+    if (b.channels !== undefined) t.channels = cleanChannels(b.channels);
     t.on = on; t.time = time; persist();
     done(res, on ? `🟢 Daily stock is ON — every day at ${time} (Addis Ababa clock), sent from ${nameOfAdmin(t.sendAs)}'s Telegram account.` : "⚪ Daily stock is OFF.");
   });
   router.post("/tg/to", ownerOnly, (req, res) => { // choose which admins receive the stock message
     if (req.body?.sendAs) { const er = setSender(req, req.body.sendAs); if (er) return fail(res, er); }
-    const to = cleanTo(req.body?.to); db.tg.to = to && to.length ? to : null; persist();
-    done(res, db.tg.to ? `✅ The stock goes to ${recipients().length} selected admin(s).` : "✅ The stock goes to every admin.");
-  });
-  router.post("/tg/send", ownerOnly, async (req, res) => {
-    const t = db.tg;
-    if (req.body?.sendAs) { const er = setSender(req, req.body.sendAs); if (er) return fail(res, er); }
-    else { const me = String(req.actor?.telegramId || ""); if (me && ctx.accountFor({ role: "owner", telegramId: me })?.ready) t.sendAs = me; else if (!t.sendAs && me) t.sendAs = me; }
+    const to = cleanTo(req.body?.to); db.tg.to = to && to.length ? to : null;
+    if (req.body?.channels !== undefined) db.tg.channels = cleanChannels(req.body.channels);
     persist();
-    const r = await sendDaily();
-    res.json({ ...(r.ok ? { ok: true, message: "✅ Stock sent to the admins' Telegram." + (r.error ? " " + r.error : "") } : { ok: false, error: r.error || "Could not send." }), ...view() });
+    done(res, (db.tg.to ? `✅ The stock goes to ${recipients().length} selected admin(s).` : "✅ The stock goes to every admin.") + (db.tg.channels.length ? ` + ${db.tg.channels.length} group/channel(s).` : ""));
+  });
+  // SEND NOW — any admin who may open Reports (main admin, assigned main admin or assigned admin) sends FROM HIS OWN Telegram account.
+  router.post("/tg/send", async (req, res) => {
+    const me = String(req.actor?.telegramId || "");
+    if (!me) return res.json({ ok: false, error: "Open the app from Telegram so your own account can be used.", ...view() });
+    const acc = accFor(me);
+    if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then press Send now again.", ...view() });
+    const b = req.body || {};
+    const r = await sendDaily({ by: { id: me, name: clip(req.actor?.name, 60) || nameOfAdmin(me), acc }, to: Array.isArray(b.to) ? (cleanTo(b.to) || []) : undefined, channels: b.channels !== undefined ? cleanChannels(b.channels) : undefined });
+    res.json({ ...(r.ok ? { ok: true, message: "✅ Stock sent from your Telegram account." + (r.error ? " " + r.error : "") } : { ok: false, error: r.error || "Could not send." }), ...view() });
   });
 
   // BACKUP sheet
