@@ -1,3 +1,10 @@
+# v144 — Stock → Telegram: private sending OPTIONAL · Telegram group (also private) + TOPIC
+- **Reports → ⚙ → Stock → Telegram:** new **📣 Telegram group / channel** section. **🔎 Choose from my Telegram groups** lists the groups the sending person's own Telegram account is in (private ones too); if the group has topics, pick the **topic** and the stock goes into that topic. You can also paste a link/username (`@mygroup`, or a topic link like `https://t.me/c/1234567890/5`).
+- **Sending privately to admins is now optional** — tick/untick **Also send privately to admins**; with it off only the group/topic gets the stock.
+- Still sent from the account of whoever presses **Send now** (daily send: the chosen admin's account). READYMADE products only.
+- The sending account must be a member of the group (admin for a channel) and allowed to post in the topic.
+- Files changed: `reports.js`, `public/reports.html`, `package.json`.
+
 # v143 — Stock → Telegram: sent from YOUR own account · group / channel username
 - **📨 Send now** works for every admin who can open Reports (main admin, assigned main admin, assigned admin). It is sent **from the account of the person who presses it** — never from someone else's. If that person's own Telegram account is not connected the app says so.
 - **Daily automatic send:** the sender can now be any admin whose own Telegram account is connected (main admin switches it on).
