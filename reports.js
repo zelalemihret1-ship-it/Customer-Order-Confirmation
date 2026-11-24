@@ -153,7 +153,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v155", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ appBuild: "v156", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -736,7 +736,8 @@ function register(app, ctx) {
     const req = wsReq(byName);
     let photo = "";
     if (f.photoBuf && f.photoBuf.length > 200 && f.photoBuf.length <= 1.5 * 1024 * 1024) { try { photo = await savePhoto("data:image/jpeg;base64," + f.photoBuf.toString("base64")); } catch {} }
-    const p = { id: uid(), ptype: "", code: nextCode(), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
+    const requestedCode = clip(f.code, 30);
+    const p = { id: uid(), ptype: "", code: requestedCode && !codeTaken(requestedCode) ? requestedCode : nextCode(), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
       category: "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
       photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40) };
     hist(p, "Added to Workflow (sent to the workshop)", req);
