@@ -1239,7 +1239,7 @@ function startFresh(by = "Admin") {
   });
 }
 /** Callers Data tab ("Callers"): needs the Apps Script Web app link (GOOGLE_SCRIPT_URL). Never throws; returns { ok, error }. */
-const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "Additional Phone Number", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
+const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "Additional Phone Number", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source", "⭐ Interested In"];
 function callersCall(payload) {
   if (!SCRIPT_URL) return Promise.resolve({ ok: false, error: "Google Sheet is not connected (main admin: open Settings → Connections and paste the Web app /exec URL)." });
   return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
@@ -3340,7 +3340,7 @@ function callerError(f) {
   return "";
 }
 const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow))); // newest customer first
-const callerSheetRow = c => [c.id, c.phone, c.name, c.additionalPhone || "", c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source];
+const callerSheetRow = c => [c.id, c.phone, c.name, c.additionalPhone || "", c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source, (c.interests||[]).length ? (c.interests.join(", ") + (c.interestNote ? " — " + c.interestNote : "")) : ""];
 let callersSheetUrl = "";
 const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, needsScript: !!(r && r.needsScript), error: (r && r.error) || "Google Sheet not updated." }; };
 // ── ORDER ID = Customer ID + Ethiopian month (+ letter when the same customer orders again that month) ──
