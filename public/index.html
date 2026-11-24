@@ -47,8 +47,49 @@ button{border:0;border-radius:11px;padding:13px 17px;font-weight:700;cursor:poin
 <style>body:not(.ambar-authorized)>header,body:not(.ambar-authorized)>main,body:not(.ambar-authorized)>#acOpen,body:not(.ambar-authorized)>#stOpen,body:not(.ambar-authorized)>#myOpen{visibility:hidden}#ambarAccessGate{display:none;position:fixed;inset:0;z-index:100000;background:#090909;color:#f6f0e5;align-items:center;justify-content:center;padding:24px;font-family:system-ui}#ambarAccessGate .panel{max-width:440px;border:1px solid #b89552;border-radius:18px;padding:26px;background:rgba(24,20,15,.96);text-align:center;box-shadow:0 20px 70px #0008}#ambarAccessGate h2{color:#d7b36e}</style>
 <style>
 </style>
-<link rel="stylesheet" href="/app.css?v=118">
+<link rel="stylesheet" href="/app.css?v=152">
 <meta name="theme-color" content="#0f3d30">
+<style id="modernUI">
+/* v152 — modern professional look for the order page (visual layer only; no ids/classes used by the scripts were changed) */
+:root{--m-ink:#0c2a21;--m-green:#0f3d30;--m-green2:#17604b;--m-gold:#c9a24d;--m-gold2:#e7c77a;--m-bg:#f4f2ec;--m-line:#e9e4d8}
+html{background:var(--m-bg)}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans Ethiopic",Nyala,sans-serif;background:var(--m-bg);color:var(--m-ink);-webkit-font-smoothing:antialiased}
+body>header{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,#0a2a20 0%,#0f3d30 55%,#17604b 100%)!important;border-bottom:0!important;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 16px!important;box-shadow:0 6px 24px rgba(8,30,22,.25);text-align:center}
+body>header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,var(--m-gold),transparent);opacity:.85}
+body>header h1{font-size:21px;font-weight:700;letter-spacing:.3px;line-height:1.15;display:inline-flex;align-items:center;gap:10px}
+body>header h1::before{content:"A";display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(150deg,var(--m-gold2),var(--m-gold));color:#3a2800;font-weight:800;font-size:17px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+body>header .sub{font-size:11px;letter-spacing:1.8px;opacity:.7;margin-top:5px}
+body>header #homeLink{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2)!important;backdrop-filter:blur(6px);font-weight:600!important;padding:7px 12px!important}
+body>main{max-width:860px;padding:18px 16px 40px}
+body>main .card{background:#fff;border:1px solid var(--m-line);border-radius:20px;padding:20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(15,40,30,.05),0 10px 28px rgba(15,40,30,.06)}
+body>main .card h2{display:flex;align-items:center;gap:10px;margin:0 0 16px;font-size:16px;font-weight:700;color:var(--m-ink);letter-spacing:.1px}
+body>main .card h2::before{content:"";width:4px;height:18px;border-radius:4px;background:linear-gradient(180deg,var(--m-gold2),var(--m-gold));flex:none}
+body>main .grid{gap:14px}
+body>main label{font-size:12.5px;font-weight:600;color:#3f5a4f;letter-spacing:.2px}
+body>main .photo-button{color:#fff;letter-spacing:0}
+body>main input,body>main select,body>main textarea{margin-top:6px;padding:12px 13px;border:1.5px solid #e3ddcf;border-radius:13px;background:#fcfbf8;color:var(--m-ink);font-family:inherit;font-size:15px;font-weight:500;transition:border-color .15s,box-shadow .15s,background .15s;outline:none}
+body>main select{-webkit-appearance:none;appearance:none;padding-right:38px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2376756c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+body>main input::placeholder,body>main textarea::placeholder{color:#a8a699;font-weight:400}
+body>main input:focus,body>main select:focus,body>main textarea:focus{border-color:var(--m-green2);background:#fff;box-shadow:0 0 0 4px rgba(23,96,75,.12)}
+body>main input[readonly]{background:#f1efe7;color:#5c6a63}
+body>main input[type=radio],body>main input[type=checkbox]{width:auto;accent-color:var(--m-green2);box-shadow:none}
+body>main .small{color:#7c7a70;line-height:1.55}
+body>main .photo-picker{border:0;background:transparent;padding:0}
+body>main .photo-box{border:2px dashed #d5cdb9;border-radius:16px;background:#fcfbf7;padding:18px}
+body>main .photo-button{background:linear-gradient(135deg,var(--m-green),var(--m-green2));border-radius:12px;padding:12px 18px;box-shadow:0 6px 16px rgba(15,61,48,.22)}
+body>main .delivery-option-card{border:1.5px solid #e3ddcf;border-radius:15px;padding:16px;transition:all .15s}
+body>main .delivery-option input:checked + .delivery-option-card{border-color:var(--m-green2);background:#f0f8f4;box-shadow:0 0 0 3px rgba(23,96,75,.1)}
+body>main button{font-family:inherit;border-radius:14px;padding:14px 20px;font-weight:700;font-size:15px;letter-spacing:.1px;transition:transform .12s,box-shadow .15s,filter .15s}
+body>main button.primary{background:linear-gradient(135deg,var(--m-green),var(--m-green2));box-shadow:0 8px 20px rgba(15,61,48,.28);flex:1 1 220px}
+body>main button.gold{background:linear-gradient(135deg,var(--m-gold2),var(--m-gold));color:#2f2100;box-shadow:0 8px 20px rgba(201,162,77,.32)}
+body>main button:not(:disabled):hover{filter:brightness(1.05)}
+body>main #orderForm>.row{gap:12px;margin:6px 0 4px}
+body>main .preview{background:#f7f5ee;border-radius:16px;padding:14px;border:1px dashed #ddd6c6;color:#7c7a70;font-size:13.5px}
+body>main #businessStatus{border-radius:16px;background:linear-gradient(135deg,#f0f8f4,#fff);border-color:#cfe3d8;font-size:13.5px}
+body>main #custSearch{background:#fff}
+body>main a{color:var(--m-green2)}
+@media (max-width:640px){body>main{padding:14px 12px 32px}body>main .card{padding:16px;border-radius:18px}body>header h1{font-size:19px}body>header h1::before{display:none}}
+</style>
 </head>
 <body>
 <div id="ambarAccessGate"><div class="panel"><h2>AMBAR Furniture</h2><p id="ambarAccessMessage">Checking your administrator access…</p><p class="small" style="color:#c9bda8">Open this mini app from the Telegram account assigned by the main admin.</p></div></div>
