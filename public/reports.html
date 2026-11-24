@@ -496,8 +496,8 @@ function render(){
     h=G.map(g=>{
       const descs=[...new Set(g.items.map(p=>p.desc).filter(Boolean))],d=descs.length===1?descs[0]:"",caps=[...new Set(g.items.map(p=>p.capacity).filter(Boolean))],cp=caps.join(" / ");
       const codes=g.items.map(p=>'<span class="code">'+esc(p.code)+'</span>').join("");
-      if(LM)return '<div class="lrow" data-g="'+esc(g.key)+'" style="cursor:pointer">'+(g.photo?'<img class="thumb sm" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg sm">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+(d?' · '+esc(d):'')+'</div><div class="meta">'+(g.handle?'🔧 '+esc(g.handle)+' · ':'')+esc(g.items.map(p=>p.code).join(", "))+'</div></div><div class="rt"><span class="chip" style="font-size:14px;padding:5px 12px">×'+g.items.length+'</span></div></div>';
-      return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<span class="cnt">×'+g.items.length+'</span></div><div class="bd"><div class="nm">'+esc(g.model)+'</div>'
+      if(LM)return '<div class="lrow" data-g="'+esc(g.key)+'" style="cursor:pointer">'+(g.photo?'<img class="thumb sm" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg sm">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+(d?' · '+esc(d):'')+'</div><div class="meta">'+ordBadge(g)+(g.handle?'🔧 '+esc(g.handle)+' · ':'')+esc(g.items.map(p=>p.code).join(", "))+'</div></div><div class="rt"><span class="chip" style="font-size:14px;padding:5px 12px">×'+g.items.length+'</span></div></div>';
+      return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<span class="cnt">×'+g.items.length+'</span></div><div class="bd"><div class="nm">'+esc(g.model)+'</div>'+ordBadge(g)
         +'<div class="meta">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+'</div>'+(d?'<div class="meta">📏 '+esc(d)+'</div>':'')+(cp?'<div class="meta">👟 '+esc(cp)+'</div>':'')+'<div class="codes">'+codes+'</div></div></div>';
     }).join("");
     if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Same model + same handle + same measurement = one photo with <b>×2</b>, <b>×3</b>…")+'</div>';
@@ -536,6 +536,7 @@ function render(){
   $("bkState").textContent=!b.configured?"Not connected — tap to set up":(b.ok===false?"⚠ Last backup failed — tap for details":"Connected · backup copy in your Google Sheet");
   $("bkState").style.color=b.configured&&b.ok===false?"var(--bad)":"";
 }
+const ordBadge=g=>{const n=g.items.filter(isCus).length;return n?'<span class="pill cus">'+(n===g.items.length?'ORDER':'ORDER ×'+n)+'</span> ':'';};
 function stockGroups(L){
   const m=new Map();
   L.forEach(p=>{const k=norm(p.model||p.desc||p.code)+"|"+norm(p.handle)+"|"+norm(p.desc);let g=m.get(k);if(!g){g={key:k,model:p.model||p.desc||p.code,handle:p.handle||"",desc:p.desc||"",items:[]};m.set(k,g);}g.items.push(p);});
@@ -550,7 +551,7 @@ function openGroup(key){
     +'<div>🔧 Handle: <b>'+(g.handle?esc(g.handle):'No handle type')+'</b></div>'
     +(caps?'<div>👟 Shoe capacity: <b>'+esc(caps)+'</b></div>':'')+(types?'<div>🏷 Type: <b>'+esc(types)+'</b></div>':'')+(cats?'<div>📦 Group: <b>'+esc(cats)+'</b></div>':'')+'</div>';
   showHist(g.model+" ×"+g.items.length,bigPh+info
-    +g.items.map(p=>'<div class="lrow" style="margin-bottom:8px">'+(photoSrc(p)?'<img class="thumb sm" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>')+'<div class="mid"><div class="nm">'+esc(p.code)+(p.desc?' · '+esc(p.desc):'')+'</div><div class="meta">'+esc(p.category||"")+' · Finished '+esc(fmtDT(p.finished))+'</div>'+(p.note?'<div class="meta">📝 '+esc(p.note)+'</div>':'')+'</div><div class="rt"><button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button><button class="b sm" data-a="edit" data-id="'+p.id+'" title="Edit">✏️</button></div></div>').join(""));
+    +g.items.map(p=>'<div class="lrow" style="margin-bottom:8px">'+(photoSrc(p)?'<img class="thumb sm" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>')+'<div class="mid"><div class="nm">'+esc(p.code)+(p.desc?' · '+esc(p.desc):'')+' '+(isCus(p)?'<span class="pill cus">ORDER</span>':'<span class="pill rdy">READYMADE</span>')+'</div><div class="meta">'+esc(p.category||"")+' · Finished '+esc(fmtDT(p.finished))+'</div>'+(p.note?'<div class="meta">📝 '+esc(p.note)+'</div>':'')+'</div><div class="rt"><button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button><button class="b sm" data-a="edit" data-id="'+p.id+'" title="Edit">✏️</button></div></div>').join(""));
 }
 
 $("out").addEventListener("click",e=>{if(e.target.closest("button"))return;const g=e.target.closest("[data-g]");if(g)openGroup(g.dataset.g);});
