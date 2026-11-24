@@ -48,7 +48,7 @@ function register(app, ctx) {
     const one = x => (x && typeof x === "object" ? cleanTargets([x])[0] : null) || null;
     const workshop = one(s.workshop) || (Array.isArray(s.targets) && s.targets[0] ? cleanTargets([s.targets[0]])[0] || null : null); // v150–v152 saved one "targets" list: its first group is the workshop
     const finishing = one(s.finishing);
-    return { workshop, finishing, mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
+    return { workshop, finishing, stock: one(s.stock), mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
   };
   function accountOf(actor) {
     let acc = typeof ctx.accountFor === "function" ? ctx.accountFor(actor) : null;
@@ -130,6 +130,8 @@ function register(app, ctx) {
   }
   const kbWorkshop = id => ({ inline_keyboard: [[{ text: "🛠 Finished workshop", callback_data: "wsf:" + id }]] });
   const kbFinishing = id => ({ inline_keyboard: [[{ text: "✅ Finished", callback_data: "wfin:" + id }]] });
+  const kbSoldOut = id => ({ inline_keyboard: [[{ text: "🔴 Sold Out", callback_data: "wsold:" + id }]] });
+  const kbRestock = id => ({ inline_keyboard: [[{ text: "♻️ Restock", callback_data: "wrestock:" + id }]] });
 
   // ── pictures ────────────────────────────────────────────────────────────────────────────────
   async function orderPhotoBuf(o) {
@@ -193,7 +195,7 @@ function register(app, ctx) {
     o.workshop = { ...(o.workshop || {}), jobId: j.id, stage: j.stage, ...patch };
     try { if (typeof ctx.saveOrder === "function") await ctx.saveOrder(o); } catch (e) { console.warn("Workshop: order stage not saved:", e.message); }
   }
-  const compactJob = j => ({ id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, by: j.by || "", photo: j.photoId || "" });
+  const compactJob = j => ({ id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, stockState: j.stockState || "stock", by: j.by || "", photo: j.photoId || "" });
   const log = (key, actor, what, ok, error) => { db.log.push({ at: stamp(), key, by: clip(actor?.name || "Admin", 60), what, ok: !!ok, error: error || "" }); if (db.log.length > 300) db.log.splice(0, db.log.length - 300); };
 
   // create the job, make its Reports product(s), post it in the WORKSHOP topic with the button
@@ -201,6 +203,7 @@ function register(app, ctx) {
     const key = keyOf(actor), s = settingsOf(key);
     if (!s.workshop) return { ok: false, error: "First choose the WORKSHOP group and topic (Settings above)." };
     if (!s.finishing) return { ok: false, error: "First choose the FINISHING group and topic (Settings above) — the workshop button sends the job there." };
+    if (!s.stock) return { ok: false, error: "First choose the STOCK group and topic (Settings above) — finished products are posted there." };
     const id = uid(), by = clip(actor?.name || "Admin", 60);
     const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), productIds: [], codes: [], photoId: "" };
     // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
@@ -249,13 +252,17 @@ function register(app, ctx) {
     const j = db.jobs[String(jobId)]; if (!j) return { ok: false, error: "This job was not found any more." };
     if (j.stage === "finished") return { ok: false, code: "DONE", error: "This job is already finished and in stock." };
     if (j.stage !== "finishing") return { ok: false, code: "EARLY", error: "The workshop has not pressed “Finished workshop” yet." };
+    const s = settingsOf(j.key);
+    if (!s.stock) return { ok: false, error: "The STOCK group is not chosen. Choose it in Workshop settings before finishing this product." };
     const by = clip(byName, 60) || "Finishing", at = stamp(), missing = [];
     for (const pid of j.productIds || []) { const r = typeof R().wsFinish === "function" ? R().wsFinish(pid, by) : { ok: false }; if (!r.ok) missing.push(r.error || "a product"); }
     j.stage = "finished"; j.finDone = { by, at };
-    await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Now IN STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
+    await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Sent to STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
+    try { j.stockMsg = await botPost(s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), kbSoldOut(j.id)); }
+    catch (e) { j.stockPostError = botFriendly(e); }
     await saveOrderStage(j, { finishedAt: at, finishedBy: by });
     log(j.key, { name: by }, `Finished · ${j.name} → stock`, true, missing.length ? missing.join(" ") : ""); persist();
-    return { ok: true, job: j, warning: missing.length ? "Some products were not found in Reports: " + missing.join(" ") : "" };
+    return { ok: true, job: j, warning: [missing.length ? "Some products were not found in Reports: " + missing.join(" ") : "", j.stockPostError ? "Stock group post failed: " + j.stockPostError : ""].filter(Boolean).join(" · ") };
   }
   // the Telegram buttons (the server forwards every callback whose data starts with wsf: or wfin:)
   async function onButton(cb) {
@@ -273,7 +280,27 @@ function register(app, ctx) {
     if (action === "wfin") {
       if (j.finMsg && chatId && String(j.finMsg.chat) !== chatId) return answer("This button belongs to another group.", true);
       const r = await toStock(j.id, by);
-      return answer(r.ok ? "✅ Finished — the product is now IN STOCK." : r.error, !r.ok && r.code !== "DONE");
+      return answer(r.ok ? (j.stockPostError ? "Finished, but the stock-group post failed: " + j.stockPostError : "✅ Finished — posted to the STOCK group.") : r.error, !r.ok && r.code !== "DONE");
+    }
+    if (action === "wsold") {
+      if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
+      const results = (j.productIds || []).map(pid => typeof R().wsSoldOut === "function" ? R().wsSoldOut(pid, by) : { ok: false, error: "Stock action is unavailable." });
+      const bad = results.find(x => !x.ok);
+      if (bad) return answer(bad.error, true);
+      j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = by;
+      await botEdit(j.stockMsg, jobCaption(j, "stock", `🔴 SOLD OUT — ${by} · ${j.soldAt}`), kbRestock(j.id));
+      log(j.key, { name: by }, `Sold Out · ${j.name}`, true, ""); persist();
+      return answer("🔴 Product marked Sold Out. Restock is now available.");
+    }
+    if (action === "wrestock") {
+      if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
+      const results = (j.productIds || []).map(pid => typeof R().wsRestock === "function" ? R().wsRestock(pid, by) : { ok: false, error: "Restock action is unavailable." });
+      const bad = results.find(x => !x.ok);
+      if (bad) return answer(bad.error, true);
+      j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = by;
+      await botEdit(j.stockMsg, jobCaption(j, "stock", `♻️ RESTOCKED — ${by} · ${j.restockAt}`), kbSoldOut(j.id));
+      log(j.key, { name: by }, `Restocked · ${j.name}`, true, ""); persist();
+      return answer("♻️ Product restocked and returned to In Stock.");
     }
   }
 
@@ -289,7 +316,7 @@ function register(app, ctx) {
   async function onOrderCreated() { /* v153: orders only go to the workshop after the customer confirmed — nothing happens at creation */ }
   async function onOrderConfirmed(o) { // mode "after the customer confirms": automatic
     const actor = actorOfOrder(o), s = settingsOf(keyOf(actor));
-    if (s.mode !== "after_confirm" || !s.workshop || !s.finishing || orderJob(o.id)) return;
+    if (s.mode !== "after_confirm" || !s.workshop || !s.finishing || !s.stock || orderJob(o.id)) return;
     const r = await sendOrder(o, actor, {});
     if (!r.ok) log(keyOf(actor), actor, `Auto · order ${o.orderId || o.id}`, false, r.error);
     persist();
@@ -307,7 +334,7 @@ function register(app, ctx) {
     const mine = Object.values(db.jobs).filter(j => j.key === key).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return {
       ok: true, me: { key, name: clip(actor?.name, 60) },
-      settings: { workshop: s.workshop, finishing: s.finishing, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing) },
+      settings: { workshop: s.workshop, finishing: s.finishing, stock: s.stock, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing), stockName: targetName(s.stock) },
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && (!orderJob(o.id) || orderJob(o.id).stage !== "finished")).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
       readymade: inProg,
@@ -322,10 +349,12 @@ function register(app, ctx) {
     const key = keyOf(req.actor), mode = String(req.body?.mode || "manual");
     if (!MODES.includes(mode)) return res.json({ ok: false, error: "Unknown sending mode." });
     const one = x => (x && x.chat ? cleanTargets([x])[0] || null : null);
-    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing);
+    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing), stock = one(req.body?.stock);
     if (workshop && finishing && workshop.chat.toLowerCase() === finishing.chat.toLowerCase() && workshop.topic === finishing.topic) return res.json({ ok: false, error: "The WORKSHOP and the FINISHING place are the same. Choose a different topic (or group) for finishing." });
     if (mode !== "manual" && (!workshop || !finishing)) return res.json({ ok: false, error: "Choose both the workshop and the finishing place first — automatic sending needs them." });
-    db.admins[key] = { workshop, finishing, mode, updatedAt: stamp() }; persist();
+    if (workshop && stock && workshop.chat.toLowerCase() === stock.chat.toLowerCase() && workshop.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the WORKSHOP place." });
+    if (finishing && stock && finishing.chat.toLowerCase() === stock.chat.toLowerCase() && finishing.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the FINISHING place." });
+    db.admins[key] = { workshop, finishing, stock, mode, updatedAt: stamp() }; persist();
     res.json({ ...view(req.actor), message: mode === "manual" ? "✅ Saved. You send orders to the workshop yourself." : "✅ Saved. Every order goes to the workshop automatically AFTER the customer confirms." });
   });
   // the groups the admin's OWN Telegram account is in (with a flag for groups that have topics)
@@ -377,7 +406,7 @@ function register(app, ctx) {
     const out = [];
     try {
       const me = await tg("getMe", {});
-      for (const [label, g] of [["Workshop", cleanTargets([req.body?.workshop])[0]], ["Finishing", cleanTargets([req.body?.finishing])[0]]]) {
+      for (const [label, g] of [["Workshop", cleanTargets([req.body?.workshop])[0]], ["Finishing", cleanTargets([req.body?.finishing])[0]], ["Stock", cleanTargets([req.body?.stock])[0]]]) {
         if (!g) { out.push({ label, ok: false, error: "Not chosen yet." }); continue; }
         try {
           const cm = await tg("getChatMember", { chat_id: chatKey(g), user_id: me.id });
@@ -392,13 +421,13 @@ function register(app, ctx) {
   });
   router.post("/test", async (req, res) => { // posts a test line (no button) to BOTH places, exactly the way the real jobs are posted
     const s = settingsOf(keyOf(req.actor)), res2 = [];
-    if (!s.workshop || !s.finishing) return res.json({ ok: false, error: "Choose both the workshop and the finishing place first, then Save." });
-    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing]]) {
+    if (!s.workshop || !s.finishing || !s.stock) return res.json({ ok: false, error: "Choose the Workshop, Finishing and Stock places first, then Save." });
+    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock]]) {
       try { await botPost(g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`, null); res2.push({ name: label + " · " + targetName(g), ok: true }); }
       catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: botFriendly(e) }); }
     }
     const okN = res2.filter(x => x.ok).length;
-    res.json({ ok: okN === res2.length, results: res2, error: okN === res2.length ? "" : (res2.find(x => !x.ok)?.error || "Could not send."), message: okN === res2.length ? "✅ Test message posted in both the Workshop and the Finishing topic." : undefined });
+    res.json({ ok: okN === res2.length, results: res2, error: okN === res2.length ? "" : (res2.find(x => !x.ok)?.error || "Could not send."), message: okN === res2.length ? "✅ Test messages posted in the Workshop, Finishing and Stock places." : undefined });
   });
   router.post("/send-order", async (req, res) => {
     const o = findOrder(req.body?.id);
@@ -431,6 +460,24 @@ function register(app, ctx) {
     if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
     const r = await toStock(j.id, req.actor?.name || "Admin");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "✅ Finished — the product is now IN STOCK (Reports)." + (r.warning ? " ⚠ " + r.warning : "") : undefined });
+  });
+  router.post("/job/sold-out", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
+    const results = (j.productIds || []).map(pid => R().wsSoldOut ? R().wsSoldOut(pid, req.actor?.name || "Admin") : { ok: false, error: "Sold Out is unavailable." });
+    const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
+    j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = req.actor?.name || "Admin";
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", `🔴 SOLD OUT — ${j.soldBy} · ${j.soldAt}`), kbRestock(j.id));
+    persist(); res.json({ ...view(req.actor), ok: true, message: "🔴 Product marked Sold Out." });
+  });
+  router.post("/job/restock", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
+    const results = (j.productIds || []).map(pid => R().wsRestock ? R().wsRestock(pid, req.actor?.name || "Admin") : { ok: false, error: "Restock is unavailable." });
+    const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
+    j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = req.actor?.name || "Admin";
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", `♻️ RESTOCKED — ${j.restockBy} · ${j.restockAt}`), kbSoldOut(j.id));
+    persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
   router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
     if (!canManage(req.actor)) return res.json({ ok: false, error: "Only a main admin can change the standard products." });
@@ -499,7 +546,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v154" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v155" }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
