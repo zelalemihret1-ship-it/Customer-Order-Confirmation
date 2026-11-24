@@ -1,3 +1,9 @@
+# v151 — Workshop: STANDARD PRODUCTS → quantity + measurement → Order / Readymade → send
+- Workshop page → new tab **🧰 Standard**. The **main admin** makes the standard products once (➕ New standard product: name + photo + standard measurements, one per line; ✏️ to change or delete). Every admin who has Workshop can choose from them.
+- Tap a standard product → choose **Quantity** (− / + / type), **Measurement** (tap a standard one or type your own), and decide **📦 Order** or **🛋 Readymade**. For an **Order** you also pick *which order* (only your own orders) — its **Order ID** goes to the workshop. Add **additional notes** if needed.
+- Each choice goes into a **list**; add as many products as you want, then **📨 Send list to workshop**. The workshop receives, per product: the standard photo + (ORDER: order ID) + product name + quantity + measurement + notes + who sent it. Sent from the admin's own Telegram account to the admin's own workshop group.
+- Files changed: `workshop.js`, `public/workshop.html`, `package.json`. Check: `/api/workshop-version` → v151.
+
 # v150 — WORKSHOP: send orders + readymade products to the private workshop Telegram group (per admin)
 - New page **/workshop.html** (Home → **Workshop**) and new section **Workshop** in **Manage Admins** — the main admin ticks it for each individual admin. Main admins always have it.
 - **Every admin has HIS OWN settings**: his own workshop group (+ topic) and his own sending mode. Picked from “My groups” (the groups his own Telegram account is in) or pasted as a link / @username / id (right-click-style: long-press a message in the group → Copy link; it also carries the topic).
