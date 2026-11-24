@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Ambar Furniture — Workshop</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Owner-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+</script>
+<link rel="stylesheet" href="/app.css?v=150">
+<style>
+:root{--ink:#0f2e25;--green:#1b4d3e;--gold:#b89552;--cream:#f4efe3;--bg:#f2efe8;--card:#fff;--line:#e6e0d2;--tx:#1f2a26;--mute:#6d675d;--ok:#1f8f55;--okbg:#e3f4e8;--warn:#8a5a00;--warnbg:#fff1d6;--bad:#b3261e;--badbg:#fde7e5;--blue:#14598f;--bluebg:#e4f0fb}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,"Noto Sans Ethiopic",Nyala,sans-serif;background:var(--bg);color:var(--tx)}
+header{background:linear-gradient(135deg,#0b2119,#1b4d3e);color:var(--cream);padding:calc(14px + env(safe-area-inset-top,0px)) 16px 16px;border-bottom:3px solid var(--gold)}
+header .row1{display:flex;align-items:center;gap:10px}
+header a.back{color:var(--cream);text-decoration:none;font-size:12px;font-weight:700;border:1px solid #ffffff44;border-radius:999px;padding:7px 12px;white-space:nowrap}
+header h1{margin:0;font-size:20px;letter-spacing:.4px;flex:1;text-align:center}
+header .sub{text-align:center;opacity:.75;margin-top:4px;font-size:11px;letter-spacing:1.6px;text-transform:uppercase}
+main{max-width:860px;margin:auto;padding:14px 14px calc(96px + env(safe-area-inset-bottom,0px))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px;box-shadow:0 3px 12px #0000000a}
+.card h2{margin:0 0 4px;font-size:16px;color:var(--ink)}
+.hint{font-size:12px;color:var(--mute);line-height:1.5;margin:2px 0 8px}
+.msg{display:none;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:600;margin:0 0 12px;line-height:1.45}
+.msg.ok{background:var(--okbg);color:var(--ok)}.msg.bad{background:var(--badbg);color:var(--bad)}.msg.info{background:var(--bluebg);color:var(--blue)}
+.pill{display:inline-block;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.wait{background:var(--warnbg);color:var(--warn)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--bluebg);color:var(--blue);border-radius:999px;padding:6px 6px 6px 11px;font-size:12px;font-weight:700}
+.chip button{border:0;background:#14598f22;color:var(--blue);border-radius:50%;width:22px;height:22px;font-weight:800;cursor:pointer;line-height:1}
+input[type=text],input[type=number]{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:15px;background:#fff;color:var(--tx)}
+.r2{display:grid;grid-template-columns:1fr 110px;gap:8px;margin:8px 0}
+.btn{border:0;border-radius:12px;padding:11px 14px;font-weight:800;font-size:14px;cursor:pointer;background:var(--ink);color:#fff}
+.btn.sec{background:#e7e2d6;color:var(--green)}.btn.gold{background:var(--gold);color:#1c1608}.btn.sm{padding:8px 11px;font-size:13px}
+.btn:disabled{opacity:.5}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.mode{display:flex;gap:10px;align-items:flex-start;border:2px solid var(--line);border-radius:14px;padding:11px 12px;margin:8px 0;cursor:pointer;background:#fff}
+.mode.on{border-color:var(--green);background:#f1f8f4}
+.mode input{margin-top:3px;width:18px;height:18px;accent-color:var(--green)}
+.mode b{display:block;font-size:14px;color:var(--ink)}.mode small{display:block;font-size:12px;color:var(--mute);line-height:1.45;margin-top:2px}
+.seg{display:flex;gap:6px;background:#e7e2d6;border-radius:16px;padding:5px;margin-bottom:14px}
+.seg button{flex:1;border:0;border-radius:12px;padding:12px 4px;font-weight:800;font-size:14px;background:transparent;color:var(--green);cursor:pointer}
+.seg button.on{background:var(--ink);color:#fff}
+.item{display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px;margin-bottom:10px}
+.item img,.item .noimg{width:64px;height:64px;border-radius:12px;object-fit:cover;background:#ece7da;flex:none;display:flex;align-items:center;justify-content:center;font-size:24px}
+.item .mid{flex:1;min-width:0}
+.item .nm{font-weight:800;font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .meta{font-size:12px;color:var(--mute);margin-top:3px;line-height:1.45}
+.item input[type=checkbox]{width:22px;height:22px;accent-color:var(--green);flex:none}
+.empty{text-align:center;color:var(--mute);padding:26px 10px;font-size:13px;line-height:1.6}
+.log{font-size:12px;line-height:1.6;color:var(--mute)}.log b{color:var(--tx)}
+.ov{position:fixed;inset:0;background:#000a;display:none;align-items:flex-end;justify-content:center;z-index:90}
+.ov.on{display:flex}
+.box{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:560px;max-height:80vh;overflow:auto;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px))}
+.gi{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin:7px 0;font-weight:700;font-size:14px}
+.busy{position:fixed;inset:0;background:#fffc;display:none;align-items:center;justify-content:center;z-index:99;font-weight:800;color:var(--ink)}.busy.on{display:flex}
+</style>
+</head>
+<body>
+<header>
+  <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Workshop</h1><span style="width:64px"></span></div>
+  <div class="sub">Orders · Readymade → private workshop group</div>
+</header>
+<main>
+  <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg" class="hint">The Workshop section is only for admins the main admin gave it to.</p></div>
+  <div id="view" style="display:none">
+    <div id="msg" class="msg"></div>
+
+    <div class="card">
+      <h2>⚙ My workshop group</h2>
+      <div class="hint">These settings are <b>only yours</b>. Everything is sent from <b>your own Telegram account</b> (never the bot). The workshop receives the product photo and the production details — no phone number and no payment.</div>
+      <div id="senderLine" class="hint"></div>
+      <div id="chips" class="chips"></div>
+      <div class="btns" style="margin-top:4px"><button class="btn sec sm" id="pickBtn" type="button">📂 Choose from my groups</button></div>
+      <div class="r2"><input type="text" id="linkIn" placeholder="…or paste the group link / @username / id" autocomplete="off"><input type="number" id="topicIn" placeholder="Topic #" inputmode="numeric"></div>
+      <div class="hint">Private group: open the group in Telegram, long-press any message → <b>Copy link</b>, and paste it here (it also carries the topic). Topic # is only for groups with topics.</div>
+      <button class="btn sec sm" id="addBtn" type="button">➕ Add this group</button>
+
+      <h2 style="margin-top:16px">📨 How do orders go to the workshop?</h2>
+      <label class="mode" data-m="manual"><input type="radio" name="mode" value="manual"><div><b>🖐 I send them myself</b><small>Nothing is sent by itself. You press <b>Send to workshop</b> on an order below.</small></div></label>
+      <label class="mode" data-m="after_confirm"><input type="radio" name="mode" value="after_confirm"><div><b>✅ After the customer confirms</b><small>The order goes to the workshop automatically the moment the customer presses <b>Confirm</b>.</small></div></label>
+      <label class="mode" data-m="on_create"><input type="radio" name="mode" value="on_create"><div><b>⚡ Without confirmation</b><small>The order goes to the workshop automatically as soon as you create it — the workshop can start at once.</small></div></label>
+      <div class="btns"><button class="btn" id="saveBtn" type="button">💾 Save</button><button class="btn gold sm" id="testBtn" type="button">📨 Send a test message</button></div>
+    </div>
+
+    <div class="seg" id="seg"><button type="button" data-t="o" class="on">📦 Orders</button><button type="button" data-t="r">🛋 Readymade</button></div>
+    <div id="out"></div>
+    <div id="rbar" style="display:none" class="btns"><button class="btn" id="rSend" type="button">📨 Send selected to workshop</button><button class="btn sec" id="rAll" type="button">Select all</button></div>
+
+    <div class="card" style="margin-top:14px"><h2>🕘 My last sends</h2><div id="log" class="log"></div></div>
+  </div>
+</main>
+<div class="ov" id="pickOv"><div class="box"><h2 style="margin:0 0 6px">📂 My Telegram groups</h2><div class="hint">Groups your own Telegram account is a member of. Tap one to use it.</div><div id="pickList"></div><div class="btns"><button class="btn sec" id="pickClose" type="button">Close</button></div></div></div>
+<div class="busy" id="busy"><span id="busyTx">Please wait…</span></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let S={settings:{targets:[],mode:"manual"},orders:[],readymade:[],log:[],sender:{}},tab="o",targets=[],mode="manual",picked=new Set();
+const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
+const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
+async function api(path,body){
+  const o=body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)};
+  let d;try{const r=await fetch(path,o);try{d=await r.json();}catch{d={ok:false,error:"Server answered with an error ("+r.status+")."};}if(r.status===401||r.status===403)d.ok=false;}catch(e){d={ok:false,error:"No connection to the server."};}
+  if(d&&d.ok&&d.settings){S={...S,...d};}
+  return d;
+}
+const tName=g=>(g.title||(/^-/.test(g.chat)?"Group "+g.chat:"@"+g.chat))+(g.topic?" › "+(g.topicTitle||"topic "+g.topic):"");
+function renderSettings(){
+  const st=S.sender||{};
+  $("senderLine").innerHTML=st.ready?'<span class="pill ok">Your Telegram account is connected'+(st.label?" · "+esc(st.label):"")+'</span>':'<span class="pill bad">Your Telegram account is NOT connected</span> — connect it first: Settings → Connect my Telegram account.';
+  $("chips").innerHTML=targets.length?targets.map((g,i)=>'<span class="chip">'+esc(tName(g))+'<button type="button" data-rm="'+i+'" aria-label="Remove">×</button></span>').join(""):'<div class="hint">No workshop group chosen yet.</div>';
+  document.querySelectorAll(".mode").forEach(l=>{const on=l.dataset.m===mode;l.classList.toggle("on",on);l.querySelector("input").checked=on;});
+}
+const stPill=o=>o.status==="Confirmed"?'<span class="pill ok">✅ Confirmed</span>':o.status==="Rejected"?'<span class="pill bad">❌ Rejected</span>':'<span class="pill wait">⏳ '+esc(o.status||"Pending")+'</span>';
+function render(){
+  renderSettings();
+  const seg=$("seg");seg.innerHTML='<button type="button" data-t="o" class="'+(tab==="o"?"on":"")+'">📦 Orders ('+S.orders.length+')</button><button type="button" data-t="r" class="'+(tab==="r"?"on":"")+'">🛋 Readymade ('+S.readymade.length+')</button>';
+  let h="";
+  if(tab==="o"){
+    h=S.orders.map(o=>{
+      const sent=(o.sent||[]).filter(x=>x.ok).slice(-1)[0],bad=(o.sent||[]).slice(-1)[0];
+      const info=sent?'<span class="pill ok">📨 Sent '+esc(sent.at)+(sent.auto?" (auto)":"")+'</span>':(bad&&!bad.ok?'<span class="pill bad">Send failed</span> '+esc(bad.error||""):"");
+      return '<div class="item">'+(o.photo?'<img loading="lazy" src="'+esc(o.photo)+'" alt="">':'<div class="noimg">🛋</div>')+'<div class="mid"><div class="nm">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+'</div><div class="meta">'+stPill(o)+' '+esc(o.customerName||"")+'<br>'+info+'</div></div><button class="btn sm" type="button" data-send="'+o.id+'">'+(sent?"Send again":"Send to workshop")+'</button></div>';
+    }).join("")||'<div class="empty"><b>No orders yet.</b><br>Orders you create will appear here.</div>';
+    $("rbar").style.display="none";
+  }else{
+    h=S.readymade.map(g=>'<label class="item"><input type="checkbox" data-k="'+esc(g.key)+'"'+(picked.has(g.key)?" checked":"")+'>'+(g.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(g.photo)+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+' ×'+g.count+'</div><div class="meta">'+(g.desc?"📏 "+esc(g.desc)+"<br>":"")+(g.handle?"🔧 "+esc(g.handle)+" · ":"")+esc((g.codes||[]).join(", "))+'</div></div></label>').join("")||'<div class="empty"><b>No readymade product in stock.</b><br>Products finished in Reports → Workflow (readymade, not ORDER) appear here.</div>';
+    $("rbar").style.display=S.readymade.length?"flex":"none";
+  }
+  $("out").innerHTML=h;
+  $("log").innerHTML=(S.log||[]).map(l=>'<div>'+(l.ok?"✅":"❌")+' <b>'+esc(l.what)+'</b> · '+esc(l.at)+(l.error?' — '+esc(l.error):"")+'</div>').join("")||"Nothing sent yet.";
+}
+function results(d){const bad=(d.results||[]).filter(x=>!x.ok);return bad.length?bad.map(x=>x.name+": "+x.error).join(" · "):"";}
+async function sendOrder(id,force){
+  busy("Sending to the workshop…");const d=await api("/api/workshop/send-order",{id,force:!!force});busy("");
+  if(d.code==="NOT_CONFIRMED"||d.code==="REJECTED"){
+    const txt=d.code==="REJECTED"?"The customer REJECTED this order.\n\nSend it to the workshop anyway?":"The customer has NOT confirmed this order yet.\n\nSend it to the workshop WITHOUT confirmation?";
+    if(confirm(txt))return sendOrder(id,true);return;
+  }
+  if(d.settings){S={...S,...d};}
+  say(d.ok?(d.message||"✅ Sent.")+(results(d)?" ⚠ "+results(d):""):(d.error||"Could not send."),d.ok?"ok":"bad");render();
+}
+$("out").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-send]");if(b){const o=S.orders.find(x=>String(x.id)===b.dataset.send);if(!o)return;
+    if(o.status!=="Confirmed"){const t=o.status==="Rejected"?"The customer REJECTED this order.\n\nSend it to the workshop anyway?":"The customer has NOT confirmed this order yet.\n\nSend it to the workshop WITHOUT confirmation?";if(!confirm(t))return;sendOrder(o.id,true);}else sendOrder(o.id,false);return;}
+  const c=e.target.closest("input[data-k]");if(c){if(c.checked)picked.add(c.dataset.k);else picked.delete(c.dataset.k);}
+});
+$("seg").addEventListener("click",e=>{const b=e.target.closest("button[data-t]");if(!b)return;tab=b.dataset.t;render();});
+$("rAll").onclick=()=>{if(picked.size===S.readymade.length)picked.clear();else S.readymade.forEach(g=>picked.add(g.key));render();};
+$("rSend").onclick=async()=>{
+  if(!picked.size)return say("Tick at least one readymade product first.","bad");
+  busy("Sending readymade products…");const d=await api("/api/workshop/send-readymade",{keys:[...picked]});busy("");
+  say(d.ok?(d.message||"✅ Sent.")+(results(d)?" ⚠ "+results(d):""):(d.error||"Could not send."),d.ok?"ok":"bad");if(d.ok)picked.clear();render();
+};
+$("chips").addEventListener("click",e=>{const b=e.target.closest("button[data-rm]");if(!b)return;targets.splice(Number(b.dataset.rm),1);renderSettings();});
+document.querySelectorAll(".mode").forEach(l=>l.addEventListener("click",()=>{mode=l.dataset.m;renderSettings();}));
+$("addBtn").onclick=()=>{
+  const v=$("linkIn").value.trim(),tp=Number($("topicIn").value)||0;if(!v)return say("Paste the group link, @username or id first.","bad");
+  const g={chat:v,topic:tp,title:"",topicTitle:""};
+  const m=v.replace(/^(https?:\/\/)?(www\.)?(t|telegram)\.me\//i,"").split(/[/?#]/).filter(Boolean);
+  if(m[0]==="+"||/^\+/.test(m[0]||"")||m[0]==="joinchat")return say("An invite link (t.me/+…) cannot be used directly. Open the group, long-press any message → Copy link, and paste THAT link — or use “Choose from my groups”.","bad");
+  targets.push(g);$("linkIn").value="";$("topicIn").value="";renderSettings();say("Group added — press 💾 Save to keep it.","info");
+};
+$("pickBtn").onclick=async()=>{
+  busy("Reading your Telegram groups…");const d=await api("/api/workshop/dialogs",{});busy("");
+  if(!d.ok)return say(d.error||"Could not read your groups.","bad");
+  $("pickList").innerHTML=(d.groups||[]).map(g=>'<div class="gi"><span>'+esc(g.title||g.chat)+'</span><button class="btn sm" type="button" data-pick="'+esc(g.chat)+'" data-title="'+esc(g.title)+'">Use</button></div>').join("")||'<div class="empty">No groups found for your Telegram account.</div>';
+  $("pickOv").classList.add("on");
+};
+$("pickList").addEventListener("click",e=>{const b=e.target.closest("button[data-pick]");if(!b)return;const tp=Number($("topicIn").value)||0;targets.push({chat:b.dataset.pick,title:b.dataset.title,topic:tp,topicTitle:""});$("pickOv").classList.remove("on");renderSettings();say("Group added — press 💾 Save to keep it.","info");});
+$("pickClose").onclick=()=>$("pickOv").classList.remove("on");
+$("saveBtn").onclick=async()=>{
+  busy("Saving…");const d=await api("/api/workshop/settings",{targets,mode});busy("");
+  if(d.ok){targets=(S.settings.targets||[]).slice();mode=S.settings.mode;}
+  say(d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");render();
+};
+$("testBtn").onclick=async()=>{
+  busy("Sending a test message…");await api("/api/workshop/settings",{targets,mode}).then(d=>{if(d.ok){targets=(S.settings.targets||[]).slice();mode=S.settings.mode;}});
+  const d=await api("/api/workshop/test",{});busy("");render();
+  say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
+};
+(async()=>{
+  let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
+  if(!(me.role==="owner"||me.role==="open"||(me.perms||[]).includes("workshop"))){
+    $("gate").style.display="block";$("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Workshop section. Ask them to tick Workshop for you in Manage Admins.":(me.error||"Access denied.");return;
+  }
+  $("view").style.display="block";
+  const d=await api("/api/workshop/state");
+  if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
+  else{targets=(S.settings.targets||[]).slice();mode=S.settings.mode||"manual";}
+  render();
+})();
+document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
+</script>
+</body>
+</html>
