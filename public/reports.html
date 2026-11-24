@@ -116,7 +116,7 @@ ol{padding-left:20px;line-height:1.7;font-size:14px;margin:8px 0}
 .pv img{width:84px;height:84px;object-fit:cover;border-radius:12px;border:1px solid var(--line)}
 .pv .ph0{width:84px;height:84px;border-radius:12px;background:#f1ecde;display:flex;align-items:center;justify-content:center;font-size:30px;color:#a39a82}
 .pv .b{padding:9px 12px}
-.pbig{width:100%;max-height:260px;object-fit:cover;border-radius:14px;margin:8px 0 4px}
+.pbig{width:100%;max-height:340px;object-fit:contain;background:#f4efe5;border-radius:14px;margin:8px 0 4px}
 @media(max-width:520px){.kpi .n{font-size:22px}.list{grid-template-columns:1fr}.seg button{font-size:12px;padding:10px 2px}.seg button small{font-size:10px}.sgrid{grid-template-columns:repeat(2,1fr);gap:9px}.sg .ph .thumb,.sg .ph .noimg{height:130px}.lrow .rt{max-width:52%}}
 
 /* ═══ v124 professional polish ═══ */
@@ -435,7 +435,7 @@ function render(){
   const K=(l,n,s,c)=>'<div class="kpi" style="border-left-color:'+(c||"var(--green)")+'"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>';
   $("kpis").innerHTML=tab==="wf"?K("In workflow",wf.length,"products in progress","#d9a21b")+K("In stock",st.length,"finished","#1f8f55")+K("All products",S.products.length,"including sold","#14598f")
     :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold this month",sdm.length,"products sold","#14598f")+K("Sold today",soldToday,fmtD(S.now.d),"#b3261e")
-    :tab==="sv"?K("Models",stockGroups(st).length,"model + handle groups","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
+    :tab==="sv"?K("Models",stockGroups(st).length,"model + handle + size groups","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
     :K("Materials",S.materials.length,"kinds in store","#8a5a00")+K("Low / out",low,low?"to re-order":"all good",low?"#b3261e":"#1f8f55")+K("Moves today",today,fmtD(S.now.d),"#6d675d");
   $("addBtn").textContent=tab==="mt"?"➕ New material":"➕ New product";
   $("addBtn").style.display=(tab==="st"||tab==="sv")?"none":"block";
@@ -491,7 +491,7 @@ function render(){
       if(!L.length)h='<div class="empty">'+(sdm.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>💰 Sold</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
   }else if(tab==="sv"){
-    // Stock view: in-stock products by PHOTO. Same model + same handle → ONE photo with ×2, ×3 …; same model with a different handle → separate photo.
+    // Stock view: in-stock products by PHOTO. Same model + same handle + same measurement → ONE photo with ×2, ×3 …; a different handle OR a different measurement → separate product.
     const G=stockGroups(st.filter(p=>hit(text(p))));
     h=G.map(g=>{
       const descs=[...new Set(g.items.map(p=>p.desc).filter(Boolean))],d=descs.length===1?descs[0]:"",caps=[...new Set(g.items.map(p=>p.capacity).filter(Boolean))],cp=caps.join(" / ");
@@ -500,7 +500,7 @@ function render(){
       return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<span class="cnt">×'+g.items.length+'</span></div><div class="bd"><div class="nm">'+esc(g.model)+'</div>'
         +'<div class="meta">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+'</div>'+(d?'<div class="meta">📏 '+esc(d)+'</div>':'')+(cp?'<div class="meta">👟 '+esc(cp)+'</div>':'')+'<div class="codes">'+codes+'</div></div></div>';
     }).join("");
-    if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Same model + same handle = one photo with <b>×2</b>, <b>×3</b>…")+'</div>';
+    if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Same model + same handle + same measurement = one photo with <b>×2</b>, <b>×3</b>…")+'</div>';
   }else if(msub==="moves"){
     const lg=S.log.filter(l=>!q||hit(logMat(l)+" "+(l.note||"")+" "+(l.by||"")));
     let lastD="";
@@ -538,15 +538,21 @@ function render(){
 }
 function stockGroups(L){
   const m=new Map();
-  L.forEach(p=>{const k=norm(p.model||p.desc||p.code)+"|"+norm(p.handle);let g=m.get(k);if(!g){g={key:k,model:p.model||p.desc||p.code,handle:p.handle||"",items:[]};m.set(k,g);}g.items.push(p);});
-  return [...m.values()].map(g=>{g.photo=(g.items.find(p=>p.photo)||{}).photo||"";return g;}).sort((a,b)=>a.model.localeCompare(b.model,undefined,{numeric:true})||a.handle.localeCompare(b.handle));
+  L.forEach(p=>{const k=norm(p.model||p.desc||p.code)+"|"+norm(p.handle)+"|"+norm(p.desc);let g=m.get(k);if(!g){g={key:k,model:p.model||p.desc||p.code,handle:p.handle||"",desc:p.desc||"",items:[]};m.set(k,g);}g.items.push(p);});
+  return [...m.values()].map(g=>{g.photo=(g.items.find(p=>p.photo)||{}).photo||"";return g;}).sort((a,b)=>a.model.localeCompare(b.model,undefined,{numeric:true})||a.handle.localeCompare(b.handle)||a.desc.localeCompare(b.desc,undefined,{numeric:true}));
 }
 function openGroup(key){
   const g=stockGroups(by("stock")).find(x=>x.key===key);if(!g)return;
-  const bigPh=g.photo?'<img class="pbig" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':"";
-  showHist(g.model+" ×"+g.items.length,bigPh+'<div class="meta" style="margin-bottom:6px">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+' · same model + same handle</div>'
-    +g.items.map(p=>'<div class="lrow" style="margin-bottom:8px">'+(photoSrc(p)?'<img class="thumb sm" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>')+'<div class="mid"><div class="nm">'+esc(p.code)+(p.desc?' · '+esc(p.desc):'')+'</div><div class="meta">'+esc(p.category||"")+' · Finished '+esc(fmtDT(p.finished))+'</div></div><div class="rt"><button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button><button class="b sm" data-a="edit" data-id="'+p.id+'" title="Edit">✏️</button></div></div>').join(""));
+  const bigPh=g.photo?'<img class="pbig" src="/api/reports-photo/'+g.photo+'.jpg" alt="'+esc(g.model)+'">':'<div class="noimg" style="height:140px;margin:8px 0 4px">🖼 No photo</div>';
+  const caps=[...new Set(g.items.map(p=>p.capacity).filter(Boolean))].join(" / "),types=[...new Set(g.items.map(p=>p.ptype).filter(Boolean))].join(" / "),cats=[...new Set(g.items.map(p=>p.category).filter(Boolean))].join(" / ");
+  const info='<div class="dl" style="margin:6px 0 10px;line-height:1.7"><div><b>'+esc(g.model)+'</b> · ×'+g.items.length+' in stock</div>'
+    +'<div>📏 Description: <b>'+(g.desc?esc(g.desc):'—')+'</b></div>'
+    +'<div>🔧 Handle: <b>'+(g.handle?esc(g.handle):'No handle type')+'</b></div>'
+    +(caps?'<div>👟 Shoe capacity: <b>'+esc(caps)+'</b></div>':'')+(types?'<div>🏷 Type: <b>'+esc(types)+'</b></div>':'')+(cats?'<div>📦 Group: <b>'+esc(cats)+'</b></div>':'')+'</div>';
+  showHist(g.model+" ×"+g.items.length,bigPh+info
+    +g.items.map(p=>'<div class="lrow" style="margin-bottom:8px">'+(photoSrc(p)?'<img class="thumb sm" src="'+photoSrc(p)+'" alt="">':'<div class="noimg sm">🛋</div>')+'<div class="mid"><div class="nm">'+esc(p.code)+(p.desc?' · '+esc(p.desc):'')+'</div><div class="meta">'+esc(p.category||"")+' · Finished '+esc(fmtDT(p.finished))+'</div>'+(p.note?'<div class="meta">📝 '+esc(p.note)+'</div>':'')+'</div><div class="rt"><button class="b sm gold" data-a="sold" data-id="'+p.id+'" title="Sold">💰</button><button class="b sm" data-a="edit" data-id="'+p.id+'" title="Edit">✏️</button></div></div>').join(""));
 }
+
 $("out").addEventListener("click",e=>{if(e.target.closest("button"))return;const g=e.target.closest("[data-g]");if(g)openGroup(g.dataset.g);});
 $("vt").addEventListener("click",e=>{const b=e.target.closest("button[data-v]");if(!b)return;VM=b.dataset.v;try{localStorage.setItem("repView",VM);}catch{}render();});
 function logRow(l){const fx=l.type==="fix",cut=l.type==="cut"||(fx&&l.qty<0),nw=l.type==="new";return '<div class="logrow"><div class="q '+(cut?"m":"p")+'">'+(cut?"−":"+")+nf(Math.abs(l.qty))+'</div><div class="w"><b>'+esc(logMat(l))+'</b> · '+(nw?"New material":fx?"Stock corrected":cut?"Cut":"Added")+(l.note&&!nw?' — '+esc(l.note):'')+'<small>'+esc(fmtDT(l))+' · available '+nf(l.balance)+(l.by?' · '+esc(l.by):'')+'</small></div></div>';}
