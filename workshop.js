@@ -19,7 +19,7 @@ function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop-data.json");
-  let db = { admins: {}, sent: {}, log: [], savedAt: "" };
+  let db = { admins: {}, sent: {}, log: [], catalog: [], savedAt: "" };
 
   // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
   let chain = Promise.resolve();
@@ -32,7 +32,8 @@ function register(app, ctx) {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "workshop_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { admins: {}, sent: {}, log: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { admins: {}, sent: {}, log: [], catalog: [], savedAt: "", ...d };
+    if (!Array.isArray(db.catalog)) db.catalog = [];
     if (!db.admins || typeof db.admins !== "object") db.admins = {};
     if (!db.sent || typeof db.sent !== "object") db.sent = {};
     if (!Array.isArray(db.log)) db.log = [];
@@ -138,7 +139,7 @@ function register(app, ctx) {
   const howLine = (o, force) => o.status === "Confirmed" ? "✅ Customer CONFIRMED this order" : force ? "⚠ Sent WITHOUT the customer's confirmation (status: " + clip(o.status || "Pending", 20) + ")" : "";
   function compactOrder(o, actor) {
     const sent = db.sent[String(o.id)] || [];
-    return { id: o.id, orderId: o.orderId || "", product: clip(o.product, 80), status: o.status || "Pending", customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", sent: sent.filter(s => s.key === keyOf(actor)).slice(-3) };
+    return { id: o.id, orderId: o.orderId || "", size: [o.length, o.width, o.height].map(x => clip(x, 20)).filter(Boolean).join(" × "), product: clip(o.product, 80), status: o.status || "Pending", customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", sent: sent.filter(s => s.key === keyOf(actor)).slice(-3) };
   }
 
   // ── send an order to the workshop ───────────────────────────────────────────────────────────
@@ -175,11 +176,59 @@ function register(app, ctx) {
   const readyData = () => ctx.reports && typeof ctx.reports.readymade === "function" ? ctx.reports.readymade() : { groups: [], photoBuf: async () => null, caption: () => "" };
   const compactGroup = g => ({ key: g.key, model: g.model, handle: g.handle || "", desc: g.desc || "", count: g.items.length, codes: g.items.map(p => p.code), photo: g.photo || "" });
 
+  // ── STANDARD PRODUCTS (a catalogue made once, then chosen when sending: photo + name + standard measurements) ──
+  const PHOTO_DIR = path.join(baseDir, "workshop-photos");
+  const photoFile = id => path.join(PHOTO_DIR, id + ".jpg");
+  async function savePhoto(dataUrl) {
+    const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
+    if (!m) throw new Error("The photo could not be read. Choose it again.");
+    const buf = Buffer.from(m[1], "base64");
+    if (buf.length < 200) throw new Error("The photo is empty. Choose it again.");
+    if (buf.length > 1.5 * 1024 * 1024) throw new Error("The photo is too big (max 1.5 MB after shrinking).");
+    const id = crypto.randomBytes(12).toString("hex");
+    try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); fs.writeFileSync(photoFile(id), buf); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "wphoto_" + id, value: { b64: m[1] }, updated_at: new Date().toISOString() }); } catch {} }
+    return id;
+  }
+  async function photoBuf(id) {
+    if (!/^[a-f0-9]{24}$/.test(String(id || ""))) return null;
+    try { return fs.readFileSync(photoFile(id)); } catch {}
+    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "wphoto_" + id).maybeSingle(); if (data?.value?.b64) return Buffer.from(data.value.b64, "base64"); } catch {} }
+    return null;
+  }
+  async function dropPhoto(id) {
+    if (!id || db.catalog.some(p => p.photo === id)) return;
+    try { fs.unlinkSync(photoFile(id)); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").delete().eq("key", "wphoto_" + id); } catch {} }
+  }
+  app.get("/api/workshop-photo/:id.jpg", async (req, res) => {
+    const buf = await photoBuf(String(req.params.id || ""));
+    if (!buf) return res.status(404).end();
+    res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=31536000, immutable" });
+    res.send(buf);
+  });
+  const cleanSizes = v => { const arr = Array.isArray(v) ? v : String(v || "").split(/\n|;/); return [...new Set(arr.map(x => clip(x, 60)).filter(Boolean))].slice(0, 40); };
+  const compactCat = p => ({ id: p.id, name: p.name, sizes: p.sizes || [], photo: p.photo || "" });
+  const canManage = actor => actor?.role === "owner" || actor?.role === "open";
+  function itemCaption(it, p, order, actor) {
+    const isOrder = it.kind === "order";
+    const L = [
+      isOrder ? `🛠 WORKSHOP ORDER — ${clip(order.orderId, 40)}` : "🛋 WORKSHOP — READYMADE PRODUCT",
+      `🪑 Product: ${clip(p.name, 100)}`,
+      `🔢 Quantity: ×${it.qty}`,
+      `📏 Measurement: ${clip(it.size, 80)}`,
+      isOrder ? `🆔 Order ID: ${clip(order.orderId, 40)}` : "",
+      it.note ? `📝 Notes: ${clip(it.note, 400)}` : "",
+      `👤 From: ${clip(actor?.name || "Admin", 60)}`
+    ];
+    return L.filter(Boolean).join("\n");
+  }
+
   // ── routes ──────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
-  router.use(express.json({ limit: "100kb" }));
+  router.use(express.json({ limit: "3mb" }));
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor), R = readyData();
     return {
@@ -187,6 +236,7 @@ function register(app, ctx) {
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 80).map(o => compactOrder(o, actor)),
       readymade: R.groups.map(compactGroup),
+      catalog: db.catalog.map(compactCat), canManage: canManage(actor),
       log: db.log.filter(l => l.key === key).slice(-15).reverse()
     };
   };
@@ -230,6 +280,60 @@ function register(app, ctx) {
     persist();
     res.json({ ok: okN > 0, results, error: okN ? (okN < results.length ? "Some groups could not be reached." : "") : (results[0]?.error || "Could not send."), message: okN ? `✅ ${groups.length} readymade model(s) sent to the workshop.` : undefined, ...view(req.actor) });
   });
+  router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
+    if (!canManage(req.actor)) return res.json({ ok: false, error: "Only a main admin can change the standard products." });
+    const name = clip(req.body?.name, 100), sizes = cleanSizes(req.body?.sizes);
+    if (!name) return res.json({ ok: false, error: "Type the product name." });
+    const prev = req.body?.id ? db.catalog.find(p => p.id === String(req.body.id)) : null;
+    if (req.body?.id && !prev) return res.json({ ok: false, error: "That standard product no longer exists." });
+    let photo = prev?.photo || "";
+    try {
+      if (req.body?.photo) { const old = photo; photo = await savePhoto(req.body.photo); if (old) setTimeout(() => dropPhoto(old), 0); }
+      else if (req.body?.removePhoto && photo) { const old = photo; photo = ""; setTimeout(() => dropPhoto(old), 0); }
+    } catch (e) { return res.json({ ok: false, error: e.message }); }
+    if (!photo) return res.json({ ok: false, error: "Add the product photo — the workshop sees this picture." });
+    if (prev) Object.assign(prev, { name, sizes, photo });
+    else { if (db.catalog.length >= 300) return res.json({ ok: false, error: "Too many standard products (max 300)." }); db.catalog.push({ id: uid(), name, sizes, photo, createdAt: stamp() }); }
+    db.catalog.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    persist(); res.json({ ...view(req.actor), message: prev ? "✅ Standard product updated." : "✅ Standard product added." });
+  });
+  router.post("/catalog/delete", (req, res) => {
+    if (!canManage(req.actor)) return res.json({ ok: false, error: "Only a main admin can change the standard products." });
+    const i = db.catalog.findIndex(p => p.id === String(req.body?.id));
+    if (i < 0) return res.json({ ok: false, error: "Not found." });
+    const [gone] = db.catalog.splice(i, 1); persist(); setTimeout(() => dropPhoto(gone.photo), 0);
+    res.json({ ...view(req.actor), message: "🗑 Standard product removed." });
+  });
+  // the basket: [{ pid, qty, size, kind: "order" | "readymade", orderId (internal id, only for kind=order), note }]
+  router.post("/send-items", async (req, res) => {
+    const key = keyOf(req.actor), s = settingsOf(key);
+    if (!s.targets.length) return res.json({ ok: false, error: "First choose the workshop Telegram group (Settings above)." });
+    const acc = accountOf(req.actor);
+    if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it first (Settings → Connect my Telegram account), then try again." });
+    const raw = Array.isArray(req.body?.items) ? req.body.items.slice(0, 30) : [];
+    if (!raw.length) return res.json({ ok: false, error: "Add at least one product to the list." });
+    const items = [], mineOrders = (ctx.getOrders() || []).filter(o => mineOnly(req.actor, o));
+    for (let i = 0; i < raw.length; i++) {
+      const r = raw[i] || {}, p = db.catalog.find(x => x.id === String(r.pid));
+      if (!p) return res.json({ ok: false, error: `Line ${i + 1}: the standard product no longer exists.` });
+      const qty = Math.floor(Number(r.qty));
+      if (!(qty >= 1 && qty <= 9999)) return res.json({ ok: false, error: `Line ${i + 1}: choose a quantity (1 – 9999).` });
+      const size = clip(r.size, 80);
+      if (!size) return res.json({ ok: false, error: `Line ${i + 1}: choose or type the measurement.` });
+      const kind = r.kind === "order" ? "order" : r.kind === "readymade" ? "readymade" : "";
+      if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
+      let order = null;
+      if (kind === "order") { order = mineOrders.find(o => String(o.id) === String(r.orderId)); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: choose the order this product belongs to.` }); }
+      const it = { kind, qty, size, note: clip(r.note, 400) };
+      items.push({ buf: await photoBuf(p.photo), caption: itemCaption(it, p, order, req.actor), what: `${kind === "order" ? "Order " + (order.orderId || order.id) : "Readymade"} · ${p.name} ×${qty}` });
+    }
+    const results = await deliver(acc, s.targets, items, "");
+    const okN = results.filter(x => x.ok).length;
+    for (const it of items) db.log.push({ at: stamp(), key, by: clip(req.actor?.name || "Admin", 60), what: it.what, ok: okN > 0, error: okN ? "" : (results[0]?.error || "") });
+    if (db.log.length > 200) db.log.splice(0, db.log.length - 200);
+    persist();
+    res.json({ ok: okN > 0, results, error: okN ? (okN < results.length ? "Some groups could not be reached." : "") : (results[0]?.error || "Could not send."), message: okN ? `✅ ${items.length} product${items.length === 1 ? "" : "s"} sent to the workshop.` : undefined, ...view(req.actor) });
+  });
   router.post("/test", async (req, res) => {
     const s = settingsOf(keyOf(req.actor));
     if (!s.targets.length) return res.json({ ok: false, error: "First choose the workshop Telegram group." });
@@ -239,7 +343,7 @@ function register(app, ctx) {
     const okN = results.filter(x => x.ok).length;
     res.json({ ok: okN > 0, results, error: okN ? "" : (results[0]?.error || "Could not send."), message: okN ? "✅ Test message sent." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v150" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v151" }));
   app.use("/api/workshop", router);
 
   return { load, onOrderCreated, onOrderConfirmed };
