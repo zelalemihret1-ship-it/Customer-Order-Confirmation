@@ -22,14 +22,16 @@ const num = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "")
 const uid = () => crypto.randomBytes(6).toString("hex");
 
 function register(app, ctx) {
-  const { requireAccess, hasPerm, supabase, baseDir, tgApi, helpers, log } = ctx;
+  const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
+  // safe even when an older server.js does not pass hasPerm: main admin / open mode = yes, otherwise the admin must have the section in his list
+  const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const ownerIdsLive = () => (ctx.ownerIds || []).map(String);
   const appAdminsLive = () => (ctx.getAppAdmins ? ctx.getAppAdmins() : []) || [];
   const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
   const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
+  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], senders: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
   let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
@@ -65,6 +67,8 @@ function register(app, ctx) {
     if (!Array.isArray(db.tg.targets)) db.tg.targets = [];
     if (Array.isArray(db.tg.channels) && db.tg.channels.length) { for (const u of db.tg.channels) if (!db.tg.targets.some(x => x.chat === u)) db.tg.targets.push({ chat: u, title: "@" + u, topic: 0, topicTitle: "" }); db.tg.channels = []; }
     db.tg.dm = db.tg.dm !== false;
+    if (!Array.isArray(db.tg.senders)) db.tg.senders = [];
+    if (!db.tg.senders.length && db.tg.sendAs) db.tg.senders = [{ id: String(db.tg.sendAs), time: db.tg.time || "08:00", lastDate: db.tg.lastDate || "" }];
     for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     layoutMaterials();
@@ -207,7 +211,7 @@ function register(app, ctx) {
   const timeAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(11, 16);
   const isOwnerId = id => ownerIdsLive().includes(String(id));
   // the Telegram account that belongs to this person (a main admin, an assigned main admin or an assigned admin) — never someone else's
-  const accFor = id => id ? ctx.accountFor({ role: isOwnerId(id) ? "owner" : "admin", telegramId: String(id) }) : null;
+  const accFor = id => id && typeof ctx.accountFor === "function" ? ctx.accountFor({ role: isOwnerId(id) ? "owner" : "admin", telegramId: String(id) }) : null;
   const senderAcc = () => accFor(db.tg.sendAs);
   const nameOfAdmin = id => { const a = appAdminsLive().find(x => String(x.telegramId) === String(id)); return clip(a?.name, 60) || (ownerIdsLive().includes(String(id)) ? "Main admin" : "Admin " + id); };
   function recipients() {
@@ -259,7 +263,7 @@ function register(app, ctx) {
   const cleanTo = v => Array.isArray(v) ? [...new Set(v.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 100) : null;
   function tgInfo() {
     const t = db.tg, acc = senderAcc();
-    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: t.dm === false ? [] : recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [], dm: t.dm !== false, targets: (t.targets || []).map(g => ({ ...g, name: targetName(g) })), lastBy: t.lastBy || "" };
+    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: t.dm === false ? [] : recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [], assigned: (t.senders || []).map(e => ({ id: e.id, name: nameOfAdmin(e.id), time: e.time, ready: !!accFor(e.id)?.ready, lastDate: e.lastDate || "", lastAt: e.lastAt || "", ok: e.ok === undefined ? null : e.ok, error: e.error || "" })), dm: t.dm !== false, targets: (t.targets || []).map(g => ({ ...g, name: targetName(g) })), lastBy: t.lastBy || "" };
   }
   const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. Try again in a few minutes."; if (/USERNAME_NOT_OCCUPIED|USERNAME_INVALID/i.test(m)) return "No Telegram group or channel with this username exists. Check the spelling."; if (/CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED|USER_BANNED_IN_CHANNEL|CHANNEL_PRIVATE|CHAT_SEND_PHOTOS_FORBIDDEN|CHAT_SEND_MEDIA_FORBIDDEN/i.test(m)) return "This Telegram account is not allowed to post there. Join the group/channel with this account (as admin for a channel) and try again."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The sender's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The sender's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
   let tgBusy = false;
@@ -319,10 +323,20 @@ function register(app, ctx) {
       return { ok: false, error: e.message };
     } finally { tgBusy = false; }
   }
+  // every assigned sender account sends the stock once a day at ITS OWN assigned time, from its own Telegram account
   async function tgTick() {
     const t = db.tg;
-    if (!t.on || !t.sendAs || tgBusy || t.lastDate === todayAddis() || timeAddis() < (t.time || "08:00")) return;
-    await sendDaily();
+    if (!t.on || tgBusy) return;
+    const today = todayAddis(), now = timeAddis();
+    for (const e of t.senders || []) {
+      if (tgBusy || e.lastDate === today || now < (e.time || "08:00")) continue;
+      const acc = accFor(e.id);
+      e.lastDate = today;
+      if (!acc?.ready) { Object.assign(e, { ok: false, error: nameOfAdmin(e.id) + "'s Telegram account is not connected.", lastAt: nowEth().d + " " + nowEth().t }); persist(); continue; }
+      const r = await sendDaily({ by: { id: e.id, name: nameOfAdmin(e.id), acc } });
+      Object.assign(e, { ok: !!r.ok, error: r.ok ? (r.error || "") : (r.error || "Could not send."), lastAt: nowEth().d + " " + nowEth().t });
+      persist();
+    }
   }
 
 
@@ -593,18 +607,19 @@ function register(app, ctx) {
   // DAILY STOCK → TELEGRAM (main admin only)
   router.post("/tg/config", ownerOnly, async (req, res) => {
     const b = req.body || {}, t = db.tg, on = b.on === true || b.on === "true";
-    const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.time || "")) ? String(b.time) : (t.time || "08:00");
-    if (on) {
-      const id = String(b.sendAs || req.actor?.telegramId || "");
-      if (!id) return fail(res, "Open the app from Telegram so the sender is known.");
-      const er = setSender(req, id);
-      if (er) return fail(res, er);
+    const okTime = v => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || ""));
+    if (Array.isArray(b.senders)) { // every admin account that should send the stock every day, each at its own time
+      const known = new Set(senders().map(x => x.id)), out = [];
+      for (const x of b.senders) { const id = String(x?.id || ""); if (!known.has(id) || out.some(o => o.id === id)) continue; const old = (t.senders || []).find(o => o.id === id); out.push({ id, time: okTime(x.time) ? String(x.time) : (old?.time || "08:00"), lastDate: old?.lastDate || "", lastAt: old?.lastAt || "", ok: old?.ok, error: old?.error || "" }); }
+      t.senders = out; t.sendAs = out[0]?.id || ""; t.time = out[0]?.time || t.time || "08:00";
     }
+    if (on && !(t.senders || []).length) return fail(res, "Tick at least one admin account that sends the stock every day.");
     if (b.to !== undefined) { const to = cleanTo(b.to); t.to = to && to.length ? to : null; }
     if (b.targets !== undefined) t.targets = cleanTargets(b.targets);
     if (b.dm !== undefined) t.dm = b.dm === true || b.dm === "true";
-    t.on = on; t.time = time; persist();
-    done(res, on ? `🟢 Daily stock is ON — every day at ${time} (Addis Ababa clock), sent from ${nameOfAdmin(t.sendAs)}'s Telegram account.` : "⚪ Daily stock is OFF.");
+    t.on = on; persist();
+    const off = (t.senders || []).filter(e => !accFor(e.id)?.ready).map(e => nameOfAdmin(e.id));
+    done(res, on ? `🟢 Daily stock is ON — ${(t.senders || []).map(e => nameOfAdmin(e.id) + " at " + e.time).join(" · ")} (Addis Ababa clock), each from their own Telegram account.` + (off.length ? ` ⚠️ Not connected yet: ${off.join(", ")}.` : "") : "⚪ Daily stock is OFF.");
   });
   router.post("/tg/to", ownerOnly, (req, res) => { // choose which admins receive the stock message
     if (req.body?.sendAs) { const er = setSender(req, req.body.sendAs); if (er) return fail(res, er); }
