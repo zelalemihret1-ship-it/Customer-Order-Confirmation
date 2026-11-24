@@ -180,10 +180,17 @@ function register(app, ctx) {
   const STAGES = { workshop: "In workshop", finishing: "In finishing", finished: "Finished · in stock" };
   const sizeOfOrder = o => [o.length, o.width, o.height].map(x => clip(x, 20)).filter(Boolean).join(" × ");
   const line = (icon, label, v) => { v = clip(v, 120); return v ? `${icon} ${label}: ${v}` : ""; };
+  const originalProductCode = o => {
+    const direct = [o?.productId, o?.productCode, o?.prodId, o?.modelCode, o?.modelId, o?.code].map(x => clip(x, 30)).find(Boolean);
+    if (direct) return direct;
+    const label = clip(o?.product || o?.model || "", 120);
+    const match = label.match(/\b[A-Z0-9]{1,12}-[A-Z0-9]{1,12}\b/i);
+    return match ? match[0].toUpperCase() : "";
+  };
   function jobCaption(j, stage, extra) {
     const head = "_________ AMBAR FURNITURE _________";
     const ordered = j.kind === "order" || !!j.orderLabel;
-    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID- " + ((j.codes || []).join(", ") || "Pending"), ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
+    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID- " + ((j.codes || []).join(", ") || "Pending"), "MODEL- " + clip(j.name || "—", 100), ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
     return L.filter(Boolean).join("\n");
   }
   const orderDetails = o => [line("🧱", "Material", o.material), line("🎨", "Color", o.color), line("✨", "Style", o.style), line("🖌", "Design", o.design), line("🔧", "Handle", o.handle), line("🚪", "Door", o.door), line("🗂", "Partition", o.partition), line("🧰", "Drawer", o.drawer), line("➕", "Extra", o.additionalFeatures), line("📅", "Completion date", o.completionDate), line("🚚", "Delivery date", o.deliveryDate)].filter(Boolean);
@@ -212,7 +219,7 @@ function register(app, ctx) {
     } else if (typeof R().wsAddProduct === "function") {
       const n = Math.max(1, Math.min(spec.qty || 1, 100));
       for (let i = 0; i < n; i++) {
-        const p = await R().wsAddProduct({ model: spec.name, desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
+        const p = await R().wsAddProduct({ model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
         j.productIds.push(p.id); j.codes.push(p.code);
       }
     }
@@ -310,7 +317,7 @@ function register(app, ctx) {
     const prev = orderJob(o.id);
     if (prev && !opt.again) return { ok: false, code: "ALREADY", error: `This order is already ${STAGES[prev.stage] ? STAGES[prev.stage].toLowerCase() : "sent"}.` };
     const buf = await orderPhotoBuf(o);
-    return createJob({ kind: "order", name: o.product || "Furniture order", qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
+    return createJob({ kind: "order", name: o.product || "Furniture order", productCode: originalProductCode(o), qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
   }
   const actorOfOrder = o => ({ role: o.createdByRole === "owner" ? "owner" : (o.createdByTelegramId ? "admin" : "open"), telegramId: String(o.createdByTelegramId || ""), name: o.createdByName || "Admin" });
   async function onOrderCreated() { /* v153: orders only go to the workshop after the customer confirmed — nothing happens at creation */ }
@@ -327,7 +334,7 @@ function register(app, ctx) {
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
   router.use(express.json({ limit: "25mb" }));
-  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", size: sizeOfOrder(o), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
+  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
     const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).filter(x => (x.productIds || []).includes(p.id))[0]; return { ...p, job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; });
@@ -336,7 +343,9 @@ function register(app, ctx) {
       ok: true, me: { key, name: clip(actor?.name, 60) },
       settings: { workshop: s.workshop, finishing: s.finishing, stock: s.stock, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing), stockName: targetName(s.stock) },
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
-      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && (!orderJob(o.id) || orderJob(o.id).stage !== "finished")).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
+      // Once sent to the workshop, remove the order from this sending queue permanently.
+      // This also hides older orders that were already sent before this update.
+      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
       readymade: inProg,
       jobs: mine.filter(j => j.stage !== "finished").slice(0, 100).map(compactJob),
       doneJobs: mine.filter(j => j.stage === "finished").slice(0, 15).map(compactJob),
@@ -546,7 +555,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v155" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v156" }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
