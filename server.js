@@ -1652,7 +1652,7 @@ function permNeeded(url) {
   if (p.startsWith("/api/orders")) return ["orders"];
   return null;
 }
-function hasPerm(actor, key) { return actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key); } // v145b: function declaration (hoisted) so it always exists
+const hasPerm = (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
 function requireAccess(req, res, next) {
   if (!accessEnforced()) { req.actor = { role: "open", name: "", telegramId: "", accountId: "" }; return next(); }
   const a = identify(req);
