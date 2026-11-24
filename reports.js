@@ -153,7 +153,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v154", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ appBuild: "v155", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -757,7 +757,27 @@ function register(app, ctx) {
     if (!gone.length) return; db.products = db.products.filter(p => !gone.includes(p)); persist(); scheduleBackup();
     for (const g of gone) dropPhoto(g.photo).catch(() => {});
   }
+  function wsSoldOut(id, byName) { // Workshop stock-group button: In Stock → Sold Out
+    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
+    if (p.status === "sold") return { ok: true, already: true, code: p.code };
+    if (p.status !== "stock") return { ok: false, error: "Only an IN STOCK product can be marked Sold Out." };
+    const req = wsReq(byName), n = nowEth(), seller = clip(byName, 80) || "Workshop";
+    p.status = "sold"; p.sold = { d: n.d, t: n.t, salesName: seller, salesInfo: seller, note: "Marked Sold Out from the Telegram stock group" };
+    hist(p, "Sold Out (Telegram stock button)", req); persist(); scheduleBackup();
+    audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
+    return { ok: true, code: p.code };
+  }
+  function wsRestock(id, byName) { // Workshop stock-group button: Sold Out → In Stock
+    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
+    if (p.status === "stock") return { ok: true, already: true, code: p.code };
+    if (p.status !== "sold") return { ok: false, error: "Only a Sold Out product can be restocked." };
+    const req = wsReq(byName), previous = p.sold ? { ...p.sold } : null;
+    p.status = "stock"; delete p.sold;
+    hist(p, "Restocked (Telegram stock button) → In Stock", req, { previousSale: previous ? previous.d + " " + previous.t : "" });
+    persist(); scheduleBackup(); audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
+    return { ok: true, code: p.code };
+  }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, wsAddProduct, wsFinish, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, wsAddProduct, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
