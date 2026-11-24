@@ -773,3 +773,10 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - The customer summary refreshes when customer records are added, edited, deleted, fully synchronized, or when order data changes. Orders/rejections/readymade counts include archived order records so moving a failed delivery to the archive does not erase the business history.
 - `Sold Readymade` counts order rows whose Product value contains the word “readymade”; `Total Revenue` sums the Customers Data `Total Spend` values.
 - Apps Script connector version is `v79`. Paste the updated `google-sheet-script.gs`, save, deploy a New version, and refresh all sections.
+
+
+## v154 — AMBAR Furniture workflow updates
+- Workshop messages now use the AMBAR READYMADE PRODUCT / ORDERED PRODUCT format with Product ID and optional Order ID.
+- Workshop Orders hide jobs already finished and in stock; My Last Sends can be filtered by result.
+- Reports stock actions use Sold Out and Restock; restocking returns the item to In Stock with an audit-history entry.
+- Reports product deletion is Main Admin-only and synchronizes removal from Workshop job lists.
