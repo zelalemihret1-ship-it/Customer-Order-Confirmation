@@ -242,8 +242,8 @@ function register(app, ctx) {
       if (!t.sendAs || !acc?.ready) throw new Error("The sender (main admin) Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then switch Daily Telegram on again.");
       const to = recipients();
       if (!to.length) throw new Error("There is no other admin to send to.");
-      const stock = db.products.filter(p => p.status === "stock"), groups = stockGroups(stock).slice(0, 60), n = nowEth();
-      const head = `📦 AMBAR STOCK — ${n.d}\n${stock.length} product${stock.length === 1 ? "" : "s"} in stock · ${groups.length} model${groups.length === 1 ? "" : "s"}` + (stock.length ? "" : "\nNothing is in stock today.");
+      const stock = db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || ""))), groups = stockGroups(stock).slice(0, 60), n = nowEth();
+      const head = `📦 AMBAR STOCK — ${n.d}\n${stock.length} readymade product${stock.length === 1 ? "" : "s"} in stock · ${groups.length} model${groups.length === 1 ? "" : "s"}` + (stock.length ? "" : "\nNothing is in stock today.");
       const photos = new Map();
       for (const g of groups) if (g.photo) { const b = await photoBuf(g.photo); if (b) photos.set(g.key, b); }
       const results = [];
