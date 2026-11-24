@@ -1,3 +1,7 @@
+# v148 — Version check for the “hasPerm is not a function” error
+- The Reports ⚙ sheet now shows `page v148 · server v148`. If it says **server OLD (not updated)** or the error is still there, the server is still running old files: deploy the **whole folder** of this zip (server.js, reports.js, public/…, package.json) and restart / redeploy.
+- Files changed: `reports.js`, `public/reports.html`, `package.json`.
+
 # v147 — Fix: “hasPerm is not a function” when opening Reports
 - `reports.js` no longer depends on `server.js` passing `hasPerm` (older `server.js` files did not): it has its own safe check. If you still see an error after redeploying, make sure the **whole folder** (including `server.js`) from this zip is deployed, not only some files.
 - Files changed: `reports.js`, `package.json`.
