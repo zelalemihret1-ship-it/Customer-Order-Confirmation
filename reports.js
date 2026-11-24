@@ -716,6 +716,35 @@ function register(app, ctx) {
     .filter(p => p.status === "workflow" && !/CUS|ORD/i.test(String(p.orderType || "")))
     .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", photo: p.photo || "" }))
     .sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.priority] ?? 2) - ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[b.priority] ?? 2));
-  return { load, readymade, inProgress };
+  // v153: used by the Workshop module (Telegram buttons "Finished workshop" → "Finished").
+  // A product sent to the workshop is put into the Workflow (so Reports shows it); the final "Finished" button moves it to STOCK.
+  const wsReq = name => ({ actor: { name: clip(name, 60) || "Workshop" } });
+  async function wsAddProduct(f, byName) {
+    const req = wsReq(byName);
+    let photo = "";
+    if (f.photoBuf && f.photoBuf.length > 200 && f.photoBuf.length <= 1.5 * 1024 * 1024) { try { photo = await savePhoto("data:image/jpeg;base64," + f.photoBuf.toString("base64")); } catch {} }
+    const p = { id: uid(), ptype: "", code: nextCode(), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
+      category: "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
+      photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40) };
+    hist(p, "Added to Workflow (sent to the workshop)", req);
+    db.products.unshift(p); persist(); scheduleBackup();
+    audit("Report: product added", `${p.code} ${lab(p)} (workshop)`, req.actor);
+    return { id: p.id, code: p.code };
+  }
+  function wsFinish(id, byName) { // Workflow → In Stock (same as the Finished button of Reports)
+    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
+    if (p.status !== "workflow") return { ok: true, already: true, code: p.code };
+    const req = wsReq(byName);
+    p.status = "stock"; p.finished = stamp(req); hist(p, "Finished (workshop button) → In Stock", req);
+    persist(); scheduleBackup(); audit("Report: product finished", `${p.code} → In Stock (workshop)`, req.actor);
+    return { ok: true, code: p.code };
+  }
+  function wsRemove(ids) { // roll back products made for a send that failed
+    const set = new Set((ids || []).map(String)); const gone = db.products.filter(p => set.has(p.id) && p.status === "workflow");
+    if (!gone.length) return; db.products = db.products.filter(p => !gone.includes(p)); persist(); scheduleBackup();
+    for (const g of gone) dropPhoto(g.photo).catch(() => {});
+  }
+  const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
+  return { load, readymade, inProgress, wsAddProduct, wsFinish, wsRemove, wsStatus };
 }
 module.exports = { register };
