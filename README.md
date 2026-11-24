@@ -1,3 +1,10 @@
+# v146 — Stock → Telegram: assign ALL sender admin accounts · each sends daily at its own time
+- **Reports → ⚙ → Stock → Telegram → ⏰ Admin accounts that send the stock every day:** tick any admins (or **Select all admins**) and set a **time for each**. Every day, at its time, the stock is sent **from that admin's own Telegram account** (main admins, assigned main admins and assigned admins). The list shows who is connected and the last result of each sender.
+- All senders use the same destinations (group / topic and the optional private admins). An admin whose Telegram account is not connected is skipped that day and shows ⚠️.
+- **📨 Send now** still sends from the account of whoever presses it.
+- Existing setting (single sender + time) is converted automatically.
+- Files changed: `reports.js`, `public/reports.html`, `package.json`.
+
 # v145 — Stock → Telegram: add / remove groups & channels · pick the topic (also several)
 - **➕ Add from my Telegram groups & channels** lists the groups and channels of the sender's own Telegram account (public or private). A group with topics shows a **topic list with tick boxes** — tick one or several topics (or "General / whole group") and press **Add**. Channels and groups without topics are added directly.
 - Every added group shows **🗂 Topic** (change / choose the topic later) and **✕ Remove**. Main admins: add / remove / topic changes are saved immediately; other admins use them for their own send.
