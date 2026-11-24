@@ -700,14 +700,26 @@ function tgChosen(){
 const tgNoneTicked=()=>{const b=[...document.querySelectorAll('#tgBox input[name=tgto]')];return b.length>0&&!b.some(x=>x.checked);};
 const tgDmOn=()=>{const e=$("tgDm");return e?e.checked:TGDM;};
 function tgTargetsHtml(){
-  return TGT.length?TGT.map((g,i)=>'<div class="hrow">📣 <b>'+esc(g.name||g.title||g.chat)+'</b> <button class="b sm red" type="button" data-rmt="'+i+'" style="float:right">✕</button></div>').join(""):'<p class="hint">No group added yet.</p>';
+  return TGT.length?TGT.map((g,i)=>'<div class="hrow" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="flex:1;min-width:140px">📣 <b>'+esc(g.name||g.title||g.chat)+'</b>'+(g.topic?'':' <small>(whole group)</small>')+'</span><button class="b sm" type="button" data-topt="'+i+'">🗂 Topic</button><button class="b sm red" type="button" data-rmt="'+i+'">✕ Remove</button><div id="tgTT'+i+'" style="flex-basis:100%"></div></div>').join(""):'<p class="hint">No group or channel added yet.</p>';
 }
-function tgDrawTargets(){const e=$("tgTargets");if(e)e.innerHTML=tgTargetsHtml();}
-function tgAddTarget(o){if(!TGT.some(x=>String(x.chat).toLowerCase()===String(o.chat).toLowerCase()&&(x.topic||0)===(o.topic||0)))TGT.push(o);tgDrawTargets();}
+const tgLabel=g=>(g.title||(/^-/.test(g.chat)?"Group "+g.chat:"@"+g.chat))+(g.topic?" › "+(g.topicTitle||"topic "+g.topic):"");
+function tgDrawTargets(){TGT.forEach(g=>{g.name=tgLabel(g);});const e=$("tgTargets");if(e)e.innerHTML=tgTargetsHtml();}
+const tgPayload=()=>({to:tgChosen(),dm:tgDmOn(),targets:TGT.map(g=>({chat:g.chat,title:g.title,topic:g.topic||0,topicTitle:g.topicTitle||""}))});
+async function tgPersist(){if(IS_OWNER){const d=await api("/api/reports/tg/to",tgPayload());if(d&&d.ok===false)say("tgMsg",d.error||"Could not save.","bad");}}
+function tgAddTarget(o){if(!TGT.some(x=>String(x.chat).toLowerCase()===String(o.chat).toLowerCase()&&(x.topic||0)===(o.topic||0)))TGT.push(o);tgDrawTargets();tgPersist();}
+// topics of one group: checkboxes (several topics of the same group can be added at once)
+async function tgTopicList(chat,title,box,replaceIdx){
+  box.innerHTML='<p class="hint">Loading topics…</p>';
+  const d=await api("/api/reports/tg/topics?chat="+encodeURIComponent(chat));
+  if(!d.ok||!(d.topics||[]).length){box.innerHTML='<p class="hint">'+esc(d.ok?"This group has no topics.":(d.error||"Could not read the topics."))+'</p>';return false;}
+  const T=d.topics.filter(x=>x.id!==1);
+  box.innerHTML='<div class="tgpick">'+'<label class="tgopt"><input type="checkbox" name="tgtp" value="0"><span class="tn">General / whole group (no topic)</span></label>'+T.map(x=>'<label class="tgopt"><input type="checkbox" name="tgtp" value="'+x.id+'" data-t="'+esc(x.title)+'"><span class="tn">🗂 '+esc(x.title)+'</span></label>').join("")+'</div><button class="b sm" type="button" data-addtp="1">'+(replaceIdx!==undefined?'✔ Use the selected topic(s)':'➕ Add selected topic(s)')+'</button>';
+  box._ctx={chat,title,replaceIdx};return true;
+}
 function tgGroupBox(){
-  return '<div class="card" style="margin-top:10px"><b>📣 Telegram group / channel <em style="font-weight:400">(also a private group, and a topic inside it)</em></b>'
+  return '<div class="card" style="margin-top:10px"><b>📣 Telegram groups &amp; channels <em style="font-weight:400">(public or private · optional topic)</em></b>'
     +'<div id="tgTargets">'+tgTargetsHtml()+'</div>'
-    +'<button class="b" type="button" id="tgLoad" style="margin-top:6px">🔎 Choose from my Telegram groups</button>'
+    +'<button class="b" type="button" id="tgLoad" style="margin-top:6px">➕ Add from my Telegram groups &amp; channels</button>'
     +'<div id="tgPickBox"></div>'
     +'<label style="margin-top:8px">…or paste a link / username <em>(group, or a topic link)</em><input id="tgLink" type="text" placeholder="https://t.me/c/1234567890/5  ·  @mygroup" autocapitalize="off" autocomplete="off"></label>'
     +'<button class="b sm" type="button" id="tgLinkAdd">➕ Add</button>'
@@ -735,37 +747,36 @@ function openTg(){
 $("tgBtn").onclick=openTg;
 const tgNothing=()=>{if(TGT.length)return false;return !tgDmOn()||tgNoneTicked();};
 async function tgPickGroups(){
-  const box=$("tgPickBox");box.innerHTML='<p class="hint">Loading your groups…</p>';
+  const box=$("tgPickBox");box.innerHTML='<p class="hint">Loading your groups and channels…</p>';
   const d=await api("/api/reports/tg/groups");
   if(!d.ok){box.innerHTML="";say("tgMsg",d.error||"Could not read your groups.","bad");return;}
   TGG=d.groups||[];
-  box.innerHTML=TGG.length?'<label>Group</label><select id="tgGsel"><option value="">— choose —</option>'+TGG.map((g,i)=>'<option value="'+i+'">'+(g.broadcast?'📢 ':'👥 ')+esc(g.title)+(g.forum?' (topics)':'')+'</option>').join("")+'</select><div id="tgTopic"></div>':'<p class="hint">Your Telegram account is not in any group yet.</p>';
+  box.innerHTML=TGG.length?'<label>Group or channel</label><select id="tgGsel"><option value="">— choose —</option>'+TGG.map((g,i)=>'<option value="'+i+'">'+(g.broadcast?'📢 ':'👥 ')+esc(g.title)+'</option>').join("")+'</select><div id="tgTopic"></div>':'<p class="hint">Your Telegram account is not in any group or channel yet.</p>';
 }
 async function tgGroupChosen(i){
   const g=TGG[Number(i)],tp=$("tgTopic");if(!g){tp.innerHTML="";return;}
-  const base={chat:g.id,title:g.title,topic:0,topicTitle:""};
-  if(!g.forum){tgAddTarget(base);tp.innerHTML="";$("tgGsel").value="";say("tgMsg","✅ Added "+g.title,"ok");return;}
-  tp.innerHTML='<p class="hint">Loading topics…</p>';
-  const d=await api("/api/reports/tg/topics?chat="+encodeURIComponent(g.id));
-  if(!d.ok||!(d.topics||[]).length){tp.innerHTML="";tgAddTarget(base);say("tgMsg",d.ok?"No topics found — the whole group was added.":(d.error||"Could not read the topics.")+" The whole group was added.",d.ok?"ok":"bad");return;}
-  tp.innerHTML='<label>Topic</label><select id="tgTsel"><option value="">— choose a topic —</option><option value="0">General (no topic)</option>'+d.topics.filter(x=>x.id!==1).map(x=>'<option value="'+x.id+'">'+esc(x.title)+'</option>').join("")+'</select>';
-  tp.dataset.gi=i;tp._topics=d.topics;
+  if(!g.mega){tgAddTarget({chat:g.id,title:g.title,topic:0,topicTitle:""});tp.innerHTML="";$("tgGsel").value="";say("tgMsg","✅ Added "+g.title,"ok");return;}
+  const has=await tgTopicList(g.id,g.title,tp);
+  if(!has){tgAddTarget({chat:g.id,title:g.title,topic:0,topicTitle:""});$("tgGsel").value="";say("tgMsg","✅ Added "+g.title+" (no topics in this group).","ok");}
 }
 $("tgOv").addEventListener("change",e=>{
   if(e.target.id==="tgDm"){$("tgPrivate").style.display=e.target.checked?"":"none";}
   if(e.target.id==="tgGsel")tgGroupChosen(e.target.value);
-  if(e.target.id==="tgTsel"){const tp=$("tgTopic"),g=TGG[Number(tp.dataset.gi)],v=e.target.value;if(v===""||!g)return;const id=Number(v),tt=(tp._topics||[]).find(x=>x.id===id);tgAddTarget({chat:g.id,title:g.title,topic:id,topicTitle:id?(tt?tt.title:"topic "+id):""});$("tgGsel").value="";tp.innerHTML="";say("tgMsg","✅ Added "+g.title+(id?" › "+(tt?tt.title:"topic "+id):""),"ok");}
 });
 $("tgOv").addEventListener("click",async e=>{
   const id=e.target.id;
   if(e.target===$("tgOv")||e.target.dataset.x){$("tgOv").classList.remove("on");return;}
-  if(e.target.dataset.rmt!==undefined){TGT.splice(Number(e.target.dataset.rmt),1);tgDrawTargets();return;}
+  if(e.target.dataset.rmt!==undefined){TGT.splice(Number(e.target.dataset.rmt),1);tgDrawTargets();tgPersist();say("tgMsg","Removed.","ok");return;}
+  if(e.target.dataset.topt!==undefined){const i=Number(e.target.dataset.topt),g=TGT[i],box=$("tgTT"+i);if(!g||!box)return;if(box.innerHTML){box.innerHTML="";return;}tgTopicList(g.chat,g.title||g.name,box,i);return;}
+  if(e.target.dataset.addtp){const box=e.target.closest("div[id]"),c=box&&box._ctx;if(!c)return;const ch=[...box.querySelectorAll('input[name=tgtp]:checked')];if(!ch.length){say("tgMsg","Tick at least one topic.","bad");return;}
+    if(c.replaceIdx!==undefined){const g=TGT[c.replaceIdx];const f=ch[0];g.topic=Number(f.value);g.topicTitle=g.topic?f.dataset.t||"":"";ch.slice(1).forEach(f2=>TGT.push({chat:g.chat,title:g.title,topic:Number(f2.value),topicTitle:Number(f2.value)?f2.dataset.t||"":""}));tgDrawTargets();tgPersist();say("tgMsg","✅ Topic saved.","ok");return;}
+    ch.forEach(f=>{const t=Number(f.value);if(!TGT.some(x=>String(x.chat)===String(c.chat)&&(x.topic||0)===t))TGT.push({chat:c.chat,title:c.title,topic:t,topicTitle:t?f.dataset.t||"":""});});tgDrawTargets();tgPersist();box.innerHTML="";const gs=$("tgGsel");if(gs)gs.value="";say("tgMsg","✅ Added "+c.title+" ("+ch.length+" selection"+(ch.length>1?"s":"")+").","ok");return;}
   if(id==="tgAll"||id==="tgNone"){document.querySelectorAll('#tgBox input[name=tgto]').forEach(b=>b.checked=id==="tgAll");return;}
   if(id==="tgLoad"){tgPickGroups();return;}
   if(id==="tgLinkAdd"){const v=$("tgLink").value.trim();if(!v)return;const m=/^(?:(?:https?:\/\/)?(?:www\.)?(?:t|telegram)\.me\/)?(c\/\d+|[A-Za-z][A-Za-z0-9_]{3,31}|@[A-Za-z][A-Za-z0-9_]{3,31}|-100\d+)(?:\/(\d+))?/.exec(v);if(!m){say("tgMsg","This link cannot be read. Use the group list above, a @username, or a topic link like https://t.me/c/1234567890/5","bad");return;}
     let chat=m[1].replace(/^@/,"");if(chat.startsWith("c/"))chat="-100"+chat.slice(2);tgAddTarget({chat,title:/^-/.test(chat)?"Group "+chat:"@"+chat,topic:m[2]?Number(m[2]):0,topicTitle:m[2]?"topic "+m[2]:""});$("tgLink").value="";say("tgMsg","✅ Added.","ok");return;}
   if((id==="tgToggle"||id==="tgSave"||id==="tgNow")&&tgNothing()){say("tgMsg","Add a Telegram group, or tick “Also send privately to admins” and choose at least one admin.","bad");return;}
-  const pl=()=>({to:tgChosen(),dm:tgDmOn(),targets:TGT.map(g=>({chat:g.chat,title:g.title,topic:g.topic||0,topicTitle:g.topicTitle||""}))});
+  const pl=tgPayload;
   if(id==="tgToggle"||id==="tgSave"){const on=id==="tgSave"?true:!(S.tg&&S.tg.on);busy("Saving…");const d=await api("/api/reports/tg/config",{on,time:$("tgTime").value,sendAs:tgSender(),...pl()});busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");}
   if(id==="tgNow"){busy("Sending the stock from your Telegram account… (this can take a minute)");if(IS_OWNER)await api("/api/reports/tg/to",pl());const d=await api("/api/reports/tg/send",pl());busy("");render();openTg();say("tgMsg",d.ok?d.message:(d.error||"Could not send."),d.ok?"ok":"bad");}
 });
