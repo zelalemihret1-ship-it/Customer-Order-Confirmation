@@ -1,3 +1,11 @@
+# v152 — Workshop: progress-only views, Custom product tab, Telegram sending fixed, modern look
+- **Orders** tab now shows only orders IN PROGRESS (rejected by the customer and paid-in-full/completed orders are hidden). It is a view only — nothing is sent from it.
+- **Readymade** tab now shows only UNFINISHED readymade products (still in Reports → Workflow). Finished (in stock) products are hidden. View only — no send.
+- **Standard** tab has two sub-tabs: **Standard products** and **Custom product** (new design: photo + name + quantity + measurement + optional order + notes → added to the list → sent to the workshop).
+- **Telegram fix:** a failed send was shown as "Sent" (the server overwrote `ok:false`). Now the real result and the Telegram error are shown, and the list is kept when sending fails.
+- New modern design for `index.html` and `workshop.html`.
+- Files changed: `workshop.js`, `reports.js`, `public/workshop.html`, `public/index.html`, `package.json`. Check: `/api/workshop-version` → v152.
+
 # v151 — Workshop: STANDARD PRODUCTS → quantity + measurement → Order / Readymade → send
 - Workshop page → new tab **🧰 Standard**. The **main admin** makes the standard products once (➕ New standard product: name + photo + standard measurements, one per line; ✏️ to change or delete). Every admin who has Workshop can choose from them.
 - Tap a standard product → choose **Quantity** (− / + / type), **Measurement** (tap a standard one or type your own), and decide **📦 Order** or **🛋 Readymade**. For an **Order** you also pick *which order* (only your own orders) — its **Order ID** goes to the workshop. Add **additional notes** if needed.
