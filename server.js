@@ -3156,7 +3156,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
     }
 
     const callback = update.callback_query;
-    if (callback && /^(wsf|wfin):/.test(String(callback.data || ""))) { // v153: workshop buttons ("Finished workshop" / "Finished") posted by the bot in the workshop group
+    if (callback && /^(wsf|wfin|wsold|wrestock):/.test(String(callback.data || ""))) { // v153: workshop and stock buttons (production / Sold Out / Restock) posted by the bot in the workshop group
       try { await workshopModule.onButton(callback); } catch (e) { console.warn("Workshop button failed:", e.message); await safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text: "Something went wrong. Try again." })); }
       return;
     }
