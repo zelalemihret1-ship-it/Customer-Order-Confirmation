@@ -186,8 +186,8 @@ function register(app, ctx) {
   const normK = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
   function stockGroups(L) {
     const m = new Map();
-    for (const p of L) { const k = normK(p.model || p.desc || p.code) + "|" + normK(p.handle); let g = m.get(k); if (!g) { g = { key: k, model: p.model || p.desc || p.code, handle: p.handle || "", items: [] }; m.set(k, g); } g.items.push(p); }
-    return [...m.values()].map(g => { g.photo = (g.items.find(p => p.photo) || {}).photo || ""; return g; }).sort((a, b) => a.model.localeCompare(b.model, undefined, { numeric: true }) || a.handle.localeCompare(b.handle));
+    for (const p of L) { const k = normK(p.model || p.desc || p.code) + "|" + normK(p.handle) + "|" + normK(p.desc); let g = m.get(k); if (!g) { g = { key: k, model: p.model || p.desc || p.code, handle: p.handle || "", desc: p.desc || "", items: [] }; m.set(k, g); } g.items.push(p); }
+    return [...m.values()].map(g => { g.photo = (g.items.find(p => p.photo) || {}).photo || ""; return g; }).sort((a, b) => a.model.localeCompare(b.model, undefined, { numeric: true }) || a.handle.localeCompare(b.handle) || a.desc.localeCompare(b.desc, undefined, { numeric: true }));
   }
   const uniq = a => [...new Set(a.map(x => clip(x, 80)).filter(Boolean))];
   function groupCaption(g) {
