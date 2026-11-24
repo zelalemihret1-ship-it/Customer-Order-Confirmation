@@ -2849,7 +2849,7 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
     const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
     await saveOrderRecord(order);
-    workshopHook("created", order); // v150: workshop mode "without confirmation"
+    workshopHook("created", order); // v153: no-op (only confirmed + delivered orders go to the workshop)
     if (order.sent) {
       const toAdmin = allAdminChatIds(order).includes(String(order.telegramChatId || ""));
       const who = `${order.customerName || "the customer"} (${order.telegramUsername || "chat id " + order.telegramChatId})`;
@@ -3156,6 +3156,10 @@ app.post("/api/telegram/webhook", async (req, res) => {
     }
 
     const callback = update.callback_query;
+    if (callback && /^(wsf|wfin):/.test(String(callback.data || ""))) { // v153: workshop buttons ("Finished workshop" / "Finished") posted by the bot in the workshop group
+      try { await workshopModule.onButton(callback); } catch (e) { console.warn("Workshop button failed:", e.message); await safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text: "Something went wrong. Try again." })); }
+      return;
+    }
     if (callback) {
       const [action, id] = String(callback.data || "").split(":");
       await supabaseReady;
@@ -3486,7 +3490,7 @@ const ratingModule = require("./ratings").register(app, {
 // ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
 const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 // ── Workshop: orders + readymade products to the private workshop Telegram group, per admin (module + page: /workshop.html) ──
-const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule });
+const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
