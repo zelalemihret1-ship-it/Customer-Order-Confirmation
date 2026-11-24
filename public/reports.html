@@ -344,7 +344,7 @@ input,textarea,select{border:1px solid #dcd8cb;border-radius:12px}
   </div>
 </main>
 <div class="ov" id="setOv"><div class="box" id="setBox">
-  <div class="setHd"><div><h2>⚙ Report settings</h2><div class="hint">Export, back up and manage your reports. <span id="bldTag" style="opacity:.6">· page v148</span></div></div><button class="setX" type="button" data-x="1" aria-label="Close">✕</button></div>
+  <div class="setHd"><div><h2>⚙ Report settings</h2><div class="hint">Export, back up and manage your reports. <span id="bldTag" style="opacity:.6">· page v149</span></div></div><button class="setX" type="button" data-x="1" aria-label="Close">✕</button></div>
   <div class="setList">
     <button class="srow" id="bPdf" type="button"><span class="ic pdf">📄</span><span class="tx"><b>Make PDF</b><small>Build a printable A4 report of the current view</small></span><span class="ch">›</span></button>
     <button class="srow" id="cloud" type="button"><span class="ic bk">☁</span><span class="tx"><b>Google Sheet backup</b><small id="bkState">Backup copy in your Google Sheet</small></span><span class="ch">›</span></button>
@@ -786,7 +786,7 @@ $("tgOv").addEventListener("click",async e=>{
 
 
 // ⚙ settings sheet: PDF · Google Sheet backup · Telegram · Start from 0
-$("gearBtn").onclick=()=>{try{$("bldTag").textContent="· page v148 · server "+(S.appBuild||"OLD (not updated)");}catch{}$("setOv").classList.add("on");};
+$("gearBtn").onclick=()=>{try{$("bldTag").textContent="· page v149 · server "+(S.appBuild||"OLD (not updated)");}catch{}$("setOv").classList.add("on");};
 $("setOv").addEventListener("click",e=>{if(e.target===$("setOv")||e.target.closest("[data-x]"))$("setOv").classList.remove("on");},false);
 $("setBox").addEventListener("click",e=>{if(e.target.closest(".srow"))$("setOv").classList.remove("on");},true);
 
