@@ -1,3 +1,11 @@
+# v143 — Stock → Telegram: sent from YOUR own account · group / channel username
+- **📨 Send now** works for every admin who can open Reports (main admin, assigned main admin, assigned admin). It is sent **from the account of the person who presses it** — never from someone else's. If that person's own Telegram account is not connected the app says so.
+- **Daily automatic send:** the sender can now be any admin whose own Telegram account is connected (main admin switches it on).
+- **New: 📣 Telegram group or channel username** (e.g. `@mychannel, @mygroup`, several allowed). The stock is sent there too. The sending account must be a member of the group / an admin of the channel.
+- The sender is skipped in the recipients list (nobody messages himself). Last send shows who sent it.
+- READYMADE products only (unchanged).
+- Files changed: `reports.js`, `public/reports.html`, `package.json`.
+
 # v142 — Stock view shows ORDER products · Telegram sends READYMADE only
 - **Reports → 🖼 Stock view** shows every product in stock, READYMADE and ORDER; ORDER products carry an **ORDER** tag (card, list and the opened product).
 - **📨 Daily stock → Telegram** (and Send now) sends **READYMADE products only** — ORDER products are never sent.
