@@ -180,11 +180,11 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
     <details class="card set" id="setBox">
       <summary>
         <div class="ico"><svg class="i"><use href="#i-gear"/></svg></div>
-        <div class="st"><b>Workshop &amp; finishing places</b><span id="setSum">Loading…</span></div>
+        <div class="st"><b>Workshop, finishing &amp; stock places</b><span id="setSum">Loading…</span></div>
         <svg class="i chev"><use href="#i-chev"/></svg>
       </summary>
       <div class="body">
-        <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>two places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> puts the product in <b>Stock</b>.</div>
+        <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>three places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> posts the product in your selected <b>Stock group</b>, where you can mark it Sold Out or Restock.</div>
         <div class="hint">The jobs are posted by the <b>AMBAR bot</b> (it must be a member — better an admin — of the group, so the buttons work).</div>
         <div id="senderLine" class="hint"></div>
         <div id="slots"></div>
@@ -224,7 +224,7 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
     </div>
 
     <div id="basket"></div>
-    <div class="card" style="margin-top:14px"><div class="log-head"><h2><svg class="i"><use href="#i-list"/></svg>My last sends</h2><select id="logFilter" aria-label="Choose sends to view"><option value="all">All sends</option><option value="success">Successful</option><option value="failed">Failed</option></select></div><div id="log" class="log"></div></div>
+    <details class="card" style="margin-top:14px" id="lastSends"><summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px"><b><svg class="i"><use href="#i-list"/></svg> My last sends</b><span class="pill gray">Tap to view</span></summary><div style="padding-top:12px"><div class="log-head"><span class="hint">Send history</span><select id="logFilter" aria-label="Choose sends to view"><option value="all">All sends</option><option value="success">Successful</option><option value="failed">Failed</option></select></div><div id="log" class="log"></div></div></details>
   </div>
 </main>
 
@@ -273,7 +273,7 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ic=(n,st)=>'<svg class="i"'+(st?' style="'+st+'"':"")+'><use href="#i-'+n+'"/></svg>';
-let S={settings:{workshop:null,finishing:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],curP=null,editId="",newPhoto="",uPhoto="";
+let S={settings:{workshop:null,finishing:null,stock:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],curP=null,editId="",newPhoto="",uPhoto="";
 const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
 const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
 const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
@@ -290,11 +290,11 @@ function renderSettings(){
   const st=S.sender||{};
   $("senderLine").innerHTML=st.ready?'<span class="pill ok">● Your Telegram account is connected'+(st.label?" · "+esc(st.label):"")+'</span> <span style="display:block;margin-top:4px">It is used to list your groups and topics.</span>':'<span class="pill wait">● Your Telegram account is not connected</span> <span style="display:block;margin-top:6px">You can still paste a group / topic link. To pick from your groups and topics, connect it: Settings → Connect my Telegram account.</span>';
   const slot=(cls,icon,label,g,role)=>'<div class="slot '+cls+'"><div class="si">'+icon+'</div><div class="sm"><b>'+label+'</b>'+(g?'<span>'+esc(tName(g))+'</span>':'<span class="none">Not chosen yet</span>')+'</div><div class="sb"><button class="btn sec sm" type="button" data-pick="'+role+'">'+(g?"Change":"Choose")+'</button>'+(g?'<button class="btn sec sm" type="button" data-clear="'+role+'">Clear</button>':"")+'</div></div>';
-  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing");
+  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock");
   document.querySelectorAll(".mode").forEach(l=>{const on=l.dataset.m===mode;l.classList.toggle("on",on);l.querySelector("input").checked=on;});
   const sv=S.settings||{};
-  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||mode!==sv.mode;
-  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(dirty?" · not saved":"");
+  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||mode!==sv.mode;
+  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(dirty?" · not saved":"");
 }
 const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="workshop"?'<span class="pill wait">🛠 In workshop</span>':j.stage==="finishing"?'<span class="pill blue">🪚 In finishing</span>':'<span class="pill ok">✅ Finished · in stock</span>';
 const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
@@ -326,7 +326,7 @@ function render(){
     const inW=S.jobs.filter(j=>j.stage==="workshop"),inF=S.jobs.filter(j=>j.stage==="finishing");
     h='<div class="sec-h"><b>🛠 In workshop</b><span>'+inW.length+'</span></div>'+(inW.map(j=>jobCard(j,'<div class="act"><button class="btn sm" type="button" data-jws="'+esc(j.id)+'">Finished workshop</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in the workshop.</div>')
       +'<div class="sec-h" style="margin-top:14px"><b>🪚 In finishing</b><span>'+inF.length+'</span></div>'+(inF.map(j=>jobCard(j,'<div class="act"><button class="btn gold sm" type="button" data-jfin="'+esc(j.id)+'">✅ Finished</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in finishing.</div>')
-      +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,"")).join(""):"");
+      +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,'<div class="act">'+(j.stockState==="sold"?'<button class="btn gold sm" type="button" data-restockjob="'+esc(j.id)+'">♻️ Restock</button>':'<button class="btn sec sm" type="button" data-soldjob="'+esc(j.id)+'">🔴 Sold Out</button>')+'</div>')).join(""):"");
   }else if(sub==="std"){
     h=(S.canManage?'<div class="btns" style="margin:0 0 12px"><button class="btn gold sm" type="button" id="newStd">'+ic("plus")+'Add Product</button></div>':"")
       +(S.catalog.length?'<div class="hint" style="margin-bottom:10px">Tap a product → choose quantity, measurement and Order / Readymade → it goes into your list below → send the whole list to the workshop.</div><div class="grid">'+S.catalog.map(p=>'<div class="pc" data-pid="'+esc(p.id)+'"><img loading="lazy" src="/api/workshop-photo/'+esc(p.photo)+'.jpg" alt="">'+(S.canManage?'<button class="ed" type="button" data-edit="'+esc(p.id)+'" aria-label="Edit">'+ic("edit","width:15px;height:15px")+'</button>':"")+'<div class="pn">'+esc(p.name)+'</div></div>').join("")+'</div>'
@@ -347,15 +347,15 @@ $("seg").addEventListener("click",e=>{const b=e.target.closest("button[data-t]")
 $("subSeg").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
 document.querySelectorAll(".mode").forEach(l=>l.addEventListener("click",()=>{mode=l.dataset.m;renderSettings();}));
 $("slots").addEventListener("click",e=>{
-  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else fin=null;renderSettings();return;}
+  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else stock=null;renderSettings();return;}
   const p=e.target.closest("button[data-pick]");if(p)openPick(p.dataset.pick);
 });
 function setPlace(g){
-  if(pickRole==="workshop")ws=g;else fin=g;
+  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else stock=g;
   $("pickOv").classList.remove("on");renderSettings();say("Place chosen — press Save settings to keep it.","info");
 }
 async function openPick(role){
-  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":"Choose the FINISHING place";
+  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":"Choose the STOCK place";
   $("pickStep1").style.display="block";$("pickStep2").style.display="none";$("pickSearch").value="";$("linkIn").value="";
   $("pickList").innerHTML='<div class="hint">Reading your Telegram groups…</div>';$("pickOv").classList.add("on");
   const d=await api("/api/workshop/dialogs",{});
@@ -398,24 +398,24 @@ $("linkGo").onclick=async()=>{
 $("pickClose").onclick=()=>$("pickOv").classList.remove("on");
 const botReport=d=>(d.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.label+(c.ok?" — the bot can post":" — "+c.error)).join("  ·  ")||(d.error||"");
 async function checkBot(quiet){
-  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin});
+  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin,stock});
   const t=botReport(d)||"";$("botLine").innerHTML=t?'<span class="pill '+(d.ok?"ok":"bad")+'" style="white-space:normal">'+esc(t)+'</span>'+(d.ok||!d.bot?"":'<span style="display:block;margin-top:6px">Open the group → Add members → <b>@'+esc(d.bot)+'</b>, then make it an admin.</span>'):"";
   if(!quiet)say(d.ok?"✅ The bot can post in both places.":(t||"The bot check failed."),d.ok?"ok":"bad");
   return d;
 }
-$("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose both the workshop and the finishing place first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
+$("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
 $("saveBtn").onclick=async()=>{
-  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,mode});
-  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;mode=S.settings.mode;}
+  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,mode});
+  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode;}
   say(d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");render();
   if(d.ok&&ws&&fin){const c=await checkBot(true);if(!c.ok)say((d.message||"")+" ⚠ "+botReport(c),"bad");}
   busy("");
 };
 $("testBtn").onclick=async()=>{
   busy("Sending a test message…");
-  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,mode});
+  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,mode});
   if(!sv.ok){busy("");return say(sv.error||"Could not save the places first.","bad");}
-  ws=S.settings.workshop;fin=S.settings.finishing;mode=S.settings.mode;
+  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode;
   const d=await api("/api/workshop/test",{});busy("");render();
   say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
 };
@@ -455,6 +455,8 @@ $("out").addEventListener("click",async e=>{
   if(jw){busy("Sending to finishing…");const r=await api("/api/workshop/job/finish-workshop",{id:jw.dataset.jws});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
   const jf=e.target.closest("button[data-jfin]");
   if(jf){busy("Moving to stock…");const r=await api("/api/workshop/job/finish",{id:jf.dataset.jfin});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
+  const sold=e.target.closest("button[data-soldjob]");if(sold){busy("Marking Sold Out…");const r=await api("/api/workshop/job/sold-out",{id:sold.dataset.soldjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
+  const restock=e.target.closest("button[data-restockjob]");if(restock){busy("Restocking…");const r=await api("/api/workshop/job/restock",{id:restock.dataset.restockjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
   if(e.target.closest("#newStd"))return openCat("");
   const ed=e.target.closest("button[data-edit]");if(ed){e.stopPropagation();return openCat(ed.dataset.edit);}
   const pc=e.target.closest(".pc[data-pid]");if(pc)openAdd(pc.dataset.pid);
@@ -529,7 +531,7 @@ $("cDel").onclick=async()=>{
   $("view").style.display="block";
   const d=await api("/api/workshop/state");
   if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
-  else{ws=S.settings.workshop;fin=S.settings.finishing;mode=S.settings.mode||"manual";if(!ws||!fin)$("setBox").open=true;}
+  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
   render();
 })();
 document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
