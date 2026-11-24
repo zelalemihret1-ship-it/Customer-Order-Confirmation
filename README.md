@@ -1,3 +1,15 @@
+# v150 — WORKSHOP: send orders + readymade products to the private workshop Telegram group (per admin)
+- New page **/workshop.html** (Home → **Workshop**) and new section **Workshop** in **Manage Admins** — the main admin ticks it for each individual admin. Main admins always have it.
+- **Every admin has HIS OWN settings**: his own workshop group (+ topic) and his own sending mode. Picked from “My groups” (the groups his own Telegram account is in) or pasted as a link / @username / id (right-click-style: long-press a message in the group → Copy link; it also carries the topic).
+- **Three ways for orders to reach the workshop** (per admin): 🖐 manual (button on each order) · ✅ automatically AFTER the customer confirms · ⚡ automatically WITHOUT confirmation, the moment the order is created. Sending manually an unconfirmed / rejected order asks “send without confirmation?” first.
+- **Readymade products**: the in-stock readymade products of Reports (photo, size, handle, Prod Ids) are listed on the Workshop page — tick some (or all) and send them to the same group.
+- Sent from the admin’s OWN connected Telegram account (not the bot). The workshop gets the product photo + production details only — **no phone, no payment, no customer contact**. A log of the last sends is shown on the page.
+- Files: new `workshop.js`, `public/workshop.html`; changed `server.js`, `reports.js`, `public/index.html`, `public/home.html`, `package.json`. Check: `/api/workshop-version`.
+
+# v149 — Fresh package of the Reports fix (no more “hasPerm is not a function”)
+- Same fix as v147/v148, with the build tag raised to v149 so you can see the new files are really running: Reports → ⚙ must say `page v149 · server v149`. If the server part says v148 or OLD, the server was not updated: deploy the whole folder and restart.
+- Files changed: `reports.js`, `public/reports.html`, `package.json`.
+
 # v148 — Version check for the “hasPerm is not a function” error
 - The Reports ⚙ sheet now shows `page v148 · server v148`. If it says **server OLD (not updated)** or the error is still there, the server is still running old files: deploy the **whole folder** of this zip (server.js, reports.js, public/…, package.json) and restart / redeploy.
 - Files changed: `reports.js`, `public/reports.html`, `package.json`.
