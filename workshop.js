@@ -114,15 +114,16 @@ function register(app, ctx) {
   // ── posting with the BOT (inline buttons need the bot) ──────────────────────────────────────
   const tg = (method, body) => ctx.tgApi.call(method, body);
   const chatKey = g => /^-?\d+$/.test(String(g.chat)) ? String(g.chat) : "@" + String(g.chat).replace(/^@/, "");
-  async function botPost(g, buf, caption, markup) {
-    const topic = g.topic > 1 ? g.topic : 0;
+  async function adminPost(actor, g, buf, caption) {
+    const acc = accountOf(actor);
+    if (!acc?.ready) throw new Error("Connect your own Telegram account in Settings first. Workshop messages are sent from your account, not the bot.");
+    const entity = await resolveTarget(acc, g);
+    const replyTo = g.topic > 1 ? { replyTo: g.topic } : {};
     if (buf) {
-      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", caption.slice(0, 1000)); if (markup) fd.append("reply_markup", JSON.stringify(markup)); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
-      try { const r = await ctx.tgApi.sendForm("sendPhoto", build); return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: true }; }
-      catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; } // not a picture Telegram accepts → plain text
+      try { return await acc.client.sendFile(entity, { file: buf, caption: caption.slice(0, 1000), forceDocument: false, ...replyTo }); }
+      catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; }
     }
-    const r = await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: caption.slice(0, 4000), ...(markup ? { reply_markup: markup } : {}) });
-    return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: false };
+    return await acc.client.sendMessage(entity, { message: caption.slice(0, 4000), ...replyTo });
   }
   async function botEdit(ref, caption, markup) { // change the text of a posted message (and drop its button); never throws
     if (!ref) return;
@@ -227,8 +228,8 @@ function register(app, ctx) {
     }
     // 2) the bot posts it in the WORKSHOP topic
     let ref;
-    try { ref = await botPost(s.workshop, spec.buf, jobCaption(j, "workshop"), kbWorkshop(id)); }
-    catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: botFriendly(e) }; }
+    try { ref = await adminPost(actor, s.workshop, spec.buf, jobCaption(j, "workshop")); }
+    catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: tgFriendly(e) }; }
     j.wsMsg = ref;
     if (spec.buf && spec.buf.length <= 1.4 * 1024 * 1024) { try { j.photoId = await savePhoto("data:image/jpeg;base64," + spec.buf.toString("base64")); } catch {} } // kept so the FINISHING post shows the same picture
     db.jobs[id] = j;
@@ -248,10 +249,10 @@ function register(app, ctx) {
     if (!s.finishing) return { ok: false, error: "The FINISHING topic is not chosen. Choose it in the Workshop settings." };
     const by = clip(byName, 60) || "Workshop", at = stamp();
     let ref;
-    try { ref = await botPost(s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`), kbFinishing(j.id));  }
+    try { ref = await adminPost({ telegramId: j.key, name: byName, role: j.key === "open" ? "open" : "admin" }, s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`));  }
     catch (e) { return { ok: false, error: botFriendly(e) }; }
     j.stage = "finishing"; j.wsDone = { by, at }; j.finMsg = ref;
-    await botEdit(j.wsMsg, jobCaption(j, "workshop", `✅ Finished workshop — ${by} · ${at}\n➡ Sent to FINISHING`));
+    
     await saveOrderStage(j, { wsDoneAt: at, wsDoneBy: by });
     log(j.key, { name: by }, `Finished workshop · ${j.name}`, true, ""); persist();
     return { ok: true, job: j };
@@ -266,9 +267,9 @@ function register(app, ctx) {
     const by = clip(byName, 60) || "Finishing", at = stamp(), missing = [];
     for (const pid of j.productIds || []) { const r = typeof R().wsFinish === "function" ? R().wsFinish(pid, by) : { ok: false }; if (!r.ok) missing.push(r.error || "a product"); }
     j.stage = "finished"; j.finDone = { by, at };
-    await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Sent to STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
-    try { j.stockMsg = await botPost(s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), kbSoldOut(j.id)); }
-    catch (e) { j.stockPostError = botFriendly(e); }
+    
+    try { j.stockMsg = await adminPost({ telegramId: j.key, name: byName, role: j.key === "open" ? "open" : "admin" }, s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`)); }
+    catch (e) { j.stockPostError = tgFriendly(e); }
     await saveOrderStage(j, { finishedAt: at, finishedBy: by });
     log(j.key, { name: by }, `Finished · ${j.name} → stock`, true, missing.length ? missing.join(" ") : ""); persist();
     return { ok: true, job: j, warning: [missing.length ? "Some products were not found in Reports: " + missing.join(" ") : "", j.stockPostError ? "Stock group post failed: " + j.stockPostError : ""].filter(Boolean).join(" · ") };
@@ -434,8 +435,8 @@ function register(app, ctx) {
     const s = settingsOf(keyOf(req.actor)), res2 = [];
     if (!s.workshop || !s.finishing || !s.stock) return res.json({ ok: false, error: "Choose the Workshop, Finishing and Stock places first, then Save." });
     for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock]]) {
-      try { await botPost(g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`, null); res2.push({ name: label + " · " + targetName(g), ok: true }); }
-      catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: botFriendly(e) }); }
+      try { await adminPost(req.actor, g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`); res2.push({ name: label + " · " + targetName(g), ok: true }); }
+      catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: tgFriendly(e) }); }
     }
     const okN = res2.filter(x => x.ok).length;
     res.json({ ok: okN === res2.length, results: res2, error: okN === res2.length ? "" : (res2.find(x => !x.ok)?.error || "Could not send."), message: okN === res2.length ? "✅ Test messages posted in the Workshop, Finishing and Stock places." : undefined });
