@@ -230,6 +230,8 @@ details.set{border-radius:var(--r)}
 .idbox{margin:12px 0 0;padding:11px 12px;border-radius:15px;background:#f0f8f4;border:1px solid #cfe3d8}
 .idbox .idh{font-size:11.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#4f6158}
 .idbox .ids{margin-top:8px}.idbox .ids:empty::before{content:"…";color:var(--mute)}.idbox .ids:empty{display:flex}
+#dispatchFab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:1000;width:58px;height:58px;border:0;border-radius:50%;background:linear-gradient(135deg,#0f3d30,#17604b);color:#fff;font-size:25px;box-shadow:0 8px 28px #09291f55;cursor:pointer}
+#dispatchFab:active{transform:scale(.96)}
 </style>
 </head>
 <body>
@@ -314,7 +316,7 @@ details.set{border-radius:var(--r)}
     <div id="basket"></div>
     <details class="card" style="margin-top:14px" id="lastSends"><summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px"><b><svg class="i"><use href="#i-list"/></svg> My last sends</b><span class="pill gray">Tap to view</span></summary><div style="padding-top:12px"><div class="log-head"><span class="hint">Send history</span><select id="logFilter" aria-label="Choose sends to view"><option value="all">All sends</option><option value="success">Successful</option><option value="failed">Failed</option></select></div><div id="log" class="log"></div></div></details>
   </div>
-</main>
+</main><button id="dispatchFab" type="button" aria-label="Open dispatch" title="Dispatch">🚚</button>
 
 <div class="ov" id="pickOv"><div class="box">
   <h2 id="pickTitle" style="margin:0 0 6px">Choose the group</h2>
@@ -423,6 +425,7 @@ function matList(){
   return h;
 }
 document.addEventListener("change",e=>{if(e.target.id==="dispatchMaterialSelect"){const m=(S.materials||[]).find(x=>String(x.id)===e.target.value);$("dispatchMaterialAvailable").value=m?m.qty+" "+m.unit:"";$("dispatchMaterialQty").max=m?m.qty:"";}});
+document.addEventListener("change",e=>{if(e.target.id==="driverSourceType"){const ready=e.target.value==="ready",sel=$("driverProductSelect");if(sel){const items=ready?(S.readymade||[]):(S.catalog||[]);sel.innerHTML='<option value="">Choose '+(ready?'a readymade product…':'an order product…')+'</option>'+items.map(p=>'<option value="'+esc(p.id)+'">ID: '+esc(p.code||p.id)+' — Model: '+esc(p.model||p.desc||p.name||'Product')+'</option>').join("");}}});
 document.addEventListener("change",e=>{if(e.target.id==="driverCustomerType"){const type=e.target.value,sel=$("driverCustomerSelect"),prev=sel.value;sel.innerHTML='<option value="">Choose any customer…</option>'+(S.customers||[]).filter(c=>!type||(c.customerType||"Customer")===type).map(c=>'<option value="'+esc(c.telegramId||c.id)+'">'+esc(c.customerCode?c.customerCode+' · ':'')+esc(c.name||"Customer")+(c.phone?' · '+esc(c.phone):'')+' · '+esc(c.customerType||"Customer")+'</option>').join("");if([...sel.options].some(o=>o.value===prev))sel.value=prev;}});
 document.addEventListener("input",e=>{if(e.target.id==="mSearch"){matQ=e.target.value;const l=$("matList");if(l)l.innerHTML=matList();}});
 let MAT=null;
@@ -477,8 +480,8 @@ function render(){
     const customerOptions='<option value="">Choose any customer…</option>'+(S.customers||[]).map(c=>'<option value="'+esc(c.telegramId||c.id)+'" data-type="'+esc(c.customerType||'Customer')+'">'+esc(c.customerCode?c.customerCode+' · ':'')+esc(c.name||'Customer')+(c.phone?' · '+esc(c.phone):'')+' · '+esc(c.customerType||'Customer')+'</option>').join('');
     const productOptions='<option value="">Choose an available product…</option>'+(S.catalog||[]).map(p=>'<option value="'+esc(p.id)+'">ID: '+esc(p.code||p.id)+' — Model: '+esc(p.model||p.name)+' · '+esc(p.ptype||'Standard')+'</option>').join('')+(S.readymade||[]).map(p=>'<option value="'+esc(p.id)+'">ID: '+esc(p.code||p.id)+' — Model: '+esc(p.model||p.desc||p.name||'Workflow product')+'</option>').join('');
     const availableMaterials=(S.materials||[]).filter(m=>Number(m.qty)>0);
-    const availableMaterialRows=availableMaterials.map(m=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)"><span>'+esc(m.name+(m.type?' '+m.type:''))+'</span><b>'+esc(String(m.qty))+' '+esc(m.unit||'')+'</b></div>').join('')||'<div class="hint">No materials currently have available stock.</div>';
-    $("out").innerHTML='<div class="card"><h2>🚚 Driver dispatch</h2><p class="hint">Select any customer from the complete customer directory, not only customers with orders. Filter by customer type, and optionally attach an order and available product.</p><label class="lab">Customer type</label><select id="driverCustomerType" class="field">'+customerTypeOptions+'</select><label class="lab">Customer</label><select id="driverCustomerSelect" class="field">'+customerOptions+'</select><label class="lab">Customer order (optional)</label><select id="driverOrderSelect" class="field">'+orderOptions+'</select><label class="lab">Available product (optional — Product ID + Model)</label><select id="driverProductSelect" class="field">'+productOptions+'</select><label class="lab">Additional driver instructions</label><textarea id="driverDispatchText" placeholder="Pickup point, delivery time, handling instructions…"></textarea><button class="btn block" id="sendDriverDispatch" type="button">🚚 Send customer, order and product details to driver</button></div><div class="card dispatch-material-card"><h2>🧱 Material dispatch</h2><p class="hint">Dispatch each material separately, with the exact quantity being transported.</p><label class="lab">Material</label><select id="dispatchMaterialSelect" class="field"><option value="">Choose a material…</option>'+availableMaterials.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name+(m.type?' · '+m.type:''))+' — '+esc(String(m.qty))+' '+esc(m.unit||'')+'</option>').join('')+'</select><div class="grid2"><div><label class="lab">Available</label><input id="dispatchMaterialAvailable" class="field" readonly placeholder="—"></div><div><label class="lab">Dispatch quantity</label><input id="dispatchMaterialQty" class="field" type="number" min="0.01" step="any" placeholder="Quantity"></div></div><label class="lab">Notes / destination (optional)</label><textarea id="dispatchMaterialNote" placeholder="Pickup point, destination, transport instructions…"></textarea><button class="btn block" id="sendMaterialDispatch" type="button" '+(availableMaterials.length?'':'disabled')+'>🧱 Send selected material</button><div class="sec-h" style="margin-top:16px"><b>Available materials</b><span>'+availableMaterials.length+' types</span></div><div style="max-height:260px;overflow:auto">'+availableMaterialRows+'</div><button class="btn sec block" id="sendAllMaterialDispatch" type="button" '+(availableMaterials.length?'':'disabled')+'>Send full inventory list</button></div>';
+    const availableMaterialRows=availableMaterials.map(m=>'<div class="item" style="align-items:center"><div class="mid"><div class="nm">'+esc(m.name+(m.type?' '+m.type:''))+'</div><div class="meta">Available: <b>'+esc(String(m.qty))+' '+esc(m.unit||'')+'</b></div></div><button class="btn sm" type="button" data-sendmaterial="'+esc(m.id)+'" data-qty="'+esc(String(m.qty))+'">Send this material</button></div>').join('')||'<div class="hint">No materials currently have available stock.</div>';
+    $("out").innerHTML='<div class="card"><h2>🚚 PRODUCT DELIVERY DISPATCH</h2><p class="hint">Choose an ORDER product or a READYMADE product, then select the buyer/customer. The driver receives customer name, phone, location, product ID/model and product photo when available.</p><label class="lab">Customer type</label><select id="driverCustomerType" class="field">'+customerTypeOptions+'</select><label class="lab">Customer</label><select id="driverCustomerSelect" class="field">'+customerOptions+'</select><label class="lab">Product source</label><select id="driverSourceType" class="field"><option value="order">Order product</option><option value="ready">Readymade product</option></select><label class="lab">Customer order (for order products)</label><select id="driverOrderSelect" class="field">'+orderOptions+'</select><label class="lab">Available product (optional — Product ID + Model)</label><select id="driverProductSelect" class="field">'+productOptions+'</select><label class="lab">Additional driver instructions</label><textarea id="driverDispatchText" placeholder="Pickup point, delivery time, handling instructions…"></textarea><button class="btn block" id="sendDriverDispatch" type="button">🚚 Send customer, order and product details to driver</button></div><div class="card"><h2>🧱 MATERIAL DISPATCH</h2><p class="hint">Send materials individually. Each message contains one material and its selected quantity.</p><div class="sec-h"><b>Available materials</b><span>'+availableMaterials.length+' types</span></div><div style="max-height:300px;overflow:auto">'+availableMaterialRows+'</div><label class="lab">Notes / pickup / destination</label><textarea id="dispatchMaterialNote" placeholder="Supplier, pickup point, required date, transport instructions…"></textarea></div>';
     return;
   }
   $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
@@ -657,13 +660,22 @@ $("aAdd").onclick=()=>{
   $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
 };
 $("out").addEventListener("click",async e=>{
-  const sendDriver=e.target.closest("#sendDriverDispatch"),sendMaterial=e.target.closest("#sendMaterialDispatch"),sendAllMaterial=e.target.closest("#sendAllMaterialDispatch");
-  if(sendDriver||sendMaterial||sendAllMaterial){
+  const oneMaterial=e.target.closest("[data-sendmaterial]");
+  if(oneMaterial){
+    const id=oneMaterial.dataset.sendmaterial,qty=oneMaterial.dataset.qty;
+    const chosen=(S.materials||[]).find(m=>String(m.id)===String(id));
+    const amount=prompt("Quantity to dispatch (available "+qty+" "+(chosen?.unit||"")+")",qty);
+    if(amount===null)return;
+    if(!(Number(amount)>0)||Number(amount)>Number(qty))return say("Enter a quantity within available stock.","bad");
+    busy("Sending material…");
+    const r=await api("/api/workshop/dispatch/send",{kind:"material",materialId:id,qty:amount,text:$("dispatchMaterialNote")?.value.trim()||""});
+    busy("");say(r.ok?r.message:(r.error||"Could not send material."),r.ok?"ok":"bad");return;
+  }
+  const sendDriver=e.target.closest("#sendDriverDispatch"),sendMaterial=e.target.closest("#sendMaterialDispatch");
+  if(sendDriver||sendMaterial){
     const kind=sendDriver?"driver":"material";
     const text=sendDriver?$("driverDispatchText").value.trim():$("dispatchMaterialNote").value.trim();
     const payload={kind,text};
-    if(sendMaterial){payload.materialId=$("dispatchMaterialSelect").value;payload.qty=$("dispatchMaterialQty").value;if(!payload.materialId||!(Number(payload.qty)>0))return say("Choose a material and enter a dispatch quantity.","bad");}
-    if(sendAllMaterial)payload.allAvailableMaterials=true;
     if(sendDriver){payload.customerId=$("driverCustomerSelect").value;payload.orderId=$("driverOrderSelect").value;payload.productId=$("driverProductSelect").value;if(!payload.customerId&&!payload.orderId&&!payload.productId&&!text)return say("Choose a customer, customer order or available product.","bad");}
     else{payload.allAvailableMaterials=true;if(!((S.materials||[]).some(m=>Number(m.qty)>0)))return say("There are no materials with available stock to send.","bad");}
     busy("Sending dispatch message…");const r=await api("/api/workshop/dispatch/send",payload);busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");return;
