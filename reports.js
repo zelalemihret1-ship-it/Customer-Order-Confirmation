@@ -152,13 +152,15 @@ function register(app, ctx) {
   const seqIndexOf = code => { const m = /^(O*)([A-DF-Z])(\d{1,2})$/i.exec(String(code || "").trim()); if (!m) return -1; const n = +m[3], L = SEQ_LETTERS.indexOf(m[2].toUpperCase()); if (n < 1 || n > SEQ_PER || L < 0) return -1; return m[1].length * SEQ_BLOCK + L * SEQ_PER + (n - 1); };
   const nextSeqCode = () => {
     let i = Math.max(+db.wsSeq || 0, db.products.reduce((mx, p) => Math.max(mx, seqIndexOf(p.code) + 1), 0));
-    while (codeTaken(seqCode(i))) i++;
+    const rs = reservedSet(); while (codeTaken(seqCode(i)) || rs.has(seqCode(i))) i++;
     db.wsSeq = i + 1; return seqCode(i);
   };
   // v159: preview the next n IDs without using them (shown in the Workshop list before it is sent)
+  let reservedFn = null; const reservedSet = () => { try { return reservedFn ? reservedFn() : new Set(); } catch { return new Set(); } };
   const peekSeqCodes = n => {
+    const rs = reservedSet();
     let i = Math.max(+db.wsSeq || 0, db.products.reduce((mx, p) => Math.max(mx, seqIndexOf(p.code) + 1), 0)); const out = [];
-    while (out.length < n) { const c = seqCode(i++); if (!codeTaken(c)) out.push(c); }
+    while (out.length < n) { const c = seqCode(i++); if (!codeTaken(c) && !rs.has(c)) out.push(c); }
     return out;
   };
   const addLog = (req, m, type, qty, balance, note) => {
@@ -806,6 +808,6 @@ function register(app, ctx) {
     return { ok: true, code: p.code };
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, peekSeqCodes, wsAddProduct, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, peekSeqCodes, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
