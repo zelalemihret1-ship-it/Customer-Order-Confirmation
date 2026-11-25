@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#0c3226">
-<title>Ambar Furniture — Workshop</title>
+<title>Ambar Furniture — Production & Dispatch</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
@@ -254,12 +254,12 @@ details.set{border-radius:var(--r)}
 <header>
   <div class="row1">
     <a class="back" href="/home.html"><svg class="i" style="width:16px;height:16px"><use href="#i-left"/></svg>Home</a>
-    <div class="ttl"><h1>Workshop</h1><div class="sub">Production tracking &amp; workshop orders</div></div>
+    <div class="ttl"><h1>Production &amp; Dispatch</h1><div class="sub">Workshop production, materials and driver coordination</div></div>
     <div class="logo">A</div>
   </div>
 </header>
 <main>
-  <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg" class="hint">The Workshop section is only for admins the main admin gave it to.</p></div>
+  <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg" class="hint">The Production &amp; Dispatch section is only for admins the main admin gave it to.</p></div>
   <div id="view" style="display:none">
     <div id="msg" class="msg"></div>
 
@@ -463,10 +463,11 @@ function pickedOrder(selId,typedId){const v=$(selId).value;if(v==="__typed"){con
 const wireOrderBox=(selId,typedId,sizeId)=>{$(selId).onchange=()=>{const t=$(selId).value==="__typed";$(typedId).style.display=t?"block":"none";if(t)$(typedId).focus();const p=pickedOrder(selId,typedId);if(p&&p.size&&!$(sizeId).value.trim())$(sizeId).value=p.size;};};
 function render(){
   renderSettings();
-  const tabs=[["m","box","Material",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
+  const tabs=[["m","box","Materials",(S.materials||[]).length],["d","send","Send & Dispatch",0],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length]];
   $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
   $("subWrap").style.display=tab==="s"?"block":"none";
   if(tab==="m"){$("out").innerHTML=matView();$("cusForm").style.display="none";$("basket").innerHTML="";return;}
+  if(tab==="d"){$("cusForm").style.display="none";$("basket").innerHTML="";$("out").innerHTML="<div class=\"card\"><h2>🚚 Driver dispatch</h2><p class=\"hint\">Send delivery or transport instructions to the saved Driver Telegram group/topic.</p><label class=\"lab\">Driver message</label><textarea id=\"driverDispatchText\" placeholder=\"Order ID, product, quantity, pickup point, destination, delivery date and driver instructions…\"></textarea><button class=\"btn block\" id=\"sendDriverDispatch\" type=\"button\">🚚 Send to driver</button></div><div class=\"card\"><h2>🧱 Material dispatch</h2><p class=\"hint\">Send material supply or transport instructions to the saved Material Telegram topic.</p><label class=\"lab\">Material / item</label><input id=\"dispatchMaterialName\" placeholder=\"Material name\"><div class=\"r2\"><div><label class=\"lab\">Quantity</label><input id=\"dispatchMaterialQty\" placeholder=\"e.g. 20\"></div><div><label class=\"lab\">Unit</label><input id=\"dispatchMaterialUnit\" placeholder=\"sheets, pcs, kg…\"></div></div><label class=\"lab\">Notes / pickup / destination</label><textarea id=\"dispatchMaterialNote\" placeholder=\"Supplier, pickup point, required date, transport instructions…\"></textarea><button class=\"btn block\" id=\"sendMaterialDispatch\" type=\"button\">🧱 Send material request</button></div>";return;}
   $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
   $("cusForm").style.display=tab==="s"&&sub==="cus"?"block":"none";
   let h="";
@@ -643,6 +644,14 @@ $("aAdd").onclick=()=>{
   $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
 };
 $("out").addEventListener("click",async e=>{
+  const sendDriver=e.target.closest("#sendDriverDispatch"),sendMaterial=e.target.closest("#sendMaterialDispatch");
+  if(sendDriver||sendMaterial){
+    const kind=sendDriver?"driver":"material";
+    const text=sendDriver?$("driverDispatchText").value.trim():["Material: "+$("dispatchMaterialName").value.trim(),"Quantity: "+$("dispatchMaterialQty").value.trim()+" "+$("dispatchMaterialUnit").value.trim(),"Notes: "+$("dispatchMaterialNote").value.trim()].filter(x=>!/:\s*$/.test(x)).join("\n");
+    if(!text)return say("Enter the dispatch details first.","bad");
+    if(sendMaterial&&!$("dispatchMaterialName").value.trim())return say("Enter the material name.","bad");
+    busy("Sending dispatch message…");const r=await api("/api/workshop/dispatch/send",{kind,text});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");return;
+  }
   const so=e.target.closest("button[data-sendorder],button[data-again]");
   if(so){const again=!!so.dataset.again,id=so.dataset.sendorder||so.dataset.again;busy("Sending to the workshop…");const r=await api("/api/workshop/send-order",{id,again});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
   const sp=e.target.closest("button[data-sendprod]");
