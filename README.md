@@ -1,3 +1,11 @@
+
+## v157 Workshop reset and live synchronization
+- Workshop queue now starts fresh at deployment cutover; older Workshop jobs remain stored but are hidden from the current board.
+- Orders queue shows only eligible orders created after the cutover timestamp.
+- Report Workflow products already linked to a Workshop job are removed from the Readymade send display and shown only in their current production stage.
+- Reports refreshes every 5 seconds and Workshop every 10 seconds while visible, so Telegram Sold Out/Restock and stage changes appear promptly.
+- Index page received responsive desktop/mobile layout polish.
+
 # v153 — Workshop → Finishing → Stock chain, orderable confirmed orders, fixed Telegram group picker
 - **Orders tab:** only orders the customer **CONFIRMED** and whose card was **DELIVERED** are listed and can be sent (button **Send** per order). Rejected, still-waiting and undelivered ("failed") orders are removed from the list, and the server refuses them too.
 - **Telegram group selection fixed:** two places per admin — **Workshop** and **Finishing** — each a group or one topic of a group. Pick from "My groups" (groups with topics are marked), then pick the topic **by name** from a real topic list (no more typing a topic number). A pasted link is checked: a message number in a normal link is no longer mistaken for a topic. New **Check the bot** and a test message that goes to both places.
