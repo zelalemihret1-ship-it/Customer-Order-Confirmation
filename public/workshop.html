@@ -266,11 +266,11 @@ details.set{border-radius:var(--r)}
     <details class="card set" id="setBox">
       <summary>
         <div class="ico"><svg class="i"><use href="#i-gear"/></svg></div>
-        <div class="st"><b>Workshop, finishing &amp; stock places</b><span id="setSum">Loading…</span></div>
+        <div class="st"><b>Workshop, finishing, stock &amp; driver places</b><span id="setSum">Loading…</span></div>
         <svg class="i chev"><use href="#i-chev"/></svg>
       </summary>
       <div class="body">
-        <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>three places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> posts the product in your selected <b>Stock group</b>, where you can mark it Sold Out or Restock.</div>
+        <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>three places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> posts the product in your selected <b>Stock group</b>, where you can mark it Sold Out or Restock. The optional <b>🚚 Driver</b> place (a group + its Driver topic) receives a <b>finished order</b> — or a <b>sold readymade product</b> — when you press <b>🚚 Send to driver</b>.</div>
         <div class="hint">The jobs are posted by the <b>AMBAR bot</b> (it must be a member — better an admin — of the group, so the buttons work).</div>
         <div id="senderLine" class="hint"></div>
         <div id="slots"></div>
@@ -304,7 +304,7 @@ details.set{border-radius:var(--r)}
       <label class="lab">Measurement</label>
       <input type="text" id="uSize" placeholder="e.g. 120 × 40 × 90" autocomplete="off">
       <label class="lab">Which order is it for? (optional — its Order ID goes to the workshop)</label>
-      <select id="uOrder"></select><input type="text" id="uOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px">
+      <select id="uOrder"></select><input type="text" id="uOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"><label class="lab">Color (choose or type)</label><input type="text" id="uColor" list="colorList" placeholder="e.g. Walnut" autocomplete="off">
       <label class="lab">Additional notes (optional)</label>
       <textarea id="uNote" placeholder="Material, colour, handle, anything the workshop must know…"></textarea>
       <div id="uMsg" class="msg" style="margin-top:12px"></div>
@@ -337,7 +337,7 @@ details.set{border-radius:var(--r)}
   <div style="display:flex;gap:12px;align-items:center"><img id="aImg" alt="" style="width:76px;height:76px;border-radius:16px;object-fit:cover;background:#ece7da"><div><h2 id="aName" style="margin:0">Product</h2><div class="hint" style="margin:2px 0 0" id="aType">Choose quantity, measurement and type</div></div></div>
   <label class="lab">Order or Readymade</label>
   <div class="tog"><button type="button" id="kOrder" data-k="order"><svg class="i"><use href="#i-box"/></svg>Order</button><button type="button" id="kReady" data-k="readymade"><svg class="i"><use href="#i-sofa"/></svg>Readymade</button></div>
-  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select><input type="text" id="aOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"></div>
+  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select><input type="text" id="aOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"><label class="lab">Color (choose or type)</label><input type="text" id="aColor" list="colorList" placeholder="e.g. Walnut" autocomplete="off"></div><datalist id="colorList"><option value="Black"><option value="White"><option value="Brown"><option value="Walnut"><option value="Oak"><option value="Grey"><option value="Beige"><option value="Cream"><option value="Natural wood"><option value="Gold"><option value="Silver"><option value="Blue"><option value="Green"><option value="Red"></datalist>
   <label class="lab">Quantity</label>
   <div class="qty"><button type="button" id="qMinus">−</button><input type="number" id="aQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="qPlus">+</button></div>
   <div class="idbox" id="aIdBox"><div class="idh">🔖 Product IDs <span id="aIdN"></span></div><div class="ids" id="aIds"></div><div class="hint" style="margin:6px 0 0">Each unit gets its own ID automatically.</div></div>
@@ -381,7 +381,7 @@ const typeSet=(id,otherId,t)=>{t=t||"";const k=PTYPES.includes(t);$(id).value=t?
 const typeWire=(id,otherId)=>$(id).addEventListener("change",()=>{const o=$(id).value==="__other";$(otherId).style.display=o?"block":"none";if(o)$(otherId).focus();});
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ic=(n,st)=>'<svg class="i"'+(st?' style="'+st+'"':"")+'><use href="#i-'+n+'"/></svg>';
-let S={settings:{workshop:null,finishing:null,stock:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
+let S={settings:{workshop:null,finishing:null,stock:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,drv=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
 const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
 const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
 const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
@@ -398,11 +398,11 @@ function renderSettings(){
   const st=S.sender||{};
   $("senderLine").innerHTML=st.ready?'<span class="pill ok">● Your Telegram account is connected'+(st.label?" · "+esc(st.label):"")+'</span> <span style="display:block;margin-top:4px">It is used to list your groups and topics.</span>':'<span class="pill wait">● Your Telegram account is not connected</span> <span style="display:block;margin-top:6px">You can still paste a group / topic link. To pick from your groups and topics, connect it: Settings → Connect my Telegram account.</span>';
   const slot=(cls,icon,label,g,role)=>'<div class="slot '+cls+'"><div class="si">'+icon+'</div><div class="sm"><b>'+label+'</b>'+(g?'<span>'+esc(tName(g))+'</span>':'<span class="none">Not chosen yet</span>')+'</div><div class="sb"><button class="btn sec sm" type="button" data-pick="'+role+'">'+(g?"Change":"Choose")+'</button>'+(g?'<button class="btn sec sm" type="button" data-clear="'+role+'">Clear</button>':"")+'</div></div>';
-  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock");
+  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock")+slot("stock","🚚","Driver (optional)",drv,"driver");
   document.querySelectorAll(".mode").forEach(l=>{const on=l.dataset.m===mode;l.classList.toggle("on",on);l.querySelector("input").checked=on;});
   const sv=S.settings||{};
-  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||mode!==sv.mode;
-  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(dirty?" · not saved":"");
+  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||!sameP(drv,sv.driver)||mode!==sv.mode;
+  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(sv.driver?" · 🚚 "+tName(sv.driver):"")+(dirty?" · not saved":"");
 }
 const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="workshop"?'<span class="pill wait">🛠 In workshop</span>':j.stage==="finishing"?'<span class="pill blue">🪚 In finishing</span>':'<span class="pill ok">✅ Finished · in stock</span>';
 const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
@@ -479,7 +479,7 @@ function render(){
     const inW=S.jobs.filter(j=>j.stage==="workshop"),inF=S.jobs.filter(j=>j.stage==="finishing");
     h='<div class="sec-h"><b>🛠 In workshop</b><span>'+inW.length+'</span></div>'+(inW.map(j=>jobCard(j,'<div class="act"><button class="btn sm" type="button" data-jws="'+esc(j.id)+'">Finished workshop</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in the workshop.</div>')
       +'<div class="sec-h" style="margin-top:14px"><b>🪚 In finishing</b><span>'+inF.length+'</span></div>'+(inF.map(j=>jobCard(j,'<div class="act"><button class="btn gold sm" type="button" data-jfin="'+esc(j.id)+'">✅ Finished</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in finishing.</div>')
-      +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,'<div class="act">'+(j.stockState==="sold"?'<button class="btn gold sm" type="button" data-restockjob="'+esc(j.id)+'">♻️ Restock</button>':'<button class="btn sec sm" type="button" data-soldjob="'+esc(j.id)+'">🔴 Sold Out</button>')+'</div>')).join(""):"");
+      +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,'<div class="act">'+(j.stockState==="sold"?'<button class="btn gold sm" type="button" data-restockjob="'+esc(j.id)+'">♻️ Restock</button>':'<button class="btn sec sm" type="button" data-soldjob="'+esc(j.id)+'">🔴 Sold Out</button>')+(j.driverAt?'<span class="pill ok">🚚 Sent to driver</span>':((j.ordered||j.stockState==="sold")?'<button class="btn sm" type="button" data-driverjob="'+esc(j.id)+'">🚚 Send to driver</button>':""))+'</div>')).join(""):"");
   }else if(sub==="std"){
     // v159: ANY admin with the Workshop section can add / change standard products (the input is always visible)
     const addBtn=(txt)=>'<button class="btn gold" type="button" data-new="1">'+ic("plus")+txt+'</button>';
@@ -495,7 +495,7 @@ function render(){
   const uo=$("uOrder"),cur=uo.value;
   const uoKeep=uo.value;uo.innerHTML=orderOpts("No order — new design only");if([...uo.options].some(x=>x.value===uoKeep))uo.value=uoKeep;
   uo.value=[...uo.options].some(x=>x.value===cur)?cur:"";
-  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+(l.ptype?'<b style="color:var(--ink)">'+esc(l.ptype)+'</b> · ':"")+esc(l.size)+'</div><div class="ids" data-i="'+i+'"></div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
+  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+(l.ptype?'<b style="color:var(--ink)">'+esc(l.ptype)+'</b> · ':"")+esc(l.size)+'</div><div class="ids" data-i="'+i+'"></div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.color?'<div class="meta">🎨 '+esc(l.color)+'</div>':"")+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
   loadBasketIds();loadOrderIds();if(tab==="s"&&sub==="cus")pvU();
   const logMode=$("logFilter")?.value||"all", shown=(S.log||[]).filter(l=>logMode==="all"||(logMode==="success"&&l.ok)||(logMode==="failed"&&!l.ok));
   $("log").innerHTML=shown.map(l=>'<div>'+(l.ok?"✅":"❌")+' <b>'+esc(l.what)+'</b><div class="meta">'+esc(l.at)+' · '+esc(l.by||"Admin")+(l.error?' — '+esc(l.error):"")+'</div></div>').join("")||'<div class="hint">No sends in this selection.</div>';
@@ -532,15 +532,15 @@ document.addEventListener("click",e=>{const b=e.target.closest("#seg button[data
 $("subSeg").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
 document.querySelectorAll(".mode").forEach(l=>l.addEventListener("click",()=>{mode=l.dataset.m;renderSettings();}));
 $("slots").addEventListener("click",e=>{
-  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else stock=null;renderSettings();return;}
+  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else if(c.dataset.clear==="driver")drv=null;else stock=null;renderSettings();return;}
   const p=e.target.closest("button[data-pick]");if(p)openPick(p.dataset.pick);
 });
 function setPlace(g){
-  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else stock=g;
+  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else if(pickRole==="driver")drv=g;else stock=g;
   $("pickOv").classList.remove("on");renderSettings();say("Place chosen — press Save settings to keep it.","info");
 }
 async function openPick(role){
-  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":"Choose the STOCK place";
+  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":role==="driver"?"Choose the DRIVER place (group + Driver topic)":"Choose the STOCK place";
   $("pickStep1").style.display="block";$("pickStep2").style.display="none";$("pickSearch").value="";$("linkIn").value="";
   $("pickList").innerHTML='<div class="hint">Reading your Telegram groups…</div>';$("pickOv").classList.add("on");
   const d=await api("/api/workshop/dialogs",{});
@@ -583,24 +583,24 @@ $("linkGo").onclick=async()=>{
 $("pickClose").onclick=()=>$("pickOv").classList.remove("on");
 const botReport=d=>(d.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.label+(c.ok?" — the bot can post":" — "+c.error)).join("  ·  ")||(d.error||"");
 async function checkBot(quiet){
-  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin,stock});
+  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin,stock,driver:drv});
   const t=botReport(d)||"";$("botLine").innerHTML=t?'<span class="pill '+(d.ok?"ok":"bad")+'" style="white-space:normal">'+esc(t)+'</span>'+(d.ok||!d.bot?"":'<span style="display:block;margin-top:6px">Open the group → Add members → <b>@'+esc(d.bot)+'</b>, then make it an admin.</span>'):"";
   if(!quiet)say(d.ok?"✅ The bot can post in both places.":(t||"The bot check failed."),d.ok?"ok":"bad");
   return d;
 }
 $("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
 $("saveBtn").onclick=async()=>{
-  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,mode});
-  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode;}
+  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,mode});
+  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;mode=S.settings.mode;}
   say(d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");render();
   if(d.ok&&ws&&fin){const c=await checkBot(true);if(!c.ok)say((d.message||"")+" ⚠ "+botReport(c),"bad");}
   busy("");
 };
 $("testBtn").onclick=async()=>{
   busy("Sending a test message…");
-  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,mode});
+  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,mode});
   if(!sv.ok){busy("");return say(sv.error||"Could not save the places first.","bad");}
-  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode;
+  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;mode=S.settings.mode;
   const d=await api("/api/workshop/test",{});busy("");render();
   say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
 };
@@ -610,7 +610,7 @@ let aKind="readymade";
 function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";}
 function openAdd(id){
   const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
-  $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aType").textContent=p.ptype?"Product type: "+p.ptype:"Choose quantity and measurement";$("aQty").value=1;$("aSize").value="";$("aNote").value="";say2("aMsg","");
+  $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aType").textContent=p.ptype?"Product type: "+p.ptype:"Choose quantity and measurement";$("aQty").value=1;$("aSize").value="";$("aNote").value="";$("aColor").value="";say2("aMsg","");
   $("aSizes").innerHTML=(p.sizes||[]).map(z=>'<button type="button" class="sz" data-z="'+esc(z)+'">'+esc(z)+'</button>').join("")||'<div class="hint">No standard measurement saved — type it below.</div>';
   $("aOrder").innerHTML=orderOpts("— choose the order —");$("aOrderTyped").value="";$("aOrderTyped").style.display="none";
   setKind("readymade");$("addOv").classList.add("on");pvA();
@@ -628,7 +628,7 @@ $("aAdd").onclick=()=>{
   if(!(qty>=1))return say2("aMsg","Choose the quantity.");
   if(!size)return say2("aMsg","Choose or type the measurement.");
   let o=null;if(aKind==="order"){o=pickedOrder("aOrder","aOrderTyped");if(!o)return say2("aMsg","Choose which order this product belongs to, or type the order ID.");}
-  basket.push({pid:curP.id,ptype:curP.ptype||"",name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
+  basket.push({pid:curP.id,ptype:curP.ptype||"",name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,color:aKind==="order"?$("aColor").value.trim():"",orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
   $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
 };
 $("out").addEventListener("click",async e=>{
@@ -642,6 +642,7 @@ $("out").addEventListener("click",async e=>{
   const jf=e.target.closest("button[data-jfin]");
   if(jf){busy("Moving to stock…");const r=await api("/api/workshop/job/finish",{id:jf.dataset.jfin});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
   const sold=e.target.closest("button[data-soldjob]");if(sold){busy("Marking Sold Out…");const r=await api("/api/workshop/job/sold-out",{id:sold.dataset.soldjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
+  const drvb=e.target.closest("button[data-driverjob]");if(drvb){busy("Sending to the driver…");const r=await api("/api/workshop/job/send-driver",{id:drvb.dataset.driverjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
   const restock=e.target.closest("button[data-restockjob]");if(restock){busy("Restocking…");const r=await api("/api/workshop/job/restock",{id:restock.dataset.restockjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
   if(e.target.closest("[data-new]"))return openCat("");
   const ed=e.target.closest("button[data-edit]");if(ed){e.stopPropagation();return openCat(ed.dataset.edit);}
@@ -666,9 +667,9 @@ $("uAdd").onclick=()=>{
   if(basket.length>=20)return say2("uMsg","The list is full (20 products). Send it first.");
   if($("uOrder").value==="__typed"&&!$("uOrderTyped").value.trim())return say2("uMsg","Type the order ID, or choose “No order”.");
   const o=pickedOrder("uOrder","uOrderTyped");
-  basket.push({custom:true,ptype,name,photoData:uPhoto,qty,size,note,kind:"order",orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
+  basket.push({custom:true,ptype,name,photoData:uPhoto,qty,size,note,kind:"order",color:$("uColor").value.trim(),orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
   uPhoto="";$("uImg").style.display="none";$("uImg").removeAttribute("src");$("uDropT").textContent="Tap to add the photo";
-  typeSet("uType","uTypeO","");$("uName").value="";$("uQty").value=1;$("uSize").value="";$("uNote").value="";$("uOrder").value="";$("uOrderTyped").value="";$("uOrderTyped").style.display="none";say2("uMsg","");
+  typeSet("uType","uTypeO","");$("uName").value="";$("uQty").value=1;$("uSize").value="";$("uNote").value="";$("uColor").value="";$("uOrder").value="";$("uOrderTyped").value="";$("uOrderTyped").style.display="none";say2("uMsg","");
   render();say("New design added to your list — add more, or press Send list to workshop.","info");
 };
 
@@ -678,7 +679,7 @@ $("basket").addEventListener("click",async e=>{
   if(e.target.closest("#bClear")){basket=[];render();return;}
   if(e.target.closest("#bSend")){
     busy("Sending to the workshop…");
-    const r=await api("/api/workshop/send-items",{items:basket.map(l=>l.custom?{custom:true,ptype:l.ptype,name:l.name,photoData:l.photoData,qty:l.qty,size:l.size,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note}:{pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note})});busy("");
+    const r=await api("/api/workshop/send-items",{items:basket.map(l=>l.custom?{custom:true,ptype:l.ptype,name:l.name,photoData:l.photoData,qty:l.qty,size:l.size,color:l.color,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note}:{pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,color:l.color,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note})});busy("");
     say(r.ok?(r.message||"✅ Sent.")+(results(r)?" ⚠ "+results(r):""):(r.error||"Could not send.")+(results(r)?" "+results(r):""),r.ok?"ok":"bad");
     if(r.ok)basket=[];render();
   }
@@ -720,7 +721,7 @@ $("cDel").onclick=async()=>{
   $("view").style.display="block";
   const d=await api("/api/workshop/state");
   if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
-  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
+  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
   render();
 })();
 document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
