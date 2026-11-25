@@ -1,3 +1,9 @@
+## v164 Color, Send to driver, hide finished orders
+- "Which order?" lists only UNFINISHED orders: an order whose products are all finished (or already sent to the driver) is not shown any more.
+- Add sheet (when Order is chosen) and Custom product have a Color box: choose from the list or type any color. It is written in the workshop message under ADDITIONAL TEXTS.
+- New optional DRIVER place in the Workshop settings (group + its Driver topic), like Workshop / Finishing / Stock.
+- Finished ORDER → Stock post gets "🚚 Send to driver". READYMADE → after "🔴 Sold Out" the post gets "🚚 Send to driver" (not before). The same button is in Progress → Finished lately. The driver post has AMBAR FURNITURE, bold Product ID-Model, Order ID, measurement, quantity and (for orders) customer name, phone, location and delivery date. Sent once only.
+
 ## v163 "Which order?" shows all orders + typed order ID
 - The "Which order?" box (Add sheet and Custom product) now lists ALL your orders (any status, even already sent), and has "✍ Type the order ID…" to type one by hand.
 - The order ID (chosen or typed) is written in the workshop Telegram message as "Order ID: …" under the bold Product ID-Model lines.
