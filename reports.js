@@ -523,8 +523,8 @@ function register(app, ctx) {
   // MATERIAL: new · add · cut   (Material · Type · Unit · Available · Opening stock · daily use · Total used · Note)
   const matKey = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase();
   const matName = m => m.name + (m.type ? " " + m.type : "");
-  const H = {}; // handlers reused by the Workshop section (same materials, same log)
-  router.post("/material/add", H.add = (req, res) => {
+  const H = {}; // v162: material ADD / CUT exist only for the Workshop section (no Reports route any more); same materials, same log
+  H.add = (req, res) => {
     const b = req.body || {}, name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || (groupsOrdered()[1] || groupsOrdered()[0] || MAT_G2);
     if (!name) return fail(res, "Write the material name.");
     if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists. Use ➕ Add on it.`);
@@ -536,8 +536,8 @@ function register(app, ctx) {
     addLog(req, m, "new", qty, qty, clip(b.note, 200) || "New material");
     audit("Report: material added", `${matName(m)} ${qty} ${unit}`, req.actor);
     done(res, `✅ ${matName(m)} added.`);
-  });
-  router.post("/material/move", H.move = (req, res) => {
+};
+  H.move = (req, res) => {
     const b = req.body || {}, m = findM(b.id), type = b.type === "cut" ? "cut" : "add";
     if (!m) return fail(res, "Material not found.");
     const qty = num(b.qty);
@@ -547,7 +547,7 @@ function register(app, ctx) {
     addLog(req, m, type, qty, m.qty, b.note);
     audit("Report: material " + type, `${matName(m)} ${qty} → ${m.qty}`, req.actor);
     done(res, type === "cut" ? `✂️ Cut ${qty} of ${matName(m)}. Left: ${m.qty}.` : `➕ Added ${qty} to ${matName(m)}. Now: ${m.qty}.`);
-  });
+};
   // STOCK EDIT (correction): wrong quantity typed by mistake → set the real quantity. Recorded as a "fix" movement (signed difference) with the reason.
   router.post("/material/correct", (req, res) => {
     const b = req.body || {}, m = findM(b.id);
