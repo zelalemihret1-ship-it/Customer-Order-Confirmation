@@ -430,7 +430,9 @@ function register(app, ctx) {
       // Once sent to the workshop, remove the order from this sending queue permanently.
       // This also hides older orders that were already sent before this update.
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
-      allOrders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && !orderDone(o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 400).map(o => compactOrder(o, actor)), // v163: the "Which order?" list shows ALL orders
+      allOrders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && !orderDone(o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 400).map(o => compactOrder(o, actor)), // v163: the "Which order?" list shows ALL orders,
+      // v169: Driver dispatch can target every saved customer, including customers without orders.
+      customers: (() => { const records = typeof ctx.getCustomerRecords === "function" ? ctx.getCustomerRecords() : []; const tg = typeof ctx.getCustomers === "function" ? ctx.getCustomers() : []; const byId = new Map(); for (const c of records || []) { const id = String(c.telegramId || c.id || ""); byId.set(id || "record:" + c.id, { id: String(c.id || id), telegramId: id, name: clip(c.name, 120), phone: clip(c.phone || c.additionalPhone, 40), location: clip(c.location, 240), customerType: clip(c.customerStatus || "Customer", 40), username: clip(c.username, 80), source: clip(c.source, 40), additionalPhone: clip(c.additionalPhone, 40), lastConversation: clip(c.lastConversation, 500), photo: c.photo || c.photoId || "", interests: Array.isArray(c.interests) ? c.interests : [], customerCode: clip(c.id, 40) }); } for (const c of tg || []) { const id = String(c.id || ""); if (!byId.has(id)) byId.set(id, { id, telegramId: id, name: clip(c.name || c.first_name, 120), username: c.username ? "@" + clip(c.username, 60) : "", customerType: "Telegram contact", phone: "", location: "" }); else { const v = byId.get(id); if (!v.name) v.name = clip(c.name || c.first_name, 120); if (!v.username && c.username) v.username = "@" + clip(c.username, 60); } } return [...byId.values()].filter(c => c.name || c.phone || c.username).slice(0, 1000); })(),
       readymade: inProg,
       // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
       // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
@@ -595,12 +597,31 @@ function register(app, ctx) {
     let message = String(req.body?.text || "").trim().slice(0, 3000);
     if (!message && !req.body?.orderId && !req.body?.materialId) return res.status(400).json({ ...view(req.actor), ok: false, error: "Select an order or enter dispatch details." });
     let media = null;
+    if (kind === "driver" && req.body?.customerId) {
+      const customerId = String(req.body.customerId);
+      const records = typeof ctx.getCustomerRecords === "function" ? ctx.getCustomerRecords() : [];
+      const tg = typeof ctx.getCustomers === "function" ? ctx.getCustomers() : [];
+      const rec = (records || []).find(c => String(c.id) === customerId || String(c.telegramId || "") === customerId);
+      const contact = (tg || []).find(c => String(c.id) === customerId);
+      if (!rec && !contact) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer was not found in the customer directory." });
+      const customer = rec || {};
+      const tgCustomer = contact || {};
+      const name = customer.name || tgCustomer.name || tgCustomer.first_name || "Customer";
+      const phone = customer.phone || customer.additionalPhone || "";
+      const location = customer.location || "";
+      const username = customer.username || (tgCustomer.username ? "@" + tgCustomer.username : "");
+      const customerType = customer.customerStatus || "Telegram contact";
+      const details = [["Customer", name], ["Customer ID", customer.id || customerId], ["Type / Status", customerType], ["Phone", phone], ["Additional phone", customer.additionalPhone], ["Telegram", username], ["Location", location], ["Source", customer.source], ["Last conversation", customer.lastConversation], ["Interested products", Array.isArray(customer.interests) ? customer.interests.join(", ") : ""]].filter(x => clip(x[1], 500));
+      message += "\n\n" + details.map(([k,v]) => `${k}: ${clip(v,500)}`).join("\n");
+      if (location) { const mapUrl = /^https?:\/\//i.test(location) ? location : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(location); message += `\nLocation map: ${mapUrl}`; }
+      if (customer.photo || customer.photoId) media = await photoBuf(customer.photo || customer.photoId);
+    }
     if (kind === "driver" && req.body?.productId) {
       const cat = db.catalog.find(p => String(p.id) === String(req.body.productId));
       const live = (typeof R().inProgress === "function" ? R().inProgress() : []).find(p => String(p.id) === String(req.body.productId));
       const chosen = cat || live;
       if (!chosen) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected available product was not found." });
-      message += `\n\nSelected product: ${clip(chosen.name || chosen.model || chosen.desc || chosen.code, 120)}`;
+      const productIdLabel = clip(chosen.code || chosen.productId || chosen.id, 60); const modelLabel = clip(chosen.model || chosen.desc || chosen.name || chosen.ptype, 100); message += `\n\nAvailable product\nProduct ID: ${productIdLabel}\nModel: ${modelLabel}\nProduct: ${clip(chosen.name || chosen.model || chosen.desc || chosen.code, 120)}`;
       if (cat?.photo) media = await photoBuf(cat.photo);
       else if (chosen.photo) media = await orderPhotoBuf({ photo: chosen.photo });
     }
