@@ -33,7 +33,7 @@ function register(app, ctx) {
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
   const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], senders: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
-  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, savedAt: "", tg: { ...TG0 } };
+  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, materialCutRequests: [], savedAt: "", tg: { ...TG0 } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
   const nowEth = () => {
@@ -63,7 +63,7 @@ function register(app, ctx) {
     }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
     if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { products: [], materials: [], log: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { products: [], materials: [], log: [], materialCutRequests: [], savedAt: "", ...d };
     db.tg = { ...TG0, ...(db.tg || {}) };
     if (!Array.isArray(db.tg.targets)) db.tg.targets = [];
     if (Array.isArray(db.tg.channels) && db.tg.channels.length) { for (const u of db.tg.channels) if (!db.tg.targets.some(x => x.chat === u)) db.tg.targets.push({ chat: u, title: "@" + u, topic: 0, topicTitle: "" }); db.tg.channels = []; }
@@ -72,6 +72,7 @@ function register(app, ctx) {
     if (!db.tg.senders.length && db.tg.sendAs) db.tg.senders = [{ id: String(db.tg.sendAs), time: db.tg.time || "08:00", lastDate: db.tg.lastDate || "" }];
     for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
+    if (!Array.isArray(db.materialCutRequests)) db.materialCutRequests = [];
     layoutMaterials();
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
@@ -795,6 +796,51 @@ function register(app, ctx) {
     return { ok: true, code: p.code };
   }
   // v161: the Workshop "Material" tab uses the SAME materials and log as Reports → Material
+  // v165: material cuts requested from Workshop require main-admin approval.
+  function wsCutRequests() {
+    return db.materialCutRequests.filter(x => x.status === "pending").slice().reverse().map(x => ({ ...x }));
+  }
+  function wsRequestCut(body, actor) {
+    const m = findM(body?.id);
+    if (!m) return { ok: false, error: "Material not found." };
+    const qty = num(body?.qty);
+    if (Number.isNaN(qty) || qty <= 0) return { ok: false, error: "Write a quantity bigger than 0." };
+    if (qty > m.qty) return { ok: false, error: `Only ${m.qty} left of ${matName(m)}. You cannot request ${qty}.` };
+    const req = {
+      id: uid(), materialId: m.id, material: m.name, mtype: m.type || "", unit: m.unit || "pcs",
+      qty, before: m.qty, after: Math.round((m.qty - qty) * 1000) / 1000,
+      note: clip(body?.note, 200), by: clip(actor?.name || "Admin", 60),
+      telegramId: String(actor?.telegramId || ""), created: stamp({ actor }),
+      status: "pending", decidedBy: "", decidedAt: "", decisionNote: ""
+    };
+    db.materialCutRequests.push(req);
+    audit("Report: material cut requested", `${matName(m)} ${qty} ${m.unit || "pcs"} — pending main-admin approval`, actor);
+    persist();
+    return { ok: true, request: req, message: `✂️ Cut request submitted for ${matName(m)}: ${qty} ${m.unit || "pcs"}. Waiting for main admin approval.` };
+  }
+  function wsApproveCut(id, approve, actor, note) {
+    const r = db.materialCutRequests.find(x => String(x.id) === String(id));
+    if (!r) return { ok: false, error: "Cut request not found." };
+    if (r.status !== "pending") return { ok: false, error: "This cut request was already decided." };
+    const m = findM(r.materialId);
+    if (!m) { r.status = "rejected"; r.decidedBy = clip(actor?.name || "Main admin", 60); r.decidedAt = stamp({ actor }); persist(); return { ok: false, error: "Material no longer exists." }; }
+    r.decidedBy = clip(actor?.name || "Main admin", 60);
+    r.decidedAt = stamp({ actor }); r.decisionNote = clip(note, 200) || "";
+    if (!approve) {
+      r.status = "rejected";
+      audit("Report: material cut rejected", `${matName(m)} ${r.qty} ${m.unit || "pcs"}`, actor);
+      persist();
+      return { ok: true, request: r, message: `❌ Cut request rejected: ${matName(m)} ${r.qty} ${m.unit || "pcs"}.` };
+    }
+    if (r.qty > m.qty) { r.status = "rejected"; persist(); return { ok: false, error: `Stock changed. Only ${m.qty} ${m.unit || "pcs"} remains.` }; }
+    const old = m.qty;
+    m.qty = Math.round((m.qty - r.qty) * 1000) / 1000;
+    r.before = old; r.after = m.qty; r.status = "approved";
+    addLog({ body: {}, actor }, m, "cut", r.qty, m.qty, r.note || "Approved cut request");
+    audit("Report: material cut approved", `${matName(m)} ${r.qty} → ${m.qty}`, actor);
+    persist(); scheduleBackup(1500);
+    return { ok: true, request: r, message: `✅ Cut approved: ${matName(m)} ${r.qty} ${m.unit || "pcs"}. Left: ${m.qty}.` };
+  }
   const wsMaterials = () => ({ materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })), groups: groupsOrdered() });
   function wsMaterial(kind, body, byName) {
     let out = { ok: false, error: "Unknown material action." };
@@ -803,6 +849,6 @@ function register(app, ctx) {
     return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, peekSeqCodes, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
