@@ -595,7 +595,7 @@ function register(app, ctx) {
     const target = settingsOf(keyOf(req.actor))[kind];
     if (!target) return res.status(400).json({ ...view(req.actor), ok: false, error: `The ${kind.toUpperCase()} Telegram topic is not selected. Choose it in Production & Dispatch settings and save first.` });
     let message = String(req.body?.text || "").trim().slice(0, 3000);
-    if (!message && !req.body?.orderId && !req.body?.materialId) return res.status(400).json({ ...view(req.actor), ok: false, error: "Select an order or enter dispatch details." });
+    if (!message && !req.body?.orderId && !req.body?.materialId && !req.body?.allAvailableMaterials) return res.status(400).json({ ...view(req.actor), ok: false, error: "Select an order, choose all available materials, or enter dispatch details." });
     let media = null;
     if (kind === "driver" && req.body?.customerId) {
       const customerId = String(req.body.customerId);
@@ -635,7 +635,13 @@ function register(app, ctx) {
       if (mapUrl) message += `\nLocation map: ${mapUrl}`;
       media = await orderPhotoBuf(order);
     }
-    if (kind === "material" && req.body?.materialId) {
+    if (kind === "material" && req.body?.allAvailableMaterials) {
+      const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
+      const available = inventory.filter(m => Number(m.qty) > 0);
+      if (!available.length) return res.status(400).json({ ...view(req.actor), ok: false, error: "There are no materials with available stock to send." });
+      const rows = available.map((m, i) => `${i + 1}. ${clip(m.name, 120)}${m.type ? " " + clip(m.type, 80) : ""} — ${clip(String(m.qty), 40)} ${clip(m.unit || "", 30)}`);
+      message = `ALL AVAILABLE WORKSHOP MATERIALS\nTotal material types: ${available.length}\n\n${rows.join("\n")}` + (message ? `\n\nNotes / dispatch instructions: ${message}` : "");
+    } else if (kind === "material" && req.body?.materialId) {
       const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
       const item = inventory.find(m => String(m.id) === String(req.body.materialId));
       if (!item) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected material was not found in current inventory." });
@@ -644,7 +650,19 @@ function register(app, ctx) {
       message = `Material: ${item.name}${item.type ? " " + item.type : ""}\nRequested quantity: ${qty} ${item.unit}\nAvailable stock: ${item.qty} ${item.unit}` + (message ? `\nNotes: ${message}` : "");
     }
     try {
-      await userPost(req.actor, target, media, `<b>AMBAR FURNITURE</b>\n${kind === "driver" ? "🚚 <b>DRIVER DISPATCH</b>" : "🧱 <b>MATERIAL DISPATCH</b>"}\n\n${esc(message)}\n\nSent by: ${esc(req.actor?.name || "Admin")}`, true);
+      const title = kind === "driver" ? "🚚 DRIVER DISPATCH" : "🧱 MATERIAL DISPATCH";
+      const lines = String(message).split("\n");
+      const parts = []; let part = "";
+      for (const line of lines) {
+        if (part && (part.length + line.length + 1) > 3400) { parts.push(part); part = ""; }
+        part += (part ? "\n" : "") + line;
+      }
+      if (part || !parts.length) parts.push(part);
+      for (let i = 0; i < parts.length; i++) {
+        const continuation = parts.length > 1 ? `\nPART ${i + 1}/${parts.length}` : "";
+        const caption = `<b>AMBAR FURNITURE</b>\n<b>${esc(title)}</b>${continuation}\n\n${esc(parts[i])}\n\nSent by: ${esc(req.actor?.name || "Admin")}`;
+        await userPost(req.actor, target, null, caption, true);
+      }
       log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, true, "Sent to the selected Telegram topic.");
       return res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "driver" ? "Driver" : "Material"} dispatch sent to the selected Telegram topic.` });
     } catch (e) {
