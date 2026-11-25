@@ -221,7 +221,7 @@ function register(app, ctx) {
     } else if (typeof R().wsAddProduct === "function") {
       const n = Math.max(1, Math.min(spec.qty || 1, 100));
       for (let i = 0; i < n; i++) {
-        const p = await R().wsAddProduct({ model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), seqId: !!spec.standard && spec.kind !== "order", orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
+        const p = await R().wsAddProduct({ model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), seqId: true, orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
         j.productIds.push(p.id); j.codes.push(p.code);
       }
     }
@@ -519,6 +519,11 @@ function register(app, ctx) {
     res.json({ ...view(req.actor), message: "🗑 Standard product removed." });
   });
   // the basket: [{ pid, qty, size, kind: "order" | "readymade", orderId (internal id, only for kind=order), note }] — every line becomes its own job
+  router.post("/preview-ids", (req, res) => { // v159: the Product IDs the list will receive (in list order, one per unit)
+    const counts = (Array.isArray(req.body?.counts) ? req.body.counts : []).slice(0, 40).map(n => Math.max(1, Math.min(100, Math.floor(Number(n)) || 1)));
+    const all = typeof R().peekSeqCodes === "function" ? R().peekSeqCodes(counts.reduce((a, b) => a + b, 0)) : [];
+    let k = 0; res.json({ ok: true, codes: counts.map(n => all.slice(k, (k += n))) });
+  });
   router.post("/send-items", async (req, res) => {
     const key = keyOf(req.actor), s = settingsOf(key);
     if (!s.workshop || !s.finishing) return res.json({ ok: false, error: "First choose the WORKSHOP and the FINISHING place (Settings above)." });
