@@ -788,3 +788,9 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - Workshop Orders hide jobs already finished and in stock; My Last Sends can be filtered by result.
 - Reports stock actions use Sold Out and Restock; restocking returns the item to In Stock with an audit-history entry.
 - Reports product deletion is Main Admin-only and synchronizes removal from Workshop job lists.
+
+
+# v158 — Workshop Telegram messages sent by admin accounts
+- Workshop, finishing and stock Telegram posts are sent by the admin’s connected Telegram account, not by the AMBAR bot.
+- Telegram inline bot buttons are not used for these posts; stage transitions remain available in the Workshop Mini App.
+- Each admin must connect their own Telegram account and have access to their selected groups/topics.
