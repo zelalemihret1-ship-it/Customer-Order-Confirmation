@@ -22,7 +22,7 @@ function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop-data.json");
-  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
+  let db = { admins: {}, sent: {}, jobs: {}, dispatches: {}, log: [], catalog: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
 
   // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
   let chain = Promise.resolve();
@@ -35,9 +35,9 @@ function register(app, ctx) {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "workshop_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { admins: {}, sent: {}, jobs: {}, dispatches: {}, log: [], catalog: [], savedAt: "", ...d };
     if (!Array.isArray(db.catalog)) db.catalog = [];
-    for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
+    for (const k of ["admins", "sent", "jobs", "dispatches"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
     // v157: start the Workshop queue fresh from this deployment; retain historical records in storage.
     if (db.cutoverVersion !== 157 || !db.cutoverAt) { db.cutoverAt = new Date().toISOString(); db.cutoverVersion = 157; await persist(); }
@@ -352,6 +352,17 @@ function register(app, ctx) {
   async function onButton(cb) {
     const [action, id] = String(cb?.data || "").split(":");
     const answer = (text, alert) => tg("answerCallbackQuery", { callback_query_id: cb.id, text: String(text).slice(0, 190), show_alert: !!alert }).catch(() => {});
+    if (action === "wdispatchdone") {
+      const d = db.dispatches && db.dispatches[String(id)];
+      if (!d) return answer("Dispatch record not found.", true);
+      if (d.deliveredAt) return answer("Already marked delivered.", true);
+      if (d.target && chatId !== String(d.target.chat)) return answer("Use the delivery button in the assigned Driver topic.", true);
+      d.deliveredAt = stamp(); d.deliveredBy = [cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") || "Driver";
+      log(d.key || "open", { name: d.deliveredBy }, "Driver marked delivered · " + (d.label || id), true, "Delivery report recorded for Main Admin.");
+      persist();
+      try { await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [[{ text: "✅ DELIVERED · " + d.deliveredBy, callback_data: "wdispatchdone:" + id }]] } }); } catch {}
+      return answer("✅ Delivery reported to Main Admin.", false);
+    }
     const j = db.jobs[String(id)];
     if (!j) return answer("This job was not found any more.", true);
     const chatId = String(cb.message?.chat?.id || "");
@@ -630,7 +641,7 @@ function register(app, ctx) {
       if (!order) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer order was not found." });
       const loc = clip(order.location, 240);
       const mapUrl = /^https?:\/\//i.test(loc) ? loc : (loc ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(loc) : "");
-      const details = [["Customer", order.customerName], ["Phone", order.phone || order.telegramPhone], ["Product", order.product], ["Order ID", order.orderId], ["Location", loc], ["Delivery date", order.deliveryDate]].filter(x => clip(x[1], 240));
+      const details = [["Customer", order.customerName], ["Phone", order.phone || order.telegramPhone], ["Product", order.product], ["Product ID", order.productId || order.code], ["Model", order.model], ["Order ID", order.orderId], ["Location", loc], ["Delivery date", order.deliveryDate]].filter(x => clip(x[1], 240));
       message += "\n\n" + details.map(([k,v]) => `${k}: ${clip(v,240)}`).join("\n");
       if (mapUrl) message += `\nLocation map: ${mapUrl}`;
       media = await orderPhotoBuf(order);
@@ -661,8 +672,13 @@ function register(app, ctx) {
       for (let i = 0; i < parts.length; i++) {
         const continuation = parts.length > 1 ? `\nPART ${i + 1}/${parts.length}` : "";
         const caption = `<b>AMBAR FURNITURE</b>\n<b>${esc(title)}</b>${continuation}\n\n${esc(parts[i])}\n\nSent by: ${esc(req.actor?.name || "Admin")}`;
-        // Attach the selected customer's/product/order photo to the first Telegram post when available.
-        await userPost(req.actor, target, i === 0 && media ? media : null, caption, true);
+        await userPost(req.actor, target, kind === "driver" ? media : null, caption, true);
+      }
+      if (kind === "driver") {
+        const dispatchId = uid();
+        db.dispatches[dispatchId] = { key: keyOf(req.actor), target, label: clip(message.split("\\n")[0] || "Product delivery", 100), createdAt: stamp(), deliveredAt: "", deliveredBy: "" };
+        await tg("sendMessage", { chat_id: target.chat, ...(target.topic > 1 ? { message_thread_id: target.topic } : {}), text: "🚚 <b>Delivery confirmation</b>\\nWhen the product reaches the customer, tap the button below. Main Admin will receive the delivery report.", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "✅ DELIVERED — REPORT TO MAIN ADMIN", callback_data: "wdispatchdone:" + dispatchId }]] } });
+        persist();
       }
       log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, true, "Sent to the selected Telegram topic.");
       return res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "driver" ? "Driver" : "Material"} dispatch sent to the selected Telegram topic.` });
