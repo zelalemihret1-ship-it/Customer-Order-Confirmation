@@ -1,3 +1,7 @@
+## v163 "Which order?" shows all orders + typed order ID
+- The "Which order?" box (Add sheet and Custom product) now lists ALL your orders (any status, even already sent), and has "✍ Type the order ID…" to type one by hand.
+- The order ID (chosen or typed) is written in the workshop Telegram message as "Order ID: …" under the bold Product ID-Model lines.
+
 ## v162 Material search + add/cut only in Workshop
 - Workshop → Material has a search box (name, type, unit, table).
 - Reports → Material no longer has New material, ➕ Add or ✂️ Cut (buttons and server routes removed). Materials are added / cut only in Workshop; Reports keeps edit, fix stock, delete, drag order, history and the movements list.
