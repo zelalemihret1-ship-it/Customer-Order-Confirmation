@@ -155,6 +155,12 @@ function register(app, ctx) {
     while (codeTaken(seqCode(i))) i++;
     db.wsSeq = i + 1; return seqCode(i);
   };
+  // v159: preview the next n IDs without using them (shown in the Workshop list before it is sent)
+  const peekSeqCodes = n => {
+    let i = Math.max(+db.wsSeq || 0, db.products.reduce((mx, p) => Math.max(mx, seqIndexOf(p.code) + 1), 0)); const out = [];
+    while (out.length < n) { const c = seqCode(i++); if (!codeTaken(c)) out.push(c); }
+    return out;
+  };
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
@@ -800,6 +806,6 @@ function register(app, ctx) {
     return { ok: true, code: p.code };
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, wsAddProduct, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, peekSeqCodes, wsAddProduct, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
