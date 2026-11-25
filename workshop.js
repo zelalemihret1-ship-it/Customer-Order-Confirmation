@@ -1,742 +1,730 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#0c3226">
-<title>Ambar Furniture — Workshop</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script>
-try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
-(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Owner-Key",k);o.headers=h;}return f.call(this,u,o);};})();
-</script>
-<link rel="stylesheet" href="/app.css?v=159">
-<style>
-:root{
-  --ink:#0c2a21;--green:#0f3d30;--green2:#17604b;--gold:#c9a24d;--gold2:#e7c77a;
-  --bg:#f4f2ec;--card:#fff;--line:#e9e4d8;--line2:#f0ece2;--tx:#1d2924;--mute:#76756c;
-  --ok:#17824c;--okbg:#e2f5ea;--warn:#8a5a00;--warnbg:#fff1d4;--bad:#b3261e;--badbg:#fde8e6;--blue:#14598f;--bluebg:#e5f1fb;
-  --r:18px;--sh:0 1px 2px rgba(15,40,30,.05),0 8px 24px rgba(15,40,30,.06);
-}
-*{box-sizing:border-box}
-html{background:var(--bg)}
-body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,"Noto Sans Ethiopic",Nyala,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
-svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+// ── WORKSHOP (module + page: /workshop.html) ───────────────────────────────────────────────────
+// v154: synchronized production, stock and workshop message formats, connected to Reports and to the orders
+//   • each admin picks TWO places in his own Telegram groups: the WORKSHOP topic and the FINISHING topic (a real group list + a real topic list)
+//   • only orders that are CONFIRMED by the customer and whose card was DELIVERED are orderable here (rejected / undelivered orders are removed from the list)
+//   • an order / readymade product sent to the workshop = a JOB. The BOT posts it in the WORKSHOP topic with the button  🛠 Finished workshop
+//       → the job is posted in the FINISHING topic with the button  ✅ Finished
+//       → Finished: the product moves to STOCK in Reports and the order shows "Finished · in stock"
+//   • the same two buttons also exist in the mini app (Progress tab) in case somebody does not use Telegram
+// Browsing groups/topics uses the admin's OWN Telegram account; the job messages (with buttons) are posted by the BOT — a user account cannot send buttons —
+// so the AMBAR bot must be a member of the group. The workshop gets the product photo + production details only: no phone number, no payment, no customer contact.
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const crypto = require("crypto");
+const express = require("express");
 
-/* header */
-header{position:sticky;top:0;z-index:40;color:#fff;background:linear-gradient(135deg,#0a2a20 0%,#0f3d30 55%,#17604b 100%);padding:calc(12px + env(safe-area-inset-top,0px)) 16px 14px;box-shadow:0 6px 24px rgba(8,30,22,.25)}
-header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
-header .row1{display:flex;align-items:center;gap:12px;max-width:880px;margin:auto}
-header a.back{display:inline-flex;align-items:center;gap:4px;color:#fff;text-decoration:none;font-size:13px;font-weight:600;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:7px 12px 7px 8px;white-space:nowrap;backdrop-filter:blur(6px)}
-header .ttl{flex:1;min-width:0}
-header h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.2px;line-height:1.15}
-header .sub{margin-top:2px;font-size:11.5px;color:rgba(255,255,255,.68);letter-spacing:.3px}
-header .logo{width:36px;height:36px;border-radius:11px;background:linear-gradient(150deg,var(--gold2),var(--gold));color:#3a2800;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+const uid = () => crypto.randomBytes(6).toString("hex");
+const MODES = ["manual", "after_confirm"];
 
-main{max-width:880px;margin:auto;padding:16px 14px calc(96px + env(safe-area-inset-bottom,0px))}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px;box-shadow:var(--sh)}
-.card h2{margin:0 0 4px;font-size:15.5px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px}
-.card h2 .i{color:var(--green2)}
-.hint{font-size:12.5px;color:var(--mute);line-height:1.55;margin:2px 0 8px}
-.msg{display:none;border-radius:14px;padding:11px 14px;font-size:13px;font-weight:600;margin:0 0 12px;line-height:1.5;border:1px solid transparent}
-.msg.ok{background:var(--okbg);color:var(--ok);border-color:#bfe6cf}.msg.bad{background:var(--badbg);color:var(--bad);border-color:#f4c4c0}.msg.info{background:var(--bluebg);color:var(--blue);border-color:#c5dff3}
-.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:700;white-space:nowrap}
-.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.wait{background:var(--warnbg);color:var(--warn)}.pill.blue{background:var(--bluebg);color:var(--blue)}.pill.gray{background:#eeebe2;color:#5f5d54}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.chip{display:inline-flex;align-items:center;gap:6px;background:var(--bluebg);color:var(--blue);border-radius:999px;padding:6px 6px 6px 12px;font-size:12.5px;font-weight:600}
-.chip button{border:0;background:rgba(20,89,143,.14);color:var(--blue);border-radius:50%;width:22px;height:22px;font-weight:700;cursor:pointer;line-height:1}
-input[type=text],input[type=number],textarea,select{width:100%;border:1.5px solid #e3ddcf;border-radius:13px;padding:12px 13px;font-size:15px;background:#fcfbf8;color:var(--tx);font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s;outline:none;-webkit-appearance:none;appearance:none}
-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2376756c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
-textarea{min-height:76px;resize:vertical}
-input:focus,textarea:focus,select:focus{border-color:var(--green2);background:#fff;box-shadow:0 0 0 4px rgba(23,96,75,.12)}
-.r2{display:grid;grid-template-columns:1fr 110px;gap:8px;margin:8px 0}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:13px;padding:12px 16px;font-weight:700;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;box-shadow:0 6px 16px rgba(15,61,48,.22);font-family:inherit}
-.btn.sec{background:#eeebe1;color:var(--green);box-shadow:none}
-.btn.gold{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#2f2100;box-shadow:0 6px 16px rgba(201,162,77,.3)}
-.btn.sm{padding:9px 13px;font-size:13px;border-radius:12px}
-.btn.danger{background:var(--bad);box-shadow:none}
-.btn.block{width:100%;padding:14px}
-.btn:disabled{opacity:.5}
-.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+function register(app, ctx) {
+  const { requireAccess, supabase, baseDir, helpers } = ctx;
+  const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
+  const DATA_FILE = path.join(baseDir, "workshop-data.json");
+  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
 
-/* settings (collapsible) */
-details.set{padding:0;overflow:hidden}
-details.set>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer}
-details.set>summary::-webkit-details-marker{display:none}
-details.set .ico{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#e4f1ea,#d3e9de);color:var(--green2);display:flex;align-items:center;justify-content:center;flex:none}
-details.set .ico .i{width:20px;height:20px}
-details.set .st{flex:1;min-width:0}
-details.set .st b{display:block;font-size:14.5px;color:var(--ink)}
-details.set .st span{display:block;font-size:12px;color:var(--mute);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-details.set .chev{transition:transform .2s;color:var(--mute)}
-details.set[open] .chev{transform:rotate(180deg)}
-details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
-.mode{display:flex;gap:11px;align-items:flex-start;border:1.5px solid var(--line);border-radius:15px;padding:12px;margin:9px 0;cursor:pointer;background:#fff;transition:border-color .15s,background .15s}
-.mode.on{border-color:var(--green2);background:#f0f8f4}
-.mode input{margin-top:3px;width:18px;height:18px;accent-color:var(--green2)}
-.mode b{display:block;font-size:14px;color:var(--ink)}.mode small{display:block;font-size:12px;color:var(--mute);line-height:1.5;margin-top:2px}
-
-/* places (workshop / finishing) */
-.slot{display:flex;gap:10px;align-items:center;border:1.5px solid var(--line);border-radius:15px;padding:11px 12px;margin:9px 0;background:#fff}
-.slot .si{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:#e4f1ea;color:var(--green2);font-size:18px}
-.slot.fin .si{background:#fdf0d5;color:#8a5a00}
-.slot .sm{flex:1;min-width:0}.slot .sm b{display:block;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:#4f6158}
-.slot .sm span{display:block;font-size:14px;font-weight:600;color:var(--ink);margin-top:2px;word-break:break-word}.slot .sm span.none{color:var(--bad);font-weight:600}
-.slot .sb{display:flex;flex-direction:column;gap:6px}
-.gi.tap{cursor:pointer}.gi small{display:block;color:var(--mute);font-weight:600;font-size:11.5px;margin-top:2px}
-.flow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--mute);margin:8px 0 2px}.flow b{color:var(--ink)}
-.item .act{display:flex;flex-direction:column;gap:6px;flex:none}
-/* tabs */
-.seg{display:flex;gap:4px;background:#e8e4d8;border-radius:16px;padding:4px;margin-bottom:14px}
-.seg button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:12px;padding:11px 4px;font-weight:700;font-size:13px;background:transparent;color:#4f5d56;cursor:pointer;font-family:inherit;transition:background .18s,color .18s,box-shadow .18s}
-.seg button .n{font-size:11px;font-weight:700;background:rgba(15,61,48,.1);border-radius:999px;padding:1px 7px}
-.seg button.on{background:#fff;color:var(--green);box-shadow:0 2px 10px rgba(15,40,30,.12)}
-.seg button.on .n{background:var(--green);color:#fff}
-.seg.sub{background:transparent;padding:0;gap:8px;margin-bottom:12px}
-.seg.sub button{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 6px}
-.seg.sub button.on{background:var(--green);color:#fff;border-color:var(--green);box-shadow:0 4px 12px rgba(15,61,48,.2)}
-
-.sec-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 2px 10px}
-.sec-h b{font-size:15px;color:var(--ink)}.sec-h span{font-size:12px;color:var(--mute)}
-
-/* list items */
-.item{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px;margin-bottom:10px;box-shadow:var(--sh)}
-.item img,.item .noimg{width:68px;height:68px;border-radius:14px;object-fit:cover;background:#ece7da;flex:none;display:flex;align-items:center;justify-content:center;color:#a79f8a}
-.item .noimg .i{width:26px;height:26px}
-.item .mid{flex:1;min-width:0}
-.item .nm{font-weight:700;font-size:14.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .meta{font-size:12.5px;color:var(--mute);margin-top:4px;line-height:1.55}
-.item .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
-.prog{height:5px;border-radius:99px;background:#ece8dc;margin-top:8px;overflow:hidden}.prog i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold),var(--green2))}
-.empty{text-align:center;color:var(--mute);padding:34px 14px;font-size:13px;line-height:1.65;background:#fff;border:1.5px dashed #ddd6c6;border-radius:var(--r)}
-.empty .em{width:54px;height:54px;border-radius:18px;background:#eef3ef;color:var(--green2);display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
-.empty .em .i{width:26px;height:26px}
-.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
-.log{font-size:12.5px;line-height:1.7;color:var(--mute)}.log b{color:var(--tx)}
-
-/* standard grid */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
-.pc{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;box-shadow:var(--sh);transition:transform .15s,box-shadow .15s}
-.pc:active{transform:scale(.98)}
-.pc img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#ece7da}
-.pc .pn{padding:10px 12px 12px;font-weight:700;font-size:13.5px;color:var(--ink);line-height:1.3}
-.pc .ed{position:absolute;top:8px;right:8px;border:0;border-radius:11px;background:rgba(255,255,255,.92);color:var(--green);padding:6px 7px;cursor:pointer;display:flex;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-
-/* forms */
-.lab{display:block;font-size:11.5px;font-weight:700;color:#4f6158;margin:14px 0 6px;letter-spacing:.6px;text-transform:uppercase}
-.szs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
-.sz{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:700;color:var(--green);cursor:pointer;font-family:inherit}
-.sz.on{border-color:var(--green2);background:#f0f8f4}
-.tog{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.tog button{display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:13px 6px;font-weight:700;font-size:14px;color:var(--green);cursor:pointer;font-family:inherit}
-.tog button.on{border-color:var(--green2);background:#f0f8f4;box-shadow:0 0 0 3px rgba(23,96,75,.1)}
-.qty{display:flex;align-items:center;gap:8px}.qty button{width:46px;height:46px;border:0;border-radius:13px;background:#eeebe1;font-size:22px;font-weight:700;color:var(--green);cursor:pointer;flex:none}.qty input{text-align:center;font-weight:700}
-.pv{width:100%;max-height:240px;object-fit:contain;border-radius:14px;background:#ece7da;display:none;margin:8px 0}
-.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed #d5cdb9;border-radius:16px;background:#fcfbf7;padding:20px 12px;text-align:center;color:var(--mute);font-size:13px;cursor:pointer}
-.drop .i{width:28px;height:28px;color:var(--green2)}
-.drop b{color:var(--ink);font-size:14px}
-
-/* overlays */
-.ov{position:fixed;inset:0;background:rgba(10,25,19,.55);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center;z-index:90}
-.ov.on{display:flex}
-.box{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:560px;max-height:88vh;overflow:auto;padding:12px 16px calc(18px + env(safe-area-inset-bottom,0px));animation:up .22s ease-out}
-.box::before{content:"";display:block;width:42px;height:4px;border-radius:9px;background:#d9d3c3;margin:0 auto 12px}
-@keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
-.gi{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:13px;padding:11px 12px;margin:7px 0;font-weight:600;font-size:14px}
-.busy{position:fixed;inset:0;background:rgba(244,242,236,.8);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:99;font-weight:700;color:var(--ink)}.busy.on{display:flex}
-.spin{width:34px;height:34px;border-radius:50%;border:3.5px solid #d7e5de;border-top-color:var(--green2);animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
-.log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.log-head h2{margin:0}.log-head select{max-width:190px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff;color:var(--ink);font:inherit;font-weight:650}.log>div{padding:10px 12px;margin:7px 0;border:1px solid var(--line);border-radius:12px;background:#fff;line-height:1.5}
-
-/* ===== v159 modern polish ===== */
-:root{--r:22px;--sh:0 1px 2px rgba(15,40,30,.04),0 10px 30px -8px rgba(15,40,30,.10);--sh2:0 2px 4px rgba(15,40,30,.05),0 18px 40px -10px rgba(15,40,30,.18)}
-html{background:var(--bg)}
-body{background:radial-gradient(900px 380px at 50% -120px,#e3efe8 0,transparent 70%),var(--bg);letter-spacing:-.005em}
-header{padding:calc(14px + env(safe-area-inset-top,0px)) 16px 18px;background:radial-gradient(500px 200px at 90% -40%,rgba(231,199,122,.28),transparent 60%),linear-gradient(135deg,#07241b 0%,#0f3d30 55%,#17604b 100%)}
-header h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
-header .sub{font-size:12px;opacity:.9}
-header a.back{transition:background .15s}header a.back:active{background:rgba(255,255,255,.22)}
-header .logo{width:40px;height:40px;border-radius:13px;font-size:19px}
-main{padding-top:18px}
-.card{border-radius:var(--r);padding:18px;border-color:rgba(233,228,216,.9)}
-.btn{border-radius:14px;transition:transform .12s,box-shadow .15s,filter .15s}
-.btn:active{transform:scale(.97)}.btn:hover{filter:brightness(1.05)}
-.btn.sec:hover{filter:none;background:#e6e2d4}
-/* stat tiles */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 16px}
-.stat{appearance:none;border:1px solid var(--line);background:#fff;border-radius:18px;padding:12px 10px 11px;text-align:left;cursor:pointer;font-family:inherit;box-shadow:var(--sh);position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s,border-color .15s}
-.stat:active{transform:scale(.97)}
-.stat .sn{display:block;font-size:24px;font-weight:800;color:var(--ink);letter-spacing:-.03em;line-height:1}
-.stat .sl{display:block;font-size:11px;font-weight:700;color:var(--mute);margin-top:6px;letter-spacing:.2px;line-height:1.25}
-.stat .si2{position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:#e9f3ee;color:var(--green2)}
-.stat .si2 .i{width:15px;height:15px}
-.stat.on{border-color:var(--green2);box-shadow:0 0 0 3px rgba(23,96,75,.12),var(--sh)}
-.stat.hot .sn{color:var(--green2)}
-/* tabs */
-.seg{margin-top:2px;background:rgba(232,228,216,.75);backdrop-filter:blur(8px);border-radius:18px;padding:5px;position:sticky;top:calc(68px + env(safe-area-inset-top,0px));z-index:30;box-shadow:0 6px 18px -8px rgba(15,40,30,.18)}
-.seg button{flex-direction:column;gap:3px;padding:9px 2px 8px;font-size:11.5px;border-radius:14px;line-height:1.15;text-align:center}
-.seg button .i{width:19px;height:19px}
-.seg button .n{font-size:10.5px;padding:1px 7px;margin-top:1px}
-.seg button.on{box-shadow:0 3px 12px -2px rgba(15,40,30,.2)}
-.seg.sub{position:static;background:transparent;backdrop-filter:none;box-shadow:none;padding:0}
-.seg.sub button{flex-direction:row;font-size:13px;padding:10px 8px;gap:7px}
-/* list items */
-.item{border-radius:20px;padding:12px;transition:transform .15s,box-shadow .15s}
-.item:hover{box-shadow:var(--sh2)}
-.item img,.item .noimg{width:72px;height:72px;border-radius:16px}
-.item .nm{font-size:15px;letter-spacing:-.01em}
-.sec-h b{font-size:16px;letter-spacing:-.015em}
-.pill{padding:4px 10px;font-size:11px}
-.empty{border-radius:24px;padding:40px 18px;background:linear-gradient(180deg,#fff,#faf8f2);border-color:#d9d1bd}
-.empty .em{width:62px;height:62px;border-radius:20px;background:linear-gradient(135deg,#e4f1ea,#d3e9de)}
-.empty b{font-size:16px}
-.empty .btn{margin-top:14px}
-/* standard products */
-.toolbar{display:flex;gap:10px;align-items:center;margin:0 0 14px}
-.search{position:relative;flex:1;min-width:0}
-.search .i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--mute);width:17px;height:17px;pointer-events:none}
-.search input[type=text]{padding-left:42px;border-radius:15px;background:#fff;height:46px}
-.toolbar .btn{height:46px;white-space:nowrap;flex:none}
-.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
-.pc{border-radius:22px;border:1px solid var(--line);transition:transform .2s,box-shadow .2s}
-.pc:hover{transform:translateY(-3px);box-shadow:var(--sh2)}
-.pc .ph{overflow:hidden;background:#ece7da}
-.pc img{transition:transform .35s}.pc:hover img{transform:scale(1.05)}
-.pc .pn{padding:11px 13px 13px;font-size:13.5px;letter-spacing:-.01em}
-.pc .pn small{display:block;font-weight:600;font-size:11.5px;color:var(--mute);margin-top:3px}
-.pc .ed{top:10px;right:10px;border-radius:12px;padding:7px;backdrop-filter:blur(6px)}
-.pc .go{position:absolute;right:10px;bottom:62px;width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#2f2100;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(201,162,77,.4);opacity:0;transform:translateY(6px);transition:.2s}
-.pc:hover .go,.pc:focus-within .go{opacity:1;transform:none}
-@media(hover:none){.pc .go{opacity:1;transform:none;width:30px;height:30px;bottom:58px}}
-.pc.add{appearance:none;font-family:inherit;border:2px dashed #cfc7b0;background:linear-gradient(180deg,#fdfcf8,#f7f4ea);box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:190px;color:var(--green);font-weight:800;font-size:14px}
-.pc.add:hover{border-color:var(--green2);background:#f0f8f4}
-.pc.add .plus{width:46px;height:46px;border-radius:16px;background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(15,61,48,.25)}
-.pc.add small{font-weight:600;color:var(--mute);font-size:11.5px;padding:0 10px;text-align:center}
-.ptp{display:inline-block;background:#e4f1ea;color:var(--green2);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800;margin:0 6px 3px 0}
-.noRes{display:none;text-align:center;color:var(--mute);font-size:13px;padding:22px 0}
-/* forms + sheets */
-input[type=text],input[type=number],textarea,select{border-radius:14px;padding:13px 14px}
-.box{border-radius:28px 28px 0 0;box-shadow:0 -20px 50px rgba(0,0,0,.25)}
-.box h2{font-size:18px;letter-spacing:-.02em;color:var(--ink)}
-.drop{border-radius:18px;transition:border-color .15s,background .15s}.drop:hover{border-color:var(--green2);background:#f4faf6}
-.tog button,.sz,.qty button{transition:transform .12s,border-color .15s}
-.tog button:active,.sz:active,.qty button:active{transform:scale(.96)}
-details.set{border-radius:var(--r)}
-.slot,.mode{border-radius:16px}
-@media(min-width:700px){main{padding-top:24px}.stats{gap:14px}.stat .sn{font-size:28px}.seg{top:78px}.box{border-radius:28px;margin-bottom:5vh}.ov{align-items:center}}
-@media(max-width:380px){.stats{grid-template-columns:repeat(2,1fr)}.seg{top:64px}}
-.ids{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px}.ids:empty{display:none}
-.idl{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--mute);margin-right:2px}
-.idc{font-weight:800;font-size:12px;color:var(--green);background:#e4f1ea;border:1px solid #cfe3d8;border-radius:8px;padding:3px 8px;letter-spacing:.2px}
-.idbox{margin:12px 0 0;padding:11px 12px;border-radius:15px;background:#f0f8f4;border:1px solid #cfe3d8}
-.idbox .idh{font-size:11.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#4f6158}
-.idbox .ids{margin-top:8px}.idbox .ids:empty::before{content:"…";color:var(--mute)}.idbox .ids:empty{display:flex}
-</style>
-</head>
-<body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
-    <symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a3 3 0 013-3h8a3 3 0 013 3v3"/><path d="M3 13a2 2 0 014 0v2h10v-2a2 2 0 014 0v5H3z"/><path d="M5 18v2M19 18v2"/></symbol>
-    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></symbol>
-    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
-    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></symbol>
-    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
-    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
-    <symbol id="i-cam" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></symbol>
-    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></symbol>
-    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.6 7.6"/><circle cx="11" cy="11" r="2"/></symbol>
-    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
-    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
-    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
-  </defs>
-</svg>
-<header>
-  <div class="row1">
-    <a class="back" href="/home.html"><svg class="i" style="width:16px;height:16px"><use href="#i-left"/></svg>Home</a>
-    <div class="ttl"><h1>Workshop</h1><div class="sub">Production tracking &amp; workshop orders</div></div>
-    <div class="logo">A</div>
-  </div>
-</header>
-<main>
-  <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg" class="hint">The Workshop section is only for admins the main admin gave it to.</p></div>
-  <div id="view" style="display:none">
-    <div id="msg" class="msg"></div>
-
-    <details class="card set" id="setBox">
-      <summary>
-        <div class="ico"><svg class="i"><use href="#i-gear"/></svg></div>
-        <div class="st"><b>Workshop, finishing, stock &amp; driver places</b><span id="setSum">Loading…</span></div>
-        <svg class="i chev"><use href="#i-chev"/></svg>
-      </summary>
-      <div class="body">
-        <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>three places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> posts the product in your selected <b>Stock group</b>, where you can mark it Sold Out or Restock. The optional <b>🚚 Driver</b> place (a group + its Driver topic) receives a <b>finished order</b> — or a <b>sold readymade product</b> — when you press <b>🚚 Send to driver</b>.</div>
-        <div class="hint"><b>All production and material messages are sent from YOUR connected Telegram account — never by the bot.</b> The selected group/topic is only the destination.</div>
-        <div id="senderLine" class="hint"></div>
-        <div id="slots"></div>
-        <div id="botLine" class="hint"></div>
-
-        <h2 style="margin-top:20px"><svg class="i"><use href="#i-send"/></svg>How do orders go to the workshop?</h2>
-        <label class="mode" data-m="manual"><input type="radio" name="mode" value="manual"><div><b>I send them myself</b><small>Nothing is sent by itself. In the <b>Orders</b> tab you press <b>Send to workshop</b>.</small></div></label>
-        <label class="mode" data-m="after_confirm"><input type="radio" name="mode" value="after_confirm"><div><b>After the customer confirms</b><small>The order goes to the workshop automatically the moment the customer presses <b>Confirm</b> (and the card was delivered).</small></div></label>
-        <div class="btns"><button class="btn" id="saveBtn" type="button">Save settings</button><button class="btn sec sm" id="checkBtn" type="button">Check topic access</button><button class="btn gold sm" id="testBtn" type="button"><svg class="i"><use href="#i-send"/></svg>Send a test message</button></div>
-      </div>
-    </details>
-
-    <div class="seg" id="seg"></div>
-    <div id="subWrap" style="display:none"><div class="seg sub" id="subSeg"></div></div>
-    <div id="out"></div>
-
-    <!-- CUSTOM PRODUCT (new design) — sent to the workshop through the list below -->
-    <div id="cusForm" class="card" style="display:none">
-      <h2><svg class="i"><use href="#i-pen"/></svg>New design — custom product</h2>
-      <div class="hint">For a product that is <b>not</b> in the standard list. Add its photo, name and measurement; it goes into the list below and is sent to the workshop with the rest.</div>
-      <label class="lab">Photo of the new design</label>
-      <img id="uImg" class="pv" alt="">
-      <input type="file" id="uFile" accept="image/*" style="display:none">
-      <div class="drop" id="uDrop"><svg class="i"><use href="#i-cam"/></svg><b id="uDropT">Tap to add the photo</b><span>Take a picture or choose one from your phone</span></div>
-      <label class="lab">Product type</label><div id="uTypeBox"></div>
-      <label class="lab">Design / product name</label>
-      <input type="text" id="uName" placeholder="e.g. TV stand with open shelf" autocomplete="off">
-      <label class="lab">Quantity</label>
-      <div class="qty"><button type="button" id="uMinus">−</button><input type="number" id="uQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="uPlus">+</button></div>
-      <div class="idbox" id="uIdBox"><div class="idh">🔖 Product IDs <span id="uIdN"></span></div><div class="ids" id="uIds"></div></div>
-      <label class="lab">Measurement</label>
-      <input type="text" id="uSize" placeholder="e.g. 120 × 40 × 90" autocomplete="off">
-      <label class="lab">Which order is it for? (optional — its Order ID goes to the workshop)</label>
-      <select id="uOrder"></select><input type="text" id="uOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"><label class="lab">Color (choose or type)</label><input type="text" id="uColor" list="colorList" placeholder="e.g. Walnut" autocomplete="off">
-      <label class="lab">Additional notes (optional)</label>
-      <textarea id="uNote" placeholder="Material, colour, handle, anything the workshop must know…"></textarea>
-      <div id="uMsg" class="msg" style="margin-top:12px"></div>
-      <div class="btns"><button class="btn block" id="uAdd" type="button"><svg class="i"><use href="#i-plus"/></svg>Add to list</button></div>
-    </div>
-
-    <div id="basket"></div>
-    <details class="card" style="margin-top:14px" id="lastSends"><summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px"><b><svg class="i"><use href="#i-list"/></svg> My last sends</b><span class="pill gray">Tap to view</span></summary><div style="padding-top:12px"><div class="log-head"><span class="hint">Send history</span><select id="logFilter" aria-label="Choose sends to view"><option value="all">All sends</option><option value="success">Successful</option><option value="failed">Failed</option></select></div><div id="log" class="log"></div></div></details>
-  </div>
-</main>
-
-<div class="ov" id="pickOv"><div class="box">
-  <h2 id="pickTitle" style="margin:0 0 6px">Choose the group</h2>
-  <div id="pickStep1">
-    <div class="hint">Groups your own Telegram account is a member of. Tap one. Groups with topics let you choose the topic next.</div>
-    <input type="text" id="pickSearch" placeholder="Search my groups…" autocomplete="off">
-    <div id="pickList" style="margin-top:6px"></div>
-    <label class="lab">…or paste a link</label>
-    <div class="r2" style="grid-template-columns:1fr 92px"><input type="text" id="linkIn" placeholder="Group / topic link, @username or id" autocomplete="off"><button class="btn sec sm" id="linkGo" type="button">Use link</button></div>
-    <div class="hint">Open the group (or the topic) in Telegram, long-press a message → <b>Copy link</b>, paste it here.</div>
-  </div>
-  <div id="pickStep2" style="display:none">
-    <button class="btn sec sm" id="topicBack" type="button">← Groups</button>
-    <div class="hint" style="margin-top:10px">Choose the topic of <b id="topicGroup"></b>:</div>
-    <div id="topicList"></div>
-  </div>
-  <div class="btns"><button class="btn sec" id="pickClose" type="button">Close</button></div>
-</div></div>
-<div class="ov" id="addOv"><div class="box">
-  <div style="display:flex;gap:12px;align-items:center"><img id="aImg" alt="" style="width:76px;height:76px;border-radius:16px;object-fit:cover;background:#ece7da"><div><h2 id="aName" style="margin:0">Product</h2><div class="hint" style="margin:2px 0 0" id="aType">Choose quantity, measurement and type</div></div></div>
-  <label class="lab">Order or Readymade</label>
-  <div class="tog"><button type="button" id="kOrder" data-k="order"><svg class="i"><use href="#i-box"/></svg>Order</button><button type="button" id="kReady" data-k="readymade"><svg class="i"><use href="#i-sofa"/></svg>Readymade</button></div>
-  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select><input type="text" id="aOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"><label class="lab">Color (choose or type)</label><input type="text" id="aColor" list="colorList" placeholder="e.g. Walnut" autocomplete="off"></div><datalist id="colorList"><option value="Black"><option value="White"><option value="Brown"><option value="Walnut"><option value="Oak"><option value="Grey"><option value="Beige"><option value="Cream"><option value="Natural wood"><option value="Gold"><option value="Silver"><option value="Blue"><option value="Green"><option value="Red"></datalist>
-  <label class="lab">Quantity</label>
-  <div class="qty"><button type="button" id="qMinus">−</button><input type="number" id="aQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="qPlus">+</button></div>
-  <div class="idbox" id="aIdBox"><div class="idh">🔖 Product IDs <span id="aIdN"></span></div><div class="ids" id="aIds"></div><div class="hint" style="margin:6px 0 0">Each unit gets its own ID automatically.</div></div>
-  <label class="lab">Measurement</label>
-  <div class="szs" id="aSizes"></div>
-  <input type="text" id="aSize" placeholder="Choose above or type the measurement (e.g. 120 × 40 × 90)" autocomplete="off">
-  <label class="lab">Additional notes (optional)</label>
-  <textarea id="aNote" placeholder="Anything the workshop must know…"></textarea>
-  <div id="aMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="aAdd" type="button"><svg class="i"><use href="#i-plus"/></svg>Add to list</button><button class="btn sec" id="aClose" type="button">Cancel</button></div>
-</div></div>
-<div class="ov" id="matOv"><div class="box">
-  <h2 id="mTitle" style="margin:0 0 4px">Material</h2><div class="hint" id="mInfo" style="margin:0"></div>
-  <div id="mNew">
-    <label class="lab">Material</label><input type="text" id="mName" placeholder="e.g. NORMAL MDF" autocomplete="off">
-    <label class="lab">Type (optional)</label><input type="text" id="mType" placeholder="e.g. 18" autocomplete="off">
-    <label class="lab">Unit</label><input type="text" id="mUnit" value="244-122" autocomplete="off">
-    <label class="lab">Table (group)</label><input type="text" id="mGroup" list="mGroups" autocomplete="off"><datalist id="mGroups"></datalist>
-  </div>
-  <label class="lab" id="mQtyLab">Quantity</label><input type="number" id="mQty" inputmode="decimal" min="0" step="any" placeholder="0">
-  <div id="mNoteBox"><label class="lab">Note (optional)</label><input type="text" id="mNote" autocomplete="off"></div>
-  <div id="mMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="mOk" type="button">Save</button><button class="btn sec" id="mNo" type="button">Cancel</button></div>
-</div></div>
-<div class="ov" id="catOv"><div class="box">
-  <h2 id="cTitle" style="margin:0 0 2px">Add standard product</h2><div class="hint" style="margin:0 0 4px">The workshop sees this photo, so make it clear. Measurements appear as one-tap choices.</div>
-  <label class="lab">Product name</label><input type="text" id="cName" placeholder="e.g. Shoe shelf 4 doors" autocomplete="off">
-  <label class="lab">Product type</label><div id="cTypeBox"></div>
-  <label class="lab">Photo</label><img id="cImg" class="pv" alt=""><input type="file" id="cFile" accept="image/*" style="display:none"><div class="drop" id="cPick"><svg class="i"><use href="#i-cam"/></svg><b id="cPickT">Tap to add the photo</b><span>Take a picture or choose one from your phone</span></div>
-  <label class="lab">Standard measurements (one per line)</label><textarea id="cSizes" placeholder="120 × 40 × 90&#10;100 × 35 × 80"></textarea>
-  <div id="cMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="cSave" type="button">Save</button><button class="btn sec" id="cClose" type="button">Cancel</button><button class="btn sm danger" id="cDel" type="button" style="display:none">Delete</button></div>
-</div></div>
-<div class="busy" id="busy"><div class="spin"></div><span id="busyTx">Please wait…</span></div>
-<script>
-const $=id=>document.getElementById(id);
-const PTYPES=["Shoe Shelf","Console Table","Chest Drawer","Center Table","TV Stand","Dining Table","Mirror"];
-const typeSel=(id,otherId)=>'<select id="'+id+'"><option value="">— Choose the product type —</option>'+PTYPES.map(t=>'<option>'+t+'</option>').join("")+'<option value="__other">Other…</option></select><input type="text" id="'+otherId+'" placeholder="Type the product type (e.g. Bookshelf)" autocomplete="off" style="display:none;margin-top:8px">';
-const typeVal=(id,otherId)=>{const v=$(id).value;return v==="__other"?$(otherId).value.trim():v;};
-const typeSet=(id,otherId,t)=>{t=t||"";const k=PTYPES.includes(t);$(id).value=t?(k?t:"__other"):"";$(otherId).value=t&&!k?t:"";$(otherId).style.display=t&&!k?"block":"none";};
-const typeWire=(id,otherId)=>$(id).addEventListener("change",()=>{const o=$(id).value==="__other";$(otherId).style.display=o?"block":"none";if(o)$(otherId).focus();});
-const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const ic=(n,st)=>'<svg class="i"'+(st?' style="'+st+'"':"")+'><use href="#i-'+n+'"/></svg>';
-let meRole="";let S={settings:{workshop:null,finishing:null,stock:null,driver:null,material:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,drv=null,matTopic=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
-const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
-const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
-const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
-async function api(path,body){
-  const o=body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)};
-  let d;try{const r=await fetch(path,o);try{d=await r.json();}catch{d={ok:false,error:"Server answered with an error ("+r.status+")."};}if(r.status===401||r.status===403)d.ok=false;}catch(e){d={ok:false,error:"No connection to the server."};}
-  if(d&&d.settings){const ok=d.ok,er=d.error;S={...S,...d};delete S.ok;delete S.error;d.ok=ok;d.error=er;} // always refresh the lists, but keep the REAL result of the call
-  return d;
-}
-const tName=g=>(g.title||(/^-/.test(g.chat)?"Group "+g.chat:"@"+g.chat))+(g.topic?" › "+(g.topicTitle||"topic "+g.topic):"");
-const emptyBox=(icon,t,s)=>'<div class="empty"><div class="em">'+ic(icon)+'</div><b>'+t+'</b>'+s+'</div>';
-const sameP=(a,b)=>JSON.stringify(a||null)===JSON.stringify(b||null);
-function renderSettings(){
-  const st=S.sender||{};
-  $("senderLine").innerHTML=st.ready?'<span class="pill ok">● Your Telegram account is connected'+(st.label?" · "+esc(st.label):"")+'</span> <span style="display:block;margin-top:4px">It is used to list your groups and topics.</span>':'<span class="pill wait">● Your Telegram account is not connected</span> <span style="display:block;margin-top:6px">You can still paste a group / topic link. To pick from your groups and topics, connect it: Settings → Connect my Telegram account.</span>';
-  const slot=(cls,icon,label,g,role)=>'<div class="slot '+cls+'"><div class="si">'+icon+'</div><div class="sm"><b>'+label+'</b>'+(g?'<span>'+esc(tName(g))+'</span>':'<span class="none">Not chosen yet</span>')+'</div><div class="sb"><button class="btn sec sm" type="button" data-pick="'+role+'">'+(g?"Change":"Choose")+'</button>'+(g?'<button class="btn sec sm" type="button" data-clear="'+role+'">Clear</button>':"")+'</div></div>';
-  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock")+slot("stock","🚚","Driver",drv,"driver")+slot("stock","🧱","Material topic",matTopic,"material");
-  document.querySelectorAll(".mode").forEach(l=>{const on=l.dataset.m===mode;l.classList.toggle("on",on);l.querySelector("input").checked=on;});
-  const sv=S.settings||{};
-  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||!sameP(drv,sv.driver)||!sameP(matTopic,sv.material)||mode!==sv.mode;
-  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(sv.driver?" · 🚚 "+tName(sv.driver):"")+(sv.material?" · 🧱 "+tName(sv.material):"")+(dirty?" · not saved":"");
-}
-const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="workshop"?'<span class="pill wait">🛠 In workshop</span>':j.stage==="finishing"?'<span class="pill blue">🪚 In finishing</span>':'<span class="pill ok">✅ Finished · in stock</span>';
-const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
-// ── MATERIAL (v161): the same materials as Reports → Material ──
-const nfm=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
-let matQ="";
-function matView(){
-  const pending=S.cutRequests||[];
-  const approvals=(meRole==="owner"&&pending.length)?'<div class="card" style="margin:12px 0"><div class="sec-h"><b>⏳ Pending cut approvals</b><span>'+pending.length+'</span></div>'+pending.map(r=>'<div class="item"><div class="mid"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+'</div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' '+esc(r.unit)+(r.note?" · "+esc(r.note):"")+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'">✅ Approve</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'">❌ Reject</button></div></div>').join('')+'</div>':'';
-  return approvals+'<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
-}
-function matList(){
-  const q=matQ.trim().toLowerCase(),L=(S.materials||[]).filter(m=>!q||(m.name+" "+m.type+" "+m.unit+" "+m.group).toLowerCase().includes(q)),gs=(S.matGroups||[]).slice();L.forEach(m=>{if(!gs.includes(m.group))gs.push(m.group);});
-  const row=m=>{const low=m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");const pill=low==="ok"?'<span class="pill ok">OK</span>':'<span class="pill '+(low==="out"?"bad":"wait")+'">'+(low==="out"?"OUT":"LOW")+'</span>';
-    return '<div class="item"><div class="mid"><div class="nm">'+esc(m.name+(m.type?" "+m.type:""))+'</div><div class="meta"><b style="font-size:15px;color:'+(m.qty<5?"#cc0000":"var(--ink)")+'">'+nfm(m.qty)+'</b> '+esc(m.unit)+' · '+pill+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-madd="'+esc(m.id)+'">➕ Add</button><button class="btn sec sm" type="button" data-mcut="'+esc(m.id)+'">✂️ Cut</button></div></div>';};
-  let h=gs.map(g=>{const X=L.filter(m=>m.group===g);return X.length?'<div class="sec-h" style="margin-top:14px"><b style="font-size:13px;color:var(--mute)">'+esc(g)+'</b><span>'+X.length+'</span></div>'+X.map(row).join(""):"";}).join("");
-  if(!L.length)h+=q?emptyBox("search","No material found","Nothing matches “"+esc(matQ)+"”."):emptyBox("box","No material yet","Tap <b>New material</b>. Materials added here also appear in Reports → Material.");
-  return h;
-}
-document.addEventListener("input",e=>{if(e.target.id==="mSearch"){matQ=e.target.value;const l=$("matList");if(l)l.innerHTML=matList();}});
-let MAT=null;
-function openMat(kind,m){
-  MAT={kind,id:m?m.id:""};say2("mMsg","");
-  $("mNew").style.display=kind==="new"?"block":"none";
-  $("mTitle").textContent=kind==="new"?"New material":(kind==="add"?"➕ Add to ":"✂️ Cut from ")+(m?m.name+(m.type?" "+m.type:""):"");
-  $("mInfo").textContent=kind==="new"?"Write the material once. Then use Add when stock arrives and Cut when you use it.":(m?"Now available: "+nfm(m.qty)+" "+m.unit:"");
-  $("mQtyLab").textContent=kind==="new"?"Available now (optional)":"Quantity";
-  $("mName").value="";$("mType").value="";$("mUnit").value="244-122";$("mQty").value="";$("mNote").value="";
-  const gs=(S.matGroups||[]);$("mGroup").value=gs[1]||gs[0]||"MATERIAL";$("mGroups").innerHTML=gs.map(g=>'<option value="'+esc(g)+'">').join("");
-  $("mOk").textContent=kind==="new"?"Save material":(kind==="add"?"Add":"Cut");
-  $("matOv").classList.add("on");setTimeout(()=>$(kind==="new"?"mName":"mQty").focus(),50);
-}
-$("mNo").onclick=()=>$("matOv").classList.remove("on");
-$("mOk").onclick=async()=>{
-  if(!MAT)return;let path,body;
-  if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
-  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path=MAT.kind==="cut"?"/api/workshop/material/cut-request":"/api/workshop/material/move";body={id:MAT.id,type:"add",qty:$("mQty").value,note:$("mNote").value};}
-  busy("Saving…");const d=await api(path,body);busy("");
-  if(d.ok){$("matOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("mMsg",d.error||"Could not save.");
-};
-document.addEventListener("click",e=>{
-  const n=e.target.closest("[data-mnew]");if(n)return openMat("new");
-  const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
-  const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
-});
-document.addEventListener("click",async e=>{
-  const a=e.target.closest("[data-cutapprove]"),r=e.target.closest("[data-cutreject]"),el=a||r;if(!el)return;
-  const id=el.dataset.cutapprove||el.dataset.cutreject,approve=!!a;
-  if(!confirm(approve?"Approve this material cut?":"Reject this material cut?"))return;
-  busy(approve?"Approving cut…":"Rejecting cut…");
-  const d=await api("/api/workshop/material/cut-decide",{id,approve});
-  busy("");
-  if(d.ok){render();say(d.message||"Done.","ok");}else say(d.error||"Could not decide the cut.","bad");
-});
-const orderOpts=first=>'<option value="">'+first+'</option><option value="__typed">✍ Type the order ID…</option>'+(S.allOrders||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+(o.status&&o.status!=="Confirmed"?" ["+esc(o.status)+"]":"")+'</option>').join("");
-// the order chosen in a "Which order?" box: a listed order (any status) or a TYPED order ID → {orderId,orderLabel} (null = nothing chosen)
-function pickedOrder(selId,typedId){const v=$(selId).value;if(v==="__typed"){const t=$(typedId).value.trim().slice(0,40);return t?{orderId:"",orderLabel:t,typed:true}:null;}if(!v)return null;const o=(S.allOrders||[]).find(x=>String(x.id)===v);return o?{orderId:o.id,orderLabel:o.orderId||("#"+o.id),size:o.size}:null;}
-const wireOrderBox=(selId,typedId,sizeId)=>{$(selId).onchange=()=>{const t=$(selId).value==="__typed";$(typedId).style.display=t?"block":"none";if(t)$(typedId).focus();const p=pickedOrder(selId,typedId);if(p&&p.size&&!$(sizeId).value.trim())$(sizeId).value=p.size;};};
-function render(){
-  renderSettings();
-  const tabs=[["m","box","Material",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
-  $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
-  $("subWrap").style.display=tab==="s"?"block":"none";
-  if(tab==="m"){$("out").innerHTML=matView();$("cusForm").style.display="none";$("basket").innerHTML="";return;}
-  $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
-  $("cusForm").style.display=tab==="s"&&sub==="cus"?"block":"none";
-  let h="";
-  const unsent=S.orders;
-  const jobCard=(j,btn)=>'<div class="item">'+(j.photo?'<img loading="lazy" src="/api/workshop-photo/'+esc(j.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(j.name)+(j.qty>1?' ×'+j.qty:'')+'</div><div class="meta">'+(j.orderLabel?'<b style="color:var(--ink)">'+esc(j.orderLabel)+'</b>':'<b style="color:var(--ink)">Readymade</b>')+(j.codes&&j.codes.length?' · '+esc(j.codes.join(", ")):'')+(j.size?'<br>'+esc(j.size):'')+(j.wsDone?'<br>Workshop done: '+esc(j.wsDone.by)+' · '+esc(j.wsDone.at):'')+(j.finDone?'<br>Finished: '+esc(j.finDone.by)+' · '+esc(j.finDone.at):'')+'</div><div class="tags">'+stagePill(j)+'</div></div>'+(btn||'')+'</div>';
-  if(tab==="o"){
-    // ORDERABLE orders only: the customer CONFIRMED it and the card was DELIVERED. Rejected / not delivered orders are not listed.
-    h='<div class="sec-h"><b>Orders for the workshop</b><span>'+unsent.length+' ready to send</span></div><div class="hint" style="margin:-4px 2px 10px">Only confirmed, delivered orders that have not yet been sent appear here. After sending, an order disappears from this list and remains in Progress.</div>'+(S.orders.map(o=>{
-      const dates=[o.completionDate?"Ready: "+esc(o.completionDate):"",o.deliveryDate?"Delivery: "+esc(o.deliveryDate):""].filter(Boolean).join(" · ");
-      const btn='<div class="act"><button class="btn sm" type="button" data-sendorder="'+esc(o.id)+'">'+ic("send")+'Send</button></div>';
-      return '<div class="item">'+(o.photo?'<img loading="lazy" src="'+esc(o.photo)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(o.product||"Product")+'</div><div class="meta">'+'<div class="ids" data-o="'+esc(o.id)+'"></div>'+'<b style="color:var(--ink)">ORDER ID: '+esc(o.orderId||("#"+o.id))+'</b>'+(o.customerName?" · "+esc(o.customerName):"")+(o.size?"<br>"+esc(o.size):"")+(dates?"<br>"+dates:"")+'</div><div class="tags"><span class="pill ok">Confirmed · delivered</span></div></div>'+btn+'</div>';
-    }).join("")||emptyBox("box","No orders to send","Orders appear here after the customer pressed <b>Confirm</b> and the order card was delivered. Rejected and undelivered orders are not shown."));
-  }else if(tab==="r"){
-    // Reports is the source of truth: show every product currently in Reports → Workflow.
-    const unsent=S.readymade.filter(g=>!g.job),sent=S.readymade.length-unsent.length;
-    h='<div class="sec-h"><b>🛠 Reports · Workflow Products</b><span>'+S.readymade.length+' total · '+unsent.length+' to send · '+sent+' in progress</span></div><div class="hint" style="margin:-4px 2px 10px">This list is linked directly to Reports. Products stay here while their Reports status is Workflow, and move to Reports Stock when finishing is completed.</div>'+(unsent.length>1?'<div class="btns" style="margin:0 0 12px"><button class="btn gold sm" type="button" id="sendAllReady">'+ic("send")+'Send all '+unsent.length+' to the workshop</button></div>':'')+(S.readymade.map(g=>
-      '<div class="item">'+(g.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(g.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(g.model||g.desc||g.code)+'</div><div class="meta">'+(g.desc&&g.model?esc(g.desc)+"<br>":"")+(g.handle?"Handle: "+esc(g.handle)+" · ":"")+'<b style="color:var(--ink)">'+esc(g.code)+'</b>'+(g.orderType&&/ORDER|CUS/i.test(g.orderType)?' · <b>ORDER</b>':' · <b>READYMADE</b>')+(g.orderRef?' · Order ID: '+esc(g.orderRef):'')+(g.started?"<br>Added "+esc(g.started):"")+'</div><div class="tags">'+prioPill(g.priority)+(g.ptype?'<span class="pill blue">'+esc(g.ptype)+'</span>':"")+(g.job?'<span class="pill wait">'+esc(g.job.stageName||g.job.stage||'In workshop')+'</span>':'<span class="pill gray">Reports Workflow · Not sent</span>')+'</div></div>'+(!g.job?'<div class="act"><button class="btn sm" type="button" data-sendprod="'+esc(g.id)+'">'+ic("send")+'Send</button></div>':'')+'</div>'
-    ).join("")||emptyBox("sofa","No Workflow products","Add or move products to Workflow in Reports. They will appear here automatically."));
-  }else if(tab==="p"){
-    // the chain: In workshop → In finishing → Finished (the same buttons as in Telegram)
-    const inW=S.jobs.filter(j=>j.stage==="workshop"),inF=S.jobs.filter(j=>j.stage==="finishing");
-    h='<div class="sec-h"><b>🛠 In workshop</b><span>'+inW.length+'</span></div>'+(inW.map(j=>jobCard(j,'<div class="act"><button class="btn sm" type="button" data-jws="'+esc(j.id)+'">Finished workshop</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in the workshop.</div>')
-      +'<div class="sec-h" style="margin-top:14px"><b>🪚 In finishing</b><span>'+inF.length+'</span></div>'+(inF.map(j=>jobCard(j,'<div class="act"><button class="btn gold sm" type="button" data-jfin="'+esc(j.id)+'">✅ Finished</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in finishing.</div>')
-      +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,'<div class="act">'+(j.stockState==="sold"?'<button class="btn gold sm" type="button" data-restockjob="'+esc(j.id)+'">♻️ Restock</button>':'<button class="btn sec sm" type="button" data-soldjob="'+esc(j.id)+'">🔴 Sold Out</button>')+(j.driverAt?'<span class="pill ok">🚚 Sent to driver</span>':((j.ordered||j.stockState==="sold")?'<button class="btn sm" type="button" data-driverjob="'+esc(j.id)+'">🚚 Send to driver</button>':""))+'</div>')).join(""):"");
-  }else if(sub==="std"){
-    // v159: ANY admin with the Workshop section can add / change standard products (the input is always visible)
-    const addBtn=(txt)=>'<button class="btn gold" type="button" data-new="1">'+ic("plus")+txt+'</button>';
-    h=S.catalog.length
-      ?'<div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="stdSearch" placeholder="Search products…" autocomplete="off" value="'+esc(stdQ)+'"></div>'+addBtn("Add product")+'</div>'
-        +'<div class="hint" style="margin:0 2px 12px">Tap a product → choose quantity, measurement and Order / Readymade → it goes into your list below → send the whole list to the workshop.</div>'
-        +'<div class="grid">'+S.catalog.map(p=>'<div class="pc" data-pid="'+esc(p.id)+'" data-q="'+esc((p.name+" "+(p.ptype||"")+" "+(p.sizes||[]).join(" ")).toLowerCase())+'"><div class="ph"><img loading="lazy" src="/api/workshop-photo/'+esc(p.photo)+'.jpg" alt=""></div><button class="ed" type="button" data-edit="'+esc(p.id)+'" aria-label="Edit">'+ic("edit","width:15px;height:15px")+'</button><span class="go">'+ic("plus","width:17px;height:17px")+'</span><div class="pn">'+esc(p.name)+'<small>'+(p.ptype?'<span class="ptp">'+esc(p.ptype)+'</span>':'')+((p.sizes||[]).length?(p.sizes.length+(p.sizes.length>1?" measurements":" measurement")):"No measurement saved")+'</small></div></div>').join("")
-        +'<button class="pc add" type="button" data-new="1"><span class="plus">'+ic("plus","width:22px;height:22px")+'</span>Add product<small>Photo, name &amp; measurements</small></button></div><div class="noRes" id="noRes">No product matches your search.</div>'
-      :emptyBox("grid","No standard products yet","Add your first one: a photo, a name and its standard measurements. Everyone in the workshop can then pick it in one tap.<br>"+addBtn("Add standard product"));
+  // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
+  let chain = Promise.resolve();
+  const persist = () => (chain = chain.then(async () => {
+    db.savedAt = new Date().toISOString();
+    try { fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true }); fs.writeFileSync(DATA_FILE, JSON.stringify(db)); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "workshop_data", value: db, updated_at: new Date().toISOString() }); } catch {} }
+  }).catch(() => {}));
+  async function load() {
+    let d = null;
+    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "workshop_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
+    if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
+    if (d && typeof d === "object") db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", ...d };
+    if (!Array.isArray(db.catalog)) db.catalog = [];
+    for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
+    if (!Array.isArray(db.log)) db.log = [];
+    // v157: start the Workshop queue fresh from this deployment; retain historical records in storage.
+    if (db.cutoverVersion !== 157 || !db.cutoverAt) { db.cutoverAt = new Date().toISOString(); db.cutoverVersion = 157; await persist(); }
   }
-  $("out").innerHTML=h;applyStdFilter();
-  // custom form: keep the order list fresh without losing the choice
-  const uo=$("uOrder"),cur=uo.value;
-  const uoKeep=uo.value;uo.innerHTML=orderOpts("No order — new design only");if([...uo.options].some(x=>x.value===uoKeep))uo.value=uoKeep;
-  uo.value=[...uo.options].some(x=>x.value===cur)?cur:"";
-  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+(l.ptype?'<b style="color:var(--ink)">'+esc(l.ptype)+'</b> · ':"")+esc(l.size)+'</div><div class="ids" data-i="'+i+'"></div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.color?'<div class="meta">🎨 '+esc(l.color)+'</div>':"")+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
-  loadBasketIds();loadOrderIds();if(tab==="s"&&sub==="cus")pvU();
-  const logMode=$("logFilter")?.value||"all", shown=(S.log||[]).filter(l=>logMode==="all"||(logMode==="success"&&l.ok)||(logMode==="failed"&&!l.ok));
-  $("log").innerHTML=shown.map(l=>'<div>'+(l.ok?"✅":"❌")+' <b>'+esc(l.what)+'</b><div class="meta">'+esc(l.at)+' · '+esc(l.by||"Admin")+(l.error?' — '+esc(l.error):"")+'</div></div>').join("")||'<div class="hint">No sends in this selection.</div>';
-}
-let oSeq=0;
-async function loadOrderIds(){
-  if(tab!=="o"||!S.orders.length)return;const my=++oSeq;
-  const d=await api("/api/workshop/preview-ids",{orders:S.orders.map(o=>o.id)});
-  if(my!==oSeq||!d||!d.ok)return;
-  document.querySelectorAll("#out .ids[data-o]").forEach(e=>{const c=(d.orderCodes||{})[e.dataset.o];e.innerHTML=c?'<span class="idl">Product ID</span><span class="idc">'+esc(c)+'</span>':"";});
-}
-let pvSeq=0,pvT=null;
-function previewFor(qtyId,idsId,nId,typeFn){ // IDs this line will get = continue after the lines already in the list
-  const q=Math.max(1,Math.min(100,Math.floor(Number($(qtyId).value))||1));
-  clearTimeout(pvT);pvT=setTimeout(async()=>{
-    const my=++pvSeq;const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty).concat(q),types:basket.map(l=>l.ptype||"").concat(typeFn?typeFn():"")});
-    if(my!==pvSeq||!d||!d.ok)return;const c=(d.codes||[])[basket.length]||[];
-    $(idsId).innerHTML=c.map(x=>'<span class="idc">'+esc(x)+'</span>').join("");$(nId).textContent=c.length?"("+c.length+")":"";
-  },180);
-}
-const pvA=()=>previewFor("aQty","aIds","aIdN",()=>curP?curP.ptype||"":""),pvU=()=>previewFor("uQty","uIds","uIdN",()=>typeVal("uType","uTypeO"));
-let idSeq=0;
-async function loadBasketIds(){
-  if(!basket.length)return;const my=++idSeq;
-  const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty),types:basket.map(l=>l.ptype||"")});
-  if(my!==idSeq||!d||!d.ok||!basket.length)return;
-  document.querySelectorAll("#basket .ids").forEach(e=>{const c=(d.codes||[])[Number(e.dataset.i)]||[];e.innerHTML=c.length?'<span class="idl">Product ID'+(c.length>1?"s":"")+'</span>'+c.map(x=>'<span class="idc">'+esc(x)+'</span>').join(""):"";});
-}
-function results(d){const bad=(d.results||[]).filter(x=>!x.ok);return bad.length?bad.map(x=>x.name+": "+x.error).join(" · "):"";}
-$("logFilter").addEventListener("change",render);
-function applyStdFilter(){const q=stdQ.trim().toLowerCase();let n=0;document.querySelectorAll("#out .pc[data-pid]").forEach(c=>{const ok=!q||c.dataset.q.includes(q);c.style.display=ok?"":"none";if(ok)n++;});const a=document.querySelector("#out .pc.add");if(a)a.style.display=q&&!n?"none":"";const nr=$("noRes");if(nr)nr.style.display=q&&!n?"block":"none";}
-$("out").addEventListener("input",e=>{if(e.target.id==="stdSearch"){stdQ=e.target.value;applyStdFilter();}});
-document.addEventListener("click",e=>{const b=e.target.closest("#seg button[data-t]");if(!b)return;tab=b.dataset.t;render();});
-$("subSeg").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
-document.querySelectorAll(".mode").forEach(l=>l.addEventListener("click",()=>{mode=l.dataset.m;renderSettings();}));
-$("slots").addEventListener("click",e=>{
-  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else if(c.dataset.clear==="driver")drv=null;else if(c.dataset.clear==="material")matTopic=null;else stock=null;renderSettings();return;}
-  const p=e.target.closest("button[data-pick]");if(p)openPick(p.dataset.pick);
-});
-function setPlace(g){
-  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else if(pickRole==="driver")drv=g;else if(pickRole==="material")matTopic=g;else stock=g;
-  $("pickOv").classList.remove("on");renderSettings();say("Place chosen — press Save settings to keep it.","info");
-}
-async function openPick(role){
-  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":role==="driver"?"Choose the DRIVER place (group + Driver topic)":role==="material"?"Choose the MATERIAL topic (group + topic)":"Choose the STOCK place";
-  $("pickStep1").style.display="block";$("pickStep2").style.display="none";$("pickSearch").value="";$("linkIn").value="";
-  $("pickList").innerHTML='<div class="hint">Reading your Telegram groups…</div>';$("pickOv").classList.add("on");
-  const d=await api("/api/workshop/dialogs",{});
-  if(!d.ok){pickGroups=[];$("pickList").innerHTML='<div class="empty" style="padding:16px">'+esc(d.error||"Could not read your groups.")+'</div>';return;}
-  pickGroups=d.groups||[];drawGroups();
-}
-function drawGroups(){
-  const q=$("pickSearch").value.trim().toLowerCase(),L=pickGroups.filter(g=>!q||String(g.title).toLowerCase().includes(q));
-  $("pickList").innerHTML=L.map(g=>'<div class="gi tap" data-g="'+esc(g.chat)+'"><span>'+esc(g.title||g.chat)+'<small>'+(g.forum?"Has topics — tap to choose one":g.channel?"Channel":"Group")+'</small></span><span class="pill '+(g.forum?"blue":"gray")+'">'+(g.forum?"Topics ›":"Use")+'</span></div>').join("")||'<div class="empty" style="padding:16px">'+(pickGroups.length?"No group matches.":"No groups found for your Telegram account.")+'</div>';
-}
-$("pickSearch").addEventListener("input",drawGroups);
-async function showTopics(chat,title,topics){
-  $("topicGroup").textContent=title||chat;
-  $("topicList").innerHTML=topics.map(t=>'<div class="gi tap" data-t="'+t.id+'" data-tt="'+esc(t.title)+'"><span>'+esc(t.title)+(t.closed?'<small>Closed topic</small>':"")+'</span><span class="pill blue">Use</span></div>').join("");
-  $("topicList").dataset.chat=chat;$("topicList").dataset.title=title||"";
-  $("pickStep1").style.display="none";$("pickStep2").style.display="block";
-}
-$("pickList").addEventListener("click",async e=>{
-  const r=e.target.closest(".gi[data-g]");if(!r)return;
-  const g=pickGroups.find(x=>x.chat===r.dataset.g);if(!g)return;
-  if(!g.forum)return setPlace({chat:g.chat,title:g.title,topic:0,topicTitle:""});
-  busy("Reading the topics…");const d=await api("/api/workshop/topics",{chat:g.chat});busy("");
-  if(!d.ok)return say(d.error||"Could not read the topics.","bad");
-  if(!d.forum)return setPlace({chat:g.chat,title:g.title,topic:0,topicTitle:""});
-  showTopics(g.chat,g.title,d.topics||[]);
-});
-$("topicList").addEventListener("click",e=>{
-  const r=e.target.closest(".gi[data-t]");if(!r)return;const id=Number(r.dataset.t);
-  setPlace({chat:$("topicList").dataset.chat,title:$("topicList").dataset.title,topic:id>1?id:0,topicTitle:r.dataset.tt});
-});
-$("topicBack").onclick=()=>{$("pickStep2").style.display="none";$("pickStep1").style.display="block";};
-$("linkGo").onclick=async()=>{
-  const v=$("linkIn").value.trim();if(!v)return say("Paste the group link, @username or id first.","bad");
-  busy("Checking the link…");const d=await api("/api/workshop/resolve",{link:v});busy("");
-  if(!d.ok)return say(d.error||"This link could not be used.","bad");
-  if(d.forum&&!d.topic&&(d.topics||[]).length>1)return showTopics(d.chat,d.title,d.topics);   // a group with topics but no topic in the link → choose it
-  setPlace({chat:d.chat,title:d.title||"",topic:d.topic||0,topicTitle:d.topicTitle||""});
-  if(d.unchecked)say("Place added (your Telegram account is not connected, so it could not be checked) — press Save settings.","info");
-};
-$("pickClose").onclick=()=>$("pickOv").classList.remove("on");
-const botReport=d=>(d.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.label+(c.ok?" — the bot can post":" — "+c.error)).join("  ·  ")||(d.error||"");
-async function checkBot(quiet){
-  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin,stock,driver:drv});
-  const t=botReport(d)||"";$("botLine").innerHTML=t?'<span class="pill '+(d.ok?"ok":"bad")+'" style="white-space:normal">'+esc(t)+'</span>'+(d.ok||!d.bot?"":'<span style="display:block;margin-top:6px">Open the group → Add members → <b>@'+esc(d.bot)+'</b>, then make it an admin.</span>'):"";
-  if(!quiet)say(d.ok?"✅ The bot can post in both places.":(t||"The bot check failed."),d.ok?"ok":"bad");
-  return d;
-}
-$("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
-$("saveBtn").onclick=async()=>{
-  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,material:matTopic,mode});
-  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode;}
-  say(d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");render();
-  if(d.ok&&ws&&fin){const c=await checkBot(true);if(!c.ok)say((d.message||"")+" ⚠ "+botReport(c),"bad");}
-  busy("");
-};
-$("testBtn").onclick=async()=>{
-  busy("Sending a test message…");
-  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,material:matTopic,mode});
-  if(!sv.ok){busy("");return say(sv.error||"Could not save the places first.","bad");}
-  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode;
-  const d=await api("/api/workshop/test",{});busy("");render();
-  say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
-};
 
-// ── standard products: choose → quantity + measurement + order/readymade → list → send ──
-let aKind="readymade";
-function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";}
-function openAdd(id){
-  const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
-  $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aType").textContent=p.ptype?"Product type: "+p.ptype:"Choose quantity and measurement";$("aQty").value=1;$("aSize").value="";$("aNote").value="";$("aColor").value="";say2("aMsg","");
-  $("aSizes").innerHTML=(p.sizes||[]).map(z=>'<button type="button" class="sz" data-z="'+esc(z)+'">'+esc(z)+'</button>').join("")||'<div class="hint">No standard measurement saved — type it below.</div>';
-  $("aOrder").innerHTML=orderOpts("— choose the order —");$("aOrderTyped").value="";$("aOrderTyped").style.display="none";
-  setKind("readymade");$("addOv").classList.add("on");pvA();
-}
-$("kOrder").onclick=()=>setKind("order");$("kReady").onclick=()=>setKind("readymade");
-$("qMinus").onclick=()=>{$("aQty").value=Math.max(1,(Number($("aQty").value)||1)-1);pvA();};
-$("qPlus").onclick=()=>{$("aQty").value=Math.min(9999,(Number($("aQty").value)||0)+1);pvA();};
-$("aQty").addEventListener("input",pvA);$("uQty").addEventListener("input",pvU);["change","input"].forEach(ev=>document.addEventListener(ev,e=>{if(e.target&&(e.target.id==="uType"||e.target.id==="uTypeO"))pvU();}));
-$("aSizes").addEventListener("click",e=>{const b=e.target.closest("button[data-z]");if(!b)return;$("aSize").value=b.dataset.z;document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x===b));});
-$("aSize").addEventListener("input",()=>document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x.dataset.z===$("aSize").value.trim())));
-wireOrderBox("aOrder","aOrderTyped","aSize");
-$("aClose").onclick=()=>$("addOv").classList.remove("on");
-$("aAdd").onclick=()=>{
-  const qty=Math.floor(Number($("aQty").value)),size=$("aSize").value.trim(),note=$("aNote").value.trim();
-  if(!(qty>=1))return say2("aMsg","Choose the quantity.");
-  if(!size)return say2("aMsg","Choose or type the measurement.");
-  let o=null;if(aKind==="order"){o=pickedOrder("aOrder","aOrderTyped");if(!o)return say2("aMsg","Choose which order this product belongs to, or type the order ID.");}
-  basket.push({pid:curP.id,ptype:curP.ptype||"",name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,color:aKind==="order"?$("aColor").value.trim():"",orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
-  $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
-};
-$("out").addEventListener("click",async e=>{
-  const so=e.target.closest("button[data-sendorder],button[data-again]");
-  if(so){const again=!!so.dataset.again,id=so.dataset.sendorder||so.dataset.again;busy("Sending to the workshop…");const r=await api("/api/workshop/send-order",{id,again});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
-  const sp=e.target.closest("button[data-sendprod]");
-  if(sp){busy("Sending to the workshop…");const r=await api("/api/workshop/send-product",{ids:[sp.dataset.sendprod]});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
-  if(e.target.closest("#sendAllReady")){busy("Sending to the workshop…");const r=await api("/api/workshop/send-product",{ids:S.readymade.filter(g=>!g.job).map(g=>g.id)});busy("");say(r.ok?r.message+(r.error?" ⚠ "+r.error:""):(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
-  const jw=e.target.closest("button[data-jws]");
-  if(jw){busy("Sending to finishing…");const r=await api("/api/workshop/job/finish-workshop",{id:jw.dataset.jws});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const jf=e.target.closest("button[data-jfin]");
-  if(jf){busy("Moving to stock…");const r=await api("/api/workshop/job/finish",{id:jf.dataset.jfin});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const sold=e.target.closest("button[data-soldjob]");if(sold){busy("Marking Sold Out…");const r=await api("/api/workshop/job/sold-out",{id:sold.dataset.soldjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const drvb=e.target.closest("button[data-driverjob]");if(drvb){busy("Sending to the driver…");const r=await api("/api/workshop/job/send-driver",{id:drvb.dataset.driverjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const restock=e.target.closest("button[data-restockjob]");if(restock){busy("Restocking…");const r=await api("/api/workshop/job/restock",{id:restock.dataset.restockjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  if(e.target.closest("[data-new]"))return openCat("");
-  const ed=e.target.closest("button[data-edit]");if(ed){e.stopPropagation();return openCat(ed.dataset.edit);}
-  const pc=e.target.closest(".pc[data-pid]");if(pc)openAdd(pc.dataset.pid);
-});
-
-// ── custom product (new design) ──
-$("uDrop").onclick=()=>$("uFile").click();
-$("uImg").onclick=()=>$("uFile").click();
-$("uFile").onchange=async()=>{const f=$("uFile").files&&$("uFile").files[0];if(!f)return;
-  try{uPhoto=await resizePhoto(f);$("uImg").src=uPhoto;$("uImg").style.display="block";$("uDropT").textContent="Change the photo";say2("uMsg","");}catch(e){say2("uMsg",e.message||"Could not read the photo.");}$("uFile").value="";};
-$("uMinus").onclick=()=>{$("uQty").value=Math.max(1,(Number($("uQty").value)||1)-1);pvU();};
-$("uPlus").onclick=()=>{$("uQty").value=Math.min(9999,(Number($("uQty").value)||0)+1);pvU();};
-wireOrderBox("uOrder","uOrderTyped","uSize");
-$("uAdd").onclick=()=>{
-  const name=$("uName").value.trim(),qty=Math.floor(Number($("uQty").value)),size=$("uSize").value.trim(),note=$("uNote").value.trim();
-  if(!uPhoto)return say2("uMsg","Add the photo of the new design.");
-  const ptype=typeVal("uType","uTypeO");if(!ptype)return say2("uMsg","Choose the product type.");
-  if(!name)return say2("uMsg","Type the design / product name.");
-  if(!(qty>=1))return say2("uMsg","Choose the quantity.");
-  if(!size)return say2("uMsg","Type the measurement.");
-  if(basket.length>=20)return say2("uMsg","The list is full (20 products). Send it first.");
-  if($("uOrder").value==="__typed"&&!$("uOrderTyped").value.trim())return say2("uMsg","Type the order ID, or choose “No order”.");
-  const o=pickedOrder("uOrder","uOrderTyped");
-  basket.push({custom:true,ptype,name,photoData:uPhoto,qty,size,note,kind:"order",color:$("uColor").value.trim(),orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
-  uPhoto="";$("uImg").style.display="none";$("uImg").removeAttribute("src");$("uDropT").textContent="Tap to add the photo";
-  typeSet("uType","uTypeO","");$("uName").value="";$("uQty").value=1;$("uSize").value="";$("uNote").value="";$("uColor").value="";$("uOrder").value="";$("uOrderTyped").value="";$("uOrderTyped").style.display="none";say2("uMsg","");
-  render();say("New design added to your list — add more, or press Send list to workshop.","info");
-};
-
-// ── the list → Telegram ──
-$("basket").addEventListener("click",async e=>{
-  const d=e.target.closest("button[data-del]");if(d){basket.splice(Number(d.dataset.del),1);render();return;}
-  if(e.target.closest("#bClear")){basket=[];render();return;}
-  if(e.target.closest("#bSend")){
-    busy("Sending to the workshop…");
-    const r=await api("/api/workshop/send-items",{items:basket.map(l=>l.custom?{custom:true,ptype:l.ptype,name:l.name,photoData:l.photoData,qty:l.qty,size:l.size,color:l.color,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note}:{pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,color:l.color,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note})});busy("");
-    say(r.ok?(r.message||"✅ Sent.")+(results(r)?" ⚠ "+results(r):""):(r.error||"Could not send.")+(results(r)?" "+results(r):""),r.ok?"ok":"bad");
-    if(r.ok)basket=[];render();
+  // ── who is who ──────────────────────────────────────────────────────────────────────────────
+  const keyOf = actor => String(actor?.telegramId || "") || "open";
+  const settingsOf = key => {
+    const s = db.admins[key] || {};
+    const one = x => (x && typeof x === "object" ? cleanTargets([x])[0] : null) || null;
+    const workshop = one(s.workshop) || (Array.isArray(s.targets) && s.targets[0] ? cleanTargets([s.targets[0]])[0] || null : null); // v150–v152 saved one "targets" list: its first group is the workshop
+    const finishing = one(s.finishing);
+    return { workshop, finishing, stock: one(s.stock), driver: one(s.driver), material: one(s.material), mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
+  };
+  function accountOf(actor) {
+    let acc = typeof ctx.accountFor === "function" ? ctx.accountFor(actor) : null;
+    if (!acc && actor?.role === "open" && ctx.admins) acc = [...ctx.admins.values()].find(a => a.ready) || null; // open mode (no admin list yet): any connected account
+    return acc;
   }
-});
+  const mineOnly = (actor, o) => actor?.role === "owner" || actor?.role === "open" || actor?.viewer || String(o.createdByTelegramId || "") === String(actor?.telegramId || "");
+  // v153: ORDERABLE = the customer CONFIRMED it AND the order card was DELIVERED to the customer. Everything else (rejected, still waiting, not delivered) is not shown.
+  const isOrderable = o => o.status === "Confirmed" && !!(o.sent || o.customerDelivered);
+  const nowEth = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }); return { d: helpers.ethDate(g.slice(0, 10)), t: g.slice(11, 16) }; };
+  const stamp = () => { const n = nowEth(); return n.d + " " + n.t; };
+  const R = () => ctx.reports || {};
 
-// ── main admin: make / change standard products ──
-function resizePhoto(file){
-  return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();
-    im.onload=()=>{try{const mx=1000,sc=Math.min(1,mx/Math.max(im.naturalWidth,im.naturalHeight)),w=Math.max(1,Math.round(im.naturalWidth*sc)),h=Math.max(1,Math.round(im.naturalHeight*sc)),cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,w,h);c.drawImage(im,0,0,w,h);URL.revokeObjectURL(u);res(cv.toDataURL("image/jpeg",.82));}catch(e){rej(e);}};
-    im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});
-}
-$("cTypeBox").innerHTML=typeSel("cType","cTypeO");$("uTypeBox").innerHTML=typeSel("uType","uTypeO");typeWire("cType","cTypeO");typeWire("uType","uTypeO");
-function openCat(id){
-  editId=id||"";newPhoto="";const p=id?S.catalog.find(x=>x.id===id):null;
-  $("cTitle").textContent=p?"Change standard product":"Add standard product";$("cName").value=p?p.name:"";typeSet("cType","cTypeO",p?p.ptype:"");$("cSizes").value=p?(p.sizes||[]).join("\n"):"";
-  $("cImg").style.display=p?"block":"none";if(p)$("cImg").src="/api/workshop-photo/"+p.photo+".jpg";
-  $("cPickT").textContent=p?"Change the photo":"Tap to add the photo";$("cDel").style.display=p?"inline-flex":"none";say2("cMsg","");$("catOv").classList.add("on");
-}
-$("cPick").onclick=()=>$("cFile").click();
-$("cFile").onchange=async()=>{const f=$("cFile").files&&$("cFile").files[0];if(!f)return;try{newPhoto=await resizePhoto(f);$("cImg").src=newPhoto;$("cImg").style.display="block";$("cPickT").textContent="Change the photo";say2("cMsg","");}catch(e){say2("cMsg",e.message||"Could not read the photo.");}$("cFile").value="";};
-$("cClose").onclick=()=>$("catOv").classList.remove("on");
-$("cSave").onclick=async()=>{
-  const name=$("cName").value.trim();if(!name)return say2("cMsg","Type the product name.");const ptype=typeVal("cType","cTypeO");if(!ptype)return say2("cMsg","Choose the product type.");if(!newPhoto&&!(editId&&S.catalog.some(x=>x.id===editId&&x.photo)))return say2("cMsg","Add the product photo.");
-  busy("Saving…");const d=await api("/api/workshop/catalog/save",{id:editId||undefined,name,ptype,sizes:$("cSizes").value,photo:newPhoto||undefined});busy("");
-  if(!d.ok)return say2("cMsg",d.error||"Could not save.");
-  $("catOv").classList.remove("on");basket=basket.filter(l=>l.custom||S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
-};
-$("cDel").onclick=async()=>{
-  if(!editId||!confirm("Delete this standard product?"))return;
-  busy("Deleting…");const d=await api("/api/workshop/catalog/delete",{id:editId});busy("");
-  if(!d.ok)return say2("cMsg",d.error||"Could not delete.");
-  $("catOv").classList.remove("on");basket=basket.filter(l=>l.custom||S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
-};
-(async()=>{
-  let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
-  meRole=me.role||"";if(!(me.role==="owner"||me.role==="open"||(me.perms||[]).includes("workshop"))){
-    $("gate").style.display="block";$("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Workshop section. Ask them to tick Workshop for you in Manage Admins.":(me.error||"Access denied.");return;
+  // ── Telegram targets: public @username · private group id (-100…) · any t.me link, + optional forum TOPIC ──
+  function parseTgLink(x) {
+    let t = String(x || "").trim(); if (!t) return null;
+    t = t.replace(/^(https?:\/\/)?(www\.)?(t|telegram)\.me\//i, "");
+    const parts = t.split(/[/?#]/).filter(Boolean); if (!parts.length) return null;
+    if (parts[0] === "c" && /^\d+$/.test(parts[1] || "")) return { chat: "-100" + parts[1], nums: parts.slice(2).filter(p => /^\d+$/.test(p)).map(Number) };
+    const u = parts[0].replace(/^@+/, "");
+    if (/^-100\d{5,15}$/.test(u)) return { chat: u, nums: parts.slice(1).filter(p => /^\d+$/.test(p)).map(Number) };
+    if (/^-\d{5,20}$/.test(u)) return { chat: u, nums: [] };
+    if (/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(u)) return { chat: u, nums: parts.slice(1).filter(p => /^\d+$/.test(p)).map(Number) };
+    return null;
   }
-  $("view").style.display="block";
-  const d=await api("/api/workshop/state");
-  if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
-  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
-  render();
-})();
-document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
-setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/workshop/state");if(d.ok)render();},10000);
-</script>
-</body>
-</html>
+  function cleanTargets(v) {
+    const arr = Array.isArray(v) ? v : String(v || "").split(/[\s,;\n]+/), out = [];
+    for (const x of arr) {
+      let o = null;
+      if (x && typeof x === "object") { const pl = parseTgLink(x.chat); if (pl) o = { chat: pl.chat, title: clip(x.title, 80), topic: Number.isInteger(Number(x.topic)) && Number(x.topic) > 1 ? Number(x.topic) : 0, topicTitle: clip(x.topicTitle, 80) }; }
+      else { const pl = parseTgLink(x); if (pl) o = { chat: pl.chat, title: /^-?\d/.test(pl.chat) ? "" : "@" + pl.chat, topic: 0, topicTitle: "" }; }
+      if (o && !out.some(y => y.chat.toLowerCase() === o.chat.toLowerCase() && y.topic === o.topic)) out.push(o);
+    }
+    return out.slice(0, 5);
+  }
+  const targetName = g => g ? (g.title || (/^-/.test(g.chat) ? "Group " + g.chat : "@" + g.chat)) + (g.topic ? " › " + (g.topicTitle || "topic " + g.topic) : (g.topicTitle ? " › " + g.topicTitle : "")) : "";
+  async function resolveTarget(acc, g) {
+    const key = /^-?\d+$/.test(g.chat) ? BigInt(g.chat) : "@" + g.chat;
+    try { return await acc.client.getEntity(key); }
+    catch (e) { if (typeof key === "bigint") { await acc.client.getDialogs({ limit: 500 }); return await acc.client.getEntity(key); } throw e; }
+  }
+  const tgFriendly = e => {
+    const m = String(e?.errorMessage || e?.message || e || "");
+    if (/FLOOD_WAIT|PEER_FLOOD|Too Many Requests/i.test(m)) return "Telegram asked to slow down. Try again in a few minutes.";
+    if (/USERNAME_NOT_OCCUPIED|USERNAME_INVALID/i.test(m)) return "No Telegram group with this username exists. Check the spelling.";
+    if (/CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED|USER_BANNED_IN_CHANNEL|CHANNEL_PRIVATE|CHAT_SEND_PHOTOS_FORBIDDEN|CHAT_SEND_MEDIA_FORBIDDEN/i.test(m)) return "Your Telegram account is not allowed to look into that group. Join it with your own account.";
+    if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "Your Telegram account cannot see that group. Join the group with your own account, or pick it from the list.";
+    if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "Your Telegram connection expired. Connect your Telegram account again.";
+    return clip(m, 160) || "Could not reach Telegram.";
+  };
+  const botFriendly = e => {
+    const m = String(e?.message || e || "");
+    if (/BOT_TOKEN is not configured/i.test(m)) return "The AMBAR bot is not set up on the server (BOT_TOKEN).";
+    if (/chat not found/i.test(m)) return "The AMBAR bot cannot see this group. Add the bot to the group (as admin) first.";
+    if (/not enough rights|have no rights|CHAT_WRITE_FORBIDDEN|need administrator|bot was kicked|bot is not a member|forbidden/i.test(m)) return "The AMBAR bot is not allowed to post here. Add the bot to the group and make it an admin.";
+    if (/message thread not found|TOPIC_CLOSED|TOPIC_DELETED/i.test(m)) return "That topic does not exist (or is closed). Choose the topic again.";
+    if (/Too Many Requests|retry after/i.test(m)) return "Telegram asked to slow down. Try again in a minute.";
+    return clip(m, 160) || "The bot could not post.";
+  };
+
+  // ── posting with the BOT (inline buttons need the bot) ──────────────────────────────────────
+  const tg = (method, body) => ctx.tgApi.call(method, body);
+  const chatKey = g => /^-?\d+$/.test(String(g.chat)) ? String(g.chat) : "@" + String(g.chat).replace(/^@/, "");
+  async function botPost(g, buf, caption, markup, html) { // html = true → caption is Telegram HTML (bold lines)
+    const topic = g.topic > 1 ? g.topic : 0;
+    if (buf) {
+      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", html ? caption : caption.slice(0, 1000)); if (html) fd.append("parse_mode", "HTML"); if (markup) fd.append("reply_markup", JSON.stringify(markup)); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
+      try { const r = await ctx.tgApi.sendForm("sendPhoto", build); return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: true }; }
+      catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; } // not a picture Telegram accepts → plain text
+    }
+    const r = await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: html ? caption : caption.slice(0, 4000), ...(html ? { parse_mode: "HTML" } : {}), ...(markup ? { reply_markup: markup } : {}) });
+    return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: false };
+  }
+  // v165: production messages are sent by the connected admin USER ACCOUNT, never by the bot.
+  async function userPost(actor, g, buf, caption, html) {
+    const acc = accountOf(actor);
+    if (!acc?.ready) throw new Error("Your own Telegram account is not connected. Connect it before sending to topics.");
+    const entity = await resolveTarget(acc, g);
+    const replyTo = g.topic > 1 ? Number(g.topic) : undefined;
+    if (buf) return await acc.client.sendFile(entity, { file: buf, caption: html ? caption : String(caption || "").slice(0, 4000), parseMode: html ? "html" : undefined, forceDocument: false, ...(replyTo ? { replyTo } : {}) });
+    return await acc.client.sendMessage(entity, { message: html ? caption : String(caption || "").slice(0, 4000), ...(replyTo ? { replyTo } : {}) });
+  }
+
+  async function botEdit(ref, caption, markup, html) { // change the text of a posted message (and drop its button); never throws
+    if (!ref) return;
+    const body = { chat_id: ref.chat, message_id: ref.message_id, reply_markup: markup || { inline_keyboard: [] }, ...(html ? { parse_mode: "HTML" } : {}) };
+    try { await tg(ref.photo ? "editMessageCaption" : "editMessageText", ref.photo ? { ...body, caption: html ? caption : caption.slice(0, 1000) } : { ...body, text: html ? caption : caption.slice(0, 4000) }); }
+    catch (e) { if (!/not modified/i.test(String(e.message))) { try { await tg("editMessageReplyMarkup", { chat_id: ref.chat, message_id: ref.message_id, reply_markup: { inline_keyboard: [] } }); } catch {} } }
+  }
+  const kbWorkshop = id => ({ inline_keyboard: [[{ text: "🛠 Finished workshop", callback_data: "wsf:" + id }]] });
+  const kbFinishing = id => ({ inline_keyboard: [[{ text: "✅ Finished", callback_data: "wfin:" + id }]] });
+  const kbSoldOut = id => ({ inline_keyboard: [[{ text: "🔴 Sold Out", callback_data: "wsold:" + id }]] });
+  const kbRestock = id => ({ inline_keyboard: [[{ text: "♻️ Restock", callback_data: "wrestock:" + id }]] });
+  // v164: STOCK-post buttons. ORDER (finished): 🚚 Send to driver (+ Sold Out). READYMADE: Sold Out → then Restock + 🚚 Send to driver. Driver button disappears once sent.
+  const isOrderJob = j => j.kind === "order" || !!j.orderLabel;
+  const kbStock = j => {
+    const row = [], drv = { text: "🚚 Send to driver", callback_data: "wdrv:" + j.id };
+    if (j.stockState === "sold") { row.push({ text: "♻️ Restock", callback_data: "wrestock:" + j.id }); if (!j.driver) row.push(drv); }
+    else { if (isOrderJob(j) && !j.driver) row.push(drv); row.push({ text: "🔴 Sold Out", callback_data: "wsold:" + j.id }); }
+    return { inline_keyboard: [row] };
+  };
+  const stockExtra = j => (j.stockState === "sold" ? `🔴 SOLD OUT — ${j.soldBy} · ${j.soldAt}` : j.restockAt ? `♻️ RESTOCKED — ${j.restockBy} · ${j.restockAt}` : `📦 IN STOCK — ${(j.finDone || {}).by || ""} · ${(j.finDone || {}).at || ""}`) + (j.driver ? `\n🚚 Sent to driver — ${j.driver.by} · ${j.driver.at}` : "");
+
+  // ── pictures ────────────────────────────────────────────────────────────────────────────────
+  async function orderPhotoBuf(o) {
+    const u = String(o.photo || ""); if (!u) return null;
+    try {
+      if (/^https?:\/\//i.test(u)) { const r = await fetch(u); if (!r.ok) return null; return Buffer.from(await r.arrayBuffer()); }
+      const f = path.join(ctx.uploadDir || path.join(__dirname, "public", "uploads"), path.basename(u.split("?")[0]));
+      return fs.readFileSync(f);
+    } catch { return null; }
+  }
+  const PHOTO_DIR = path.join(baseDir, "workshop-photos");
+  const photoFile = id => path.join(PHOTO_DIR, id + ".jpg");
+  async function savePhoto(dataUrl) {
+    const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
+    if (!m) throw new Error("The photo could not be read. Choose it again.");
+    const buf = Buffer.from(m[1], "base64");
+    if (buf.length < 200) throw new Error("The photo is empty. Choose it again.");
+    if (buf.length > 1.5 * 1024 * 1024) throw new Error("The photo is too big (max 1.5 MB after shrinking).");
+    const id = crypto.randomBytes(12).toString("hex");
+    try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); fs.writeFileSync(photoFile(id), buf); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "wphoto_" + id, value: { b64: m[1] }, updated_at: new Date().toISOString() }); } catch {} }
+    return id;
+  }
+  async function photoBuf(id) {
+    if (!/^[a-f0-9]{24}$/.test(String(id || ""))) return null;
+    try { return fs.readFileSync(photoFile(id)); } catch {}
+    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "wphoto_" + id).maybeSingle(); if (data?.value?.b64) return Buffer.from(data.value.b64, "base64"); } catch {} }
+    return null;
+  }
+  async function dropPhoto(id) {
+    if (!id || db.catalog.some(p => p.photo === id) || Object.values(db.jobs).some(j => j.photoId === id)) return;
+    try { fs.unlinkSync(photoFile(id)); } catch {}
+    if (supabase) { try { await supabase.from("app_settings").delete().eq("key", "wphoto_" + id); } catch {} }
+  }
+  app.get("/api/workshop-photo/:id.jpg", async (req, res) => {
+    const buf = await photoBuf(String(req.params.id || ""));
+    if (!buf) return res.status(404).end();
+    res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=31536000, immutable" });
+    res.send(buf);
+  });
+  const cleanSizes = v => { const arr = Array.isArray(v) ? v : String(v || "").split(/\n|;/); return [...new Set(arr.map(x => clip(x, 60)).filter(Boolean))].slice(0, 40); };
+  const compactCat = p => ({ id: p.id, name: p.name, ptype: p.ptype || "", sizes: p.sizes || [], photo: p.photo || "" });
+  const canManage = actor => !!actor && hasPerm(actor, "workshop"); // v159: every admin who has the Workshop section can add / change standard products
+
+  // ── jobs: one job = one thing sent to the workshop. stage: workshop → finishing → finished ────
+  const STAGES = { workshop: "In workshop", finishing: "In finishing", finished: "Finished · in stock" };
+  const sizeOfOrder = o => [o.length, o.width, o.height].map(x => clip(x, 20)).filter(Boolean).join(" × ");
+  const line = (icon, label, v) => { v = clip(v, 120); return v ? `${icon} ${label}: ${v}` : ""; };
+  const originalProductCode = o => {
+    const direct = [o?.productId, o?.productCode, o?.prodId, o?.modelCode, o?.modelId, o?.code].map(x => clip(x, 30)).find(Boolean);
+    if (direct) return direct;
+    const label = clip(o?.product || o?.model || "", 120);
+    const match = label.match(/\b[A-Z0-9]{1,12}-[A-Z0-9]{1,12}\b/i);
+    return match ? match[0].toUpperCase() : "";
+  };
+  // v159: an order without its own Product ID gets the next ID of the Z/Y/X sequence. It is RESERVED when first shown so the Orders list and the Telegram message agree.
+  const reservedSet = () => new Set(Object.values(db.reserved || {}));
+  // v160: Shoe Shelf → Z1, Z2 … (old sequence). Every other product type → 1A, 1B … 1Z, 2A … 2Z …
+  const isShoe = pt => /shoe\s*shelf/i.test(String(pt || ""));
+  const orderPtype = o => clip(o?.ptype || o?.productType || "", 40) || (/shoe/i.test(String(o?.product || o?.model || "")) ? "Shoe Shelf" : "");
+  const orderCodeFor = (o, reserve) => {
+    db.reserved = db.reserved || {}; R().setReservedCodes?.(reservedSet);
+    const taken = c => typeof R().codeTaken === "function" && R().codeTaken(c); // v159: orders always take the next Z/Y/X ID (no original code)
+    const cur = db.reserved[o.id]; if (cur && !taken(cur)) return cur;
+    if (!reserve || typeof R().peekSeqCodes !== "function") return "";
+    delete db.reserved[o.id]; const c = R().peekSeqCodes(1, orderPtype(o))[0]; if (c) { db.reserved[o.id] = c; persist(); } return c || "";
+  };
+  // v160: measurement "120*35*120"
+  const fmtSize = v => clip(v, 80).replace(/(\d(?:\.\d+)?\s*(?:cm|mm|m)?)\s*[×✕xX*]\s*(?=\d)/gi, "$1*").replace(/\s*\*\s*/g, "*");
+  const esc = v => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // v160: the WORKSHOP post is short: AMBAR FURNITURE · bold "ProductID-Model" (one line per unit) · measurement · quantity · additional texts. Telegram HTML (bold).
+  function workshopCaption(j, extra) {
+    const model = clip(j.name || "", 100), codes = (j.codes || []).length ? j.codes : ["—"];
+    const tail = extra ? "\n\n" + esc(extra) : "", LIMIT = 1000 - tail.length;
+    const head = ["<b>AMBAR FURNITURE</b>", "", ...codes.map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>"), ...(j.orderLabel ? ["Order ID: " + esc(clip(j.orderLabel, 40))] : []), "", "Measurement: " + esc(fmtSize(j.size) || "—"), "Quantity: " + (j.qty || 1)];
+    const more = [...(j.details || []), j.note ? clip(j.note, 400) : ""].filter(Boolean);
+    let out = head.join("\n");
+    if (more.length) {
+      out += "\n\nADDITIONAL TEXTS:";
+      for (const m of more) { const l = "\n" + esc(m); if (out.length + l.length > LIMIT) break; out += l; }
+    }
+    return out.slice(0, LIMIT) + tail;
+  }
+  function jobCaption(j, stage, extra) {
+    if (stage === "workshop") return workshopCaption(j, extra);
+    const head = "_________ AMBAR FURNITURE _________";
+    const ordered = j.kind === "order" || !!j.orderLabel;
+    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID" + ((j.codes || []).length > 1 ? `s (${j.codes.length})` : "") + "- " + (clip((j.codes || []).join(", "), 330) || "Pending"), "MODEL- " + clip(j.name || "—", 100), j.ptype ? "PRODUCT TYPE- " + clip(j.ptype, 40) : "", ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
+    return L.filter(Boolean).join("\n");
+  }
+  const orderDetails = o => [line("🧱", "Material", o.material), line("🎨", "Color", o.color), line("✨", "Style", o.style), line("🖌", "Design", o.design), line("🔧", "Handle", o.handle), line("🚪", "Door", o.door), line("🗂", "Partition", o.partition), line("🧰", "Drawer", o.drawer), line("➕", "Extra", o.additionalFeatures), line("📅", "Completion date", o.completionDate), line("🚚", "Delivery date", o.deliveryDate)].filter(Boolean);
+  const findOrder = id => (ctx.getOrders() || []).find(o => String(o.id) === String(id));
+  // v164: an order whose production is FINISHED (or already handed to the driver) is no longer listed in "Which order?"
+  const orderDone = o => { const js = Object.values(db.jobs).filter(j => String(j.orderId) === String(o.id)); return js.length > 0 && js.every(j => j.stage === "finished" || !!j.driver); };
+  const orderJob = oid => Object.values(db.jobs).filter(j => String(j.orderId) === String(oid)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
+  async function saveOrderStage(j, patch) { // the order shows where its production is
+    if (!j.orderId) return;
+    const o = findOrder(j.orderId); if (!o) return;
+    o.workshop = { ...(o.workshop || {}), jobId: j.id, stage: j.stage, ...patch };
+    try { if (typeof ctx.saveOrder === "function") await ctx.saveOrder(o); } catch (e) { console.warn("Workshop: order stage not saved:", e.message); }
+  }
+  const compactJob = j => ({ id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, stockState: j.stockState || "stock", ordered: isOrderJob(j), driverAt: j.driver ? j.driver.at : "", by: j.by || "", photo: j.photoId || "" });
+  const log = (key, actor, what, ok, error) => { db.log.push({ at: stamp(), key, by: clip(actor?.name || "Admin", 60), what, ok: !!ok, error: error || "" }); if (db.log.length > 300) db.log.splice(0, db.log.length - 300); };
+
+  // create the job, make its Reports product(s), post it in the WORKSHOP topic with the button
+  async function createJob(spec, actor) {
+    const key = keyOf(actor), s = settingsOf(key); R().setReservedCodes?.(reservedSet);
+    if (!s.workshop) return { ok: false, error: "First choose the WORKSHOP group and topic (Settings above)." };
+    if (!s.finishing) return { ok: false, error: "First choose the FINISHING group and topic (Settings above) — the workshop button sends the job there." };
+    if (!s.stock) return { ok: false, error: "First choose the STOCK group and topic (Settings above) — finished products are posted there." };
+    const id = uid(), by = clip(actor?.name || "Admin", 60);
+    const j = { id, key, telegramId: String(actor?.telegramId || ""), kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), ptype: clip(spec.ptype, 40), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
+    // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
+    if (spec.existingProductIds && spec.existingProductIds.length) {
+      for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); if (R().wsSetStage) R().wsSetStage(pid, "workshop", by, id); } }
+    } else if (typeof R().wsAddProduct === "function") {
+      const n = Math.max(1, Math.min(spec.qty || 1, 100));
+      for (let i = 0; i < n; i++) {
+        const p = await R().wsAddProduct({ ptype: spec.ptype || "", model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), seqId: true, orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
+        j.productIds.push(p.id); j.codes.push(p.code);
+      }
+    }
+    // 2) the bot posts it in the WORKSHOP topic
+    let ref;
+    try { ref = await userPost(actor, s.workshop, spec.buf, jobCaption(j, "workshop"), true); }
+    catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: botFriendly(e) }; }
+    j.wsMsg = ref;
+    if (spec.buf && spec.buf.length <= 1.4 * 1024 * 1024) { try { j.photoId = await savePhoto("data:image/jpeg;base64," + spec.buf.toString("base64")); } catch {} } // kept so the FINISHING post shows the same picture
+    db.jobs[id] = j;
+    const keys = Object.keys(db.jobs); if (keys.length > 600) { for (const k of keys.sort((a, b) => String(db.jobs[a].createdAt).localeCompare(String(db.jobs[b].createdAt))).slice(0, keys.length - 600)) if (db.jobs[k].stage === "finished") { const ph = db.jobs[k].photoId; delete db.jobs[k]; if (ph) setTimeout(() => dropPhoto(ph), 0); } }
+    await saveOrderStage(j, { sentAt: stamp(), by });
+    log(key, actor, `${j.kind === "order" ? "Order " + (j.orderLabel || "") : "Readymade"} · ${j.name}${j.qty ? " ×" + j.qty : ""}`, true, "");
+    persist();
+    return { ok: true, job: j };
+  }
+
+  // WORKSHOP → FINISHING (button "Finished workshop")
+  async function toFinishing(jobId, byName) {
+    const j = db.jobs[String(jobId)]; if (!j) return { ok: false, error: "This job was not found any more." };
+    if (j.stage === "finishing") return { ok: false, code: "DONE", error: "Already in finishing." };
+    if (j.stage === "finished") return { ok: false, code: "DONE", error: "This job is already finished." };
+    const s = settingsOf(j.key);
+    if (!s.finishing) return { ok: false, error: "The FINISHING topic is not chosen. Choose it in the Workshop settings." };
+    const by = clip(byName, 60) || "Workshop", at = stamp();
+    let ref;
+    try { ref = await userPost({ telegramId: j.telegramId, name: by, role: "admin" }, s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`), true);  }
+    catch (e) { return { ok: false, error: botFriendly(e) }; }
+    j.stage = "finishing"; j.wsDone = { by, at }; j.finMsg = ref;
+    for (const pid of j.productIds || []) if (R().wsSetStage) R().wsSetStage(pid, "finishing", by, j.id);
+    await botEdit(j.wsMsg, jobCaption(j, "workshop", `✅ Finished workshop — ${by} · ${at}\n➡ Sent to FINISHING`), null, true);
+    await saveOrderStage(j, { wsDoneAt: at, wsDoneBy: by });
+    log(j.key, { name: by }, `Finished workshop · ${j.name}`, true, ""); persist();
+    return { ok: true, job: j };
+  }
+  // FINISHING → STOCK (button "Finished"): Reports product(s) go to STOCK, the order shows "Finished"
+  async function toStock(jobId, byName) {
+    const j = db.jobs[String(jobId)]; if (!j) return { ok: false, error: "This job was not found any more." };
+    if (j.stage === "finished") return { ok: false, code: "DONE", error: "This job is already finished and in stock." };
+    if (j.stage !== "finishing") return { ok: false, code: "EARLY", error: "The workshop has not pressed “Finished workshop” yet." };
+    const s = settingsOf(j.key);
+    if (!s.stock) return { ok: false, error: "The STOCK group is not chosen. Choose it in Workshop settings before finishing this product." };
+    const by = clip(byName, 60) || "Finishing", at = stamp(), missing = [];
+    for (const pid of j.productIds || []) { const r = typeof R().wsFinish === "function" ? R().wsFinish(pid, by) : { ok: false }; if (!r.ok) missing.push(r.error || "a product"); }
+    j.stage = "finished"; j.finDone = { by, at };
+    await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Sent to STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
+    try { j.stockMsg = await userPost({ telegramId: j.telegramId, name: by, role: "admin" }, s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), true); }
+    catch (e) { j.stockPostError = botFriendly(e); }
+    await saveOrderStage(j, { finishedAt: at, finishedBy: by });
+    log(j.key, { name: by }, `Finished · ${j.name} → stock`, true, missing.length ? missing.join(" ") : ""); persist();
+    return { ok: true, job: j, warning: [missing.length ? "Some products were not found in Reports: " + missing.join(" ") : "", j.stockPostError ? "Stock group post failed: " + j.stockPostError : ""].filter(Boolean).join(" · ") };
+  }
+  // v164: SEND TO DRIVER — a finished ORDER, or a SOLD readymade product, is posted in the DRIVER place (group + topic) chosen in the settings
+  function driverCaption(j, by, at) {
+    const model = clip(j.name || "", 100), codes = (j.codes || []).length ? j.codes : ["—"], o = j.orderId ? findOrder(j.orderId) : null;
+    const lines = ["<b>AMBAR FURNITURE</b>", "<b>🚚 FOR THE DRIVER</b>", "", ...codes.map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>"), ...(j.orderLabel ? ["Order ID: " + esc(clip(j.orderLabel, 40))] : []), "", "Measurement: " + esc(fmtSize(j.size) || "—"), "Quantity: " + (j.qty || 1)];
+    const info = o ? [["Customer", o.customerName], ["Phone", o.phone || o.telegramPhone], ["Location", o.location], ["Delivery date", o.deliveryDate]].map(([l, v]) => clip(v, 120) ? l + ": " + esc(clip(v, 120)) : "").filter(Boolean) : [];
+    if (info.length) lines.push("", ...info);
+    lines.push("", "Sent by " + esc(by) + " · " + esc(at));
+    let out = ""; for (const l of lines) { if ((out + "\n" + l).length > 990) break; out += (out ? "\n" : "") + l; }
+    return out;
+  }
+  async function sendToDriver(jobId, byName) {
+    const j = db.jobs[String(jobId)]; if (!j) return { ok: false, error: "This job was not found any more." };
+    if (j.driver) return { ok: false, code: "DONE", error: "Already sent to the driver." };
+    if (j.stage !== "finished") return { ok: false, code: "EARLY", error: "The product is not finished yet." };
+    if (!isOrderJob(j) && j.stockState !== "sold") return { ok: false, code: "EARLY", error: "A readymade product goes to the driver after it is SOLD." };
+    const s = settingsOf(j.key); if (!s.driver) return { ok: false, error: "The DRIVER place is not chosen. Choose it in the Workshop settings (Driver topic) and save." };
+    const by = clip(byName, 60) || "Admin", at = stamp();
+    let ref; try { ref = await userPost({ telegramId: j.telegramId, name: by, role: "admin" }, s.driver, j.photoId ? await photoBuf(j.photoId) : null, driverCaption(j, by, at), true); } catch (e) { return { ok: false, error: botFriendly(e) }; }
+    j.driver = { by, at, msg: ref };
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
+    await saveOrderStage(j, { driverAt: at, driverBy: by });
+    log(j.key, { name: by }, `Sent to driver · ${j.name}`, true, ""); persist();
+    return { ok: true, job: j };
+  }
+  // the Telegram buttons (the server forwards every callback whose data starts with wsf: or wfin:)
+  async function onButton(cb) {
+    const [action, id] = String(cb?.data || "").split(":");
+    const answer = (text, alert) => tg("answerCallbackQuery", { callback_query_id: cb.id, text: String(text).slice(0, 190), show_alert: !!alert }).catch(() => {});
+    const j = db.jobs[String(id)];
+    if (!j) return answer("This job was not found any more.", true);
+    const chatId = String(cb.message?.chat?.id || "");
+    const by = [cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") || (cb.from?.username ? "@" + cb.from.username : "Workshop");
+    if (action === "wsf") {
+      if (j.wsMsg && chatId && String(j.wsMsg.chat) !== chatId) return answer("This button belongs to another group.", true);
+      const r = await toFinishing(j.id, by);
+      return answer(r.ok ? "✅ Sent to FINISHING." : r.error, !r.ok && r.code !== "DONE");
+    }
+    if (action === "wfin") {
+      if (j.finMsg && chatId && String(j.finMsg.chat) !== chatId) return answer("This button belongs to another group.", true);
+      const r = await toStock(j.id, by);
+      return answer(r.ok ? (j.stockPostError ? "Finished, but the stock-group post failed: " + j.stockPostError : "✅ Finished — posted to the STOCK group.") : r.error, !r.ok && r.code !== "DONE");
+    }
+    if (action === "wsold") {
+      if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
+      const results = (j.productIds || []).map(pid => typeof R().wsSoldOut === "function" ? R().wsSoldOut(pid, by) : { ok: false, error: "Stock action is unavailable." });
+      const bad = results.find(x => !x.ok);
+      if (bad) return answer(bad.error, true);
+      j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = by;
+      await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
+      log(j.key, { name: by }, `Sold Out · ${j.name}`, true, ""); persist();
+      return answer("🔴 Product marked Sold Out. Restock is now available.");
+    }
+    if (action === "wdrv") {
+      if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
+      const r = await sendToDriver(j.id, by);
+      return answer(r.ok ? "🚚 Sent to the driver." : r.error, !r.ok && r.code !== "DONE");
+    }
+    if (action === "wrestock") {
+      if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
+      const results = (j.productIds || []).map(pid => typeof R().wsRestock === "function" ? R().wsRestock(pid, by) : { ok: false, error: "Restock action is unavailable." });
+      const bad = results.find(x => !x.ok);
+      if (bad) return answer(bad.error, true);
+      j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = by;
+      await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
+      log(j.key, { name: by }, `Restocked · ${j.name}`, true, ""); persist();
+      return answer("♻️ Product restocked and returned to In Stock.");
+    }
+  }
+
+  // ── send an order (only orderable orders) ───────────────────────────────────────────────────
+  async function sendOrder(o, actor, opt = {}) {
+    if (!isOrderable(o)) return { ok: false, code: "NOT_ORDERABLE", error: o.status === "Rejected" ? "The customer REJECTED this order." : o.status !== "Confirmed" ? "The customer has not confirmed this order yet." : "The order card was not delivered to the customer." };
+    const prev = orderJob(o.id);
+    if (prev && !opt.again) return { ok: false, code: "ALREADY", error: `This order is already ${STAGES[prev.stage] ? STAGES[prev.stage].toLowerCase() : "sent"}.` };
+    const buf = await orderPhotoBuf(o);
+    const sentJob = await createJob({ kind: "order", name: o.product || "Furniture order", ptype: orderPtype(o), productCode: orderCodeFor(o, true), qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
+    if (sentJob.ok && db.reserved && db.reserved[o.id]) { delete db.reserved[o.id]; persist(); }
+    return sentJob;
+  }
+  const actorOfOrder = o => ({ role: o.createdByRole === "owner" ? "owner" : (o.createdByTelegramId ? "admin" : "open"), telegramId: String(o.createdByTelegramId || ""), name: o.createdByName || "Admin" });
+  async function onOrderCreated() { /* v153: orders only go to the workshop after the customer confirmed — nothing happens at creation */ }
+  async function onOrderConfirmed(o) { // mode "after the customer confirms": automatic
+    const actor = actorOfOrder(o), s = settingsOf(keyOf(actor));
+    if (s.mode !== "after_confirm" || !s.workshop || !s.finishing || !s.stock || orderJob(o.id)) return;
+    const r = await sendOrder(o, actor, {});
+    if (!r.ok) log(keyOf(actor), actor, `Auto · order ${o.orderId || o.id}`, false, r.error);
+    persist();
+  }
+
+  // ── routes ──────────────────────────────────────────────────────────────────────────────────
+  const router = express.Router();
+  router.use(requireAccess);
+  router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
+  router.use(express.json({ limit: "25mb" }));
+  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), status: clip(o.status, 20), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
+  const view = actor => {
+    const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
+    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).find(x => (x.productIds || []).includes(p.id)); return { ...p, job: j ? compactJob(j) : null }; });
+    const mine = Object.values(db.jobs).filter(j => j.key === key).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    return {
+      ok: true, me: { key, name: clip(actor?.name, 60) },
+      settings: { workshop: s.workshop, finishing: s.finishing, stock: s.stock, driver: s.driver, material: s.material, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing), stockName: targetName(s.stock), driverName: targetName(s.driver), materialName: targetName(s.material) },
+      sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
+      // Once sent to the workshop, remove the order from this sending queue permanently.
+      // This also hides older orders that were already sent before this update.
+      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
+      allOrders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && !orderDone(o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 400).map(o => compactOrder(o, actor)), // v163: the "Which order?" list shows ALL orders
+      readymade: inProg,
+      // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
+      // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
+      jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
+      doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
+      catalog: db.catalog.map(compactCat), canManage: canManage(actor),
+      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], // v165
+      log: db.log.filter(l => l.key === key).slice(-100).reverse()
+    };
+  };
+  router.get("/state", (req, res) => res.json(view(req.actor)));
+  router.post("/settings", (req, res) => {
+    const key = keyOf(req.actor), mode = String(req.body?.mode || "manual");
+    if (!MODES.includes(mode)) return res.json({ ok: false, error: "Unknown sending mode." });
+    const one = x => (x && x.chat ? cleanTargets([x])[0] || null : null);
+    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing), stock = one(req.body?.stock), driver = one(req.body?.driver), material = one(req.body?.material);
+    if (workshop && finishing && workshop.chat.toLowerCase() === finishing.chat.toLowerCase() && workshop.topic === finishing.topic) return res.json({ ok: false, error: "The WORKSHOP and the FINISHING place are the same. Choose a different topic (or group) for finishing." });
+    if (mode !== "manual" && (!workshop || !finishing)) return res.json({ ok: false, error: "Choose both the workshop and the finishing place first — automatic sending needs them." });
+    if (workshop && stock && workshop.chat.toLowerCase() === stock.chat.toLowerCase() && workshop.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the WORKSHOP place." });
+    if (finishing && stock && finishing.chat.toLowerCase() === stock.chat.toLowerCase() && finishing.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the FINISHING place." });
+    for (const [n, g] of [["WORKSHOP", workshop], ["FINISHING", finishing], ["STOCK", stock]]) if (driver && g && driver.chat.toLowerCase() === g.chat.toLowerCase() && driver.topic === g.topic) return res.json({ ok: false, error: `Choose a different DRIVER place from the ${n} place.` });
+    db.admins[key] = { workshop, finishing, stock, driver, material, mode, updatedAt: stamp() }; persist();
+    res.json({ ...view(req.actor), message: mode === "manual" ? "✅ Saved. You send orders to the workshop yourself." : "✅ Saved. Every order goes to the workshop automatically AFTER the customer confirms." });
+  });
+  // the groups the admin's OWN Telegram account is in (with a flag for groups that have topics)
+  router.post("/dialogs", async (req, res) => {
+    const acc = accountOf(req.actor);
+    if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it first (Settings → Connect my Telegram account), or paste the group link instead." });
+    try {
+      const ds = await acc.client.getDialogs({ limit: 400 });
+      const list = ds.filter(d => d.isGroup || d.isChannel).map(d => ({ chat: String(d.id), title: clip(d.title || d.name, 80), forum: !!d.entity?.forum, channel: !!d.entity?.broadcast })).filter(x => /^-\d+$/.test(x.chat)).sort((a, b) => Number(b.forum) - Number(a.forum) || a.title.localeCompare(b.title)).slice(0, 250);
+      res.json({ ok: true, groups: list });
+    } catch (e) { res.json({ ok: false, error: tgFriendly(e) }); }
+  });
+  async function topicsOf(acc, chat) {
+    const { Api } = require("telegram");
+    const entity = await resolveTarget(acc, { chat });
+    const title = clip(entity.title || entity.firstName || "", 80);
+    if (!entity.forum) return { forum: false, title, topics: [] };
+    const r = await acc.client.invoke(new Api.channels.GetForumTopics({ channel: entity, offsetDate: 0, offsetId: 0, offsetTopic: 0, limit: 100 }));
+    const topics = (r.topics || []).filter(t => t.className === "ForumTopic").map(t => ({ id: Number(t.id), title: clip(t.title, 60), closed: !!t.closed }));
+    if (!topics.some(t => t.id === 1)) topics.unshift({ id: 1, title: "General", closed: false });
+    return { forum: true, title, topics: topics.sort((a, b) => a.id - b.id) };
+  }
+  router.post("/topics", async (req, res) => {
+    const acc = accountOf(req.actor);
+    if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected, so the topics cannot be listed. Paste a link of the topic instead." });
+    const pl = parseTgLink(req.body?.chat); if (!pl) return res.json({ ok: false, error: "This group could not be read." });
+    try { res.json({ ok: true, chat: pl.chat, ...(await topicsOf(acc, pl.chat)) }); } catch (e) { res.json({ ok: false, error: tgFriendly(e) }); }
+  });
+  // a pasted link / @username / id → the real group, its title, and the topic only if it really is a topic of that group
+  router.post("/resolve", async (req, res) => {
+    const raw = String(req.body?.link || "").trim();
+    const m = raw.replace(/^(https?:\/\/)?(www\.)?(t|telegram)\.me\//i, "").split(/[/?#]/).filter(Boolean);
+    if (m[0] === "joinchat" || /^\+/.test(m[0] || "")) return res.json({ ok: false, error: "An invite link (t.me/+…) cannot be used. Open the group, long-press any message → Copy link, and paste THAT link — or choose the group from the list." });
+    const pl = parseTgLink(raw); if (!pl) return res.json({ ok: false, error: "This is not a Telegram group link, @username or id." });
+    const acc = accountOf(req.actor);
+    if (!acc?.ready) return res.json({ ok: true, unchecked: true, chat: pl.chat, title: /^-?\d/.test(pl.chat) ? "" : "@" + pl.chat, topic: pl.nums.length >= 2 ? pl.nums[0] : 0, topicTitle: "", forum: null, topics: [] });
+    try {
+      const t = await topicsOf(acc, pl.chat);
+      let topic = 0, topicTitle = "";
+      if (t.forum) { // t.me/c/ID/TOPIC/MESSAGE → topic = first number; t.me/c/ID/N → N is a topic only if that topic exists (otherwise it is a message in General)
+        const cand = pl.nums[0] || 0, hit = t.topics.find(x => x.id === cand);
+        if (hit) { topic = hit.id > 1 ? hit.id : 0; topicTitle = hit.title; }
+      }
+      res.json({ ok: true, chat: pl.chat, title: t.title, topic, topicTitle, forum: t.forum, topics: t.topics });
+    } catch (e) { res.json({ ok: false, error: tgFriendly(e) }); }
+  });
+  // is the AMBAR bot able to post in the chosen place?
+  router.post("/bot-check", async (req, res) => {
+    const out = [];
+    try {
+      const me = await tg("getMe", {});
+      for (const [label, g] of [["Workshop", cleanTargets([req.body?.workshop])[0]], ["Finishing", cleanTargets([req.body?.finishing])[0]], ["Stock", cleanTargets([req.body?.stock])[0]], ["Driver", cleanTargets([req.body?.driver])[0]]]) {
+        if (!g && label === "Driver") continue; // optional
+        if (!g) { out.push({ label, ok: false, error: "Not chosen yet." }); continue; }
+        try {
+          const cm = await tg("getChatMember", { chat_id: chatKey(g), user_id: me.id });
+          const st = String(cm.status || "");
+          if (["left", "kicked"].includes(st)) out.push({ label, ok: false, error: `Add @${me.username} to this group.` });
+          else if (st === "restricted" && cm.can_send_messages === false) out.push({ label, ok: false, error: `@${me.username} is muted in this group. Make it an admin.` });
+          else out.push({ label, ok: true, status: st });
+        } catch (e) { out.push({ label, ok: false, error: botFriendly(e) }); }
+      }
+      res.json({ ok: out.every(x => x.ok), bot: me.username || "", checks: out });
+    } catch (e) { res.json({ ok: false, error: botFriendly(e), checks: out }); }
+  });
+  router.post("/test", async (req, res) => { // posts a test line (no button) to BOTH places, exactly the way the real jobs are posted
+    const s = settingsOf(keyOf(req.actor)), res2 = [];
+    if (!s.workshop || !s.finishing || !s.stock) return res.json({ ok: false, error: "Choose the Workshop, Finishing and Stock places first, then Save." });
+    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock], ["Driver", s.driver], ["Material", s.material]]) {
+      if (!g) continue;
+      try { await userPost(req.actor, g, null, `AMBAR ${label.toUpperCase()} TEST\nThis topic receives production updates from ${clip(req.actor?.name || "the admin", 60)}.`, false); res2.push({ name: label + " · " + targetName(g), ok: true }); }
+      catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: botFriendly(e) }); }
+    }
+    const okN = res2.filter(x => x.ok).length;
+    res.json({ ok: okN === res2.length, results: res2, error: okN === res2.length ? "" : (res2.find(x => !x.ok)?.error || "Could not send."), message: okN === res2.length ? "✅ Test messages posted in the Workshop, Finishing and Stock places." : undefined });
+  });
+  router.post("/send-order", async (req, res) => {
+    const o = findOrder(req.body?.id);
+    if (!o || !mineOnly(req.actor, o)) return res.json({ ok: false, error: "Order not found." });
+    const r = await sendOrder(o, req.actor, { again: !!req.body?.again });
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ Order ${o.orderId || o.id} sent to the workshop.` : undefined });
+  });
+  router.post("/send-product", async (req, res) => { // selected Reports Workflow products → workshop
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 40) : [];
+    const list = (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => ids.includes(p.id));
+    if (!list.length) return res.json({ ok: false, error: "Choose at least one product from Reports → Workflow Products." });
+    let okN = 0, err = "";
+    for (const p of list) {
+      if (Object.values(db.jobs).some(x => (x.productIds || []).includes(p.id))) { err = err || `${p.code} is already sent to the workshop.`; continue; }
+      let buf = null; if (p.photo && typeof R().readymade === "function") { try { buf = await R().readymade().photoBuf(p.photo); } catch {} }
+      if (okN) await new Promise(x => setTimeout(x, 700));
+      const isOrder = /ORDER|CUS/i.test(String(p.orderType || ""));
+      const r = await createJob({ kind: isOrder ? "order" : "readymade", ptype: p.ptype || "", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, orderLabel: p.orderRef || "", existingProductIds: [p.id], buf }, req.actor);
+      if (r.ok) okN++; else err = r.error;
+    }
+    res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (err || "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
+  });
+  router.post("/job/finish-workshop", async (req, res) => { // the same as the Telegram button
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    const r = await toFinishing(j.id, req.actor?.name || "Admin");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "✅ Sent to FINISHING." : undefined });
+  });
+  router.post("/job/finish", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    const r = await toStock(j.id, req.actor?.name || "Admin");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "✅ Finished — the product is now IN STOCK (Reports)." + (r.warning ? " ⚠ " + r.warning : "") : undefined });
+  });
+  router.post("/job/send-driver", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    const r = await sendToDriver(j.id, req.actor?.name || "Admin");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🚚 Sent to the driver." : undefined });
+  });
+  router.post("/job/sold-out", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
+    const results = (j.productIds || []).map(pid => R().wsSoldOut ? R().wsSoldOut(pid, req.actor?.name || "Admin") : { ok: false, error: "Sold Out is unavailable." });
+    const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
+    j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = req.actor?.name || "Admin";
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
+    persist(); res.json({ ...view(req.actor), ok: true, message: "🔴 Product marked Sold Out." });
+  });
+  router.post("/job/restock", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
+    const results = (j.productIds || []).map(pid => R().wsRestock ? R().wsRestock(pid, req.actor?.name || "Admin") : { ok: false, error: "Restock is unavailable." });
+    const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
+    j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = req.actor?.name || "Admin";
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
+    persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
+  });
+  // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
+  router.post("/material/add", (req, res) => {
+    if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
+    const r = R().wsMaterial("add", req.body, req.actor?.name);
+    if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+  });
+  router.post("/material/move", (req, res) => {
+    if (req.body?.type === "cut") return res.status(400).json({ ...view(req.actor), ok: false, error: "Use the Cut request button. Main admin approval is required." });
+    if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
+    const r = R().wsMaterial("add", req.body, req.actor?.name);
+    if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+  });
+  router.post("/material/cut-request", async (req, res) => {
+    if (typeof R().wsRequestCut !== "function") return res.json({ ...view(req.actor), ok: false, error: "Material cut requests are not available." });
+    const r = R().wsRequestCut(req.body, req.actor);
+    if (!r.ok) return res.json({ ...view(req.actor), ok: false, error: r.error });
+    const target = settingsOf(keyOf(req.actor)).material;
+    let tg = "";
+    if (target) {
+      try {
+        await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT REQUEST</b>\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\nAvailable: ${esc(String(r.request.before))} ${esc(r.request.unit)}\nRequested by: ${esc(r.request.by)}${r.request.note ? "\nNote: " + esc(r.request.note) : ""}\n\n⏳ Waiting for main admin approval.`, true);
+        tg = " Sent to the selected Material topic from your Telegram account.";
+      } catch (e) { tg = " Telegram topic send failed: " + clip(e.message, 180); }
+    } else tg = " No Material topic is selected yet.";
+    log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, tg);
+    res.json({ ...view(req.actor), ok: true, message: r.message + tg });
+  });
+  router.post("/material/cut-decide", async (req, res) => {
+    if (req.actor?.role !== "owner") return res.json({ ...view(req.actor), ok: false, error: "Only the main admin can approve or reject material cuts." });
+    const approve = req.body?.approve === true || req.body?.approve === "true";
+    const r = R().wsApproveCut ? R().wsApproveCut(req.body?.id, approve, req.actor, req.body?.note) : { ok: false, error: "Material cut approval is not available." };
+    if (!r.ok) return res.json({ ...view(req.actor), ok: false, error: r.error });
+    const target = settingsOf(keyOf(req.actor)).material;
+    if (target) {
+      try { await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n${approve ? "✅ <b>MATERIAL CUT APPROVED</b>" : "❌ <b>MATERIAL CUT REJECTED</b>"}\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\n${approve ? "Remaining: " + esc(String(r.request.after)) + " " + esc(r.request.unit) : ""}\nRequested by: ${esc(r.request.by)}\nApproved by: ${esc(req.actor?.name || "Main admin")}${r.request.decisionNote ? "\nNote: " + esc(r.request.decisionNote) : ""}`, true); } catch {}
+    }
+    res.json({ ...view(req.actor), ok: true, message: r.message });
+  });
+  router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
+    if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
+    const name = clip(req.body?.name, 100), sizes = cleanSizes(req.body?.sizes), ptype = clip(req.body?.ptype, 40);
+    if (!name) return res.json({ ok: false, error: "Type the product name." });
+    if (!ptype) return res.json({ ok: false, error: "Choose the product type." });
+    const prev = req.body?.id ? db.catalog.find(p => p.id === String(req.body.id)) : null;
+    if (req.body?.id && !prev) return res.json({ ok: false, error: "That standard product no longer exists." });
+    let photo = prev?.photo || "";
+    try {
+      if (req.body?.photo) { const old = photo; photo = await savePhoto(req.body.photo); if (old) setTimeout(() => dropPhoto(old), 0); }
+      else if (req.body?.removePhoto && photo) { const old = photo; photo = ""; setTimeout(() => dropPhoto(old), 0); }
+    } catch (e) { return res.json({ ok: false, error: e.message }); }
+    if (!photo) return res.json({ ok: false, error: "Add the product photo — the workshop sees this picture." });
+    if (prev) Object.assign(prev, { name, ptype, sizes, photo });
+    else { if (db.catalog.length >= 300) return res.json({ ok: false, error: "Too many standard products (max 300)." }); db.catalog.push({ id: uid(), name, ptype, sizes, photo, createdAt: stamp() }); }
+    db.catalog.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    persist(); res.json({ ...view(req.actor), message: prev ? "✅ Standard product updated." : "✅ Standard product added." });
+  });
+  router.post("/catalog/delete", (req, res) => {
+    if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
+    const i = db.catalog.findIndex(p => p.id === String(req.body?.id));
+    if (i < 0) return res.json({ ok: false, error: "Not found." });
+    const [gone] = db.catalog.splice(i, 1); persist(); setTimeout(() => dropPhoto(gone.photo), 0);
+    res.json({ ...view(req.actor), message: "🗑 Standard product removed." });
+  });
+  // the basket: [{ pid, qty, size, kind: "order" | "readymade", orderId (internal id, only for kind=order), note }] — every line becomes its own job
+  router.post("/preview-ids", (req, res) => { // v159: the Product IDs the list will receive (in list order, one per unit)
+    R().setReservedCodes?.(reservedSet);
+    const orderIds = (Array.isArray(req.body?.orders) ? req.body.orders : []).slice(0, 200).map(String);
+    if (orderIds.length) { // Orders tab: the Product ID each order will get
+      db.reserved = db.reserved || {}; const out = {}; const shown = new Set(orderIds);
+      for (const k of Object.keys(db.reserved)) if (!findOrder(k) || orderJob(k)) delete db.reserved[k];
+      for (const id of orderIds) { const o = findOrder(id); if (o) out[id] = orderCodeFor(o, true); }
+      return res.json({ ok: true, orderCodes: out });
+    }
+    const counts = (Array.isArray(req.body?.counts) ? req.body.counts : []).slice(0, 40).map(n => Math.max(1, Math.min(100, Math.floor(Number(n)) || 1)));
+    const types = Array.isArray(req.body?.types) ? req.body.types : [];
+    const fam = i => isShoe(types[i]) ? "s" : "o", need = { s: 0, o: 0 }; counts.forEach((n, i) => { need[fam(i)] += n; });
+    const peek = (n, pt) => n && typeof R().peekSeqCodes === "function" ? R().peekSeqCodes(n, pt) : [];
+    const pool = { s: peek(need.s, "Shoe Shelf"), o: peek(need.o, "") }, pos = { s: 0, o: 0 };
+    res.json({ ok: true, codes: counts.map((n, i) => { const f = fam(i), out = pool[f].slice(pos[f], pos[f] + n); pos[f] += n; return out; }) });
+  });
+  router.post("/send-items", async (req, res) => {
+    const key = keyOf(req.actor), s = settingsOf(key);
+    if (!s.workshop || !s.finishing) return res.json({ ok: false, error: "First choose the WORKSHOP and the FINISHING place (Settings above)." });
+    const raw = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : [];
+    if (!raw.length) return res.json({ ok: false, error: "Add at least one product to the list." });
+    const specs = [];
+    for (let i = 0; i < raw.length; i++) {
+      const r = raw[i] || {};
+      const qty = Math.floor(Number(r.qty));
+      if (!(qty >= 1 && qty <= 9999)) return res.json({ ok: false, error: `Line ${i + 1}: choose a quantity (1 – 9999).` });
+      const size = clip(r.size, 80);
+      if (!size) return res.json({ ok: false, error: `Line ${i + 1}: choose or type the measurement.` });
+      const colorDetails = c => clip(c, 40) ? [line("🎨", "Color", c)] : []; // v164: chosen / typed colour → ADDITIONAL TEXTS
+      const anyOrder = id => { const o = findOrder(id); return o && mineOnly(req.actor, o) ? o : null; }; // v163: any order, not only confirmed + delivered
+      if (r.custom) { // NEW DESIGN: a one-off product made in the page (own photo + name) — not saved in the standard products
+        const name = clip(r.name, 100);
+        if (!name) return res.json({ ok: false, error: `Line ${i + 1}: type the name of the new design.` });
+        const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(r.photoData || ""));
+        if (!m) return res.json({ ok: false, error: `Line ${i + 1}: the photo of the new design could not be read. Choose it again.` });
+        const buf = Buffer.from(m[1], "base64");
+        if (buf.length < 200 || buf.length > 6 * 1024 * 1024) return res.json({ ok: false, error: `Line ${i + 1}: the photo is empty or too big.` });
+        let order = null; const typedLabel = !r.orderId ? clip(r.orderLabel, 40) : ""; // v163: any order of mine, or a TYPED order ID
+        if (r.orderId) { order = anyOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: the chosen order was not found.` }); }
+        const cptype = clip(r.ptype, 40); if (!cptype) return res.json({ ok: false, error: `Line ${i + 1}: choose the product type.` });
+        specs.push({ kind: order || typedLabel ? "order" : "readymade", custom: true, ptype: cptype, name, qty, size, note: clip(r.note, 400), details: colorDetails(r.color), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
+        continue;
+      }
+      const p = db.catalog.find(x => x.id === String(r.pid));
+      if (!p) return res.json({ ok: false, error: `Line ${i + 1}: the standard product no longer exists.` });
+      const kind = r.kind === "order" ? "order" : r.kind === "readymade" ? "readymade" : "";
+      if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
+      let order = null, typedLabel = "";
+      if (kind === "order") { if (r.orderId) order = anyOrder(r.orderId); else typedLabel = clip(r.orderLabel, 40); if (!order && !typedLabel) return res.json({ ok: false, error: `Line ${i + 1}: choose the order of this product, or type its order ID.` }); }
+      specs.push({ kind, standard: true, ptype: p.ptype || "", name: p.name, qty, size, note: clip(r.note, 400), details: colorDetails(r.color), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
+    }
+    let okN = 0, err = "";
+    for (const sp of specs) {
+      if (okN) await new Promise(x => setTimeout(x, 700));
+      const r = await createJob(sp, req.actor);
+      if (r.ok) okN++; else { err = r.error; if (/First choose/.test(r.error)) break; }
+    }
+    persist();
+    res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
+  });
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v165", cutoverAt: db.cutoverAt }));
+  app.use("/api/workshop", router);
+
+  function deleteReportProducts(ids) {
+    const gone = new Set((Array.isArray(ids) ? ids : [ids]).map(String));
+    for (const [id, j] of Object.entries(db.jobs)) {
+      const pairs = (j.productIds || []).map((pid, i) => ({ pid: String(pid), code: (j.codes || [])[i] || "" })).filter(x => !gone.has(x.pid));
+      j.productIds = pairs.map(x => x.pid);
+      j.codes = pairs.map(x => x.code);
+      if (!j.productIds.length) delete db.jobs[id];
+    }
+    persist();
+  }
+  return { load, onOrderCreated, onOrderConfirmed, onButton, deleteReportProducts };
+}
+module.exports = { register };
