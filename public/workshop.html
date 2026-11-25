@@ -146,6 +146,66 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 .busy{position:fixed;inset:0;background:rgba(244,242,236,.8);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:99;font-weight:700;color:var(--ink)}.busy.on{display:flex}
 .spin{width:34px;height:34px;border-radius:50%;border:3.5px solid #d7e5de;border-top-color:var(--green2);animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
 .log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.log-head h2{margin:0}.log-head select{max-width:190px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff;color:var(--ink);font:inherit;font-weight:650}.log>div{padding:10px 12px;margin:7px 0;border:1px solid var(--line);border-radius:12px;background:#fff;line-height:1.5}
+
+/* v158 responsive workshop polish: desktop workspace + mobile-first controls */
+main{max-width:1180px;padding:22px 18px calc(100px + env(safe-area-inset-bottom,0px))}
+#view{display:block}
+#view>.seg{position:sticky;top:74px;z-index:30;box-shadow:0 5px 16px rgba(12,42,33,.08);backdrop-filter:blur(12px)}
+.card{padding:clamp(14px,2vw,20px)}
+.btns{align-items:stretch}
+.btns .btn{min-height:44px}
+.item .act{min-width:140px}
+#out,#basket,.grid{width:100%}
+@media(min-width:900px){
+ main{padding-left:26px;padding-right:26px}
+ #view{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,340px);gap:18px;align-items:start}
+ #msg,#seg,#subWrap,#out{grid-column:1}
+ #setBox{grid-column:2;grid-row:1 / span 4;position:sticky;top:84px}
+ #cusForm,#basket,#lastSends{grid-column:1 / -1}
+ #out{min-width:0}
+ .grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+ .item{padding:14px}
+ .item img,.item .noimg{width:84px;height:84px}
+ .box{border-radius:24px;max-height:85vh;margin:3vh auto}
+ .ov{align-items:center}
+}
+@media(max-width:899px){
+ main{padding:12px 12px calc(92px + env(safe-area-inset-bottom,0px))}
+ header{padding-left:12px;padding-right:12px}
+ header .row1{gap:9px}
+ header h1{font-size:17px}
+ #view>.seg{top:0}
+ .seg{gap:3px;padding:3px;border-radius:14px}
+ .seg button{font-size:12px;padding:10px 3px;min-height:44px;line-height:1.15}
+ .seg button .n{padding:2px 6px}
+ .card{border-radius:16px;margin-bottom:12px;padding:14px}
+ .btns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .btns .btn{width:100%;min-width:0;font-size:13px;padding:11px 8px}
+ .btns .btn.block{grid-column:1/-1}
+ .item{align-items:flex-start;gap:9px;padding:10px}
+ .item img,.item .noimg{width:64px;height:64px;border-radius:12px}
+ .item .mid{min-width:0}
+ .item .nm{white-space:normal;overflow-wrap:anywhere}
+ .item .act{min-width:0;max-width:116px}
+ .item .act button{width:100%;white-space:normal;font-size:12px;padding:9px 7px}
+ .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .pc .pn{font-size:12.5px;padding:9px}
+ .r2{grid-template-columns:minmax(0,1fr) 90px}
+ .slot{align-items:flex-start}
+ .slot .sb button{padding:8px 9px}
+ .qty button{width:42px;height:44px}
+ input[type=text],input[type=number],textarea,select{font-size:16px}
+ .box{padding:12px 14px calc(16px + env(safe-area-inset-bottom,0px));max-height:92vh}
+ .log-head select{max-width:150px}
+}
+@media(max-width:380px){
+ main{padding-left:8px;padding-right:8px}
+ .item img,.item .noimg{width:54px;height:54px}
+ .item .act{max-width:100px}
+ .btns{grid-template-columns:1fr}
+ .btns .btn.block{grid-column:auto}
+ .seg button{font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -300,7 +360,7 @@ const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="
 const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
 function render(){
   renderSettings();
-  const tabs=[["o","box","Orders",S.orders.length],["r","sofa","Workflow Products",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
+  const tabs=[["o","box","Orders",S.orders.length],["r","sofa","Readymade",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
   $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+t[2]+' <span class="n">'+t[3]+'</span></button>').join("");
   $("subWrap").style.display=tab==="s"?"block":"none";
   $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
@@ -316,11 +376,11 @@ function render(){
       return '<div class="item">'+(o.photo?'<img loading="lazy" src="'+esc(o.photo)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(o.product||"Product")+'</div><div class="meta">'+(o.productId?'<b style="color:var(--ink)">PRODUCT ID: '+esc(o.productId)+'</b><br>':"")+'<b style="color:var(--ink)">ORDER ID: '+esc(o.orderId||("#"+o.id))+'</b>'+(o.customerName?" · "+esc(o.customerName):"")+(o.size?"<br>"+esc(o.size):"")+(dates?"<br>"+dates:"")+'</div><div class="tags"><span class="pill ok">Confirmed · delivered</span></div></div>'+btn+'</div>';
     }).join("")||emptyBox("box","No orders to send","Orders appear here after the customer pressed <b>Confirm</b> and the order card was delivered. Rejected and undelivered orders are not shown."));
   }else if(tab==="r"){
-    // Reports is the source of truth: show every product currently in Reports → Workflow.
-    const unsent=S.readymade.filter(g=>!g.job),sent=S.readymade.length-unsent.length;
-    h='<div class="sec-h"><b>🛠 Reports · Workflow Products</b><span>'+S.readymade.length+' total · '+unsent.length+' to send · '+sent+' in progress</span></div><div class="hint" style="margin:-4px 2px 10px">This list is linked directly to Reports. Products stay here while their Reports status is Workflow, and move to Reports Stock when finishing is completed.</div>'+(unsent.length>1?'<div class="btns" style="margin:0 0 12px"><button class="btn gold sm" type="button" id="sendAllReady">'+ic("send")+'Send all '+unsent.length+' to the workshop</button></div>':'')+(S.readymade.map(g=>
-      '<div class="item">'+(g.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(g.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(g.model||g.desc||g.code)+'</div><div class="meta">'+(g.desc&&g.model?esc(g.desc)+"<br>":"")+(g.handle?"Handle: "+esc(g.handle)+" · ":"")+'<b style="color:var(--ink)">'+esc(g.code)+'</b>'+(g.orderType&&/ORDER|CUS/i.test(g.orderType)?' · <b>ORDER</b>':' · <b>READYMADE</b>')+(g.orderRef?' · Order ID: '+esc(g.orderRef):'')+(g.started?"<br>Added "+esc(g.started):"")+'</div><div class="tags">'+prioPill(g.priority)+(g.ptype?'<span class="pill blue">'+esc(g.ptype)+'</span>':"")+(g.job?'<span class="pill wait">'+esc(g.job.stageName||g.job.stage||'In workshop')+'</span>':'<span class="pill gray">Reports Workflow · Not sent</span>')+'</div></div>'+(!g.job?'<div class="act"><button class="btn sm" type="button" data-sendprod="'+esc(g.id)+'">'+ic("send")+'Send</button></div>':'')+'</div>'
-    ).join("")||emptyBox("sofa","No Workflow products","Add or move products to Workflow in Reports. They will appear here automatically."));
+    // UNFINISHED readymade products of Reports (Workflow) — send them to the workshop
+    const rest=S.readymade.filter(g=>!g.job);
+    h='<div class="sec-h"><b>Readymade in production</b><span>'+rest.length+' to send · '+(S.readymade.length-rest.length)+' sent</span></div>'+(rest.length>1?'<div class="btns" style="margin:0 0 12px"><button class="btn gold sm" type="button" id="sendAllReady">'+ic("send")+'Send all '+rest.length+' to the workshop</button></div>':'')+(S.readymade.map(g=>
+      '<div class="item">'+(g.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(g.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(g.model||g.desc||g.code)+'</div><div class="meta">'+(g.desc&&g.model?esc(g.desc)+"<br>":"")+(g.handle?"Handle: "+esc(g.handle)+" · ":"")+'<b style="color:var(--ink)">'+esc(g.code)+'</b>'+(g.started?"<br>Started "+esc(g.started):"")+'</div><div class="tags">'+prioPill(g.priority)+(g.ptype?'<span class="pill blue">'+esc(g.ptype)+'</span>':"")+stagePill(g.job)+'</div></div>'+(!g.job?'<div class="act"><button class="btn sm" type="button" data-sendprod="'+esc(g.id)+'">'+ic("send")+'Send</button></div>':'')+'</div>'
+    ).join("")||emptyBox("sofa","Nothing in production","Readymade products that are not finished yet (Reports → Workflow) appear here. Finished products are in Stock."));
   }else if(tab==="p"){
     // the chain: In workshop → In finishing → Finished (the same buttons as in Telegram)
     const inW=S.jobs.filter(j=>j.stage==="workshop"),inF=S.jobs.filter(j=>j.stage==="finishing");
