@@ -435,10 +435,10 @@ function render(){
   const K=(l,n,s,c)=>'<div class="kpi" style="border-left-color:'+(c||"var(--green)")+'"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>';
   $("kpis").innerHTML=tab==="wf"?K("In workflow",wf.length,"products in progress","#d9a21b")+K("In stock",st.length,"finished","#1f8f55")+K("All products",S.products.length,"including sold","#14598f")
     :tab==="st"?K("In stock",st.length,"ready to sell","#1f8f55")+K("Sold this month",sdm.length,"products sold","#14598f")+K("Sold today",soldToday,fmtD(S.now.d),"#b3261e")
-    :tab==="sv"?K("Models",stockGroups(st).length,"model + handle + size groups","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
+    :tab==="sv"?K("Products",st.length,"each with its own Product ID","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
     :K("Materials",S.materials.length,"kinds in store","#8a5a00")+K("Low / out",low,low?"to re-order":"all good",low?"#b3261e":"#1f8f55")+K("Moves today",today,fmtD(S.now.d),"#6d675d");
-  $("addBtn").textContent=tab==="mt"?"➕ New material":"➕ New product";
-  $("addBtn").style.display=(tab==="st"||tab==="sv")?"none":"block";
+  $("addBtn").textContent="➕ New material";
+  $("addBtn").style.display=tab==="mt"?"block":"none"; // v160: products are added only in the Workshop section
   document.querySelectorAll("#vt button").forEach(b=>b.classList.toggle("on",b.dataset.v===VM));
   $("vt").style.display=(tab==="mt"&&msub==="moves")?"none":"flex";
   $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search Prod Id, model, handle, description…";
@@ -465,7 +465,7 @@ function render(){
     h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+(p.workshopStage?" · Workshop: "+(p.workshopStage==="finishing"?"In finishing":"In workshop"):"")+" · "+esc(fmtDT(p.added)),(p.jobId?'<span class="pill wait">Workshop manages stage</span>':'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>')+ic("edit",p.id,"✏️ Edit")+ic("times",p.id,"🕒 Dates & times")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
       :'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+(p.workshopStage?' · <b>Workshop: '+(p.workshopStage==='finishing'?'In finishing':'In workshop')+'</b>':'')+'</div>'
       +'<div class="acts">'+(p.jobId?'<span class="pill wait">Workshop manages stage</span>':'<button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button>')+'<button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="times" data-id="'+p.id+'" title="Dates & times">🕒</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
-    if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Tap <b>➕ New product</b> and fill the Prod Id, model, handle type and photo.<br>When it is finished, press <b>Finished → In Stock</b> — it appears in <b>Stock</b> and <b>Stock view</b> at once.")+'</div>';
+    if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Products are added in the <b>Workshop</b> section (they get their Product ID there).<br>When it is finished, press <b>Finished → In Stock</b> — it appears in <b>Stock</b> and <b>Stock view</b> at once.")+'</div>';
     // products that moved on to Stock this Ethiopian month stay here with RED text; next month they are gone
     const F=S.products.filter(p=>p.finished&&inM(p.finished)&&hit(text(p))).sort((a,b)=>((b.finished.d||"")+(b.finished.t||"")).localeCompare((a.finished.d||"")+(a.finished.t||"")));
     if(F.length){
@@ -491,16 +491,16 @@ function render(){
       if(!L.length)h='<div class="empty">'+(sdm.length?"No sale matches your search.":"<b>Nothing sold yet.</b><br>Press <b>📦 Sold Out</b> on a product that is in stock — the Ethiopian date and time are saved automatically.")+'</div>';
     }
   }else if(tab==="sv"){
-    // Stock view: in-stock products by PHOTO. Same model + same handle + same measurement → ONE photo with ×2, ×3 …; a different handle OR a different measurement → separate product.
+    // Stock view: v160 — every in-stock product is its own card (own Product ID + model).
     const G=stockGroups(st.filter(p=>hit(text(p))));
     h=G.map(g=>{
       const descs=[...new Set(g.items.map(p=>p.desc).filter(Boolean))],d=descs.length===1?descs[0]:"",caps=[...new Set(g.items.map(p=>p.capacity).filter(Boolean))],cp=caps.join(" / ");
       const codes=g.items.map(p=>'<span class="code">'+esc(p.code)+'</span>').join("");
-      if(LM)return '<div class="lrow" data-g="'+esc(g.key)+'" style="cursor:pointer">'+(g.photo?'<img class="thumb sm" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg sm">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.model)+(d?' · '+esc(d):'')+'</div><div class="meta">'+ordBadge(g)+(g.handle?'🔧 '+esc(g.handle)+' · ':'')+esc(g.items.map(p=>p.code).join(", "))+'</div></div><div class="rt"><span class="chip" style="font-size:14px;padding:5px 12px">×'+g.items.length+'</span></div></div>';
-      return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'<span class="cnt">×'+g.items.length+'</span></div><div class="bd"><div class="nm">'+esc(g.model)+'</div>'+ordBadge(g)
+      if(LM)return '<div class="lrow" data-g="'+esc(g.key)+'" style="cursor:pointer">'+(g.photo?'<img class="thumb sm" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg sm">🖼</div>')+'<div class="mid"><div class="nm">'+esc(g.items[0].code+"-"+g.model)+(d?' · '+esc(d):'')+'</div><div class="meta">'+ordBadge(g)+(g.handle?'🔧 '+esc(g.handle)+' · ':'')+esc(g.items.map(p=>p.code).join(", "))+'</div></div></div>';
+      return '<div class="sg" data-g="'+esc(g.key)+'"><div class="ph">'+(g.photo?'<img class="thumb" loading="lazy" src="/api/reports-photo/'+g.photo+'.jpg" alt="">':'<div class="noimg">🖼</div>')+'</div><div class="bd"><div class="nm">'+esc(g.items[0].code+"-"+g.model)+'</div>'+ordBadge(g)
         +'<div class="meta">'+(g.handle?'🔧 Handle: <b>'+esc(g.handle)+'</b>':'🔧 No handle type')+'</div>'+(d?'<div class="meta">📏 '+esc(d)+'</div>':'')+(cp?'<div class="meta">👟 '+esc(cp)+'</div>':'')+'<div class="codes">'+codes+'</div></div></div>';
     }).join("");
-    if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Same model + same handle + same measurement = one photo with <b>×2</b>, <b>×3</b>…")+'</div>';
+    if(!G.length)h='<div class="empty" style="grid-column:1/-1">'+(st.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>The moment you press <b>Finished → In Stock</b> on a product in Workflow, its photo appears here.<br>Every product is shown separately with its own Product ID and model.")+'</div>';
   }else if(msub==="moves"){
     const lg=S.log.filter(l=>!q||hit(logMat(l)+" "+(l.note||"")+" "+(l.by||"")));
     let lastD="";
@@ -539,8 +539,8 @@ function render(){
 const ordBadge=g=>{const n=g.items.filter(isCus).length;return n?'<span class="pill cus">'+(n===g.items.length?'ORDER':'ORDER ×'+n)+'</span> ':'';};
 function stockGroups(L){
   const m=new Map();
-  L.forEach(p=>{const k=norm(p.model||p.desc||p.code)+"|"+norm(p.handle)+"|"+norm(p.desc);let g=m.get(k);if(!g){g={key:k,model:p.model||p.desc||p.code,handle:p.handle||"",desc:p.desc||"",items:[]};m.set(k,g);}g.items.push(p);});
-  return [...m.values()].map(g=>{g.photo=(g.items.find(p=>p.photo)||{}).photo||"";return g;}).sort((a,b)=>a.model.localeCompare(b.model,undefined,{numeric:true})||a.handle.localeCompare(b.handle)||a.desc.localeCompare(b.desc,undefined,{numeric:true}));
+  L.forEach(p=>{const k=String(p.id);/* v160: each product separately */let g=m.get(k);if(!g){g={key:k,model:p.model||p.desc||p.code,handle:p.handle||"",desc:p.desc||"",items:[]};m.set(k,g);}g.items.push(p);});
+  return [...m.values()].map(g=>{g.photo=(g.items.find(p=>p.photo)||{}).photo||"";return g;}).sort((a,b)=>a.model.localeCompare(b.model,undefined,{numeric:true})||a.handle.localeCompare(b.handle)||a.desc.localeCompare(b.desc,undefined,{numeric:true})||String(a.items[0].code).localeCompare(String(b.items[0].code),undefined,{numeric:true}));
 }
 function openGroup(key){
   const g=stockGroups(by("stock")).find(x=>x.key===key);if(!g)return;
@@ -633,7 +633,6 @@ $("addBtn").onclick=()=>{
     fields:[{k:"name",label:"Material",ph:"e.g. NORMAL MDF"},{k:"type",label:"Type",opt:1,ph:"e.g. 18"},{k:"unit",label:"Unit",val:"244-122",list:"units"},{k:"group",label:"Table (group)",opt:1,val:(S.matGroups||[])[1]||(S.matGroups||[])[0]||"MATERIAL",list:"groups"},{k:"qty",label:"Available now",num:1,val:"0",opt:1},{k:"min",label:"Low-stock alert at",num:1,opt:1,ph:"e.g. 2"},{k:"note",label:"Note",opt:1,area:1}],
     confirm:v=>"Add the new material?\n\n"+(v.name||"")+" "+(v.type||"")+"\nTable: "+(v.group||"")+"\nAvailable now: "+(v.qty||0)+" "+(v.unit||""),
     submit:v=>api("/api/reports/material/add",v)});
-  openForm({title:"➕ New product",info:"It goes to <b>Workflow</b>. Start date + clock time (Ethiopian) are saved automatically: <b>"+esc(fmtD(S.now.d))+" · "+esc(et(S.now.t))+"</b>",ok:"Add to Workflow",fields:prodFields(null,true),confirm:v=>"Add this product to Workflow?\n\n"+[v.ptype==="Other"?v.ptypeOther:v.ptype,v.model,v.desc].filter(Boolean).join(" ")+(v.code?"\nProd Id: "+v.code:""),submit:v=>api("/api/reports/product/add",v)});
 };
 async function act(path,body,ask){if(ask&&!confirm(ask))return;busy("Saving…");const d=await api(path,body);busy("");if(d.ok){toast(d.message||"✅ Saved");render();}else say("vMsg",d.error||"Could not save.","bad");}
 document.addEventListener("click",e=>{
