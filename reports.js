@@ -153,7 +153,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v156", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ appBuild: "v158", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -725,10 +725,22 @@ function register(app, ctx) {
   // v150: the Workshop module reads the readymade (in-stock, not ORDER) products from here
   const readymade = () => ({ groups: stockGroups(db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || "")))), photoBuf, caption: groupCaption });
   // v152: UNFINISHED readymade products (still in Workflow, not ORDER) — shown (not sent) on the Workshop page
+  // v158: Workshop Workflow Products is a live view of ALL Reports products in Workflow (orders + readymade).
+  // The Reports record is the source of truth; the Workshop job only adds the active production stage.
   const inProgress = () => db.products
-    .filter(p => p.status === "workflow" && !/CUS|ORD/i.test(String(p.orderType || "")))
-    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", photo: p.photo || "" }))
+    .filter(p => p.status === "workflow")
+    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", workshopStage: p.workshopStage || "", jobId: p.jobId || "", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", photo: p.photo || "" }))
     .sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.priority] ?? 2) - ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[b.priority] ?? 2));
+  function wsSetStage(id, stage, byName, jobId) {
+    const p = findP(id); if (!p || p.status !== "workflow") return false;
+    const allowed = ["workshop", "finishing"];
+    if (!allowed.includes(stage)) return false;
+    if (jobId) p.jobId = clip(jobId, 40);
+    if (p.workshopStage === stage) { persist(); return true; }
+    const req = wsReq(byName); p.workshopStage = stage; p.workshopStageAt = stamp(req);
+    hist(p, stage === "workshop" ? "Workshop stage → In workshop" : "Workshop stage → In finishing", req);
+    persist(); scheduleBackup(); return true;
+  }
   // v153: used by the Workshop module (Telegram buttons "Finished workshop" → "Finished").
   // A product sent to the workshop is put into the Workflow (so Reports shows it); the final "Finished" button moves it to STOCK.
   const wsReq = name => ({ actor: { name: clip(name, 60) || "Workshop" } });
@@ -779,6 +791,6 @@ function register(app, ctx) {
     return { ok: true, code: p.code };
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, wsAddProduct, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, wsAddProduct, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
