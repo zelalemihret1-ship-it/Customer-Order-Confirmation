@@ -50,7 +50,7 @@ function register(app, ctx) {
     const one = x => (x && typeof x === "object" ? cleanTargets([x])[0] : null) || null;
     const workshop = one(s.workshop) || (Array.isArray(s.targets) && s.targets[0] ? cleanTargets([s.targets[0]])[0] || null : null); // v150–v152 saved one "targets" list: its first group is the workshop
     const finishing = one(s.finishing);
-    return { workshop, finishing, stock: one(s.stock), mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
+    return { workshop, finishing, stock: one(s.stock), driver: one(s.driver), mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
   };
   function accountOf(actor) {
     let acc = typeof ctx.accountFor === "function" ? ctx.accountFor(actor) : null;
@@ -134,6 +134,15 @@ function register(app, ctx) {
   const kbFinishing = id => ({ inline_keyboard: [[{ text: "✅ Finished", callback_data: "wfin:" + id }]] });
   const kbSoldOut = id => ({ inline_keyboard: [[{ text: "🔴 Sold Out", callback_data: "wsold:" + id }]] });
   const kbRestock = id => ({ inline_keyboard: [[{ text: "♻️ Restock", callback_data: "wrestock:" + id }]] });
+  // v164: STOCK-post buttons. ORDER (finished): 🚚 Send to driver (+ Sold Out). READYMADE: Sold Out → then Restock + 🚚 Send to driver. Driver button disappears once sent.
+  const isOrderJob = j => j.kind === "order" || !!j.orderLabel;
+  const kbStock = j => {
+    const row = [], drv = { text: "🚚 Send to driver", callback_data: "wdrv:" + j.id };
+    if (j.stockState === "sold") { row.push({ text: "♻️ Restock", callback_data: "wrestock:" + j.id }); if (!j.driver) row.push(drv); }
+    else { if (isOrderJob(j) && !j.driver) row.push(drv); row.push({ text: "🔴 Sold Out", callback_data: "wsold:" + j.id }); }
+    return { inline_keyboard: [row] };
+  };
+  const stockExtra = j => (j.stockState === "sold" ? `🔴 SOLD OUT — ${j.soldBy} · ${j.soldAt}` : j.restockAt ? `♻️ RESTOCKED — ${j.restockBy} · ${j.restockAt}` : `📦 IN STOCK — ${(j.finDone || {}).by || ""} · ${(j.finDone || {}).at || ""}`) + (j.driver ? `\n🚚 Sent to driver — ${j.driver.by} · ${j.driver.at}` : "");
 
   // ── pictures ────────────────────────────────────────────────────────────────────────────────
   async function orderPhotoBuf(o) {
@@ -226,6 +235,8 @@ function register(app, ctx) {
   }
   const orderDetails = o => [line("🧱", "Material", o.material), line("🎨", "Color", o.color), line("✨", "Style", o.style), line("🖌", "Design", o.design), line("🔧", "Handle", o.handle), line("🚪", "Door", o.door), line("🗂", "Partition", o.partition), line("🧰", "Drawer", o.drawer), line("➕", "Extra", o.additionalFeatures), line("📅", "Completion date", o.completionDate), line("🚚", "Delivery date", o.deliveryDate)].filter(Boolean);
   const findOrder = id => (ctx.getOrders() || []).find(o => String(o.id) === String(id));
+  // v164: an order whose production is FINISHED (or already handed to the driver) is no longer listed in "Which order?"
+  const orderDone = o => { const js = Object.values(db.jobs).filter(j => String(j.orderId) === String(o.id)); return js.length > 0 && js.every(j => j.stage === "finished" || !!j.driver); };
   const orderJob = oid => Object.values(db.jobs).filter(j => String(j.orderId) === String(oid)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
   async function saveOrderStage(j, patch) { // the order shows where its production is
     if (!j.orderId) return;
@@ -233,7 +244,7 @@ function register(app, ctx) {
     o.workshop = { ...(o.workshop || {}), jobId: j.id, stage: j.stage, ...patch };
     try { if (typeof ctx.saveOrder === "function") await ctx.saveOrder(o); } catch (e) { console.warn("Workshop: order stage not saved:", e.message); }
   }
-  const compactJob = j => ({ id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, stockState: j.stockState || "stock", by: j.by || "", photo: j.photoId || "" });
+  const compactJob = j => ({ id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, stockState: j.stockState || "stock", ordered: isOrderJob(j), driverAt: j.driver ? j.driver.at : "", by: j.by || "", photo: j.photoId || "" });
   const log = (key, actor, what, ok, error) => { db.log.push({ at: stamp(), key, by: clip(actor?.name || "Admin", 60), what, ok: !!ok, error: error || "" }); if (db.log.length > 300) db.log.splice(0, db.log.length - 300); };
 
   // create the job, make its Reports product(s), post it in the WORKSHOP topic with the button
@@ -297,11 +308,35 @@ function register(app, ctx) {
     for (const pid of j.productIds || []) { const r = typeof R().wsFinish === "function" ? R().wsFinish(pid, by) : { ok: false }; if (!r.ok) missing.push(r.error || "a product"); }
     j.stage = "finished"; j.finDone = { by, at };
     await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Sent to STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
-    try { j.stockMsg = await botPost(s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), kbSoldOut(j.id)); }
+    try { j.stockMsg = await botPost(s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), kbStock(j)); }
     catch (e) { j.stockPostError = botFriendly(e); }
     await saveOrderStage(j, { finishedAt: at, finishedBy: by });
     log(j.key, { name: by }, `Finished · ${j.name} → stock`, true, missing.length ? missing.join(" ") : ""); persist();
     return { ok: true, job: j, warning: [missing.length ? "Some products were not found in Reports: " + missing.join(" ") : "", j.stockPostError ? "Stock group post failed: " + j.stockPostError : ""].filter(Boolean).join(" · ") };
+  }
+  // v164: SEND TO DRIVER — a finished ORDER, or a SOLD readymade product, is posted in the DRIVER place (group + topic) chosen in the settings
+  function driverCaption(j, by, at) {
+    const model = clip(j.name || "", 100), codes = (j.codes || []).length ? j.codes : ["—"], o = j.orderId ? findOrder(j.orderId) : null;
+    const lines = ["<b>AMBAR FURNITURE</b>", "<b>🚚 FOR THE DRIVER</b>", "", ...codes.map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>"), ...(j.orderLabel ? ["Order ID: " + esc(clip(j.orderLabel, 40))] : []), "", "Measurement: " + esc(fmtSize(j.size) || "—"), "Quantity: " + (j.qty || 1)];
+    const info = o ? [["Customer", o.customerName], ["Phone", o.phone || o.telegramPhone], ["Location", o.location], ["Delivery date", o.deliveryDate]].map(([l, v]) => clip(v, 120) ? l + ": " + esc(clip(v, 120)) : "").filter(Boolean) : [];
+    if (info.length) lines.push("", ...info);
+    lines.push("", "Sent by " + esc(by) + " · " + esc(at));
+    let out = ""; for (const l of lines) { if ((out + "\n" + l).length > 990) break; out += (out ? "\n" : "") + l; }
+    return out;
+  }
+  async function sendToDriver(jobId, byName) {
+    const j = db.jobs[String(jobId)]; if (!j) return { ok: false, error: "This job was not found any more." };
+    if (j.driver) return { ok: false, code: "DONE", error: "Already sent to the driver." };
+    if (j.stage !== "finished") return { ok: false, code: "EARLY", error: "The product is not finished yet." };
+    if (!isOrderJob(j) && j.stockState !== "sold") return { ok: false, code: "EARLY", error: "A readymade product goes to the driver after it is SOLD." };
+    const s = settingsOf(j.key); if (!s.driver) return { ok: false, error: "The DRIVER place is not chosen. Choose it in the Workshop settings (Driver topic) and save." };
+    const by = clip(byName, 60) || "Admin", at = stamp();
+    let ref; try { ref = await botPost(s.driver, j.photoId ? await photoBuf(j.photoId) : null, driverCaption(j, by, at), null, true); } catch (e) { return { ok: false, error: botFriendly(e) }; }
+    j.driver = { by, at, msg: ref };
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
+    await saveOrderStage(j, { driverAt: at, driverBy: by });
+    log(j.key, { name: by }, `Sent to driver · ${j.name}`, true, ""); persist();
+    return { ok: true, job: j };
   }
   // the Telegram buttons (the server forwards every callback whose data starts with wsf: or wfin:)
   async function onButton(cb) {
@@ -327,9 +362,14 @@ function register(app, ctx) {
       const bad = results.find(x => !x.ok);
       if (bad) return answer(bad.error, true);
       j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = by;
-      await botEdit(j.stockMsg, jobCaption(j, "stock", `🔴 SOLD OUT — ${by} · ${j.soldAt}`), kbRestock(j.id));
+      await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
       log(j.key, { name: by }, `Sold Out · ${j.name}`, true, ""); persist();
       return answer("🔴 Product marked Sold Out. Restock is now available.");
+    }
+    if (action === "wdrv") {
+      if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
+      const r = await sendToDriver(j.id, by);
+      return answer(r.ok ? "🚚 Sent to the driver." : r.error, !r.ok && r.code !== "DONE");
     }
     if (action === "wrestock") {
       if (j.stockMsg && chatId && String(j.stockMsg.chat) !== chatId) return answer("This button belongs to the STOCK group only.", true);
@@ -337,7 +377,7 @@ function register(app, ctx) {
       const bad = results.find(x => !x.ok);
       if (bad) return answer(bad.error, true);
       j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = by;
-      await botEdit(j.stockMsg, jobCaption(j, "stock", `♻️ RESTOCKED — ${by} · ${j.restockAt}`), kbSoldOut(j.id));
+      await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
       log(j.key, { name: by }, `Restocked · ${j.name}`, true, ""); persist();
       return answer("♻️ Product restocked and returned to In Stock.");
     }
@@ -375,12 +415,12 @@ function register(app, ctx) {
     const mine = Object.values(db.jobs).filter(j => j.key === key).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return {
       ok: true, me: { key, name: clip(actor?.name, 60) },
-      settings: { workshop: s.workshop, finishing: s.finishing, stock: s.stock, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing), stockName: targetName(s.stock) },
+      settings: { workshop: s.workshop, finishing: s.finishing, stock: s.stock, driver: s.driver, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing), stockName: targetName(s.stock), driverName: targetName(s.driver) },
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
       // Once sent to the workshop, remove the order from this sending queue permanently.
       // This also hides older orders that were already sent before this update.
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
-      allOrders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 400).map(o => compactOrder(o, actor)), // v163: the "Which order?" list shows ALL orders
+      allOrders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && !orderDone(o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 400).map(o => compactOrder(o, actor)), // v163: the "Which order?" list shows ALL orders
       readymade: inProg,
       // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
       // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
@@ -396,12 +436,13 @@ function register(app, ctx) {
     const key = keyOf(req.actor), mode = String(req.body?.mode || "manual");
     if (!MODES.includes(mode)) return res.json({ ok: false, error: "Unknown sending mode." });
     const one = x => (x && x.chat ? cleanTargets([x])[0] || null : null);
-    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing), stock = one(req.body?.stock);
+    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing), stock = one(req.body?.stock), driver = one(req.body?.driver);
     if (workshop && finishing && workshop.chat.toLowerCase() === finishing.chat.toLowerCase() && workshop.topic === finishing.topic) return res.json({ ok: false, error: "The WORKSHOP and the FINISHING place are the same. Choose a different topic (or group) for finishing." });
     if (mode !== "manual" && (!workshop || !finishing)) return res.json({ ok: false, error: "Choose both the workshop and the finishing place first — automatic sending needs them." });
     if (workshop && stock && workshop.chat.toLowerCase() === stock.chat.toLowerCase() && workshop.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the WORKSHOP place." });
     if (finishing && stock && finishing.chat.toLowerCase() === stock.chat.toLowerCase() && finishing.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the FINISHING place." });
-    db.admins[key] = { workshop, finishing, stock, mode, updatedAt: stamp() }; persist();
+    for (const [n, g] of [["WORKSHOP", workshop], ["FINISHING", finishing], ["STOCK", stock]]) if (driver && g && driver.chat.toLowerCase() === g.chat.toLowerCase() && driver.topic === g.topic) return res.json({ ok: false, error: `Choose a different DRIVER place from the ${n} place.` });
+    db.admins[key] = { workshop, finishing, stock, driver, mode, updatedAt: stamp() }; persist();
     res.json({ ...view(req.actor), message: mode === "manual" ? "✅ Saved. You send orders to the workshop yourself." : "✅ Saved. Every order goes to the workshop automatically AFTER the customer confirms." });
   });
   // the groups the admin's OWN Telegram account is in (with a flag for groups that have topics)
@@ -453,7 +494,8 @@ function register(app, ctx) {
     const out = [];
     try {
       const me = await tg("getMe", {});
-      for (const [label, g] of [["Workshop", cleanTargets([req.body?.workshop])[0]], ["Finishing", cleanTargets([req.body?.finishing])[0]], ["Stock", cleanTargets([req.body?.stock])[0]]]) {
+      for (const [label, g] of [["Workshop", cleanTargets([req.body?.workshop])[0]], ["Finishing", cleanTargets([req.body?.finishing])[0]], ["Stock", cleanTargets([req.body?.stock])[0]], ["Driver", cleanTargets([req.body?.driver])[0]]]) {
+        if (!g && label === "Driver") continue; // optional
         if (!g) { out.push({ label, ok: false, error: "Not chosen yet." }); continue; }
         try {
           const cm = await tg("getChatMember", { chat_id: chatKey(g), user_id: me.id });
@@ -469,8 +511,9 @@ function register(app, ctx) {
   router.post("/test", async (req, res) => { // posts a test line (no button) to BOTH places, exactly the way the real jobs are posted
     const s = settingsOf(keyOf(req.actor)), res2 = [];
     if (!s.workshop || !s.finishing || !s.stock) return res.json({ ok: false, error: "Choose the Workshop, Finishing and Stock places first, then Save." });
-    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock]]) {
-      try { await botPost(g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`, null); res2.push({ name: label + " · " + targetName(g), ok: true }); }
+    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock], ["Driver", s.driver]]) {
+      if (!g) continue;
+      try { await botPost(g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : label === "Driver" ? "finished orders and sold products to deliver, sent by" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`, null); res2.push({ name: label + " · " + targetName(g), ok: true }); }
       catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: botFriendly(e) }); }
     }
     const okN = res2.filter(x => x.ok).length;
@@ -509,13 +552,19 @@ function register(app, ctx) {
     const r = await toStock(j.id, req.actor?.name || "Admin");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "✅ Finished — the product is now IN STOCK (Reports)." + (r.warning ? " ⚠ " + r.warning : "") : undefined });
   });
+  router.post("/job/send-driver", async (req, res) => {
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    const r = await sendToDriver(j.id, req.actor?.name || "Admin");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🚚 Sent to the driver." : undefined });
+  });
   router.post("/job/sold-out", async (req, res) => {
     const j = db.jobs[String(req.body?.id)];
     if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
     const results = (j.productIds || []).map(pid => R().wsSoldOut ? R().wsSoldOut(pid, req.actor?.name || "Admin") : { ok: false, error: "Sold Out is unavailable." });
     const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
     j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = req.actor?.name || "Admin";
-    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", `🔴 SOLD OUT — ${j.soldBy} · ${j.soldAt}`), kbRestock(j.id));
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
     persist(); res.json({ ...view(req.actor), ok: true, message: "🔴 Product marked Sold Out." });
   });
   router.post("/job/restock", async (req, res) => {
@@ -524,7 +573,7 @@ function register(app, ctx) {
     const results = (j.productIds || []).map(pid => R().wsRestock ? R().wsRestock(pid, req.actor?.name || "Admin") : { ok: false, error: "Restock is unavailable." });
     const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
     j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = req.actor?.name || "Admin";
-    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", `♻️ RESTOCKED — ${j.restockBy} · ${j.restockAt}`), kbSoldOut(j.id));
+    if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
     persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
   // v161: Material section (same data as Reports → Material): new material · ➕ add · ✂️ cut
@@ -588,6 +637,7 @@ function register(app, ctx) {
       if (!(qty >= 1 && qty <= 9999)) return res.json({ ok: false, error: `Line ${i + 1}: choose a quantity (1 – 9999).` });
       const size = clip(r.size, 80);
       if (!size) return res.json({ ok: false, error: `Line ${i + 1}: choose or type the measurement.` });
+      const colorDetails = c => clip(c, 40) ? [line("🎨", "Color", c)] : []; // v164: chosen / typed colour → ADDITIONAL TEXTS
       const anyOrder = id => { const o = findOrder(id); return o && mineOnly(req.actor, o) ? o : null; }; // v163: any order, not only confirmed + delivered
       if (r.custom) { // NEW DESIGN: a one-off product made in the page (own photo + name) — not saved in the standard products
         const name = clip(r.name, 100);
@@ -599,7 +649,7 @@ function register(app, ctx) {
         let order = null; const typedLabel = !r.orderId ? clip(r.orderLabel, 40) : ""; // v163: any order of mine, or a TYPED order ID
         if (r.orderId) { order = anyOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: the chosen order was not found.` }); }
         const cptype = clip(r.ptype, 40); if (!cptype) return res.json({ ok: false, error: `Line ${i + 1}: choose the product type.` });
-        specs.push({ kind: order || typedLabel ? "order" : "readymade", custom: true, ptype: cptype, name, qty, size, note: clip(r.note, 400), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
+        specs.push({ kind: order || typedLabel ? "order" : "readymade", custom: true, ptype: cptype, name, qty, size, note: clip(r.note, 400), details: colorDetails(r.color), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
         continue;
       }
       const p = db.catalog.find(x => x.id === String(r.pid));
@@ -608,7 +658,7 @@ function register(app, ctx) {
       if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
       let order = null, typedLabel = "";
       if (kind === "order") { if (r.orderId) order = anyOrder(r.orderId); else typedLabel = clip(r.orderLabel, 40); if (!order && !typedLabel) return res.json({ ok: false, error: `Line ${i + 1}: choose the order of this product, or type its order ID.` }); }
-      specs.push({ kind, standard: true, ptype: p.ptype || "", name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
+      specs.push({ kind, standard: true, ptype: p.ptype || "", name: p.name, qty, size, note: clip(r.note, 400), details: colorDetails(r.color), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
     }
     let okN = 0, err = "";
     for (const sp of specs) {
@@ -619,7 +669,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v163", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v164", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
