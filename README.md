@@ -1,3 +1,9 @@
+## v160 Workshop-only products, new Product IDs, short workshop message
+- Reports no longer has "➕ New product" (and the /api/reports/product/add route is gone). Products are added only in the Workshop section. "➕ New material" stays.
+- Reports → Stock view lists every product separately (own Product ID + model, e.g. Z1-E1); no more grouping with ×2, ×3.
+- Product IDs: Shoe Shelf keeps Z1, Z2 … Every other product type / order uses 1A, 1B … 1Z, 2A … 2Z, 3A … The Workshop page previews the right IDs for each product type.
+- Workshop Telegram message is now: AMBAR FURNITURE (top) · bold "ProductID-Model" (one line per unit, e.g. Z1-E1) · Measurement 120*35*120 · Quantity · Additional texts. (Finishing and Stock posts are unchanged.)
+
 ## v159 Workshop standard products + redesign
 - Every admin with the Workshop section can now add, change and delete standard products (before, only the main admin saw the input).
 - Standard tab: always-visible Add product button, an Add tile, search, and a clear empty state with an Add button.
