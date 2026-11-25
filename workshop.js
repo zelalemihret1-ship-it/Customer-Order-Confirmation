@@ -22,7 +22,7 @@ function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop-data.json");
-  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "" };
+  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
 
   // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
   let chain = Promise.resolve();
@@ -39,6 +39,8 @@ function register(app, ctx) {
     if (!Array.isArray(db.catalog)) db.catalog = [];
     for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
+    // v157: start the Workshop queue fresh from this deployment; retain historical records in storage.
+    if (db.cutoverVersion !== 157 || !db.cutoverAt) { db.cutoverAt = new Date().toISOString(); db.cutoverVersion = 157; await persist(); }
   }
 
   // ── who is who ──────────────────────────────────────────────────────────────────────────────
@@ -212,7 +214,7 @@ function register(app, ctx) {
     if (!s.finishing) return { ok: false, error: "First choose the FINISHING group and topic (Settings above) — the workshop button sends the job there." };
     if (!s.stock) return { ok: false, error: "First choose the STOCK group and topic (Settings above) — finished products are posted there." };
     const id = uid(), by = clip(actor?.name || "Admin", 60);
-    const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), productIds: [], codes: [], photoId: "" };
+    const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
     // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
     if (spec.existingProductIds && spec.existingProductIds.length) {
       for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); } }
@@ -337,7 +339,7 @@ function register(app, ctx) {
   const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
-    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).filter(x => (x.productIds || []).includes(p.id))[0]; return { ...p, job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; });
+    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !Object.values(db.jobs).some(x => (x.productIds || []).includes(p.id))).map(p => ({ ...p, job: null }));
     const mine = Object.values(db.jobs).filter(j => j.key === key).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return {
       ok: true, me: { key, name: clip(actor?.name, 60) },
@@ -345,10 +347,10 @@ function register(app, ctx) {
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
       // Once sent to the workshop, remove the order from this sending queue permanently.
       // This also hides older orders that were already sent before this update.
-      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
+      orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
       readymade: inProg,
-      jobs: mine.filter(j => j.stage !== "finished").slice(0, 100).map(compactJob),
-      doneJobs: mine.filter(j => j.stage === "finished").slice(0, 15).map(compactJob),
+      jobs: mine.filter(j => j.stage !== "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 100).map(compactJob),
+      doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
       log: db.log.filter(l => l.key === key).slice(-100).reverse()
     };
@@ -555,7 +557,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v156" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v157", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
