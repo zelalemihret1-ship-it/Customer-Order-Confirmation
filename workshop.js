@@ -586,6 +586,23 @@ function register(app, ctx) {
     if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
     persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
+  // Explicit dispatch messages from the Production & Dispatch workspace.
+  router.post("/dispatch/send", async (req, res) => {
+    const kind = String(req.body?.kind || "");
+    if (!["driver", "material"].includes(kind)) return res.status(400).json({ ...view(req.actor), ok: false, error: "Choose a valid dispatch destination." });
+    const target = settingsOf(keyOf(req.actor))[kind];
+    if (!target) return res.status(400).json({ ...view(req.actor), ok: false, error: `The ${kind.toUpperCase()} Telegram topic is not selected. Choose it in Production & Dispatch settings and save first.` });
+    const message = String(req.body?.text || "").trim().slice(0, 3500);
+    if (!message) return res.status(400).json({ ...view(req.actor), ok: false, error: "Enter dispatch details before sending." });
+    try {
+      await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n${kind === "driver" ? "🚚 <b>DRIVER DISPATCH</b>" : "🧱 <b>MATERIAL DISPATCH</b>"}\n\n${esc(message)}\n\nSent by: ${esc(req.actor?.name || "Admin")}`, true);
+      log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, true, "Sent to the selected Telegram topic.");
+      return res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "driver" ? "Driver" : "Material"} dispatch sent to the selected Telegram topic.` });
+    } catch (e) {
+      log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, false, clip(e.message, 180));
+      return res.status(400).json({ ...view(req.actor), ok: false, error: `Telegram send failed: ${clip(e.message, 180)}` });
+    }
+  });
   // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
   router.post("/material/add", (req, res) => {
     if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
