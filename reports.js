@@ -523,7 +523,8 @@ function register(app, ctx) {
   // MATERIAL: new · add · cut   (Material · Type · Unit · Available · Opening stock · daily use · Total used · Note)
   const matKey = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase();
   const matName = m => m.name + (m.type ? " " + m.type : "");
-  router.post("/material/add", (req, res) => {
+  const H = {}; // handlers reused by the Workshop section (same materials, same log)
+  router.post("/material/add", H.add = (req, res) => {
     const b = req.body || {}, name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || (groupsOrdered()[1] || groupsOrdered()[0] || MAT_G2);
     if (!name) return fail(res, "Write the material name.");
     if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists. Use ➕ Add on it.`);
@@ -536,7 +537,7 @@ function register(app, ctx) {
     audit("Report: material added", `${matName(m)} ${qty} ${unit}`, req.actor);
     done(res, `✅ ${matName(m)} added.`);
   });
-  router.post("/material/move", (req, res) => {
+  router.post("/material/move", H.move = (req, res) => {
     const b = req.body || {}, m = findM(b.id), type = b.type === "cut" ? "cut" : "add";
     if (!m) return fail(res, "Material not found.");
     const qty = num(b.qty);
@@ -793,7 +794,15 @@ function register(app, ctx) {
     persist(); scheduleBackup(); audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
     return { ok: true, code: p.code };
   }
+  // v161: the Workshop "Material" tab uses the SAME materials and log as Reports → Material
+  const wsMaterials = () => ({ materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })), groups: groupsOrdered() });
+  function wsMaterial(kind, body, byName) {
+    let out = { ok: false, error: "Unknown material action." };
+    const fn = H[kind]; if (!fn) return out;
+    fn({ body: body || {}, actor: { name: clip(byName, 60) || "Workshop" } }, { json: o => { out = o; } });
+    return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
+  }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, peekSeqCodes, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, peekSeqCodes, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
