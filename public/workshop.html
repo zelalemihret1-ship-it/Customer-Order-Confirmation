@@ -271,7 +271,7 @@ details.set{border-radius:var(--r)}
       </summary>
       <div class="body">
         <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>three places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> posts the product in your selected <b>Stock group</b>, where you can mark it Sold Out or Restock. The optional <b>🚚 Driver</b> place (a group + its Driver topic) receives a <b>finished order</b> — or a <b>sold readymade product</b> — when you press <b>🚚 Send to driver</b>.</div>
-        <div class="hint">The jobs are posted by the <b>AMBAR bot</b> (it must be a member — better an admin — of the group, so the buttons work).</div>
+        <div class="hint"><b>All production and material messages are sent from YOUR connected Telegram account — never by the bot.</b> The selected group/topic is only the destination.</div>
         <div id="senderLine" class="hint"></div>
         <div id="slots"></div>
         <div id="botLine" class="hint"></div>
@@ -279,7 +279,7 @@ details.set{border-radius:var(--r)}
         <h2 style="margin-top:20px"><svg class="i"><use href="#i-send"/></svg>How do orders go to the workshop?</h2>
         <label class="mode" data-m="manual"><input type="radio" name="mode" value="manual"><div><b>I send them myself</b><small>Nothing is sent by itself. In the <b>Orders</b> tab you press <b>Send to workshop</b>.</small></div></label>
         <label class="mode" data-m="after_confirm"><input type="radio" name="mode" value="after_confirm"><div><b>After the customer confirms</b><small>The order goes to the workshop automatically the moment the customer presses <b>Confirm</b> (and the card was delivered).</small></div></label>
-        <div class="btns"><button class="btn" id="saveBtn" type="button">Save settings</button><button class="btn sec sm" id="checkBtn" type="button">Check the bot</button><button class="btn gold sm" id="testBtn" type="button"><svg class="i"><use href="#i-send"/></svg>Send a test message</button></div>
+        <div class="btns"><button class="btn" id="saveBtn" type="button">Save settings</button><button class="btn sec sm" id="checkBtn" type="button">Check topic access</button><button class="btn gold sm" id="testBtn" type="button"><svg class="i"><use href="#i-send"/></svg>Send a test message</button></div>
       </div>
     </details>
 
@@ -381,7 +381,7 @@ const typeSet=(id,otherId,t)=>{t=t||"";const k=PTYPES.includes(t);$(id).value=t?
 const typeWire=(id,otherId)=>$(id).addEventListener("change",()=>{const o=$(id).value==="__other";$(otherId).style.display=o?"block":"none";if(o)$(otherId).focus();});
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ic=(n,st)=>'<svg class="i"'+(st?' style="'+st+'"':"")+'><use href="#i-'+n+'"/></svg>';
-let S={settings:{workshop:null,finishing:null,stock:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,drv=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
+let meRole="";let S={settings:{workshop:null,finishing:null,stock:null,driver:null,material:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,drv=null,matTopic=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
 const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
 const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
 const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
@@ -398,11 +398,11 @@ function renderSettings(){
   const st=S.sender||{};
   $("senderLine").innerHTML=st.ready?'<span class="pill ok">● Your Telegram account is connected'+(st.label?" · "+esc(st.label):"")+'</span> <span style="display:block;margin-top:4px">It is used to list your groups and topics.</span>':'<span class="pill wait">● Your Telegram account is not connected</span> <span style="display:block;margin-top:6px">You can still paste a group / topic link. To pick from your groups and topics, connect it: Settings → Connect my Telegram account.</span>';
   const slot=(cls,icon,label,g,role)=>'<div class="slot '+cls+'"><div class="si">'+icon+'</div><div class="sm"><b>'+label+'</b>'+(g?'<span>'+esc(tName(g))+'</span>':'<span class="none">Not chosen yet</span>')+'</div><div class="sb"><button class="btn sec sm" type="button" data-pick="'+role+'">'+(g?"Change":"Choose")+'</button>'+(g?'<button class="btn sec sm" type="button" data-clear="'+role+'">Clear</button>':"")+'</div></div>';
-  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock")+slot("stock","🚚","Driver (optional)",drv,"driver");
+  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock")+slot("stock","🚚","Driver",drv,"driver")+slot("stock","🧱","Material topic",matTopic,"material");
   document.querySelectorAll(".mode").forEach(l=>{const on=l.dataset.m===mode;l.classList.toggle("on",on);l.querySelector("input").checked=on;});
   const sv=S.settings||{};
-  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||!sameP(drv,sv.driver)||mode!==sv.mode;
-  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(sv.driver?" · 🚚 "+tName(sv.driver):"")+(dirty?" · not saved":"");
+  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||!sameP(drv,sv.driver)||!sameP(matTopic,sv.material)||mode!==sv.mode;
+  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(sv.driver?" · 🚚 "+tName(sv.driver):"")+(sv.material?" · 🧱 "+tName(sv.material):"")+(dirty?" · not saved":"");
 }
 const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="workshop"?'<span class="pill wait">🛠 In workshop</span>':j.stage==="finishing"?'<span class="pill blue">🪚 In finishing</span>':'<span class="pill ok">✅ Finished · in stock</span>';
 const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
@@ -410,7 +410,9 @@ const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="
 const nfm=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
 let matQ="";
 function matView(){
-  return '<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
+  const pending=S.cutRequests||[];
+  const approvals=(meRole==="owner"&&pending.length)?'<div class="card" style="margin:12px 0"><div class="sec-h"><b>⏳ Pending cut approvals</b><span>'+pending.length+'</span></div>'+pending.map(r=>'<div class="item"><div class="mid"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+'</div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' '+esc(r.unit)+(r.note?" · "+esc(r.note):"")+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'">✅ Approve</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'">❌ Reject</button></div></div>').join('')+'</div>':'';
+  return approvals+'<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
 }
 function matList(){
   const q=matQ.trim().toLowerCase(),L=(S.materials||[]).filter(m=>!q||(m.name+" "+m.type+" "+m.unit+" "+m.group).toLowerCase().includes(q)),gs=(S.matGroups||[]).slice();L.forEach(m=>{if(!gs.includes(m.group))gs.push(m.group);});
@@ -437,7 +439,7 @@ $("mNo").onclick=()=>$("matOv").classList.remove("on");
 $("mOk").onclick=async()=>{
   if(!MAT)return;let path,body;
   if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
-  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path="/api/workshop/material/move";body={id:MAT.id,type:MAT.kind==="cut"?"cut":"add",qty:$("mQty").value,note:$("mNote").value};}
+  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path=MAT.kind==="cut"?"/api/workshop/material/cut-request":"/api/workshop/material/move";body={id:MAT.id,type:"add",qty:$("mQty").value,note:$("mNote").value};}
   busy("Saving…");const d=await api(path,body);busy("");
   if(d.ok){$("matOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("mMsg",d.error||"Could not save.");
 };
@@ -445,6 +447,15 @@ document.addEventListener("click",e=>{
   const n=e.target.closest("[data-mnew]");if(n)return openMat("new");
   const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
   const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
+});
+document.addEventListener("click",async e=>{
+  const a=e.target.closest("[data-cutapprove]"),r=e.target.closest("[data-cutreject]"),el=a||r;if(!el)return;
+  const id=el.dataset.cutapprove||el.dataset.cutreject,approve=!!a;
+  if(!confirm(approve?"Approve this material cut?":"Reject this material cut?"))return;
+  busy(approve?"Approving cut…":"Rejecting cut…");
+  const d=await api("/api/workshop/material/cut-decide",{id,approve});
+  busy("");
+  if(d.ok){render();say(d.message||"Done.","ok");}else say(d.error||"Could not decide the cut.","bad");
 });
 const orderOpts=first=>'<option value="">'+first+'</option><option value="__typed">✍ Type the order ID…</option>'+(S.allOrders||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+(o.status&&o.status!=="Confirmed"?" ["+esc(o.status)+"]":"")+'</option>').join("");
 // the order chosen in a "Which order?" box: a listed order (any status) or a TYPED order ID → {orderId,orderLabel} (null = nothing chosen)
@@ -532,15 +543,15 @@ document.addEventListener("click",e=>{const b=e.target.closest("#seg button[data
 $("subSeg").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
 document.querySelectorAll(".mode").forEach(l=>l.addEventListener("click",()=>{mode=l.dataset.m;renderSettings();}));
 $("slots").addEventListener("click",e=>{
-  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else if(c.dataset.clear==="driver")drv=null;else stock=null;renderSettings();return;}
+  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else if(c.dataset.clear==="driver")drv=null;else if(c.dataset.clear==="material")matTopic=null;else stock=null;renderSettings();return;}
   const p=e.target.closest("button[data-pick]");if(p)openPick(p.dataset.pick);
 });
 function setPlace(g){
-  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else if(pickRole==="driver")drv=g;else stock=g;
+  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else if(pickRole==="driver")drv=g;else if(pickRole==="material")matTopic=g;else stock=g;
   $("pickOv").classList.remove("on");renderSettings();say("Place chosen — press Save settings to keep it.","info");
 }
 async function openPick(role){
-  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":role==="driver"?"Choose the DRIVER place (group + Driver topic)":"Choose the STOCK place";
+  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":role==="driver"?"Choose the DRIVER place (group + Driver topic)":role==="material"?"Choose the MATERIAL topic (group + topic)":"Choose the STOCK place";
   $("pickStep1").style.display="block";$("pickStep2").style.display="none";$("pickSearch").value="";$("linkIn").value="";
   $("pickList").innerHTML='<div class="hint">Reading your Telegram groups…</div>';$("pickOv").classList.add("on");
   const d=await api("/api/workshop/dialogs",{});
@@ -590,17 +601,17 @@ async function checkBot(quiet){
 }
 $("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
 $("saveBtn").onclick=async()=>{
-  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,mode});
-  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;mode=S.settings.mode;}
+  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,material:matTopic,mode});
+  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode;}
   say(d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");render();
   if(d.ok&&ws&&fin){const c=await checkBot(true);if(!c.ok)say((d.message||"")+" ⚠ "+botReport(c),"bad");}
   busy("");
 };
 $("testBtn").onclick=async()=>{
   busy("Sending a test message…");
-  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,mode});
+  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,material:matTopic,mode});
   if(!sv.ok){busy("");return say(sv.error||"Could not save the places first.","bad");}
-  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;mode=S.settings.mode;
+  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode;
   const d=await api("/api/workshop/test",{});busy("");render();
   say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
 };
@@ -715,13 +726,13 @@ $("cDel").onclick=async()=>{
 };
 (async()=>{
   let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
-  if(!(me.role==="owner"||me.role==="open"||(me.perms||[]).includes("workshop"))){
+  meRole=me.role||"";if(!(me.role==="owner"||me.role==="open"||(me.perms||[]).includes("workshop"))){
     $("gate").style.display="block";$("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Workshop section. Ask them to tick Workshop for you in Manage Admins.":(me.error||"Access denied.");return;
   }
   $("view").style.display="block";
   const d=await api("/api/workshop/state");
   if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
-  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
+  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
   render();
 })();
 document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
