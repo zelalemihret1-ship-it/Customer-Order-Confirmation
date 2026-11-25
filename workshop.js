@@ -114,20 +114,20 @@ function register(app, ctx) {
   // ── posting with the BOT (inline buttons need the bot) ──────────────────────────────────────
   const tg = (method, body) => ctx.tgApi.call(method, body);
   const chatKey = g => /^-?\d+$/.test(String(g.chat)) ? String(g.chat) : "@" + String(g.chat).replace(/^@/, "");
-  async function botPost(g, buf, caption, markup) {
+  async function botPost(g, buf, caption, markup, html) { // html = true → caption is Telegram HTML (bold lines)
     const topic = g.topic > 1 ? g.topic : 0;
     if (buf) {
-      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", caption.slice(0, 1000)); if (markup) fd.append("reply_markup", JSON.stringify(markup)); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
+      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", html ? caption : caption.slice(0, 1000)); if (html) fd.append("parse_mode", "HTML"); if (markup) fd.append("reply_markup", JSON.stringify(markup)); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
       try { const r = await ctx.tgApi.sendForm("sendPhoto", build); return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: true }; }
       catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; } // not a picture Telegram accepts → plain text
     }
-    const r = await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: caption.slice(0, 4000), ...(markup ? { reply_markup: markup } : {}) });
+    const r = await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: html ? caption : caption.slice(0, 4000), ...(html ? { parse_mode: "HTML" } : {}), ...(markup ? { reply_markup: markup } : {}) });
     return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: false };
   }
-  async function botEdit(ref, caption, markup) { // change the text of a posted message (and drop its button); never throws
+  async function botEdit(ref, caption, markup, html) { // change the text of a posted message (and drop its button); never throws
     if (!ref) return;
-    const body = { chat_id: ref.chat, message_id: ref.message_id, reply_markup: markup || { inline_keyboard: [] } };
-    try { await tg(ref.photo ? "editMessageCaption" : "editMessageText", ref.photo ? { ...body, caption: caption.slice(0, 1000) } : { ...body, text: caption.slice(0, 4000) }); }
+    const body = { chat_id: ref.chat, message_id: ref.message_id, reply_markup: markup || { inline_keyboard: [] }, ...(html ? { parse_mode: "HTML" } : {}) };
+    try { await tg(ref.photo ? "editMessageCaption" : "editMessageText", ref.photo ? { ...body, caption: html ? caption : caption.slice(0, 1000) } : { ...body, text: html ? caption : caption.slice(0, 4000) }); }
     catch (e) { if (!/not modified/i.test(String(e.message))) { try { await tg("editMessageReplyMarkup", { chat_id: ref.chat, message_id: ref.message_id, reply_markup: { inline_keyboard: [] } }); } catch {} } }
   }
   const kbWorkshop = id => ({ inline_keyboard: [[{ text: "🛠 Finished workshop", callback_data: "wsf:" + id }]] });
@@ -191,14 +191,34 @@ function register(app, ctx) {
   };
   // v159: an order without its own Product ID gets the next ID of the Z/Y/X sequence. It is RESERVED when first shown so the Orders list and the Telegram message agree.
   const reservedSet = () => new Set(Object.values(db.reserved || {}));
+  // v160: Shoe Shelf → Z1, Z2 … (old sequence). Every other product type → 1A, 1B … 1Z, 2A … 2Z …
+  const isShoe = pt => /shoe\s*shelf/i.test(String(pt || ""));
+  const orderPtype = o => clip(o?.ptype || o?.productType || "", 40) || (/shoe/i.test(String(o?.product || o?.model || "")) ? "Shoe Shelf" : "");
   const orderCodeFor = (o, reserve) => {
     db.reserved = db.reserved || {}; R().setReservedCodes?.(reservedSet);
     const taken = c => typeof R().codeTaken === "function" && R().codeTaken(c); // v159: orders always take the next Z/Y/X ID (no original code)
     const cur = db.reserved[o.id]; if (cur && !taken(cur)) return cur;
     if (!reserve || typeof R().peekSeqCodes !== "function") return "";
-    delete db.reserved[o.id]; const c = R().peekSeqCodes(1)[0]; if (c) { db.reserved[o.id] = c; persist(); } return c || "";
+    delete db.reserved[o.id]; const c = R().peekSeqCodes(1, orderPtype(o))[0]; if (c) { db.reserved[o.id] = c; persist(); } return c || "";
   };
+  // v160: measurement "120*35*120"
+  const fmtSize = v => clip(v, 80).replace(/(\d(?:\.\d+)?\s*(?:cm|mm|m)?)\s*[×✕xX*]\s*(?=\d)/gi, "$1*").replace(/\s*\*\s*/g, "*");
+  const esc = v => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // v160: the WORKSHOP post is short: AMBAR FURNITURE · bold "ProductID-Model" (one line per unit) · measurement · quantity · additional texts. Telegram HTML (bold).
+  function workshopCaption(j, extra) {
+    const model = clip(j.name || "", 100), codes = (j.codes || []).length ? j.codes : ["—"];
+    const tail = extra ? "\n\n" + esc(extra) : "", LIMIT = 1000 - tail.length;
+    const head = ["<b>AMBAR FURNITURE</b>", "", ...codes.map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>"), "", "Measurement: " + esc(fmtSize(j.size) || "—"), "Quantity: " + (j.qty || 1)];
+    const more = [...(j.details || []), j.note ? clip(j.note, 400) : ""].filter(Boolean);
+    let out = head.join("\n");
+    if (more.length) {
+      out += "\n\nADDITIONAL TEXTS:";
+      for (const m of more) { const l = "\n" + esc(m); if (out.length + l.length > LIMIT) break; out += l; }
+    }
+    return out.slice(0, LIMIT) + tail;
+  }
   function jobCaption(j, stage, extra) {
+    if (stage === "workshop") return workshopCaption(j, extra);
     const head = "_________ AMBAR FURNITURE _________";
     const ordered = j.kind === "order" || !!j.orderLabel;
     const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID" + ((j.codes || []).length > 1 ? `s (${j.codes.length})` : "") + "- " + (clip((j.codes || []).join(", "), 330) || "Pending"), "MODEL- " + clip(j.name || "—", 100), j.ptype ? "PRODUCT TYPE- " + clip(j.ptype, 40) : "", ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
@@ -236,7 +256,7 @@ function register(app, ctx) {
     }
     // 2) the bot posts it in the WORKSHOP topic
     let ref;
-    try { ref = await botPost(s.workshop, spec.buf, jobCaption(j, "workshop"), kbWorkshop(id)); }
+    try { ref = await botPost(s.workshop, spec.buf, jobCaption(j, "workshop"), kbWorkshop(id), true); }
     catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: botFriendly(e) }; }
     j.wsMsg = ref;
     if (spec.buf && spec.buf.length <= 1.4 * 1024 * 1024) { try { j.photoId = await savePhoto("data:image/jpeg;base64," + spec.buf.toString("base64")); } catch {} } // kept so the FINISHING post shows the same picture
@@ -261,7 +281,7 @@ function register(app, ctx) {
     catch (e) { return { ok: false, error: botFriendly(e) }; }
     j.stage = "finishing"; j.wsDone = { by, at }; j.finMsg = ref;
     for (const pid of j.productIds || []) if (R().wsSetStage) R().wsSetStage(pid, "finishing", by, j.id);
-    await botEdit(j.wsMsg, jobCaption(j, "workshop", `✅ Finished workshop — ${by} · ${at}\n➡ Sent to FINISHING`));
+    await botEdit(j.wsMsg, jobCaption(j, "workshop", `✅ Finished workshop — ${by} · ${at}\n➡ Sent to FINISHING`), null, true);
     await saveOrderStage(j, { wsDoneAt: at, wsDoneBy: by });
     log(j.key, { name: by }, `Finished workshop · ${j.name}`, true, ""); persist();
     return { ok: true, job: j };
@@ -329,7 +349,7 @@ function register(app, ctx) {
     const prev = orderJob(o.id);
     if (prev && !opt.again) return { ok: false, code: "ALREADY", error: `This order is already ${STAGES[prev.stage] ? STAGES[prev.stage].toLowerCase() : "sent"}.` };
     const buf = await orderPhotoBuf(o);
-    const sentJob = await createJob({ kind: "order", name: o.product || "Furniture order", productCode: orderCodeFor(o, true), qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
+    const sentJob = await createJob({ kind: "order", name: o.product || "Furniture order", ptype: orderPtype(o), productCode: orderCodeFor(o, true), qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
     if (sentJob.ok && db.reserved && db.reserved[o.id]) { delete db.reserved[o.id]; persist(); }
     return sentJob;
   }
@@ -541,8 +561,11 @@ function register(app, ctx) {
       return res.json({ ok: true, orderCodes: out });
     }
     const counts = (Array.isArray(req.body?.counts) ? req.body.counts : []).slice(0, 40).map(n => Math.max(1, Math.min(100, Math.floor(Number(n)) || 1)));
-    const all = typeof R().peekSeqCodes === "function" ? R().peekSeqCodes(counts.reduce((a, b) => a + b, 0)) : [];
-    let k = 0; res.json({ ok: true, codes: counts.map(n => all.slice(k, (k += n))) });
+    const types = Array.isArray(req.body?.types) ? req.body.types : [];
+    const fam = i => isShoe(types[i]) ? "s" : "o", need = { s: 0, o: 0 }; counts.forEach((n, i) => { need[fam(i)] += n; });
+    const peek = (n, pt) => n && typeof R().peekSeqCodes === "function" ? R().peekSeqCodes(n, pt) : [];
+    const pool = { s: peek(need.s, "Shoe Shelf"), o: peek(need.o, "") }, pos = { s: 0, o: 0 };
+    res.json({ ok: true, codes: counts.map((n, i) => { const f = fam(i), out = pool[f].slice(pos[f], pos[f] + n); pos[f] += n; return out; }) });
   });
   router.post("/send-items", async (req, res) => {
     const key = keyOf(req.actor), s = settingsOf(key);
@@ -587,7 +610,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v158", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v160", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
