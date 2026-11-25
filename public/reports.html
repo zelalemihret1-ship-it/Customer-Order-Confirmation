@@ -438,7 +438,7 @@ function render(){
     :tab==="sv"?K("Products",st.length,"each with its own Product ID","#8a5a00")+K("In stock",st.length,"products ready","#1f8f55")+K("With photo",st.filter(p=>p.photo).length,"of "+st.length,"#14598f")
     :K("Materials",S.materials.length,"kinds in store","#8a5a00")+K("Low / out",low,low?"to re-order":"all good",low?"#b3261e":"#1f8f55")+K("Moves today",today,fmtD(S.now.d),"#6d675d");
   $("addBtn").textContent="➕ New material";
-  $("addBtn").style.display=tab==="mt"?"block":"none"; // v160: products are added only in the Workshop section
+  $("addBtn").style.display="none"; // v160/v162: products and materials are added / cut only in the Workshop section
   document.querySelectorAll("#vt button").forEach(b=>b.classList.toggle("on",b.dataset.v===VM));
   $("vt").style.display=(tab==="mt"&&msub==="moves")?"none":"flex";
   $("q").placeholder=tab==="mt"?"🔍 Search material…":"🔍 Search Prod Id, model, handle, description…";
@@ -515,11 +515,11 @@ function render(){
     const rowOf=m=>{const s=lowOf(m),pct=m.min>0?Math.min(100,Math.round(m.qty/(m.min*2)*100)):(m.qty>0?100:0);const last=S.log.find(l=>l.matId===m.id);
       const pill=s==="ok"?'<span class="pill stock">OK</span>':'<span class="pill '+s+'">'+(s==="out"?"OUT":"LOW")+'</span>';
       const grip=canDrag?'<span class="grip" title="Hold and drag">⠿</span>':'';
-      if(LM)return '<div class="lrow mrow" data-mid="'+m.id+'"><div class="mid"><div class="nm"'+redSt(m)+'>'+grip+esc(matLab(m))+'</div><div class="meta"><b style="font-size:14px;color:'+(RED5(m)?'#cc0000':'var(--tx)')+'">'+nf(m.qty)+'</b> '+esc(m.unit)+' · '+pill+(last?' · '+esc(fmtDT(last)):'')+'</div></div><div class="rt"><button class="b sm add2" data-a="madd" data-id="'+m.id+'" title="Add">➕</button><button class="b sm cut" data-a="mcut" data-id="'+m.id+'" title="Cut">✂️</button>'+ic("mfix",m.id,"🛠 Fix stock")+ic("medit",m.id,"✏️ Edit")+ic("mhist",m.id,"📜 Movements")+ic("mdel",m.id,"🗑 Delete","red")+'</div></div>';
+      if(LM)return '<div class="lrow mrow" data-mid="'+m.id+'"><div class="mid"><div class="nm"'+redSt(m)+'>'+grip+esc(matLab(m))+'</div><div class="meta"><b style="font-size:14px;color:'+(RED5(m)?'#cc0000':'var(--tx)')+'">'+nf(m.qty)+'</b> '+esc(m.unit)+' · '+pill+(last?' · '+esc(fmtDT(last)):'')+'</div></div><div class="rt">'+ic("mfix",m.id,"🛠 Fix stock")+ic("medit",m.id,"✏️ Edit")+ic("mhist",m.id,"📜 Movements")+ic("mdel",m.id,"🗑 Delete","red")+'</div></div>';
       return '<div class="item mrow" data-mid="'+m.id+'"><div class="top"><div class="nm"'+redSt(m)+'>'+grip+esc(matLab(m))+'</div>'+pill+'</div>'
         +'<div class="bal"><span class="n"'+redSt(m)+'>'+nf(m.qty)+'</span><span class="u"'+redSt(m)+'>available · unit '+esc(m.unit)+'</span></div><div class="bar"><i class="'+(s==="ok"?"":s)+'" style="width:'+pct+'%"></i></div>'
         +'<div class="meta">'+(m.min>0?'Low-stock alert at <b>'+nf(m.min)+'</b> · ':'')+(last?'Last move <b>'+esc(fmtDT(last))+'</b>':'No movement yet')+'</div>'
-        +'<div class="acts"><button class="b add2" data-a="madd" data-id="'+m.id+'">➕ Add</button><button class="b cut" data-a="mcut" data-id="'+m.id+'">✂️ Cut</button><button class="b" data-a="mfix" data-id="'+m.id+'" title="Fix stock (wrong quantity)">🛠 Fix stock</button><button class="b" data-a="mhist" data-id="'+m.id+'">📜</button><button class="b" data-a="medit" data-id="'+m.id+'">✏️</button><button class="b red" data-a="mdel" data-id="'+m.id+'">🗑</button></div></div>';};
+        +'<div class="acts"><button class="b" data-a="mfix" data-id="'+m.id+'" title="Fix stock (wrong quantity)">🛠 Fix stock</button><button class="b" data-a="mhist" data-id="'+m.id+'">📜</button><button class="b" data-a="medit" data-id="'+m.id+'">✏️</button><button class="b red" data-a="mdel" data-id="'+m.id+'">🗑</button></div></div>';};
     h=grps.map(g=>{
       const L=S.materials.filter(m=>(m.group||"MATERIAL")===g&&hit(matLab(m)+" "+g));
       if(q&&!L.length)return "";
@@ -527,7 +527,7 @@ function render(){
     }).join("");
     if(h&&canDrag)h='<div class="hint" style="margin:0 2px 10px">✋ Hold a material for a moment, then drag it to a new place — also into the other table. The order is saved by itself.</div>'+h;
     $("out").className="";
-    if(!S.materials.length||!h)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Tap <b>➕ New material</b>, then use <b>➕ Add</b> when stock arrives and <b>✂️ Cut</b> when you use it. Open <b>🕘 Recent movements</b> to see every add and cut.")+'</div>';
+    if(!S.materials.length||!h)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Materials are added and cut in the <b>Workshop</b> section. Open <b>🕘 Recent movements</b> to see every add and cut.")+'</div>';
   }
   $("out").innerHTML=h;$("extra").innerHTML=extra;
   const ob=$("oldBtn");if(ob)ob.onclick=()=>{showOld=!showOld;render();};
