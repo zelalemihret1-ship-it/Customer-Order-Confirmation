@@ -1,3 +1,9 @@
+## v158 Reports ↔ Workshop Workflow Products
+- Workshop's Workflow Products tab is now a live view of every Reports product whose status is Workflow (READYMADE and ORDER), with Reports as the source of truth.
+- Existing Reports products can be sent to Workshop and linked to a job; already-linked products show the current Workshop stage and cannot be sent twice.
+- Workshop stage changes are written back to the Reports product (In workshop / In finishing). Finishing moves the same Reports product to Stock, so it leaves Workflow automatically.
+- The Workshop tab is renamed Workflow Products and shows Reports product code, order type/reference, priority, and active stage.
+
 
 ## v157 Workshop reset and live synchronization
 - Workshop queue now starts fresh at deployment cutover; older Workshop jobs remain stored but are hidden from the current board.
