@@ -839,3 +839,9 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - Workshop Orders hide jobs already finished and in stock; My Last Sends can be filtered by result.
 - Reports stock actions use Sold Out and Restock; restocking returns the item to In Stock with an audit-history entry.
 - Reports product deletion is Main Admin-only and synchronizes removal from Workshop job lists.
+
+
+## v166 — Material topic persistence + Workshop quick actions
+- Fixed the Workshop state response so the saved Material topic is returned to the interface after reload; this was the reason the saved slot displayed “Not chosen yet” again.
+- Added compact top-of-Workshop shortcuts to Material, Reports sold-out controls, and product records.
+- Expanded the test-message success text to describe all configured destinations.
