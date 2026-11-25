@@ -450,19 +450,19 @@ async function loadOrderIds(){
   document.querySelectorAll("#out .ids[data-o]").forEach(e=>{const c=(d.orderCodes||{})[e.dataset.o];e.innerHTML=c?'<span class="idl">Product ID</span><span class="idc">'+esc(c)+'</span>':"";});
 }
 let pvSeq=0,pvT=null;
-function previewFor(qtyId,idsId,nId){ // IDs this line will get = continue after the lines already in the list
+function previewFor(qtyId,idsId,nId,typeFn){ // IDs this line will get = continue after the lines already in the list
   const q=Math.max(1,Math.min(100,Math.floor(Number($(qtyId).value))||1));
   clearTimeout(pvT);pvT=setTimeout(async()=>{
-    const my=++pvSeq;const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty).concat(q)});
+    const my=++pvSeq;const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty).concat(q),types:basket.map(l=>l.ptype||"").concat(typeFn?typeFn():"")});
     if(my!==pvSeq||!d||!d.ok)return;const c=(d.codes||[])[basket.length]||[];
     $(idsId).innerHTML=c.map(x=>'<span class="idc">'+esc(x)+'</span>').join("");$(nId).textContent=c.length?"("+c.length+")":"";
   },180);
 }
-const pvA=()=>previewFor("aQty","aIds","aIdN"),pvU=()=>previewFor("uQty","uIds","uIdN");
+const pvA=()=>previewFor("aQty","aIds","aIdN",()=>curP?curP.ptype||"":""),pvU=()=>previewFor("uQty","uIds","uIdN",()=>typeVal("uType","uTypeO"));
 let idSeq=0;
 async function loadBasketIds(){
   if(!basket.length)return;const my=++idSeq;
-  const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty)});
+  const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty),types:basket.map(l=>l.ptype||"")});
   if(my!==idSeq||!d||!d.ok||!basket.length)return;
   document.querySelectorAll("#basket .ids").forEach(e=>{const c=(d.codes||[])[Number(e.dataset.i)]||[];e.innerHTML=c.length?'<span class="idl">Product ID'+(c.length>1?"s":"")+'</span>'+c.map(x=>'<span class="idc">'+esc(x)+'</span>').join(""):"";});
 }
@@ -560,7 +560,7 @@ function openAdd(id){
 $("kOrder").onclick=()=>setKind("order");$("kReady").onclick=()=>setKind("readymade");
 $("qMinus").onclick=()=>{$("aQty").value=Math.max(1,(Number($("aQty").value)||1)-1);pvA();};
 $("qPlus").onclick=()=>{$("aQty").value=Math.min(9999,(Number($("aQty").value)||0)+1);pvA();};
-$("aQty").addEventListener("input",pvA);$("uQty").addEventListener("input",pvU);
+$("aQty").addEventListener("input",pvA);$("uQty").addEventListener("input",pvU);["change","input"].forEach(ev=>document.addEventListener(ev,e=>{if(e.target&&(e.target.id==="uType"||e.target.id==="uTypeO"))pvU();}));
 $("aSizes").addEventListener("click",e=>{const b=e.target.closest("button[data-z]");if(!b)return;$("aSize").value=b.dataset.z;document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x===b));});
 $("aSize").addEventListener("input",()=>document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x.dataset.z===$("aSize").value.trim())));
 $("aOrder").onchange=()=>{const o=S.orders.find(x=>String(x.id)===$("aOrder").value);if(o&&o.size&&!$("aSize").value.trim())$("aSize").value=o.size;};
