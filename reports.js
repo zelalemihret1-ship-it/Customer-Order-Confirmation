@@ -146,6 +146,15 @@ function register(app, ctx) {
     let max = 0; for (const p of db.products) { const m = /^P-(\d+)$/i.exec(p.code); if (m) max = Math.max(max, +m[1]); }
     return "P-" + String(max + 1).padStart(4, "0");
   };
+  // v159: Product IDs for READYMADE standard products: Z1..Z40, Y1..Y40 … A1..A40 (letter E is skipped), then OZ1..OZ40, OY1.. (one more "O" each full round). One ID per product.
+  const SEQ_LETTERS = "ZYXWVUTSRQPONMLKJIHGFDCBA".split(""), SEQ_PER = 40, SEQ_BLOCK = SEQ_LETTERS.length * SEQ_PER;
+  const seqCode = i => "O".repeat(Math.floor(i / SEQ_BLOCK)) + SEQ_LETTERS[Math.floor((i % SEQ_BLOCK) / SEQ_PER)] + ((i % SEQ_PER) + 1);
+  const seqIndexOf = code => { const m = /^(O*)([A-DF-Z])(\d{1,2})$/i.exec(String(code || "").trim()); if (!m) return -1; const n = +m[3], L = SEQ_LETTERS.indexOf(m[2].toUpperCase()); if (n < 1 || n > SEQ_PER || L < 0) return -1; return m[1].length * SEQ_BLOCK + L * SEQ_PER + (n - 1); };
+  const nextSeqCode = () => {
+    let i = Math.max(+db.wsSeq || 0, db.products.reduce((mx, p) => Math.max(mx, seqIndexOf(p.code) + 1), 0));
+    while (codeTaken(seqCode(i))) i++;
+    db.wsSeq = i + 1; return seqCode(i);
+  };
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
@@ -749,7 +758,7 @@ function register(app, ctx) {
     let photo = "";
     if (f.photoBuf && f.photoBuf.length > 200 && f.photoBuf.length <= 1.5 * 1024 * 1024) { try { photo = await savePhoto("data:image/jpeg;base64," + f.photoBuf.toString("base64")); } catch {} }
     const requestedCode = clip(f.code, 30);
-    const p = { id: uid(), ptype: "", code: requestedCode && !codeTaken(requestedCode) ? requestedCode : nextCode(), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
+    const p = { id: uid(), ptype: "", code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode() : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
       category: "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
       photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40) };
     hist(p, "Added to Workflow (sent to the workshop)", req);
