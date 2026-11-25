@@ -217,7 +217,7 @@ function register(app, ctx) {
     const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
     // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
     if (spec.existingProductIds && spec.existingProductIds.length) {
-      for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); } }
+      for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); if (R().wsSetStage) R().wsSetStage(pid, "workshop", by, id); } }
     } else if (typeof R().wsAddProduct === "function") {
       const n = Math.max(1, Math.min(spec.qty || 1, 100));
       for (let i = 0; i < n; i++) {
@@ -251,6 +251,7 @@ function register(app, ctx) {
     try { ref = await botPost(s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`), kbFinishing(j.id));  }
     catch (e) { return { ok: false, error: botFriendly(e) }; }
     j.stage = "finishing"; j.wsDone = { by, at }; j.finMsg = ref;
+    for (const pid of j.productIds || []) if (R().wsSetStage) R().wsSetStage(pid, "finishing", by, j.id);
     await botEdit(j.wsMsg, jobCaption(j, "workshop", `✅ Finished workshop — ${by} · ${at}\n➡ Sent to FINISHING`));
     await saveOrderStage(j, { wsDoneAt: at, wsDoneBy: by });
     log(j.key, { name: by }, `Finished workshop · ${j.name}`, true, ""); persist();
@@ -339,7 +340,7 @@ function register(app, ctx) {
   const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
-    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !Object.values(db.jobs).some(x => (x.productIds || []).includes(p.id))).map(p => ({ ...p, job: null }));
+    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).find(x => (x.productIds || []).includes(p.id)); return { ...p, job: j ? compactJob(j) : null }; });
     const mine = Object.values(db.jobs).filter(j => j.key === key).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return {
       ok: true, me: { key, name: clip(actor?.name, 60) },
@@ -446,16 +447,17 @@ function register(app, ctx) {
     const r = await sendOrder(o, req.actor, { again: !!req.body?.again });
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ Order ${o.orderId || o.id} sent to the workshop.` : undefined });
   });
-  router.post("/send-product", async (req, res) => { // unfinished readymade products of Reports → workshop
+  router.post("/send-product", async (req, res) => { // selected Reports Workflow products → workshop
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 40) : [];
     const list = (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => ids.includes(p.id));
-    if (!list.length) return res.json({ ok: false, error: "Choose at least one readymade product." });
+    if (!list.length) return res.json({ ok: false, error: "Choose at least one product from Reports → Workflow Products." });
     let okN = 0, err = "";
     for (const p of list) {
       if (Object.values(db.jobs).some(x => (x.productIds || []).includes(p.id))) { err = err || `${p.code} is already sent to the workshop.`; continue; }
       let buf = null; if (p.photo && typeof R().readymade === "function") { try { buf = await R().readymade().photoBuf(p.photo); } catch {} }
       if (okN) await new Promise(x => setTimeout(x, 700));
-      const r = await createJob({ kind: "readymade", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, existingProductIds: [p.id], buf }, req.actor);
+      const isOrder = /ORDER|CUS/i.test(String(p.orderType || ""));
+      const r = await createJob({ kind: isOrder ? "order" : "readymade", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, orderLabel: p.orderRef || "", existingProductIds: [p.id], buf }, req.actor);
       if (r.ok) okN++; else err = r.error;
     }
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (err || "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
@@ -557,7 +559,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v157", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v158", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
