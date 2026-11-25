@@ -1,3 +1,12 @@
+## v165 — Material cut approval + user-account topic sending
+- Added a dedicated **Material topic** setting.
+- Material **Cut** now creates a pending request; stock is reduced only after the **main admin approves** it.
+- Main admin sees pending cuts in Workshop → Material and can Approve/Reject. Approved cuts are recorded in the shared material movement log and Google Sheet backup.
+- Cut requests and approval/rejection notices are sent to the selected Material topic from the connected **user Telegram account**, not the bot.
+- Workshop, Finishing, Stock and Driver production messages now send from the connected admin's **own Telegram account** to the selected topics.
+- The mini app is the control center for approvals and production actions.
+- Important: Telegram bot callback buttons are not used for these user-account production posts; the mini app controls the workflow.
+
 ## v164 Color, Send to driver, hide finished orders
 - "Which order?" lists only UNFINISHED orders: an order whose products are all finished (or already sent to the driver) is not shown any more.
 - Add sheet (when Order is chosen) and Custom product have a Color box: choose from the list or type any color. It is written in the workshop message under ADDITIONAL TEXTS.
