@@ -625,6 +625,12 @@ function register(app, ctx) {
       if (cat?.photo) media = await photoBuf(cat.photo);
       else if (chosen.photo) media = await orderPhotoBuf({ photo: chosen.photo });
     }
+    if (kind === "driver" && req.body?.materialId) {
+      const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
+      const material = inventory.find(m => String(m.id) === String(req.body.materialId));
+      if (!material) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected material was not found." });
+      message += `\n\nMaterial: ${clip(material.name,120)}${material.type ? " "+clip(material.type,80) : ""}\nAvailable: ${clip(String(material.qty),40)} ${clip(material.unit||"",30)}`;
+    }
     if (kind === "driver" && req.body?.orderId) {
       const order = (ctx.getOrders() || []).find(o => String(o.id) === String(req.body.orderId));
       if (!order) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer order was not found." });
