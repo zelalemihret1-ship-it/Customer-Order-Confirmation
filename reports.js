@@ -762,8 +762,8 @@ function register(app, ctx) {
     let photo = "";
     if (f.photoBuf && f.photoBuf.length > 200 && f.photoBuf.length <= 1.5 * 1024 * 1024) { try { photo = await savePhoto("data:image/jpeg;base64," + f.photoBuf.toString("base64")); } catch {} }
     const requestedCode = clip(f.code, 30);
-    const p = { id: uid(), ptype: "", code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode() : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
-      category: "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
+    const p = { id: uid(), ptype: clip(f.ptype, 40), code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode() : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
+      category: /^shoe shelf$/i.test(String(f.ptype || "").trim()) ? "SHOE SHELF" : "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
       photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40) };
     hist(p, "Added to Workflow (sent to the workshop)", req);
     db.products.unshift(p); persist(); scheduleBackup();
