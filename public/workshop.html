@@ -304,7 +304,7 @@ details.set{border-radius:var(--r)}
       <label class="lab">Measurement</label>
       <input type="text" id="uSize" placeholder="e.g. 120 × 40 × 90" autocomplete="off">
       <label class="lab">Which order is it for? (optional — its Order ID goes to the workshop)</label>
-      <select id="uOrder"></select>
+      <select id="uOrder"></select><input type="text" id="uOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px">
       <label class="lab">Additional notes (optional)</label>
       <textarea id="uNote" placeholder="Material, colour, handle, anything the workshop must know…"></textarea>
       <div id="uMsg" class="msg" style="margin-top:12px"></div>
@@ -337,7 +337,7 @@ details.set{border-radius:var(--r)}
   <div style="display:flex;gap:12px;align-items:center"><img id="aImg" alt="" style="width:76px;height:76px;border-radius:16px;object-fit:cover;background:#ece7da"><div><h2 id="aName" style="margin:0">Product</h2><div class="hint" style="margin:2px 0 0" id="aType">Choose quantity, measurement and type</div></div></div>
   <label class="lab">Order or Readymade</label>
   <div class="tog"><button type="button" id="kOrder" data-k="order"><svg class="i"><use href="#i-box"/></svg>Order</button><button type="button" id="kReady" data-k="readymade"><svg class="i"><use href="#i-sofa"/></svg>Readymade</button></div>
-  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select></div>
+  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select><input type="text" id="aOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"></div>
   <label class="lab">Quantity</label>
   <div class="qty"><button type="button" id="qMinus">−</button><input type="number" id="aQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="qPlus">+</button></div>
   <div class="idbox" id="aIdBox"><div class="idh">🔖 Product IDs <span id="aIdN"></span></div><div class="ids" id="aIds"></div><div class="hint" style="margin:6px 0 0">Each unit gets its own ID automatically.</div></div>
@@ -446,6 +446,10 @@ document.addEventListener("click",e=>{
   const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
   const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
 });
+const orderOpts=first=>'<option value="">'+first+'</option><option value="__typed">✍ Type the order ID…</option>'+(S.allOrders||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+(o.status&&o.status!=="Confirmed"?" ["+esc(o.status)+"]":"")+'</option>').join("");
+// the order chosen in a "Which order?" box: a listed order (any status) or a TYPED order ID → {orderId,orderLabel} (null = nothing chosen)
+function pickedOrder(selId,typedId){const v=$(selId).value;if(v==="__typed"){const t=$(typedId).value.trim().slice(0,40);return t?{orderId:"",orderLabel:t,typed:true}:null;}if(!v)return null;const o=(S.allOrders||[]).find(x=>String(x.id)===v);return o?{orderId:o.id,orderLabel:o.orderId||("#"+o.id),size:o.size}:null;}
+const wireOrderBox=(selId,typedId,sizeId)=>{$(selId).onchange=()=>{const t=$(selId).value==="__typed";$(typedId).style.display=t?"block":"none";if(t)$(typedId).focus();const p=pickedOrder(selId,typedId);if(p&&p.size&&!$(sizeId).value.trim())$(sizeId).value=p.size;};};
 function render(){
   renderSettings();
   const tabs=[["m","box","Material",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
@@ -489,7 +493,7 @@ function render(){
   $("out").innerHTML=h;applyStdFilter();
   // custom form: keep the order list fresh without losing the choice
   const uo=$("uOrder"),cur=uo.value;
-  uo.innerHTML='<option value="">No order — new design only</option>'+S.orders.filter(o=>!o.job).map(o=>'<option value="'+o.id+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+'</option>').join("");
+  const uoKeep=uo.value;uo.innerHTML=orderOpts("No order — new design only");if([...uo.options].some(x=>x.value===uoKeep))uo.value=uoKeep;
   uo.value=[...uo.options].some(x=>x.value===cur)?cur:"";
   $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+(l.ptype?'<b style="color:var(--ink)">'+esc(l.ptype)+'</b> · ':"")+esc(l.size)+'</div><div class="ids" data-i="'+i+'"></div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
   loadBasketIds();loadOrderIds();if(tab==="s"&&sub==="cus")pvU();
@@ -608,7 +612,7 @@ function openAdd(id){
   const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
   $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aType").textContent=p.ptype?"Product type: "+p.ptype:"Choose quantity and measurement";$("aQty").value=1;$("aSize").value="";$("aNote").value="";say2("aMsg","");
   $("aSizes").innerHTML=(p.sizes||[]).map(z=>'<button type="button" class="sz" data-z="'+esc(z)+'">'+esc(z)+'</button>').join("")||'<div class="hint">No standard measurement saved — type it below.</div>';
-  $("aOrder").innerHTML='<option value="">— choose the order —</option>'+S.orders.filter(o=>!o.job).map(o=>'<option value="'+o.id+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+'</option>').join("");
+  $("aOrder").innerHTML=orderOpts("— choose the order —");$("aOrderTyped").value="";$("aOrderTyped").style.display="none";
   setKind("readymade");$("addOv").classList.add("on");pvA();
 }
 $("kOrder").onclick=()=>setKind("order");$("kReady").onclick=()=>setKind("readymade");
@@ -617,14 +621,14 @@ $("qPlus").onclick=()=>{$("aQty").value=Math.min(9999,(Number($("aQty").value)||
 $("aQty").addEventListener("input",pvA);$("uQty").addEventListener("input",pvU);["change","input"].forEach(ev=>document.addEventListener(ev,e=>{if(e.target&&(e.target.id==="uType"||e.target.id==="uTypeO"))pvU();}));
 $("aSizes").addEventListener("click",e=>{const b=e.target.closest("button[data-z]");if(!b)return;$("aSize").value=b.dataset.z;document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x===b));});
 $("aSize").addEventListener("input",()=>document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x.dataset.z===$("aSize").value.trim())));
-$("aOrder").onchange=()=>{const o=S.orders.find(x=>String(x.id)===$("aOrder").value);if(o&&o.size&&!$("aSize").value.trim())$("aSize").value=o.size;};
+wireOrderBox("aOrder","aOrderTyped","aSize");
 $("aClose").onclick=()=>$("addOv").classList.remove("on");
 $("aAdd").onclick=()=>{
-  const qty=Math.floor(Number($("aQty").value)),size=$("aSize").value.trim(),note=$("aNote").value.trim(),oid=$("aOrder").value;
+  const qty=Math.floor(Number($("aQty").value)),size=$("aSize").value.trim(),note=$("aNote").value.trim();
   if(!(qty>=1))return say2("aMsg","Choose the quantity.");
   if(!size)return say2("aMsg","Choose or type the measurement.");
-  let o=null;if(aKind==="order"){o=S.orders.find(x=>String(x.id)===oid);if(!o)return say2("aMsg","Choose which order this product belongs to.");}
-  basket.push({pid:curP.id,ptype:curP.ptype||"",name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,orderId:o?o.id:"",orderLabel:o?(o.orderId||("#"+o.id)):""});
+  let o=null;if(aKind==="order"){o=pickedOrder("aOrder","aOrderTyped");if(!o)return say2("aMsg","Choose which order this product belongs to, or type the order ID.");}
+  basket.push({pid:curP.id,ptype:curP.ptype||"",name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
   $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
 };
 $("out").addEventListener("click",async e=>{
@@ -651,19 +655,20 @@ $("uFile").onchange=async()=>{const f=$("uFile").files&&$("uFile").files[0];if(!
   try{uPhoto=await resizePhoto(f);$("uImg").src=uPhoto;$("uImg").style.display="block";$("uDropT").textContent="Change the photo";say2("uMsg","");}catch(e){say2("uMsg",e.message||"Could not read the photo.");}$("uFile").value="";};
 $("uMinus").onclick=()=>{$("uQty").value=Math.max(1,(Number($("uQty").value)||1)-1);pvU();};
 $("uPlus").onclick=()=>{$("uQty").value=Math.min(9999,(Number($("uQty").value)||0)+1);pvU();};
-$("uOrder").onchange=()=>{const o=S.orders.find(x=>String(x.id)===$("uOrder").value);if(o&&o.size&&!$("uSize").value.trim())$("uSize").value=o.size;};
+wireOrderBox("uOrder","uOrderTyped","uSize");
 $("uAdd").onclick=()=>{
-  const name=$("uName").value.trim(),qty=Math.floor(Number($("uQty").value)),size=$("uSize").value.trim(),note=$("uNote").value.trim(),oid=$("uOrder").value;
+  const name=$("uName").value.trim(),qty=Math.floor(Number($("uQty").value)),size=$("uSize").value.trim(),note=$("uNote").value.trim();
   if(!uPhoto)return say2("uMsg","Add the photo of the new design.");
   const ptype=typeVal("uType","uTypeO");if(!ptype)return say2("uMsg","Choose the product type.");
   if(!name)return say2("uMsg","Type the design / product name.");
   if(!(qty>=1))return say2("uMsg","Choose the quantity.");
   if(!size)return say2("uMsg","Type the measurement.");
   if(basket.length>=20)return say2("uMsg","The list is full (20 products). Send it first.");
-  const o=oid?S.orders.find(x=>String(x.id)===oid):null;
-  basket.push({custom:true,ptype,name,photoData:uPhoto,qty,size,note,kind:"order",orderId:o?o.id:"",orderLabel:o?(o.orderId||("#"+o.id)):""});
+  if($("uOrder").value==="__typed"&&!$("uOrderTyped").value.trim())return say2("uMsg","Type the order ID, or choose “No order”.");
+  const o=pickedOrder("uOrder","uOrderTyped");
+  basket.push({custom:true,ptype,name,photoData:uPhoto,qty,size,note,kind:"order",orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
   uPhoto="";$("uImg").style.display="none";$("uImg").removeAttribute("src");$("uDropT").textContent="Tap to add the photo";
-  typeSet("uType","uTypeO","");$("uName").value="";$("uQty").value=1;$("uSize").value="";$("uNote").value="";$("uOrder").value="";say2("uMsg","");
+  typeSet("uType","uTypeO","");$("uName").value="";$("uQty").value=1;$("uSize").value="";$("uNote").value="";$("uOrder").value="";$("uOrderTyped").value="";$("uOrderTyped").style.display="none";say2("uMsg","");
   render();say("New design added to your list — add more, or press Send list to workshop.","info");
 };
 
@@ -673,7 +678,7 @@ $("basket").addEventListener("click",async e=>{
   if(e.target.closest("#bClear")){basket=[];render();return;}
   if(e.target.closest("#bSend")){
     busy("Sending to the workshop…");
-    const r=await api("/api/workshop/send-items",{items:basket.map(l=>l.custom?{custom:true,ptype:l.ptype,name:l.name,photoData:l.photoData,qty:l.qty,size:l.size,orderId:l.orderId,note:l.note}:{pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,orderId:l.orderId,note:l.note})});busy("");
+    const r=await api("/api/workshop/send-items",{items:basket.map(l=>l.custom?{custom:true,ptype:l.ptype,name:l.name,photoData:l.photoData,qty:l.qty,size:l.size,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note}:{pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note})});busy("");
     say(r.ok?(r.message||"✅ Sent.")+(results(r)?" ⚠ "+results(r):""):(r.error||"Could not send.")+(results(r)?" "+results(r):""),r.ok?"ok":"bad");
     if(r.ok)basket=[];render();
   }
