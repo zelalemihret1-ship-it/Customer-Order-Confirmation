@@ -175,7 +175,7 @@ function register(app, ctx) {
     res.send(buf);
   });
   const cleanSizes = v => { const arr = Array.isArray(v) ? v : String(v || "").split(/\n|;/); return [...new Set(arr.map(x => clip(x, 60)).filter(Boolean))].slice(0, 40); };
-  const compactCat = p => ({ id: p.id, name: p.name, sizes: p.sizes || [], photo: p.photo || "" });
+  const compactCat = p => ({ id: p.id, name: p.name, ptype: p.ptype || "", sizes: p.sizes || [], photo: p.photo || "" });
   const canManage = actor => !!actor && hasPerm(actor, "workshop"); // v159: every admin who has the Workshop section can add / change standard products
 
   // ── jobs: one job = one thing sent to the workshop. stage: workshop → finishing → finished ────
@@ -201,7 +201,7 @@ function register(app, ctx) {
   function jobCaption(j, stage, extra) {
     const head = "_________ AMBAR FURNITURE _________";
     const ordered = j.kind === "order" || !!j.orderLabel;
-    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID" + ((j.codes || []).length > 1 ? `s (${j.codes.length})` : "") + "- " + (clip((j.codes || []).join(", "), 330) || "Pending"), "MODEL- " + clip(j.name || "—", 100), ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
+    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID" + ((j.codes || []).length > 1 ? `s (${j.codes.length})` : "") + "- " + (clip((j.codes || []).join(", "), 330) || "Pending"), "MODEL- " + clip(j.name || "—", 100), j.ptype ? "PRODUCT TYPE- " + clip(j.ptype, 40) : "", ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
     return L.filter(Boolean).join("\n");
   }
   const orderDetails = o => [line("🧱", "Material", o.material), line("🎨", "Color", o.color), line("✨", "Style", o.style), line("🖌", "Design", o.design), line("🔧", "Handle", o.handle), line("🚪", "Door", o.door), line("🗂", "Partition", o.partition), line("🧰", "Drawer", o.drawer), line("➕", "Extra", o.additionalFeatures), line("📅", "Completion date", o.completionDate), line("🚚", "Delivery date", o.deliveryDate)].filter(Boolean);
@@ -223,14 +223,14 @@ function register(app, ctx) {
     if (!s.finishing) return { ok: false, error: "First choose the FINISHING group and topic (Settings above) — the workshop button sends the job there." };
     if (!s.stock) return { ok: false, error: "First choose the STOCK group and topic (Settings above) — finished products are posted there." };
     const id = uid(), by = clip(actor?.name || "Admin", 60);
-    const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
+    const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), ptype: clip(spec.ptype, 40), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
     // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
     if (spec.existingProductIds && spec.existingProductIds.length) {
       for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); if (R().wsSetStage) R().wsSetStage(pid, "workshop", by, id); } }
     } else if (typeof R().wsAddProduct === "function") {
       const n = Math.max(1, Math.min(spec.qty || 1, 100));
       for (let i = 0; i < n; i++) {
-        const p = await R().wsAddProduct({ model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), seqId: true, orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
+        const p = await R().wsAddProduct({ ptype: spec.ptype || "", model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), seqId: true, orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
         j.productIds.push(p.id); j.codes.push(p.code);
       }
     }
@@ -470,7 +470,7 @@ function register(app, ctx) {
       let buf = null; if (p.photo && typeof R().readymade === "function") { try { buf = await R().readymade().photoBuf(p.photo); } catch {} }
       if (okN) await new Promise(x => setTimeout(x, 700));
       const isOrder = /ORDER|CUS/i.test(String(p.orderType || ""));
-      const r = await createJob({ kind: isOrder ? "order" : "readymade", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, orderLabel: p.orderRef || "", existingProductIds: [p.id], buf }, req.actor);
+      const r = await createJob({ kind: isOrder ? "order" : "readymade", ptype: p.ptype || "", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, orderLabel: p.orderRef || "", existingProductIds: [p.id], buf }, req.actor);
       if (r.ok) okN++; else err = r.error;
     }
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (err || "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
@@ -507,8 +507,9 @@ function register(app, ctx) {
   });
   router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
     if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
-    const name = clip(req.body?.name, 100), sizes = cleanSizes(req.body?.sizes);
+    const name = clip(req.body?.name, 100), sizes = cleanSizes(req.body?.sizes), ptype = clip(req.body?.ptype, 40);
     if (!name) return res.json({ ok: false, error: "Type the product name." });
+    if (!ptype) return res.json({ ok: false, error: "Choose the product type." });
     const prev = req.body?.id ? db.catalog.find(p => p.id === String(req.body.id)) : null;
     if (req.body?.id && !prev) return res.json({ ok: false, error: "That standard product no longer exists." });
     let photo = prev?.photo || "";
@@ -517,8 +518,8 @@ function register(app, ctx) {
       else if (req.body?.removePhoto && photo) { const old = photo; photo = ""; setTimeout(() => dropPhoto(old), 0); }
     } catch (e) { return res.json({ ok: false, error: e.message }); }
     if (!photo) return res.json({ ok: false, error: "Add the product photo — the workshop sees this picture." });
-    if (prev) Object.assign(prev, { name, sizes, photo });
-    else { if (db.catalog.length >= 300) return res.json({ ok: false, error: "Too many standard products (max 300)." }); db.catalog.push({ id: uid(), name, sizes, photo, createdAt: stamp() }); }
+    if (prev) Object.assign(prev, { name, ptype, sizes, photo });
+    else { if (db.catalog.length >= 300) return res.json({ ok: false, error: "Too many standard products (max 300)." }); db.catalog.push({ id: uid(), name, ptype, sizes, photo, createdAt: stamp() }); }
     db.catalog.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     persist(); res.json({ ...view(req.actor), message: prev ? "✅ Standard product updated." : "✅ Standard product added." });
   });
@@ -565,7 +566,8 @@ function register(app, ctx) {
         if (buf.length < 200 || buf.length > 6 * 1024 * 1024) return res.json({ ok: false, error: `Line ${i + 1}: the photo is empty or too big.` });
         let order = null;
         if (r.orderId) { order = pickOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: the chosen order is not orderable (it must be confirmed and delivered).` }); }
-        specs.push({ kind: order ? "order" : "readymade", custom: true, name, qty, size, note: clip(r.note, 400), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
+        const cptype = clip(r.ptype, 40); if (!cptype) return res.json({ ok: false, error: `Line ${i + 1}: choose the product type.` });
+        specs.push({ kind: order ? "order" : "readymade", custom: true, ptype: cptype, name, qty, size, note: clip(r.note, 400), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
         continue;
       }
       const p = db.catalog.find(x => x.id === String(r.pid));
@@ -574,7 +576,7 @@ function register(app, ctx) {
       if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
       let order = null;
       if (kind === "order") { order = pickOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: choose a confirmed and delivered order for this product.` }); }
-      specs.push({ kind, standard: true, name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
+      specs.push({ kind, standard: true, ptype: p.ptype || "", name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
     }
     let okN = 0, err = "";
     for (const sp of specs) {
