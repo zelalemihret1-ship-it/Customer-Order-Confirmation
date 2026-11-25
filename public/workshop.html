@@ -535,6 +535,7 @@ $("cDel").onclick=async()=>{
   render();
 })();
 document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
+setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/workshop/state");if(d.ok)render();},10000);
 </script>
 </body>
 </html>
