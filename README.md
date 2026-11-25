@@ -1,3 +1,14 @@
+## v159 Workshop standard products + redesign
+- Every admin with the Workshop section can now add, change and delete standard products (before, only the main admin saw the input).
+- Standard tab: always-visible Add product button, an Add tile, search, and a clear empty state with an Add button.
+- Workshop page redesigned: refreshed header, sticky icon tabs, softer cards, modern product grid.
+
+## v158 Reports ↔ Workshop Workflow Products
+- Workshop's Workflow Products tab is now a live view of every Reports product whose status is Workflow (READYMADE and ORDER), with Reports as the source of truth.
+- Existing Reports products can be sent to Workshop and linked to a job; already-linked products show the current Workshop stage and cannot be sent twice.
+- Workshop stage changes are written back to the Reports product (In workshop / In finishing). Finishing moves the same Reports product to Stock, so it leaves Workflow automatically.
+- The Workshop tab is renamed Workflow Products and shows Reports product code, order type/reference, priority, and active stage.
+
 
 ## v157 Workshop reset and live synchronization
 - Workshop queue now starts fresh at deployment cutover; older Workshop jobs remain stored but are hidden from the current board.
@@ -788,9 +799,3 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - Workshop Orders hide jobs already finished and in stock; My Last Sends can be filtered by result.
 - Reports stock actions use Sold Out and Restock; restocking returns the item to In Stock with an audit-history entry.
 - Reports product deletion is Main Admin-only and synchronizes removal from Workshop job lists.
-
-
-# v158 — Workshop Telegram messages sent by admin accounts
-- Workshop, finishing and stock Telegram posts are sent by the admin’s connected Telegram account, not by the AMBAR bot.
-- Telegram inline bot buttons are not used for these posts; stage transitions remain available in the Workshop Mini App.
-- Each admin must connect their own Telegram account and have access to their selected groups/topics.
