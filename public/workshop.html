@@ -223,6 +223,9 @@ details.set{border-radius:var(--r)}
 .slot,.mode{border-radius:16px}
 @media(min-width:700px){main{padding-top:24px}.stats{gap:14px}.stat .sn{font-size:28px}.seg{top:78px}.box{border-radius:28px;margin-bottom:5vh}.ov{align-items:center}}
 @media(max-width:380px){.stats{grid-template-columns:repeat(2,1fr)}.seg{top:64px}}
+.ids{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px}.ids:empty{display:none}
+.idl{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--mute);margin-right:2px}
+.idc{font-weight:800;font-size:12px;color:var(--green);background:#e4f1ea;border:1px solid #cfe3d8;border-radius:8px;padding:3px 8px;letter-spacing:.2px}
 </style>
 </head>
 <body>
@@ -422,9 +425,17 @@ function render(){
   const uo=$("uOrder"),cur=uo.value;
   uo.innerHTML='<option value="">No order — new design only</option>'+S.orders.filter(o=>!o.job).map(o=>'<option value="'+o.id+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+'</option>').join("");
   uo.value=[...uo.options].some(x=>x.value===cur)?cur:"";
-  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+esc(l.size)+'</div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
+  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+esc(l.size)+'</div><div class="ids" data-i="'+i+'"></div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
+  loadBasketIds();
   const logMode=$("logFilter")?.value||"all", shown=(S.log||[]).filter(l=>logMode==="all"||(logMode==="success"&&l.ok)||(logMode==="failed"&&!l.ok));
   $("log").innerHTML=shown.map(l=>'<div>'+(l.ok?"✅":"❌")+' <b>'+esc(l.what)+'</b><div class="meta">'+esc(l.at)+' · '+esc(l.by||"Admin")+(l.error?' — '+esc(l.error):"")+'</div></div>').join("")||'<div class="hint">No sends in this selection.</div>';
+}
+let idSeq=0;
+async function loadBasketIds(){
+  if(!basket.length)return;const my=++idSeq;
+  const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty)});
+  if(my!==idSeq||!d||!d.ok||!basket.length)return;
+  document.querySelectorAll("#basket .ids").forEach(e=>{const c=(d.codes||[])[Number(e.dataset.i)]||[];e.innerHTML=c.length?'<span class="idl">Product ID'+(c.length>1?"s":"")+'</span>'+c.map(x=>'<span class="idc">'+esc(x)+'</span>').join(""):"";});
 }
 function results(d){const bad=(d.results||[]).filter(x=>!x.ok);return bad.length?bad.map(x=>x.name+": "+x.error).join(" · "):"";}
 $("logFilter").addEventListener("change",render);
@@ -509,7 +520,7 @@ $("testBtn").onclick=async()=>{
 
 // ── standard products: choose → quantity + measurement + order/readymade → list → send ──
 let aKind="readymade";
-function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";$("aIdHint").style.display=k==="readymade"?"block":"none";}
+function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";$("aIdHint").style.display="block";}
 function openAdd(id){
   const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
   $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aQty").value=1;$("aSize").value="";$("aNote").value="";say2("aMsg","");
