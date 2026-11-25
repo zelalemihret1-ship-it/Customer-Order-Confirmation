@@ -150,19 +150,15 @@ function register(app, ctx) {
   const SEQ_LETTERS = "ZYXWVUTSRQPONMLKJIHGFDCBA".split(""), SEQ_PER = 40, SEQ_BLOCK = SEQ_LETTERS.length * SEQ_PER;
   const seqCode = i => "O".repeat(Math.floor(i / SEQ_BLOCK)) + SEQ_LETTERS[Math.floor((i % SEQ_BLOCK) / SEQ_PER)] + ((i % SEQ_PER) + 1);
   const seqIndexOf = code => { const m = /^(O*)([A-DF-Z])(\d{1,2})$/i.exec(String(code || "").trim()); if (!m) return -1; const n = +m[3], L = SEQ_LETTERS.indexOf(m[2].toUpperCase()); if (n < 1 || n > SEQ_PER || L < 0) return -1; return m[1].length * SEQ_BLOCK + L * SEQ_PER + (n - 1); };
-  const nextSeqCode = () => {
-    let i = Math.max(+db.wsSeq || 0, db.products.reduce((mx, p) => Math.max(mx, seqIndexOf(p.code) + 1), 0));
-    const rs = reservedSet(); while (codeTaken(seqCode(i)) || rs.has(seqCode(i))) i++;
-    db.wsSeq = i + 1; return seqCode(i);
-  };
   // v159: preview the next n IDs without using them (shown in the Workshop list before it is sent)
   let reservedFn = null; const reservedSet = () => { try { return reservedFn ? reservedFn() : new Set(); } catch { return new Set(); } };
+  // v159: always start from the FIRST free ID (Z1, Z2 …). Used / reserved IDs are skipped, so the list is never blocked by older codes like N6.
   const peekSeqCodes = n => {
-    const rs = reservedSet();
-    let i = Math.max(+db.wsSeq || 0, db.products.reduce((mx, p) => Math.max(mx, seqIndexOf(p.code) + 1), 0)); const out = [];
-    while (out.length < n) { const c = seqCode(i++); if (!codeTaken(c) && !rs.has(c)) out.push(c); }
+    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())), out = [];
+    for (let i = 0; out.length < n && i < 100000; i++) { const c = seqCode(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
     return out;
   };
+  const nextSeqCode = () => peekSeqCodes(1)[0];
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
