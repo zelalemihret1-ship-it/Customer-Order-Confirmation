@@ -349,6 +349,19 @@ details.set{border-radius:var(--r)}
   <div id="aMsg" class="msg" style="margin-top:10px"></div>
   <div class="btns"><button class="btn" id="aAdd" type="button"><svg class="i"><use href="#i-plus"/></svg>Add to list</button><button class="btn sec" id="aClose" type="button">Cancel</button></div>
 </div></div>
+<div class="ov" id="matOv"><div class="box">
+  <h2 id="mTitle" style="margin:0 0 4px">Material</h2><div class="hint" id="mInfo" style="margin:0"></div>
+  <div id="mNew">
+    <label class="lab">Material</label><input type="text" id="mName" placeholder="e.g. NORMAL MDF" autocomplete="off">
+    <label class="lab">Type (optional)</label><input type="text" id="mType" placeholder="e.g. 18" autocomplete="off">
+    <label class="lab">Unit</label><input type="text" id="mUnit" value="244-122" autocomplete="off">
+    <label class="lab">Table (group)</label><input type="text" id="mGroup" list="mGroups" autocomplete="off"><datalist id="mGroups"></datalist>
+  </div>
+  <label class="lab" id="mQtyLab">Quantity</label><input type="number" id="mQty" inputmode="decimal" min="0" step="any" placeholder="0">
+  <div id="mNoteBox"><label class="lab">Note (optional)</label><input type="text" id="mNote" autocomplete="off"></div>
+  <div id="mMsg" class="msg" style="margin-top:10px"></div>
+  <div class="btns"><button class="btn" id="mOk" type="button">Save</button><button class="btn sec" id="mNo" type="button">Cancel</button></div>
+</div></div>
 <div class="ov" id="catOv"><div class="box">
   <h2 id="cTitle" style="margin:0 0 2px">Add standard product</h2><div class="hint" style="margin:0 0 4px">The workshop sees this photo, so make it clear. Measurements appear as one-tap choices.</div>
   <label class="lab">Product name</label><input type="text" id="cName" placeholder="e.g. Shoe shelf 4 doors" autocomplete="off">
@@ -393,11 +406,48 @@ function renderSettings(){
 }
 const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="workshop"?'<span class="pill wait">🛠 In workshop</span>':j.stage==="finishing"?'<span class="pill blue">🪚 In finishing</span>':'<span class="pill ok">✅ Finished · in stock</span>';
 const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
+// ── MATERIAL (v161): the same materials as Reports → Material ──
+const nfm=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
+function matView(){
+  const L=S.materials||[],gs=(S.matGroups||[]).slice();L.forEach(m=>{if(!gs.includes(m.group))gs.push(m.group);});
+  const row=m=>{const low=m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");const pill=low==="ok"?'<span class="pill ok">OK</span>':'<span class="pill '+(low==="out"?"bad":"wait")+'">'+(low==="out"?"OUT":"LOW")+'</span>';
+    return '<div class="item"><div class="mid"><div class="nm">'+esc(m.name+(m.type?" "+m.type:""))+'</div><div class="meta"><b style="font-size:15px;color:'+(m.qty<5?"#cc0000":"var(--ink)")+'">'+nfm(m.qty)+'</b> '+esc(m.unit)+' · '+pill+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-madd="'+esc(m.id)+'">➕ Add</button><button class="btn sec sm" type="button" data-mcut="'+esc(m.id)+'">✂️ Cut</button></div></div>';};
+  let h='<div class="sec-h"><b>🧱 Material</b><span>'+L.length+' kinds · linked to Reports</span></div><div class="btns" style="margin:0 0 12px"><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div>';
+  h+=gs.map(g=>{const X=L.filter(m=>m.group===g);return X.length?'<div class="sec-h" style="margin-top:14px"><b style="font-size:13px;color:var(--mute)">'+esc(g)+'</b><span>'+X.length+'</span></div>'+X.map(row).join(""):"";}).join("");
+  if(!L.length)h+=emptyBox("box","No material yet","Tap <b>New material</b>. Materials added here also appear in Reports → Material.");
+  return h;
+}
+let MAT=null;
+function openMat(kind,m){
+  MAT={kind,id:m?m.id:""};say2("mMsg","");
+  $("mNew").style.display=kind==="new"?"block":"none";
+  $("mTitle").textContent=kind==="new"?"New material":(kind==="add"?"➕ Add to ":"✂️ Cut from ")+(m?m.name+(m.type?" "+m.type:""):"");
+  $("mInfo").textContent=kind==="new"?"Write the material once. Then use Add when stock arrives and Cut when you use it.":(m?"Now available: "+nfm(m.qty)+" "+m.unit:"");
+  $("mQtyLab").textContent=kind==="new"?"Available now (optional)":"Quantity";
+  $("mName").value="";$("mType").value="";$("mUnit").value="244-122";$("mQty").value="";$("mNote").value="";
+  const gs=(S.matGroups||[]);$("mGroup").value=gs[1]||gs[0]||"MATERIAL";$("mGroups").innerHTML=gs.map(g=>'<option value="'+esc(g)+'">').join("");
+  $("mOk").textContent=kind==="new"?"Save material":(kind==="add"?"Add":"Cut");
+  $("matOv").classList.add("on");setTimeout(()=>$(kind==="new"?"mName":"mQty").focus(),50);
+}
+$("mNo").onclick=()=>$("matOv").classList.remove("on");
+$("mOk").onclick=async()=>{
+  if(!MAT)return;let path,body;
+  if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
+  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path="/api/workshop/material/move";body={id:MAT.id,type:MAT.kind==="cut"?"cut":"add",qty:$("mQty").value,note:$("mNote").value};}
+  busy("Saving…");const d=await api(path,body);busy("");
+  if(d.ok){$("matOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("mMsg",d.error||"Could not save.");
+};
+document.addEventListener("click",e=>{
+  const n=e.target.closest("[data-mnew]");if(n)return openMat("new");
+  const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
+  const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
+});
 function render(){
   renderSettings();
-  const tabs=[["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
+  const tabs=[["m","box","Material",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Standard",S.catalog.length]];
   $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
   $("subWrap").style.display=tab==="s"?"block":"none";
+  if(tab==="m"){$("out").innerHTML=matView();$("cusForm").style.display="none";$("basket").innerHTML="";return;}
   $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
   $("cusForm").style.display=tab==="s"&&sub==="cus"?"block":"none";
   let h="";
