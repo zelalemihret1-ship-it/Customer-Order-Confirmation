@@ -146,19 +146,22 @@ function register(app, ctx) {
     let max = 0; for (const p of db.products) { const m = /^P-(\d+)$/i.exec(p.code); if (m) max = Math.max(max, +m[1]); }
     return "P-" + String(max + 1).padStart(4, "0");
   };
-  // v159: Product IDs for READYMADE standard products: Z1..Z40, Y1..Y40 … A1..A40 (letter E is skipped), then OZ1..OZ40, OY1.. (one more "O" each full round). One ID per product.
+  // v159: Product IDs of SHOE SHELF products (see v160 below for the other types): Z1..Z40, Y1..Y40 … A1..A40 (letter E is skipped), then OZ1..OZ40, OY1.. (one more "O" each full round). One ID per product.
   const SEQ_LETTERS = "ZYXWVUTSRQPONMLKJIHGFDCBA".split(""), SEQ_PER = 40, SEQ_BLOCK = SEQ_LETTERS.length * SEQ_PER;
   const seqCode = i => "O".repeat(Math.floor(i / SEQ_BLOCK)) + SEQ_LETTERS[Math.floor((i % SEQ_BLOCK) / SEQ_PER)] + ((i % SEQ_PER) + 1);
   const seqIndexOf = code => { const m = /^(O*)([A-DF-Z])(\d{1,2})$/i.exec(String(code || "").trim()); if (!m) return -1; const n = +m[3], L = SEQ_LETTERS.indexOf(m[2].toUpperCase()); if (n < 1 || n > SEQ_PER || L < 0) return -1; return m[1].length * SEQ_BLOCK + L * SEQ_PER + (n - 1); };
   // v159: preview the next n IDs without using them (shown in the Workshop list before it is sent)
   let reservedFn = null; const reservedSet = () => { try { return reservedFn ? reservedFn() : new Set(); } catch { return new Set(); } };
   // v159: always start from the FIRST free ID (Z1, Z2 …). Used / reserved IDs are skipped, so the list is never blocked by older codes like N6.
-  const peekSeqCodes = n => {
-    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())), out = [];
-    for (let i = 0; out.length < n && i < 100000; i++) { const c = seqCode(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
+  // v160: Shoe Shelf products keep the old Z1, Z2 … sequence. EVERY OTHER product type uses 1A, 1B … 1Z, 2A … 2Z, 3A … (number first, then the letter).
+  const isShoeType = pt => /shoe\s*shelf/i.test(String(pt || ""));
+  const otherCode = i => (Math.floor(i / 26) + 1) + "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i % 26];
+  const peekSeqCodes = (n, ptype) => {
+    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())), out = [], gen = isShoeType(ptype) ? seqCode : otherCode;
+    for (let i = 0; out.length < n && i < 100000; i++) { const c = gen(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
     return out;
   };
-  const nextSeqCode = () => peekSeqCodes(1)[0];
+  const nextSeqCode = ptype => peekSeqCodes(1, ptype)[0];
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
@@ -208,14 +211,14 @@ function register(app, ctx) {
   const normK = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
   function stockGroups(L) {
     const m = new Map();
-    for (const p of L) { const k = normK(p.model || p.desc || p.code) + "|" + normK(p.handle) + "|" + normK(p.desc); let g = m.get(k); if (!g) { g = { key: k, model: p.model || p.desc || p.code, handle: p.handle || "", desc: p.desc || "", items: [] }; m.set(k, g); } g.items.push(p); }
-    return [...m.values()].map(g => { g.photo = (g.items.find(p => p.photo) || {}).photo || ""; return g; }).sort((a, b) => a.model.localeCompare(b.model, undefined, { numeric: true }) || a.handle.localeCompare(b.handle) || a.desc.localeCompare(b.desc, undefined, { numeric: true }));
+    for (const p of L) { const k = String(p.id) /* v160: every product is listed separately (own Product ID + model) */; let g = m.get(k); if (!g) { g = { key: k, model: p.model || p.desc || p.code, handle: p.handle || "", desc: p.desc || "", items: [] }; m.set(k, g); } g.items.push(p); }
+    return [...m.values()].map(g => { g.photo = (g.items.find(p => p.photo) || {}).photo || ""; return g; }).sort((a, b) => a.model.localeCompare(b.model, undefined, { numeric: true }) || a.handle.localeCompare(b.handle) || a.desc.localeCompare(b.desc, undefined, { numeric: true }) || String(a.items[0].code).localeCompare(String(b.items[0].code), undefined, { numeric: true }));
   }
   const uniq = a => [...new Set(a.map(x => clip(x, 80)).filter(Boolean))];
   function groupCaption(g) {
     const sizes = uniq(g.items.map(p => p.desc)), caps = uniq(g.items.map(p => p.capacity));
     const pt = uniq(g.items.map(p => p.ptype)).join(" / ");
-    const L = [`🛋 ${pt ? pt + " · " : ""}${g.model}  ×${g.items.length}`];
+    const L = [g.items.length === 1 ? `🛋 ${g.items[0].code}-${g.model}${pt ? " · " + pt : ""}` : `🛋 ${pt ? pt + " · " : ""}${g.model}  ×${g.items.length}`];
     if (sizes.length) L.push("📏 Size: " + sizes.join(" / "));
     if (caps.length) L.push("👟 Shoe capacity: " + caps.join(" / "));
     L.push("🔧 Handle: " + (g.handle || "—"));
@@ -424,20 +427,7 @@ function register(app, ctx) {
       category: up(b.category, 30) || "OTHERS", handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
   }
   const readErr = f => (!f.model && !f.desc && !f.ptype) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
-  router.post("/product/add", async (req, res) => {
-    const f = readProduct(req.body || {}), err = readErr(f);
-    if (err) return fail(res, err);
-    if (!f.ptype) return fail(res, "Choose the product type.");
-    f.code = f.code || nextCode();
-    if (codeTaken(f.code)) return fail(res, `Prod ID “${f.code}” is already used. Choose another.`);
-    let photo = "";
-    if (req.body?.photo) { try { photo = await savePhoto(req.body.photo); } catch (e) { return fail(res, e.message); } }
-    const p = { id: uid(), ...f, photo, status: "workflow", added: stamp(req), history: [] };
-    hist(p, "Added to Workflow", req);
-    db.products.unshift(p);
-    audit("Report: product added", `${p.code} ${lab(p)}`, req.actor);
-    done(res, `✅ ${p.code} added to Workflow.`);
-  });
+  // v160: products are NOT added in Reports any more — they are added only from the Workshop section (wsAddProduct below).
   router.post("/product/edit", async (req, res) => {
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
@@ -762,7 +752,7 @@ function register(app, ctx) {
     let photo = "";
     if (f.photoBuf && f.photoBuf.length > 200 && f.photoBuf.length <= 1.5 * 1024 * 1024) { try { photo = await savePhoto("data:image/jpeg;base64," + f.photoBuf.toString("base64")); } catch {} }
     const requestedCode = clip(f.code, 30);
-    const p = { id: uid(), ptype: clip(f.ptype, 40), code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode() : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
+    const p = { id: uid(), ptype: clip(f.ptype, 40), code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode(f.ptype) : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
       category: /^shoe shelf$/i.test(String(f.ptype || "").trim()) ? "SHOE SHELF" : "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
       photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40) };
     hist(p, "Added to Workflow (sent to the workshop)", req);
