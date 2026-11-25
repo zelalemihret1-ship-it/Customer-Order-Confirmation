@@ -1,3 +1,7 @@
+## v161 Material section in Workshop
+- New first tab "Material" at the top of the Workshop page: the same materials and movement log as Reports → Material (shared data, nothing duplicated).
+- New material, ➕ Add and ✂️ Cut work from Workshop; changes show in Reports at once (and in its Google Sheet backup), and the other way round.
+
 ## v160 Workshop-only products, new Product IDs, short workshop message
 - Reports no longer has "➕ New product" (and the /api/reports/product/add route is gone). Products are added only in the Workshop section. "➕ New material" stays.
 - Reports → Stock view lists every product separately (own Product ID + model, e.g. Z1-E1); no more grouping with ×2, ×3.
