@@ -114,16 +114,15 @@ function register(app, ctx) {
   // ── posting with the BOT (inline buttons need the bot) ──────────────────────────────────────
   const tg = (method, body) => ctx.tgApi.call(method, body);
   const chatKey = g => /^-?\d+$/.test(String(g.chat)) ? String(g.chat) : "@" + String(g.chat).replace(/^@/, "");
-  async function adminPost(actor, g, buf, caption) {
-    const acc = accountOf(actor);
-    if (!acc?.ready) throw new Error("Connect your own Telegram account in Settings first. Workshop messages are sent from your account, not the bot.");
-    const entity = await resolveTarget(acc, g);
-    const replyTo = g.topic > 1 ? { replyTo: g.topic } : {};
+  async function botPost(g, buf, caption, markup) {
+    const topic = g.topic > 1 ? g.topic : 0;
     if (buf) {
-      try { return await acc.client.sendFile(entity, { file: buf, caption: caption.slice(0, 1000), forceDocument: false, ...replyTo }); }
-      catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; }
+      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", caption.slice(0, 1000)); if (markup) fd.append("reply_markup", JSON.stringify(markup)); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
+      try { const r = await ctx.tgApi.sendForm("sendPhoto", build); return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: true }; }
+      catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; } // not a picture Telegram accepts → plain text
     }
-    return await acc.client.sendMessage(entity, { message: caption.slice(0, 4000), ...replyTo });
+    const r = await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: caption.slice(0, 4000), ...(markup ? { reply_markup: markup } : {}) });
+    return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: false };
   }
   async function botEdit(ref, caption, markup) { // change the text of a posted message (and drop its button); never throws
     if (!ref) return;
@@ -177,7 +176,7 @@ function register(app, ctx) {
   });
   const cleanSizes = v => { const arr = Array.isArray(v) ? v : String(v || "").split(/\n|;/); return [...new Set(arr.map(x => clip(x, 60)).filter(Boolean))].slice(0, 40); };
   const compactCat = p => ({ id: p.id, name: p.name, sizes: p.sizes || [], photo: p.photo || "" });
-  const canManage = actor => actor?.role === "owner" || actor?.role === "open";
+  const canManage = actor => !!actor && hasPerm(actor, "workshop"); // v159: every admin who has the Workshop section can add / change standard products
 
   // ── jobs: one job = one thing sent to the workshop. stage: workshop → finishing → finished ────
   const STAGES = { workshop: "In workshop", finishing: "In finishing", finished: "Finished · in stock" };
@@ -218,7 +217,7 @@ function register(app, ctx) {
     const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
     // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
     if (spec.existingProductIds && spec.existingProductIds.length) {
-      for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); } }
+      for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); if (R().wsSetStage) R().wsSetStage(pid, "workshop", by, id); } }
     } else if (typeof R().wsAddProduct === "function") {
       const n = Math.max(1, Math.min(spec.qty || 1, 100));
       for (let i = 0; i < n; i++) {
@@ -228,8 +227,8 @@ function register(app, ctx) {
     }
     // 2) the bot posts it in the WORKSHOP topic
     let ref;
-    try { ref = await adminPost(actor, s.workshop, spec.buf, jobCaption(j, "workshop")); }
-    catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: tgFriendly(e) }; }
+    try { ref = await botPost(s.workshop, spec.buf, jobCaption(j, "workshop"), kbWorkshop(id)); }
+    catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: botFriendly(e) }; }
     j.wsMsg = ref;
     if (spec.buf && spec.buf.length <= 1.4 * 1024 * 1024) { try { j.photoId = await savePhoto("data:image/jpeg;base64," + spec.buf.toString("base64")); } catch {} } // kept so the FINISHING post shows the same picture
     db.jobs[id] = j;
@@ -249,10 +248,11 @@ function register(app, ctx) {
     if (!s.finishing) return { ok: false, error: "The FINISHING topic is not chosen. Choose it in the Workshop settings." };
     const by = clip(byName, 60) || "Workshop", at = stamp();
     let ref;
-    try { ref = await adminPost({ telegramId: j.key, name: byName, role: j.key === "open" ? "open" : "admin" }, s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`));  }
+    try { ref = await botPost(s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`), kbFinishing(j.id));  }
     catch (e) { return { ok: false, error: botFriendly(e) }; }
     j.stage = "finishing"; j.wsDone = { by, at }; j.finMsg = ref;
-    
+    for (const pid of j.productIds || []) if (R().wsSetStage) R().wsSetStage(pid, "finishing", by, j.id);
+    await botEdit(j.wsMsg, jobCaption(j, "workshop", `✅ Finished workshop — ${by} · ${at}\n➡ Sent to FINISHING`));
     await saveOrderStage(j, { wsDoneAt: at, wsDoneBy: by });
     log(j.key, { name: by }, `Finished workshop · ${j.name}`, true, ""); persist();
     return { ok: true, job: j };
@@ -267,9 +267,9 @@ function register(app, ctx) {
     const by = clip(byName, 60) || "Finishing", at = stamp(), missing = [];
     for (const pid of j.productIds || []) { const r = typeof R().wsFinish === "function" ? R().wsFinish(pid, by) : { ok: false }; if (!r.ok) missing.push(r.error || "a product"); }
     j.stage = "finished"; j.finDone = { by, at };
-    
-    try { j.stockMsg = await adminPost({ telegramId: j.key, name: byName, role: j.key === "open" ? "open" : "admin" }, s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`)); }
-    catch (e) { j.stockPostError = tgFriendly(e); }
+    await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Sent to STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
+    try { j.stockMsg = await botPost(s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), kbSoldOut(j.id)); }
+    catch (e) { j.stockPostError = botFriendly(e); }
     await saveOrderStage(j, { finishedAt: at, finishedBy: by });
     log(j.key, { name: by }, `Finished · ${j.name} → stock`, true, missing.length ? missing.join(" ") : ""); persist();
     return { ok: true, job: j, warning: [missing.length ? "Some products were not found in Reports: " + missing.join(" ") : "", j.stockPostError ? "Stock group post failed: " + j.stockPostError : ""].filter(Boolean).join(" · ") };
@@ -340,7 +340,7 @@ function register(app, ctx) {
   const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
-    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !Object.values(db.jobs).some(x => (x.productIds || []).includes(p.id))).map(p => ({ ...p, job: null }));
+    const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).find(x => (x.productIds || []).includes(p.id)); return { ...p, job: j ? compactJob(j) : null }; });
     const mine = Object.values(db.jobs).filter(j => j.key === key).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return {
       ok: true, me: { key, name: clip(actor?.name, 60) },
@@ -435,8 +435,8 @@ function register(app, ctx) {
     const s = settingsOf(keyOf(req.actor)), res2 = [];
     if (!s.workshop || !s.finishing || !s.stock) return res.json({ ok: false, error: "Choose the Workshop, Finishing and Stock places first, then Save." });
     for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock]]) {
-      try { await adminPost(req.actor, g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`); res2.push({ name: label + " · " + targetName(g), ok: true }); }
-      catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: tgFriendly(e) }); }
+      try { await botPost(g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`, null); res2.push({ name: label + " · " + targetName(g), ok: true }); }
+      catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: botFriendly(e) }); }
     }
     const okN = res2.filter(x => x.ok).length;
     res.json({ ok: okN === res2.length, results: res2, error: okN === res2.length ? "" : (res2.find(x => !x.ok)?.error || "Could not send."), message: okN === res2.length ? "✅ Test messages posted in the Workshop, Finishing and Stock places." : undefined });
@@ -447,16 +447,17 @@ function register(app, ctx) {
     const r = await sendOrder(o, req.actor, { again: !!req.body?.again });
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ Order ${o.orderId || o.id} sent to the workshop.` : undefined });
   });
-  router.post("/send-product", async (req, res) => { // unfinished readymade products of Reports → workshop
+  router.post("/send-product", async (req, res) => { // selected Reports Workflow products → workshop
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 40) : [];
     const list = (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => ids.includes(p.id));
-    if (!list.length) return res.json({ ok: false, error: "Choose at least one readymade product." });
+    if (!list.length) return res.json({ ok: false, error: "Choose at least one product from Reports → Workflow Products." });
     let okN = 0, err = "";
     for (const p of list) {
       if (Object.values(db.jobs).some(x => (x.productIds || []).includes(p.id))) { err = err || `${p.code} is already sent to the workshop.`; continue; }
       let buf = null; if (p.photo && typeof R().readymade === "function") { try { buf = await R().readymade().photoBuf(p.photo); } catch {} }
       if (okN) await new Promise(x => setTimeout(x, 700));
-      const r = await createJob({ kind: "readymade", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, existingProductIds: [p.id], buf }, req.actor);
+      const isOrder = /ORDER|CUS/i.test(String(p.orderType || ""));
+      const r = await createJob({ kind: isOrder ? "order" : "readymade", name: p.model || p.desc || p.code, qty: 1, size: p.desc && p.model ? p.desc : "", note: "", handle: p.handle, orderLabel: p.orderRef || "", existingProductIds: [p.id], buf }, req.actor);
       if (r.ok) okN++; else err = r.error;
     }
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (err || "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
@@ -492,7 +493,7 @@ function register(app, ctx) {
     persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
   router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
-    if (!canManage(req.actor)) return res.json({ ok: false, error: "Only a main admin can change the standard products." });
+    if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
     const name = clip(req.body?.name, 100), sizes = cleanSizes(req.body?.sizes);
     if (!name) return res.json({ ok: false, error: "Type the product name." });
     const prev = req.body?.id ? db.catalog.find(p => p.id === String(req.body.id)) : null;
@@ -509,7 +510,7 @@ function register(app, ctx) {
     persist(); res.json({ ...view(req.actor), message: prev ? "✅ Standard product updated." : "✅ Standard product added." });
   });
   router.post("/catalog/delete", (req, res) => {
-    if (!canManage(req.actor)) return res.json({ ok: false, error: "Only a main admin can change the standard products." });
+    if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
     const i = db.catalog.findIndex(p => p.id === String(req.body?.id));
     if (i < 0) return res.json({ ok: false, error: "Not found." });
     const [gone] = db.catalog.splice(i, 1); persist(); setTimeout(() => dropPhoto(gone.photo), 0);
@@ -558,7 +559,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v157", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v158", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
