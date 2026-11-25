@@ -1,6 +1,7 @@
 ## v159 Workshop standard products + redesign
 - Every admin with the Workshop section can now add, change and delete standard products (before, only the main admin saw the input).
 - Standard tab: always-visible Add product button, an Add tile, search, and a clear empty state with an Add button.
+- Readymade standard products get one Product ID per unit: Z1..Z40, Y1..Y40 … (E skipped), then OZ1..OZ40, OY1.. (quantity 4 = 4 IDs).
 - Progress tab now also lists every job linked to a product that is in Reports Workflow (e.g. N6 "In workshop"), even when another admin sent it.
 - Workshop page redesigned: refreshed header, sticky icon tabs, softer cards, modern product grid.
 
