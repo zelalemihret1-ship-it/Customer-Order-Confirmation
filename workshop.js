@@ -208,7 +208,7 @@ function register(app, ctx) {
   function workshopCaption(j, extra) {
     const model = clip(j.name || "", 100), codes = (j.codes || []).length ? j.codes : ["—"];
     const tail = extra ? "\n\n" + esc(extra) : "", LIMIT = 1000 - tail.length;
-    const head = ["<b>AMBAR FURNITURE</b>", "", ...codes.map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>"), "", "Measurement: " + esc(fmtSize(j.size) || "—"), "Quantity: " + (j.qty || 1)];
+    const head = ["<b>AMBAR FURNITURE</b>", "", ...codes.map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>"), ...(j.orderLabel ? ["Order ID: " + esc(clip(j.orderLabel, 40))] : []), "", "Measurement: " + esc(fmtSize(j.size) || "—"), "Quantity: " + (j.qty || 1)];
     const more = [...(j.details || []), j.note ? clip(j.note, 400) : ""].filter(Boolean);
     let out = head.join("\n");
     if (more.length) {
@@ -368,7 +368,7 @@ function register(app, ctx) {
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
   router.use(express.json({ limit: "25mb" }));
-  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
+  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), status: clip(o.status, 20), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
     const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).find(x => (x.productIds || []).includes(p.id)); return { ...p, job: j ? compactJob(j) : null }; });
@@ -380,6 +380,7 @@ function register(app, ctx) {
       // Once sent to the workshop, remove the order from this sending queue permanently.
       // This also hides older orders that were already sent before this update.
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
+      allOrders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 400).map(o => compactOrder(o, actor)), // v163: the "Which order?" list shows ALL orders
       readymade: inProg,
       // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
       // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
@@ -580,14 +581,14 @@ function register(app, ctx) {
     if (!s.workshop || !s.finishing) return res.json({ ok: false, error: "First choose the WORKSHOP and the FINISHING place (Settings above)." });
     const raw = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : [];
     if (!raw.length) return res.json({ ok: false, error: "Add at least one product to the list." });
-    const specs = [], orderable = (ctx.getOrders() || []).filter(o => mineOnly(req.actor, o) && isOrderable(o));
+    const specs = [];
     for (let i = 0; i < raw.length; i++) {
       const r = raw[i] || {};
       const qty = Math.floor(Number(r.qty));
       if (!(qty >= 1 && qty <= 9999)) return res.json({ ok: false, error: `Line ${i + 1}: choose a quantity (1 – 9999).` });
       const size = clip(r.size, 80);
       if (!size) return res.json({ ok: false, error: `Line ${i + 1}: choose or type the measurement.` });
-      const pickOrder = id => { const o = orderable.find(x => String(x.id) === String(id)); return o || null; };
+      const anyOrder = id => { const o = findOrder(id); return o && mineOnly(req.actor, o) ? o : null; }; // v163: any order, not only confirmed + delivered
       if (r.custom) { // NEW DESIGN: a one-off product made in the page (own photo + name) — not saved in the standard products
         const name = clip(r.name, 100);
         if (!name) return res.json({ ok: false, error: `Line ${i + 1}: type the name of the new design.` });
@@ -595,19 +596,19 @@ function register(app, ctx) {
         if (!m) return res.json({ ok: false, error: `Line ${i + 1}: the photo of the new design could not be read. Choose it again.` });
         const buf = Buffer.from(m[1], "base64");
         if (buf.length < 200 || buf.length > 6 * 1024 * 1024) return res.json({ ok: false, error: `Line ${i + 1}: the photo is empty or too big.` });
-        let order = null;
-        if (r.orderId) { order = pickOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: the chosen order is not orderable (it must be confirmed and delivered).` }); }
+        let order = null; const typedLabel = !r.orderId ? clip(r.orderLabel, 40) : ""; // v163: any order of mine, or a TYPED order ID
+        if (r.orderId) { order = anyOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: the chosen order was not found.` }); }
         const cptype = clip(r.ptype, 40); if (!cptype) return res.json({ ok: false, error: `Line ${i + 1}: choose the product type.` });
-        specs.push({ kind: order ? "order" : "readymade", custom: true, ptype: cptype, name, qty, size, note: clip(r.note, 400), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
+        specs.push({ kind: order || typedLabel ? "order" : "readymade", custom: true, ptype: cptype, name, qty, size, note: clip(r.note, 400), buf, orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
         continue;
       }
       const p = db.catalog.find(x => x.id === String(r.pid));
       if (!p) return res.json({ ok: false, error: `Line ${i + 1}: the standard product no longer exists.` });
       const kind = r.kind === "order" ? "order" : r.kind === "readymade" ? "readymade" : "";
       if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
-      let order = null;
-      if (kind === "order") { order = pickOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: choose a confirmed and delivered order for this product.` }); }
-      specs.push({ kind, standard: true, ptype: p.ptype || "", name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
+      let order = null, typedLabel = "";
+      if (kind === "order") { if (r.orderId) order = anyOrder(r.orderId); else typedLabel = clip(r.orderLabel, 40); if (!order && !typedLabel) return res.json({ ok: false, error: `Line ${i + 1}: choose the order of this product, or type its order ID.` }); }
+      specs.push({ kind, standard: true, ptype: p.ptype || "", name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : typedLabel });
     }
     let okN = 0, err = "";
     for (const sp of specs) {
@@ -618,7 +619,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v161", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v163", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
