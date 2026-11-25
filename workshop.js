@@ -193,8 +193,7 @@ function register(app, ctx) {
   const reservedSet = () => new Set(Object.values(db.reserved || {}));
   const orderCodeFor = (o, reserve) => {
     db.reserved = db.reserved || {}; R().setReservedCodes?.(reservedSet);
-    const orig = originalProductCode(o), taken = c => typeof R().codeTaken === "function" && R().codeTaken(c);
-    if (orig && !taken(orig)) return orig;
+    const taken = c => typeof R().codeTaken === "function" && R().codeTaken(c); // v159: orders always take the next Z/Y/X ID (no original code)
     const cur = db.reserved[o.id]; if (cur && !taken(cur)) return cur;
     if (!reserve || typeof R().peekSeqCodes !== "function") return "";
     delete db.reserved[o.id]; const c = R().peekSeqCodes(1)[0]; if (c) { db.reserved[o.id] = c; persist(); } return c || "";
