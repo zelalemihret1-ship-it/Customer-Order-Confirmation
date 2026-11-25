@@ -1,3 +1,7 @@
+## v162 Material search + add/cut only in Workshop
+- Workshop → Material has a search box (name, type, unit, table).
+- Reports → Material no longer has New material, ➕ Add or ✂️ Cut (buttons and server routes removed). Materials are added / cut only in Workshop; Reports keeps edit, fix stock, delete, drag order, history and the movements list.
+
 ## v161 Material section in Workshop
 - New first tab "Material" at the top of the Workshop page: the same materials and movement log as Reports → Material (shared data, nothing duplicated).
 - New material, ➕ Add and ✂️ Cut work from Workshop; changes show in Reports at once (and in its Google Sheet backup), and the other way round.
