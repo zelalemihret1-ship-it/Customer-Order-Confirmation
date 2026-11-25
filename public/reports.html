@@ -676,7 +676,7 @@ $("bZero").onclick=()=>{
     fields:[{k:"confirm",label:"Type ZERO",ph:"ZERO"}],submit:v=>api("/api/reports/reset",{confirm:String(v.confirm||"").trim().toUpperCase()})});
 };
 // A new day: "S.TODAY" becomes "SOLD" by itself (the server also refreshes the Google Sheet at midnight).
-setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/reports/state");if(d.ok)render();},60000);
+setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/reports/state");if(d.ok)render();},5000);
 
 
 // ── STOCK → TELEGRAM: sent from the account of the admin who presses it · private chats to admins are OPTIONAL · Telegram groups (public or private) with an optional TOPIC ──
