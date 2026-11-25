@@ -50,7 +50,7 @@ function register(app, ctx) {
     const one = x => (x && typeof x === "object" ? cleanTargets([x])[0] : null) || null;
     const workshop = one(s.workshop) || (Array.isArray(s.targets) && s.targets[0] ? cleanTargets([s.targets[0]])[0] || null : null); // v150–v152 saved one "targets" list: its first group is the workshop
     const finishing = one(s.finishing);
-    return { workshop, finishing, stock: one(s.stock), driver: one(s.driver), mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
+    return { workshop, finishing, stock: one(s.stock), driver: one(s.driver), material: one(s.material), mode: MODES.includes(s.mode) ? s.mode : (s.mode === "on_create" ? "after_confirm" : "manual"), updatedAt: s.updatedAt || "" };
   };
   function accountOf(actor) {
     let acc = typeof ctx.accountFor === "function" ? ctx.accountFor(actor) : null;
@@ -124,6 +124,16 @@ function register(app, ctx) {
     const r = await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: html ? caption : caption.slice(0, 4000), ...(html ? { parse_mode: "HTML" } : {}), ...(markup ? { reply_markup: markup } : {}) });
     return { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(g), message_id: r.message_id, photo: false };
   }
+  // v165: production messages are sent by the connected admin USER ACCOUNT, never by the bot.
+  async function userPost(actor, g, buf, caption, html) {
+    const acc = accountOf(actor);
+    if (!acc?.ready) throw new Error("Your own Telegram account is not connected. Connect it before sending to topics.");
+    const entity = await resolveTarget(acc, g);
+    const replyTo = g.topic > 1 ? Number(g.topic) : undefined;
+    if (buf) return await acc.client.sendFile(entity, { file: buf, caption: html ? caption : String(caption || "").slice(0, 4000), parseMode: html ? "html" : undefined, forceDocument: false, ...(replyTo ? { replyTo } : {}) });
+    return await acc.client.sendMessage(entity, { message: html ? caption : String(caption || "").slice(0, 4000), ...(replyTo ? { replyTo } : {}) });
+  }
+
   async function botEdit(ref, caption, markup, html) { // change the text of a posted message (and drop its button); never throws
     if (!ref) return;
     const body = { chat_id: ref.chat, message_id: ref.message_id, reply_markup: markup || { inline_keyboard: [] }, ...(html ? { parse_mode: "HTML" } : {}) };
@@ -254,7 +264,7 @@ function register(app, ctx) {
     if (!s.finishing) return { ok: false, error: "First choose the FINISHING group and topic (Settings above) — the workshop button sends the job there." };
     if (!s.stock) return { ok: false, error: "First choose the STOCK group and topic (Settings above) — finished products are posted there." };
     const id = uid(), by = clip(actor?.name || "Admin", 60);
-    const j = { id, key, kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), ptype: clip(spec.ptype, 40), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
+    const j = { id, key, telegramId: String(actor?.telegramId || ""), kind: spec.kind, custom: !!spec.custom, name: clip(spec.name, 100), qty: spec.qty || 0, size: clip(spec.size, 80), ptype: clip(spec.ptype, 40), note: clip(spec.note, 400), orderId: spec.orderId || "", orderLabel: spec.orderLabel || "", details: spec.details || [], by, stage: "workshop", createdAt: stamp(), createdAtIso: new Date().toISOString(), productIds: [], codes: [], photoId: "" };
     // 1) Reports: the product(s) enter the Workflow (ORDER or READYMADE). Existing Workflow products (sent from the Readymade tab) are reused.
     if (spec.existingProductIds && spec.existingProductIds.length) {
       for (const pid of spec.existingProductIds) { const st = R().wsStatus ? R().wsStatus(pid) : null; if (st) { j.productIds.push(pid); j.codes.push(st.code); if (R().wsSetStage) R().wsSetStage(pid, "workshop", by, id); } }
@@ -267,7 +277,7 @@ function register(app, ctx) {
     }
     // 2) the bot posts it in the WORKSHOP topic
     let ref;
-    try { ref = await botPost(s.workshop, spec.buf, jobCaption(j, "workshop"), kbWorkshop(id), true); }
+    try { ref = await userPost(actor, s.workshop, spec.buf, jobCaption(j, "workshop"), true); }
     catch (e) { if (!spec.existingProductIds && j.productIds.length && R().wsRemove) R().wsRemove(j.productIds); return { ok: false, error: botFriendly(e) }; }
     j.wsMsg = ref;
     if (spec.buf && spec.buf.length <= 1.4 * 1024 * 1024) { try { j.photoId = await savePhoto("data:image/jpeg;base64," + spec.buf.toString("base64")); } catch {} } // kept so the FINISHING post shows the same picture
@@ -288,7 +298,7 @@ function register(app, ctx) {
     if (!s.finishing) return { ok: false, error: "The FINISHING topic is not chosen. Choose it in the Workshop settings." };
     const by = clip(byName, 60) || "Workshop", at = stamp();
     let ref;
-    try { ref = await botPost(s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`), kbFinishing(j.id));  }
+    try { ref = await userPost({ telegramId: j.telegramId, name: by, role: "admin" }, s.finishing, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "finishing", `⏩ Finished in the workshop by ${by} · ${at}`), true);  }
     catch (e) { return { ok: false, error: botFriendly(e) }; }
     j.stage = "finishing"; j.wsDone = { by, at }; j.finMsg = ref;
     for (const pid of j.productIds || []) if (R().wsSetStage) R().wsSetStage(pid, "finishing", by, j.id);
@@ -308,7 +318,7 @@ function register(app, ctx) {
     for (const pid of j.productIds || []) { const r = typeof R().wsFinish === "function" ? R().wsFinish(pid, by) : { ok: false }; if (!r.ok) missing.push(r.error || "a product"); }
     j.stage = "finished"; j.finDone = { by, at };
     await botEdit(j.finMsg, jobCaption(j, "finishing", `✅ FINISHED — ${by} · ${at}\n📦 Sent to STOCK${(j.codes || []).length ? " (" + j.codes.join(", ") + ")" : ""}`));
-    try { j.stockMsg = await botPost(s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), kbStock(j)); }
+    try { j.stockMsg = await userPost({ telegramId: j.telegramId, name: by, role: "admin" }, s.stock, j.photoId ? await photoBuf(j.photoId) : null, jobCaption(j, "stock", `📦 IN STOCK — ${by} · ${at}`), true); }
     catch (e) { j.stockPostError = botFriendly(e); }
     await saveOrderStage(j, { finishedAt: at, finishedBy: by });
     log(j.key, { name: by }, `Finished · ${j.name} → stock`, true, missing.length ? missing.join(" ") : ""); persist();
@@ -331,7 +341,7 @@ function register(app, ctx) {
     if (!isOrderJob(j) && j.stockState !== "sold") return { ok: false, code: "EARLY", error: "A readymade product goes to the driver after it is SOLD." };
     const s = settingsOf(j.key); if (!s.driver) return { ok: false, error: "The DRIVER place is not chosen. Choose it in the Workshop settings (Driver topic) and save." };
     const by = clip(byName, 60) || "Admin", at = stamp();
-    let ref; try { ref = await botPost(s.driver, j.photoId ? await photoBuf(j.photoId) : null, driverCaption(j, by, at), null, true); } catch (e) { return { ok: false, error: botFriendly(e) }; }
+    let ref; try { ref = await userPost({ telegramId: j.telegramId, name: by, role: "admin" }, s.driver, j.photoId ? await photoBuf(j.photoId) : null, driverCaption(j, by, at), true); } catch (e) { return { ok: false, error: botFriendly(e) }; }
     j.driver = { by, at, msg: ref };
     if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
     await saveOrderStage(j, { driverAt: at, driverBy: by });
@@ -427,7 +437,7 @@ function register(app, ctx) {
       jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
       doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
-      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], // v161: same materials as Reports → Material
+      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], // v165
       log: db.log.filter(l => l.key === key).slice(-100).reverse()
     };
   };
@@ -436,13 +446,13 @@ function register(app, ctx) {
     const key = keyOf(req.actor), mode = String(req.body?.mode || "manual");
     if (!MODES.includes(mode)) return res.json({ ok: false, error: "Unknown sending mode." });
     const one = x => (x && x.chat ? cleanTargets([x])[0] || null : null);
-    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing), stock = one(req.body?.stock), driver = one(req.body?.driver);
+    const workshop = one(req.body?.workshop), finishing = one(req.body?.finishing), stock = one(req.body?.stock), driver = one(req.body?.driver), material = one(req.body?.material);
     if (workshop && finishing && workshop.chat.toLowerCase() === finishing.chat.toLowerCase() && workshop.topic === finishing.topic) return res.json({ ok: false, error: "The WORKSHOP and the FINISHING place are the same. Choose a different topic (or group) for finishing." });
     if (mode !== "manual" && (!workshop || !finishing)) return res.json({ ok: false, error: "Choose both the workshop and the finishing place first — automatic sending needs them." });
     if (workshop && stock && workshop.chat.toLowerCase() === stock.chat.toLowerCase() && workshop.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the WORKSHOP place." });
     if (finishing && stock && finishing.chat.toLowerCase() === stock.chat.toLowerCase() && finishing.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the FINISHING place." });
     for (const [n, g] of [["WORKSHOP", workshop], ["FINISHING", finishing], ["STOCK", stock]]) if (driver && g && driver.chat.toLowerCase() === g.chat.toLowerCase() && driver.topic === g.topic) return res.json({ ok: false, error: `Choose a different DRIVER place from the ${n} place.` });
-    db.admins[key] = { workshop, finishing, stock, driver, mode, updatedAt: stamp() }; persist();
+    db.admins[key] = { workshop, finishing, stock, driver, material, mode, updatedAt: stamp() }; persist();
     res.json({ ...view(req.actor), message: mode === "manual" ? "✅ Saved. You send orders to the workshop yourself." : "✅ Saved. Every order goes to the workshop automatically AFTER the customer confirms." });
   });
   // the groups the admin's OWN Telegram account is in (with a flag for groups that have topics)
@@ -511,9 +521,9 @@ function register(app, ctx) {
   router.post("/test", async (req, res) => { // posts a test line (no button) to BOTH places, exactly the way the real jobs are posted
     const s = settingsOf(keyOf(req.actor)), res2 = [];
     if (!s.workshop || !s.finishing || !s.stock) return res.json({ ok: false, error: "Choose the Workshop, Finishing and Stock places first, then Save." });
-    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock], ["Driver", s.driver]]) {
+    for (const [label, g] of [["Workshop", s.workshop], ["Finishing", s.finishing], ["Stock", s.stock], ["Driver", s.driver], ["Material", s.material]]) {
       if (!g) continue;
-      try { await botPost(g, null, `✅ AMBAR ${label.toUpperCase()} test — this place receives ${label === "Workshop" ? "new jobs from" : label === "Driver" ? "finished orders and sold products to deliver, sent by" : "jobs finished in the workshop by"} ${clip(req.actor?.name || "the admin", 60)}.`, null); res2.push({ name: label + " · " + targetName(g), ok: true }); }
+      try { await userPost(req.actor, g, null, `AMBAR ${label.toUpperCase()} TEST\nThis topic receives production updates from ${clip(req.actor?.name || "the admin", 60)}.`, false); res2.push({ name: label + " · " + targetName(g), ok: true }); }
       catch (e) { res2.push({ name: label + " · " + targetName(g), ok: false, error: botFriendly(e) }); }
     }
     const okN = res2.filter(x => x.ok).length;
@@ -576,12 +586,45 @@ function register(app, ctx) {
     if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
     persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
-  // v161: Material section (same data as Reports → Material): new material · ➕ add · ✂️ cut
-  for (const [path2, kind] of [["/material/add", "add"], ["/material/move", "move"]]) router.post(path2, (req, res) => {
+  // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
+  router.post("/material/add", (req, res) => {
     if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
-    const r = R().wsMaterial(kind, req.body, req.actor?.name);
+    const r = R().wsMaterial("add", req.body, req.actor?.name);
     if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+  });
+  router.post("/material/move", (req, res) => {
+    if (req.body?.type === "cut") return res.status(400).json({ ...view(req.actor), ok: false, error: "Use the Cut request button. Main admin approval is required." });
+    if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
+    const r = R().wsMaterial("add", req.body, req.actor?.name);
+    if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+  });
+  router.post("/material/cut-request", async (req, res) => {
+    if (typeof R().wsRequestCut !== "function") return res.json({ ...view(req.actor), ok: false, error: "Material cut requests are not available." });
+    const r = R().wsRequestCut(req.body, req.actor);
+    if (!r.ok) return res.json({ ...view(req.actor), ok: false, error: r.error });
+    const target = settingsOf(keyOf(req.actor)).material;
+    let tg = "";
+    if (target) {
+      try {
+        await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT REQUEST</b>\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\nAvailable: ${esc(String(r.request.before))} ${esc(r.request.unit)}\nRequested by: ${esc(r.request.by)}${r.request.note ? "\nNote: " + esc(r.request.note) : ""}\n\n⏳ Waiting for main admin approval.`, true);
+        tg = " Sent to the selected Material topic from your Telegram account.";
+      } catch (e) { tg = " Telegram topic send failed: " + clip(e.message, 180); }
+    } else tg = " No Material topic is selected yet.";
+    log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, tg);
+    res.json({ ...view(req.actor), ok: true, message: r.message + tg });
+  });
+  router.post("/material/cut-decide", async (req, res) => {
+    if (req.actor?.role !== "owner") return res.json({ ...view(req.actor), ok: false, error: "Only the main admin can approve or reject material cuts." });
+    const approve = req.body?.approve === true || req.body?.approve === "true";
+    const r = R().wsApproveCut ? R().wsApproveCut(req.body?.id, approve, req.actor, req.body?.note) : { ok: false, error: "Material cut approval is not available." };
+    if (!r.ok) return res.json({ ...view(req.actor), ok: false, error: r.error });
+    const target = settingsOf(keyOf(req.actor)).material;
+    if (target) {
+      try { await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n${approve ? "✅ <b>MATERIAL CUT APPROVED</b>" : "❌ <b>MATERIAL CUT REJECTED</b>"}\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\n${approve ? "Remaining: " + esc(String(r.request.after)) + " " + esc(r.request.unit) : ""}\nRequested by: ${esc(r.request.by)}\nApproved by: ${esc(req.actor?.name || "Main admin")}${r.request.decisionNote ? "\nNote: " + esc(r.request.decisionNote) : ""}`, true); } catch {}
+    }
+    res.json({ ...view(req.actor), ok: true, message: r.message });
   });
   router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
     if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
@@ -669,7 +712,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v164", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v165", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
