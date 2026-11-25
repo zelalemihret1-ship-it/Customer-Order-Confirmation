@@ -147,6 +147,17 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 .spin{width:34px;height:34px;border-radius:50%;border:3.5px solid #d7e5de;border-top-color:var(--green2);animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
 .log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.log-head h2{margin:0}.log-head select{max-width:190px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff;color:var(--ink);font:inherit;font-weight:650}.log>div{padding:10px 12px;margin:7px 0;border:1px solid var(--line);border-radius:12px;background:#fff;line-height:1.5}
 
+/* v159.1 fix: Standard Products entry form visibility and usability on all screen sizes */
+#catOv{z-index:95;align-items:center;padding:12px;}
+#catOv>.box{width:min(100%,560px);max-height:calc(100dvh - 24px);overflow-y:auto;border-radius:22px;padding:20px 18px calc(22px + env(safe-area-inset-bottom,0px));}
+#catOv .lab{margin-top:16px;color:#334e43;font-size:12px;}
+#catOv input[type=text],#catOv textarea{display:block;width:100%;min-height:48px;border:1.5px solid #d9e2dc;border-radius:13px;padding:12px;font:inherit;font-size:16px;color:#183b2e;background:#fff;box-sizing:border-box;}
+#catOv textarea{min-height:110px;resize:vertical;}
+#catOv #cPick{min-height:44px;margin-top:4px;}
+#catOv .pv{max-height:220px;}
+#catOv .btns{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px;}
+#catOv .btns button{min-height:46px;flex:1 1 120px;}
+@media(max-width:480px){#catOv{padding:8px;}#catOv>.box{max-height:calc(100dvh - 16px);padding:16px 14px calc(20px + env(safe-area-inset-bottom,0px));}#catOv .btns{display:grid;grid-template-columns:1fr 1fr;}#catOv #cDel{grid-column:1/-1;}}
 /* v158 responsive workshop polish: desktop workspace + mobile-first controls */
 main{max-width:1180px;padding:22px 18px calc(100px + env(safe-area-inset-bottom,0px))}
 #view{display:block}
