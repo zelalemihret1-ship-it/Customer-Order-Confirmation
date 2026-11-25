@@ -845,3 +845,11 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - Fixed the Workshop state response so the saved Material topic is returned to the interface after reload; this was the reason the saved slot displayed “Not chosen yet” again.
 - Added compact top-of-Workshop shortcuts to Material, Reports sold-out controls, and product records.
 - Expanded the test-message success text to describe all configured destinations.
+
+
+## v171 — Rebuilt Driver + Material Dispatch
+- Replaced the old combined dispatch presentation with a new dispatch workspace opened from a compact floating bottom-corner 🚚 icon.
+- Product delivery dispatch distinguishes ORDER products from READYMADE products and lets the admin select the buyer/customer, order and product.
+- Driver dispatch includes the selected customer/order details and sends the selected product/order photo when one is available.
+- The Driver Telegram topic receives a separate **DELIVERED — REPORT TO MAIN ADMIN** button. Pressing it records who marked the delivery and when in the workshop activity log for Main Admin review.
+- Material dispatch now sends each material separately, with an editable quantity limited to the current available stock.
