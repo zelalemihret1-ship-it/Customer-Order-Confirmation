@@ -221,7 +221,7 @@ function register(app, ctx) {
     } else if (typeof R().wsAddProduct === "function") {
       const n = Math.max(1, Math.min(spec.qty || 1, 100));
       for (let i = 0; i < n; i++) {
-        const p = await R().wsAddProduct({ model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
+        const p = await R().wsAddProduct({ model: spec.name, code: spec.productCode || "", desc: [j.size, spec.orderLabel].filter(Boolean).join(" · "), seqId: !!spec.standard && spec.kind !== "order", orderType: spec.kind === "order" ? "ORDER" : "READYMADE", priority: spec.priority || "MEDIUM", handle: spec.handle || "", note: j.note, orderRef: spec.orderLabel || "", jobId: id, photoBuf: spec.buf, deliveryDate: spec.deliveryDate || "", salesName: by }, by);
         j.productIds.push(p.id); j.codes.push(p.code);
       }
     }
@@ -550,7 +550,7 @@ function register(app, ctx) {
       if (!kind) return res.json({ ok: false, error: `Line ${i + 1}: decide if it is an ORDER or READYMADE.` });
       let order = null;
       if (kind === "order") { order = pickOrder(r.orderId); if (!order) return res.json({ ok: false, error: `Line ${i + 1}: choose a confirmed and delivered order for this product.` }); }
-      specs.push({ kind, name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
+      specs.push({ kind, standard: true, name: p.name, qty, size, note: clip(r.note, 400), buf: await photoBuf(p.photo), orderId: order ? order.id : "", orderLabel: order ? (order.orderId || String(order.id)) : "" });
     }
     let okN = 0, err = "";
     for (const sp of specs) {
