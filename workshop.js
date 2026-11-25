@@ -625,12 +625,6 @@ function register(app, ctx) {
       if (cat?.photo) media = await photoBuf(cat.photo);
       else if (chosen.photo) media = await orderPhotoBuf({ photo: chosen.photo });
     }
-    if (kind === "driver" && req.body?.materialId) {
-      const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
-      const material = inventory.find(m => String(m.id) === String(req.body.materialId));
-      if (!material) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected material was not found." });
-      message += `\n\nMaterial: ${clip(material.name,120)}${material.type ? " "+clip(material.type,80) : ""}\nAvailable: ${clip(String(material.qty),40)} ${clip(material.unit||"",30)}`;
-    }
     if (kind === "driver" && req.body?.orderId) {
       const order = (ctx.getOrders() || []).find(o => String(o.id) === String(req.body.orderId));
       if (!order) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer order was not found." });
@@ -667,7 +661,8 @@ function register(app, ctx) {
       for (let i = 0; i < parts.length; i++) {
         const continuation = parts.length > 1 ? `\nPART ${i + 1}/${parts.length}` : "";
         const caption = `<b>AMBAR FURNITURE</b>\n<b>${esc(title)}</b>${continuation}\n\n${esc(parts[i])}\n\nSent by: ${esc(req.actor?.name || "Admin")}`;
-        await userPost(req.actor, target, null, caption, true);
+        // Attach the selected customer's/product/order photo to the first Telegram post when available.
+        await userPost(req.actor, target, i === 0 && media ? media : null, caption, true);
       }
       log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, true, "Sent to the selected Telegram topic.");
       return res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "driver" ? "Driver" : "Material"} dispatch sent to the selected Telegram topic.` });
