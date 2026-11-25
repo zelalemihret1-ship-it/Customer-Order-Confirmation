@@ -3490,7 +3490,7 @@ const ratingModule = require("./ratings").register(app, {
 // ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
 const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 // ── Workshop: orders + readymade products to the private workshop Telegram group, per admin (module + page: /workshop.html) ──
-const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
+const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, getCustomers: () => [...customers.values()], getCustomerRecords: () => callersDb.list, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
 reportsModule.setWorkshopDeleteProducts?.(ids => workshopModule.deleteReportProducts?.(ids));
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
