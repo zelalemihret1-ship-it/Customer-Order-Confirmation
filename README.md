@@ -1,6 +1,7 @@
 ## v159 Workshop standard products + redesign
 - Every admin with the Workshop section can now add, change and delete standard products (before, only the main admin saw the input).
 - Standard tab: always-visible Add product button, an Add tile, search, and a clear empty state with an Add button.
+- Progress tab now also lists every job linked to a product that is in Reports Workflow (e.g. N6 "In workshop"), even when another admin sent it.
 - Workshop page redesigned: refreshed header, sticky icon tabs, softer cards, modern product grid.
 
 ## v158 Reports ↔ Workshop Workflow Products
