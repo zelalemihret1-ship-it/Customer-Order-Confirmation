@@ -328,6 +328,7 @@ details.set{border-radius:var(--r)}
   <div style="display:flex;gap:12px;align-items:center"><img id="aImg" alt="" style="width:76px;height:76px;border-radius:16px;object-fit:cover;background:#ece7da"><div><h2 id="aName" style="margin:0">Product</h2><div class="hint" style="margin:2px 0 0">Choose quantity, measurement and type</div></div></div>
   <label class="lab">Type</label>
   <div class="tog"><button type="button" id="kOrder" data-k="order"><svg class="i"><use href="#i-box"/></svg>Order</button><button type="button" id="kReady" data-k="readymade"><svg class="i"><use href="#i-sofa"/></svg>Readymade</button></div>
+  <div class="hint" id="aIdHint" style="margin:10px 2px 0">🔖 Each unit gets its <b>own Product ID</b> automatically (Z1, Z2, Z3 …). Quantity 4 = 4 IDs.</div>
   <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select></div>
   <label class="lab">Quantity</label>
   <div class="qty"><button type="button" id="qMinus">−</button><input type="number" id="aQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="qPlus">+</button></div>
@@ -508,7 +509,7 @@ $("testBtn").onclick=async()=>{
 
 // ── standard products: choose → quantity + measurement + order/readymade → list → send ──
 let aKind="readymade";
-function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";}
+function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";$("aIdHint").style.display=k==="readymade"?"block":"none";}
 function openAdd(id){
   const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
   $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aQty").value=1;$("aSize").value="";$("aNote").value="";say2("aMsg","");
