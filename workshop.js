@@ -418,7 +418,7 @@ function register(app, ctx) {
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
   router.use(express.json({ limit: "25mb" }));
-  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), status: clip(o.status, 20), product: clip(o.product, 80), customerName: clip(o.customerName, 60), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
+  const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), status: clip(o.status, 20), product: clip(o.product, 80), customerName: clip(o.customerName, 60), phone: clip(o.phone || o.telegramPhone, 40), location: clip(o.location, 240), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
     const inProg = (typeof R().inProgress === "function" ? R().inProgress() : []).map(p => { const j = Object.values(db.jobs).find(x => (x.productIds || []).includes(p.id)); return { ...p, job: j ? compactJob(j) : null }; });
@@ -592,10 +592,38 @@ function register(app, ctx) {
     if (!["driver", "material"].includes(kind)) return res.status(400).json({ ...view(req.actor), ok: false, error: "Choose a valid dispatch destination." });
     const target = settingsOf(keyOf(req.actor))[kind];
     if (!target) return res.status(400).json({ ...view(req.actor), ok: false, error: `The ${kind.toUpperCase()} Telegram topic is not selected. Choose it in Production & Dispatch settings and save first.` });
-    const message = String(req.body?.text || "").trim().slice(0, 3500);
-    if (!message) return res.status(400).json({ ...view(req.actor), ok: false, error: "Enter dispatch details before sending." });
+    let message = String(req.body?.text || "").trim().slice(0, 3000);
+    if (!message && !req.body?.orderId && !req.body?.materialId) return res.status(400).json({ ...view(req.actor), ok: false, error: "Select an order or enter dispatch details." });
+    let media = null;
+    if (kind === "driver" && req.body?.productId) {
+      const cat = db.catalog.find(p => String(p.id) === String(req.body.productId));
+      const live = (typeof R().inProgress === "function" ? R().inProgress() : []).find(p => String(p.id) === String(req.body.productId));
+      const chosen = cat || live;
+      if (!chosen) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected available product was not found." });
+      message += `\n\nSelected product: ${clip(chosen.name || chosen.model || chosen.desc || chosen.code, 120)}`;
+      if (cat?.photo) media = await photoBuf(cat.photo);
+      else if (chosen.photo) media = await orderPhotoBuf({ photo: chosen.photo });
+    }
+    if (kind === "driver" && req.body?.orderId) {
+      const order = (ctx.getOrders() || []).find(o => String(o.id) === String(req.body.orderId));
+      if (!order) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer order was not found." });
+      const loc = clip(order.location, 240);
+      const mapUrl = /^https?:\/\//i.test(loc) ? loc : (loc ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(loc) : "");
+      const details = [["Customer", order.customerName], ["Phone", order.phone || order.telegramPhone], ["Product", order.product], ["Order ID", order.orderId], ["Location", loc], ["Delivery date", order.deliveryDate]].filter(x => clip(x[1], 240));
+      message += "\n\n" + details.map(([k,v]) => `${k}: ${clip(v,240)}`).join("\n");
+      if (mapUrl) message += `\nLocation map: ${mapUrl}`;
+      media = await orderPhotoBuf(order);
+    }
+    if (kind === "material" && req.body?.materialId) {
+      const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
+      const item = inventory.find(m => String(m.id) === String(req.body.materialId));
+      if (!item) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected material was not found in current inventory." });
+      const qty = Number(req.body.qty);
+      if (!(qty > 0) || qty > Number(item.qty || 0)) return res.status(400).json({ ...view(req.actor), ok: false, error: `Enter a quantity up to the available ${item.qty} ${item.unit}.` });
+      message = `Material: ${item.name}${item.type ? " " + item.type : ""}\nRequested quantity: ${qty} ${item.unit}\nAvailable stock: ${item.qty} ${item.unit}` + (message ? `\nNotes: ${message}` : "");
+    }
     try {
-      await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n${kind === "driver" ? "🚚 <b>DRIVER DISPATCH</b>" : "🧱 <b>MATERIAL DISPATCH</b>"}\n\n${esc(message)}\n\nSent by: ${esc(req.actor?.name || "Admin")}`, true);
+      await userPost(req.actor, target, media, `<b>AMBAR FURNITURE</b>\n${kind === "driver" ? "🚚 <b>DRIVER DISPATCH</b>" : "🧱 <b>MATERIAL DISPATCH</b>"}\n\n${esc(message)}\n\nSent by: ${esc(req.actor?.name || "Admin")}`, true);
       log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, true, "Sent to the selected Telegram topic.");
       return res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "driver" ? "Driver" : "Material"} dispatch sent to the selected Telegram topic.` });
     } catch (e) {
