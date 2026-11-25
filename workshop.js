@@ -350,7 +350,9 @@ function register(app, ctx) {
       // This also hides older orders that were already sent before this update.
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
       readymade: inProg,
-      jobs: mine.filter(j => j.stage !== "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 100).map(compactJob),
+      // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
+      // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
+      jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
       doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
       log: db.log.filter(l => l.key === key).slice(-100).reverse()
