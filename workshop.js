@@ -189,10 +189,20 @@ function register(app, ctx) {
     const match = label.match(/\b[A-Z0-9]{1,12}-[A-Z0-9]{1,12}\b/i);
     return match ? match[0].toUpperCase() : "";
   };
+  // v159: an order without its own Product ID gets the next ID of the Z/Y/X sequence. It is RESERVED when first shown so the Orders list and the Telegram message agree.
+  const reservedSet = () => new Set(Object.values(db.reserved || {}));
+  const orderCodeFor = (o, reserve) => {
+    db.reserved = db.reserved || {}; R().setReservedCodes?.(reservedSet);
+    const orig = originalProductCode(o), taken = c => typeof R().codeTaken === "function" && R().codeTaken(c);
+    if (orig && !taken(orig)) return orig;
+    const cur = db.reserved[o.id]; if (cur && !taken(cur)) return cur;
+    if (!reserve || typeof R().peekSeqCodes !== "function") return "";
+    delete db.reserved[o.id]; const c = R().peekSeqCodes(1)[0]; if (c) { db.reserved[o.id] = c; persist(); } return c || "";
+  };
   function jobCaption(j, stage, extra) {
     const head = "_________ AMBAR FURNITURE _________";
     const ordered = j.kind === "order" || !!j.orderLabel;
-    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID- " + ((j.codes || []).join(", ") || "Pending"), "MODEL- " + clip(j.name || "—", 100), ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
+    const L = [head, ordered ? "ORDERED PRODUCT" : "READYMADE PRODUCT", "PRODUCT ID" + ((j.codes || []).length > 1 ? `s (${j.codes.length})` : "") + "- " + (clip((j.codes || []).join(", "), 330) || "Pending"), "MODEL- " + clip(j.name || "—", 100), ordered ? "ORDER ID- " + clip(j.orderLabel, 40) : "", "", "📏 Measurement: " + clip(j.size || "—", 80), "🔢 Quantity: " + (j.qty || 1), "ADDITIONAL TEXTS:", ...(j.details || []), j.note ? clip(j.note, 400) : "", extra || ""];
     return L.filter(Boolean).join("\n");
   }
   const orderDetails = o => [line("🧱", "Material", o.material), line("🎨", "Color", o.color), line("✨", "Style", o.style), line("🖌", "Design", o.design), line("🔧", "Handle", o.handle), line("🚪", "Door", o.door), line("🗂", "Partition", o.partition), line("🧰", "Drawer", o.drawer), line("➕", "Extra", o.additionalFeatures), line("📅", "Completion date", o.completionDate), line("🚚", "Delivery date", o.deliveryDate)].filter(Boolean);
@@ -209,7 +219,7 @@ function register(app, ctx) {
 
   // create the job, make its Reports product(s), post it in the WORKSHOP topic with the button
   async function createJob(spec, actor) {
-    const key = keyOf(actor), s = settingsOf(key);
+    const key = keyOf(actor), s = settingsOf(key); R().setReservedCodes?.(reservedSet);
     if (!s.workshop) return { ok: false, error: "First choose the WORKSHOP group and topic (Settings above)." };
     if (!s.finishing) return { ok: false, error: "First choose the FINISHING group and topic (Settings above) — the workshop button sends the job there." };
     if (!s.stock) return { ok: false, error: "First choose the STOCK group and topic (Settings above) — finished products are posted there." };
@@ -320,7 +330,9 @@ function register(app, ctx) {
     const prev = orderJob(o.id);
     if (prev && !opt.again) return { ok: false, code: "ALREADY", error: `This order is already ${STAGES[prev.stage] ? STAGES[prev.stage].toLowerCase() : "sent"}.` };
     const buf = await orderPhotoBuf(o);
-    return createJob({ kind: "order", name: o.product || "Furniture order", productCode: originalProductCode(o), qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
+    const sentJob = await createJob({ kind: "order", name: o.product || "Furniture order", productCode: orderCodeFor(o, true), qty: 1, size: sizeOfOrder(o), note: "", orderId: o.id, orderLabel: o.orderId || String(o.id), details: orderDetails(o), buf, handle: o.handle, deliveryDate: "", priority: "MEDIUM" }, opt.actor || actor);
+    if (sentJob.ok && db.reserved && db.reserved[o.id]) { delete db.reserved[o.id]; persist(); }
+    return sentJob;
   }
   const actorOfOrder = o => ({ role: o.createdByRole === "owner" ? "owner" : (o.createdByTelegramId ? "admin" : "open"), telegramId: String(o.createdByTelegramId || ""), name: o.createdByName || "Admin" });
   async function onOrderCreated() { /* v153: orders only go to the workshop after the customer confirmed — nothing happens at creation */ }
@@ -520,6 +532,14 @@ function register(app, ctx) {
   });
   // the basket: [{ pid, qty, size, kind: "order" | "readymade", orderId (internal id, only for kind=order), note }] — every line becomes its own job
   router.post("/preview-ids", (req, res) => { // v159: the Product IDs the list will receive (in list order, one per unit)
+    R().setReservedCodes?.(reservedSet);
+    const orderIds = (Array.isArray(req.body?.orders) ? req.body.orders : []).slice(0, 200).map(String);
+    if (orderIds.length) { // Orders tab: the Product ID each order will get
+      db.reserved = db.reserved || {}; const out = {}; const shown = new Set(orderIds);
+      for (const k of Object.keys(db.reserved)) if (!findOrder(k) || orderJob(k)) delete db.reserved[k];
+      for (const id of orderIds) { const o = findOrder(id); if (o) out[id] = orderCodeFor(o, true); }
+      return res.json({ ok: true, orderCodes: out });
+    }
     const counts = (Array.isArray(req.body?.counts) ? req.body.counts : []).slice(0, 40).map(n => Math.max(1, Math.min(100, Math.floor(Number(n)) || 1)));
     const all = typeof R().peekSeqCodes === "function" ? R().peekSeqCodes(counts.reduce((a, b) => a + b, 0)) : [];
     let k = 0; res.json({ ok: true, codes: counts.map(n => all.slice(k, (k += n))) });
