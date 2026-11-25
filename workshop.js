@@ -386,6 +386,7 @@ function register(app, ctx) {
       jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
       doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
+      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], // v161: same materials as Reports → Material
       log: db.log.filter(l => l.key === key).slice(-100).reverse()
     };
   };
@@ -525,6 +526,13 @@ function register(app, ctx) {
     if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", `♻️ RESTOCKED — ${j.restockBy} · ${j.restockAt}`), kbSoldOut(j.id));
     persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
+  // v161: Material section (same data as Reports → Material): new material · ➕ add · ✂️ cut
+  for (const [path2, kind] of [["/material/add", "add"], ["/material/move", "move"]]) router.post(path2, (req, res) => {
+    if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
+    const r = R().wsMaterial(kind, req.body, req.actor?.name);
+    if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+  });
   router.post("/catalog/save", async (req, res) => { // main admin: add / change a standard product
     if (!canManage(req.actor)) return res.json({ ok: false, error: "You need the Workshop section to change the standard products." });
     const name = clip(req.body?.name, 100), sizes = cleanSizes(req.body?.sizes), ptype = clip(req.body?.ptype, 40);
@@ -610,7 +618,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v160", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v161", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
