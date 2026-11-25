@@ -253,7 +253,7 @@ main{max-width:1180px;padding:22px 18px calc(100px + env(safe-area-inset-bottom,
         <h2 style="margin-top:20px"><svg class="i"><use href="#i-send"/></svg>How do orders go to the workshop?</h2>
         <label class="mode" data-m="manual"><input type="radio" name="mode" value="manual"><div><b>I send them myself</b><small>Nothing is sent by itself. In the <b>Orders</b> tab you press <b>Send to workshop</b>.</small></div></label>
         <label class="mode" data-m="after_confirm"><input type="radio" name="mode" value="after_confirm"><div><b>After the customer confirms</b><small>The order goes to the workshop automatically the moment the customer presses <b>Confirm</b> (and the card was delivered).</small></div></label>
-        <div class="btns"><button class="btn" id="saveBtn" type="button">Save settings</button><button class="btn sec sm" id="checkBtn" type="button">Check the bot</button><button class="btn gold sm" id="testBtn" type="button"><svg class="i"><use href="#i-send"/></svg>Send a test message</button></div>
+        <div class="btns"><button class="btn" id="saveBtn" type="button">Save settings</button><button class="btn sec sm" id="checkBtn" type="button">Check my account</button><button class="btn gold sm" id="testBtn" type="button"><svg class="i"><use href="#i-send"/></svg>Send a test message</button></div>
       </div>
     </details>
 
@@ -458,12 +458,13 @@ $("linkGo").onclick=async()=>{
 $("pickClose").onclick=()=>$("pickOv").classList.remove("on");
 const botReport=d=>(d.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.label+(c.ok?" — the bot can post":" — "+c.error)).join("  ·  ")||(d.error||"");
 async function checkBot(quiet){
-  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin,stock});
-  const t=botReport(d)||"";$("botLine").innerHTML=t?'<span class="pill '+(d.ok?"ok":"bad")+'" style="white-space:normal">'+esc(t)+'</span>'+(d.ok||!d.bot?"":'<span style="display:block;margin-top:6px">Open the group → Add members → <b>@'+esc(d.bot)+'</b>, then make it an admin.</span>'):"";
-  if(!quiet)say(d.ok?"✅ The bot can post in both places.":(t||"The bot check failed."),d.ok?"ok":"bad");
+  const d=await api("/api/workshop/state");
+  const ok=!!d.sender?.ready; const t=ok?"Your connected Telegram account is ready to send workshop messages.":"Connect your Telegram account in Settings first.";
+  $("botLine").innerHTML=t?'<span class="pill '+(ok?"ok":"bad")+'" style="white-space:normal">'+esc(t)+'</span>'+(d.ok||!d.bot?"":'<span style="display:block;margin-top:6px">Open the group → Add members → <b>@'+esc(d.bot)+'</b>, then make it an admin.</span>'):"";
+  if(!quiet)say(ok?"✅ Your Telegram account is connected.":t,ok?"ok":"bad");
   return d;
 }
-$("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
+$("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking your Telegram account…");await checkBot(false);busy("");};
 $("saveBtn").onclick=async()=>{
   busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,mode});
   if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;mode=S.settings.mode;}
