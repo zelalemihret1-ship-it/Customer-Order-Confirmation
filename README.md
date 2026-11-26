@@ -1,3 +1,10 @@
+## v172 — Photo as photo, Delivered button in the driver topic
+- Dispatch photos are now sent as a real **photo** (before, the picture had no file name, so Telegram showed it as a file). Applies to every post sent from the admin's own account (workshop, finishing, stock, driver).
+- **✅ Delivered** is now a button in the **driver topic**: right under the dispatch message the bot adds one small reply with the button (a user account cannot attach buttons; the dispatch itself is still sent from the admin's own account). The driver presses it when the product arrives: the button message changes to "✅ DELIVERED · name · time", and the admin who sent it gets a notice from the bot (once he has started the bot).
+- The mini app no longer has a Delivered button. Driver dispatch → **On the way** (waiting) and **✅ Delivered products** (full list with the time and who pressed it); the sheet refreshes by itself while open.
+- The AMBAR bot must be in the driver group (as admin) so it can post the button.
+- Files changed: `workshop.js`, `server.js` (forwards `wdel:`), `public/workshop.html`, `README.md`. Check: `/api/workshop-version` → v172.
+
 ## v171 — Dispatch rebuilt: two small buttons at the bottom
 - The old **Send & Dispatch** tab (Driver dispatch + Material dispatch) was removed completely, with its route `/api/workshop/dispatch/send`.
 - Production & Dispatch now ends with two small buttons fixed at the bottom of the page: **🚚 Driver dispatch** (badge = deliveries on the way) and **🧱 Material dispatch**. Each opens a sheet.
