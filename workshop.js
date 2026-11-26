@@ -40,7 +40,6 @@ function register(app, ctx) {
     if (!Array.isArray(db.dispatches)) db.dispatches = [];
     for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
-    if (!db.activityAssignments || typeof db.activityAssignments !== "object" || Array.isArray(db.activityAssignments)) db.activityAssignments = {};
     db.report = { month: "", auto: true, autoZero: false, lastSent: null, pending: [], history: [], lastReset: null, ...(db.report && typeof db.report === "object" ? db.report : {}) }; // v173
     if (!Array.isArray(db.report.pending)) db.report.pending = [];
     if (!Array.isArray(db.report.history)) db.report.history = [];
@@ -1114,33 +1113,6 @@ function register(app, ctx) {
     finally { resetBusy = false; }
   });
 
-  // Main-admin-only summary used by the home-screen confirmation control.
-  app.get("/api/workshop/admin-summary", requireAccess, (req, res) => {
-    if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Main admin only." });
-    const cuts = typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [];
-    const pendingCuts = cuts.filter(x => x.status === "pending").length;
-    const pendingDispatches = Object.values(db.dispatches || {}).filter(x => x && x.status === "pending_approval").length;
-    res.json({ ok: true, pendingCuts, pendingMovements: pendingCuts + pendingDispatches, cutterStatus: pendingCuts ? "awaiting_signoff" : "clear" });
-  });
-  // Activity assignment directory. Assignments are configuration only; job records remain in Workshop.
-  app.get("/api/workshop/assignments", requireAccess, (req, res) => {
-    if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Main admin only." });
-    res.json({ ok: true, assignments: db.activityAssignments || {} });
-  });
-  app.post("/api/workshop/assignments", requireAccess, express.json({ limit: "50kb" }), (req, res) => {
-    if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Main admin only." });
-    const allowed = new Set(["design", "purchasing", "material_transport", "cutting", "workshop", "finishing", "delivery"]);
-    const input = req.body?.assignments;
-    if (!input || typeof input !== "object" || Array.isArray(input)) return res.status(400).json({ ok: false, error: "Provide an assignments object." });
-    const next = {};
-    for (const [activity, ids] of Object.entries(input)) {
-      if (!allowed.has(activity)) return res.status(400).json({ ok: false, error: `Unknown production activity: ${activity}` });
-      const list = Array.isArray(ids) ? [...new Set(ids.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 20) : [];
-      next[activity] = list;
-    }
-    db.activityAssignments = { ...(db.activityAssignments || {}), ...next }; persist();
-    res.json({ ok: true, assignments: db.activityAssignments });
-  });
   app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v173", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
