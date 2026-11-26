@@ -409,7 +409,7 @@ details.set{border-radius:var(--r)}
 
   <div class="dsec">
     <h3>🚛 On the way <span class="pill wait" id="dWayN">0</span></h3>
-    <div class="hint" style="margin:0 0 8px">Press <b>Delivered</b> when the customer has the product. It posts “✅ DELIVERED” as a reply in the driver topic.</div>
+    <div class="hint" style="margin:0 0 8px">The driver presses <b>✅ Delivered</b> in the Telegram driver topic. The product then moves to the Delivered list below by itself.</div>
     <div id="dWay"></div>
     <div id="dDoneBox"></div>
   </div>
@@ -845,15 +845,16 @@ function dCustList(){
   $("dCust").innerHTML='<option value="">'+(L.length?"— Choose a customer (optional) —":"No customer found")+'</option>'+L.map(c=>'<option value="'+esc(c.id)+'">'+esc((c.customerCode?c.customerCode+" · ":"")+(c.name||"Customer")+(c.phone?" · "+c.phone:""))+'</option>').join("");
 }
 function dWayList(){
-  const W=onWay(),D=(S.dispatches||[]).filter(d=>d.status==="delivered").slice(0,5);
-  const row=(d,w)=>'<div class="item">'+(d.photoSrc?'<img loading="lazy" src="'+esc(d.photoSrc)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc((d.codes&&d.codes.length?d.codes.join(", ")+" — ":"")+d.name)+'</div><div class="meta"><b style="color:var(--ink)">'+esc((d.customer||{}).name||"")+'</b> · '+esc((d.customer||{}).phone||"")+((d.customer||{}).location?"<br>📍 "+esc(d.customer.location):"")+"<br>💰 "+money(d.balance)+" Birr · "+(w?"sent "+esc(d.sentAt):"✅ delivered "+esc(d.deliveredAt))+'</div></div>'+(w?'<div class="act"><button class="btn sm" type="button" data-ddeliv="'+esc(d.id)+'">✅ Delivered</button><button class="btn sec sm" type="button" data-dcancel="'+esc(d.id)+'">Remove</button></div>':"")+'</div>';
+  const W=onWay(),D=(S.dispatches||[]).filter(d=>d.status==="delivered");
+  const row=(d,w)=>'<div class="item">'+(d.photoSrc?'<img loading="lazy" src="'+esc(d.photoSrc)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc((d.codes&&d.codes.length?d.codes.join(", ")+" — ":"")+d.name)+'</div><div class="meta"><b style="color:var(--ink)">'+esc((d.customer||{}).name||"")+'</b> · '+esc((d.customer||{}).phone||"")+((d.customer||{}).location?"<br>📍 "+esc(d.customer.location):"")+"<br>💰 "+money(d.balance)+" Birr · "+(w?"sent "+esc(d.sentAt):"✅ delivered "+esc(d.deliveredAt)+(d.deliveredBy?" · "+esc(d.deliveredBy):""))+'</div></div>'+(w?'<div class="act"><button class="btn sec sm" type="button" data-dcancel="'+esc(d.id)+'">Remove</button></div>':"")+'</div>';
   $("dWayN").textContent=W.length;
   $("dWay").innerHTML=W.map(d=>row(d,true)).join("")||'<div class="hint" style="margin:0 0 6px">Nothing on the way.</div>';
-  $("dDoneBox").innerHTML=D.length?'<h3 style="margin:14px 0 6px;font-size:13px;color:var(--mute)">✅ Delivered lately</h3>'+D.map(d=>row(d,false)).join(""):"";
+  $("dDoneBox").innerHTML=D.length?'<h3 style="margin:14px 0 6px;font-size:13px;color:var(--mute)">✅ Delivered products <span class="pill ok">'+D.length+'</span></h3>'+D.map(d=>row(d,false)).join(""):"";
   updDock();
 }
 function openDrv(){placeWarn("dWarn",S.settings&&S.settings.driver,"Driver");say2("dMsg","");dFillPick();dCustList();dWayList();$("drvOv").classList.add("on");}
 $("openDrv").onclick=openDrv;
+setInterval(async()=>{if(document.visibilityState!=="visible"||!$("drvOv").classList.contains("on"))return;const d=await api("/api/workshop/state");if(d.ok)dWayList();},6000); // the Delivered button is pressed in Telegram, so refresh while this sheet is open
 $("dClose").onclick=()=>$("drvOv").classList.remove("on");
 $("dkReady").onclick=()=>{dMode="ready";$("dPick").value="";dFillPick();$("dBalHint").textContent="Type what the customer still has to pay. Write 0 if everything is paid.";};
 $("dkOrder").onclick=()=>{dMode="order";$("dPick").value="";dFillPick();$("dBalHint").textContent="";};
@@ -873,9 +874,8 @@ $("dSend").onclick=async()=>{
   dFillPick();dCustList();dWayList();render();say2("dMsg",r.message||"Sent.","ok");
 };
 $("dWay").addEventListener("click",async e=>{
-  const dv=e.target.closest("[data-ddeliv]"),cn=e.target.closest("[data-dcancel]");
-  if(dv){if(!confirm("Mark this as delivered? “✅ DELIVERED” will be posted in the driver topic."))return;busy("Posting delivered…");const r=await api("/api/workshop/dispatch/driver/delivered",{id:dv.dataset.ddeliv});busy("");dWayList();render();say2("dMsg",r.ok?r.message:(r.error||"Could not mark delivered."),r.ok?"ok":"bad");}
-  else if(cn){if(!confirm("Remove this from “On the way”? The message already posted in Telegram stays there."))return;const r=await api("/api/workshop/dispatch/driver/cancel",{id:cn.dataset.dcancel});dFillPick();dWayList();render();say2("dMsg",r.ok?r.message:(r.error||"Could not remove."),r.ok?"ok":"bad");}
+  const cn=e.target.closest("[data-dcancel]");
+  if(cn){if(!confirm("Remove this from “On the way”? The message already posted in Telegram stays there."))return;const r=await api("/api/workshop/dispatch/driver/cancel",{id:cn.dataset.dcancel});dFillPick();dWayList();render();say2("dMsg",r.ok?r.message:(r.error||"Could not remove."),r.ok?"ok":"bad");}
 });
 
 // MATERIAL ─ cut (group + app at once) and send everything that is available
