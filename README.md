@@ -1,3 +1,15 @@
+## v173 — ⚙ Workshop settings: monthly PDF report + Start from 0
+- **⚙ Settings button** (gear symbol, top right of the Workshop page). It opens a settings sheet with: the Telegram places (the old place settings), the **Monthly report** and **Start from 0**.
+- **Monthly report (PDF, sent by the bot).** When an Ethiopian month is finished, the AMBAR **bot** sends one PDF to every main admin and the **new month starts** (the next report counts only the new month). The PDF holds everything: sold products, finished (moved to stock), in stock, in progress / workflow, workshop jobs, driver dispatches, all materials (in / out / stock now), material movements, standard products and the workshop activity — with product photos.
+  - If the bot cannot send it (an admin never pressed Start in the AMBAR bot chat), it is retried every 10 minutes (about 2 days) and the settings sheet shows it as "Waiting to be sent".
+  - Main admin can switch the automatic report off, and can switch on **"also start from 0 after it is sent"** (off by default). That automatic reset only clears the movements of the finished month.
+  - **📄 Send this month's report to me now** sends the month so far to your own chat with the bot.
+- **Start from 0** (main admin only, type ZERO). First the bot sends the full PDF (everything since the last start). If the PDF cannot be sent, **nothing is deleted** (a "Reset anyway (no PDF)" button appears). If the reports Google Sheet is connected, the old tabs are kept as "Archive …" like the Reports reset. Then only the old movements are cleared:
+  - **Kept:** standard products · Progress (jobs in the workshop / finishing) and Workflow orders · products In Stock · every material and its stock · pending cut requests · deliveries still on the way.
+  - **Cleared:** Sold products · the material movement list · decided cut requests · delivered driver dispatches · finished jobs that are already delivered (or sold) · the workshop activity log.
+- The PDF is made inside the app (new file `pdfmini.js`, no new package). Text in other scripts (e.g. Amharic) cannot be drawn with the built-in PDF font and shows as "?".
+- Files changed: `workshop.js`, `reports.js`, `server.js` (passes the main admin list), `public/workshop.html`, new `pdfmini.js`, `README.md`. Check: `/api/workshop-version` → v173.
+
 ## v172 — Each topic only once, Photo as photo, Delivered button in the driver topic, working material Cut
 - **Each topic can be assigned only once.** The admin chooses his own places (Workshop, Finishing, Stock, Driver, Material). A topic already used by another admin, or by another place of the same admin, is hidden in the pickers, and Save refuses it too.
 - **✂️ Cut** (Material tab) now cuts at once for the main admin: stock goes down, the movement is saved in **Reports → Material** (and the Google Sheet backup) and it is posted in the Material topic if one is chosen. Before, this button only sent a pending request.
