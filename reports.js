@@ -156,21 +156,16 @@ function register(app, ctx) {
   // v159: always start from the FIRST free ID (Z1, Z2 …). Used / reserved IDs are skipped, so the list is never blocked by older codes like N6.
   // v160: Shoe Shelf products keep the old Z1, Z2 … sequence. EVERY OTHER product type uses 1A, 1B … 1Z, 2A … 2Z, 3A … (number first, then the letter).
   const isShoeType = pt => /shoe\s*shelf/i.test(String(pt || ""));
-  const otherCode = i => (Math.floor(i / 26) + 1) + "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i % 26];
+  const otherCode = i => "CON" + String(i + 1).padStart(3, "0");
+  const footwearCode = i => "CH" + String(i + 1).padStart(3, "0");
+  const isConsultType = pt => /consult/i.test(String(pt || ""));
+  const isFootwearType = pt => /shoe\s*shelf|footwear|shoe/i.test(String(pt || ""));
   const peekSeqCodes = (n, ptype) => {
-    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())), out = [], gen = isShoeType(ptype) ? seqCode : otherCode;
+    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())), out = [], gen = isConsultType(ptype) ? otherCode : isFootwearType(ptype) ? footwearCode : otherCode;
     for (let i = 0; out.length < n && i < 100000; i++) { const c = gen(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
     return out;
   };
-  const nextSeqCode = ptype => {
-    const type = String(ptype || "").toLowerCase();
-    const prefix = /footwear|shoe/i.test(type) ? "CH" : /consult/i.test(type) ? "CON" : "";
-    if (!prefix) return peekSeqCodes(1, ptype)[0];
-    const used = new Set(db.products.map(p => String(p.code || "").toUpperCase()));
-    let n = 1;
-    while (used.has(prefix + String(n).padStart(4, "0"))) n++;
-    return prefix + String(n).padStart(4, "0");
-  };
+  const nextSeqCode = ptype => peekSeqCodes(1, ptype)[0];
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
@@ -417,17 +412,10 @@ function register(app, ctx) {
   router.use((req, res, next) => hasPerm(req.actor, "reports") ? next() : res.status(403).json({ ok: false, error: "Reports are only for admins the main admin gave the Reports section." }));
   const ownerOnly = (req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Only a main admin can do this." });
   router.use(express.json({ limit: "200kb" }));
-  // Reports is a live, read-only mirror of Workshop data. No role may edit,
-  // delete, move, sell, restock, correct or create products/materials here.
-  router.use((req, res, next) => {
-    if (req.method !== "POST") return next();
-    const p = String(req.path || "");
-    if (/^\/(product\/(edit|finish|sold|restock|times|undo|delete)|material\/(correct|edit|arrange|delete)|reset)$/.test(p))
-      return res.status(403).json({ ok: false, code: "REPORTS_READ_ONLY", error: "Reports is view-only. Make all product and material changes in Workshop." });
-    return next();
-  });
 
   router.get("/state", (req, res) => res.json({ ok: true, ...view() }));
+  // Reports is a read-only dashboard. Product/material mutations are performed through Workshop APIs.
+  router.use((req, res, next) => req.method === "GET" ? next() : (req.actor?.role === "owner" ? next() : res.status(403).json({ ok:false, error:"Reports is view-only. Changes must be made in Workshop by an authorized admin." })));
 
   // WORKFLOW → STOCK → SOLD  (same columns as the Google Sheet: Prod Id · Model · Description · Order Type · Priority · Start Date · Status · Finished · Delivery · Sales Name · Location · Changes · Correction)
   const CATS = ["SHOE SHELF", "OTHERS", "GADGETS"];
