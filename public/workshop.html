@@ -517,14 +517,14 @@ function openMat(kind,m){
   $("mQtyLab").textContent=kind==="new"?"Available now (optional)":"Quantity";
   $("mName").value="";$("mType").value="";$("mUnit").value="244-122";$("mQty").value="";$("mNote").value="";
   const gs=(S.matGroups||[]);$("mGroup").value=gs[1]||gs[0]||"MATERIAL";$("mGroups").innerHTML=gs.map(g=>'<option value="'+esc(g)+'">').join("");
-  $("mOk").textContent=kind==="new"?"Save material":(kind==="add"?"Add":"Cut");
+  $("mOk").textContent=kind==="new"?"Save material":(kind==="add"?"Add":"✂️ Cut now");
   $("matOv").classList.add("on");setTimeout(()=>$(kind==="new"?"mName":"mQty").focus(),50);
 }
 $("mNo").onclick=()=>$("matOv").classList.remove("on");
 $("mOk").onclick=async()=>{
   if(!MAT)return;let path,body;
   if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
-  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path=MAT.kind==="cut"?"/api/workshop/material/cut-request":"/api/workshop/material/move";body={id:MAT.id,type:"add",qty:$("mQty").value,note:$("mNote").value};}
+  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path=MAT.kind==="cut"?"/api/workshop/material/cut":"/api/workshop/material/move";body={id:MAT.id,type:"add",qty:$("mQty").value,note:$("mNote").value};}
   busy("Saving…");const d=await api(path,body);busy("");
   if(d.ok){$("matOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("mMsg",d.error||"Could not save.");
 };
@@ -632,7 +632,16 @@ $("slots").addEventListener("click",e=>{
   const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else if(c.dataset.clear==="driver")drv=null;else if(c.dataset.clear==="material")matTopic=null;else stock=null;renderSettings();return;}
   const p=e.target.closest("button[data-pick]");if(p)openPick(p.dataset.pick);
 });
+const tkey=g=>g&&g.chat?String(g.chat).replace(/^@/,"").toLowerCase()+"|"+(Number(g.topic)>1?Number(g.topic):0):"";
+// v172: topics already assigned (to other admins, or to another place of mine) are hidden — each topic can be assigned only once
+function takenKeys(){
+  const set={},own={workshop:ws,finishing:fin,stock:stock,driver:drv,material:matTopic};
+  (S.takenTopics||[]).forEach(t=>{set[t.k]=1;});
+  Object.keys(own).forEach(r=>{if(r!==pickRole&&own[r])set[tkey(own[r])]=1;});
+  return set;
+}
 function setPlace(g){
+  if(takenKeys()[tkey(g)]){say("This topic is already assigned to another place. Choose a different topic.","bad");return;}
   if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else if(pickRole==="driver")drv=g;else if(pickRole==="material")matTopic=g;else stock=g;
   $("pickOv").classList.remove("on");renderSettings();say("Place chosen — press Save settings to keep it.","info");
 }
@@ -645,11 +654,13 @@ async function openPick(role){
   pickGroups=d.groups||[];drawGroups();
 }
 function drawGroups(){
-  const q=$("pickSearch").value.trim().toLowerCase(),L=pickGroups.filter(g=>!q||String(g.title).toLowerCase().includes(q));
+  const tk=takenKeys(),q=$("pickSearch").value.trim().toLowerCase(),L=pickGroups.filter(g=>(!q||String(g.title).toLowerCase().includes(q))&&(g.forum||!tk[tkey({chat:g.chat,topic:0})]));
   $("pickList").innerHTML=L.map(g=>'<div class="gi tap" data-g="'+esc(g.chat)+'"><span>'+esc(g.title||g.chat)+'<small>'+(g.forum?"Has topics — tap to choose one":g.channel?"Channel":"Group")+'</small></span><span class="pill '+(g.forum?"blue":"gray")+'">'+(g.forum?"Topics ›":"Use")+'</span></div>').join("")||'<div class="empty" style="padding:16px">'+(pickGroups.length?"No group matches.":"No groups found for your Telegram account.")+'</div>';
 }
 $("pickSearch").addEventListener("input",drawGroups);
 async function showTopics(chat,title,topics){
+  const tk=takenKeys(),all=topics.length;topics=topics.filter(t=>!tk[tkey({chat,topic:t.id})]);
+  if(!topics.length){say(all?"Every topic of this group is already assigned.":"This group has no topics.","bad");return;}
   $("topicGroup").textContent=title||chat;
   $("topicList").innerHTML=topics.map(t=>'<div class="gi tap" data-t="'+t.id+'" data-tt="'+esc(t.title)+'"><span>'+esc(t.title)+(t.closed?'<small>Closed topic</small>':"")+'</span><span class="pill blue">Use</span></div>').join("");
   $("topicList").dataset.chat=chat;$("topicList").dataset.title=title||"";
