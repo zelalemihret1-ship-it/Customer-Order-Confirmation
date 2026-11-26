@@ -516,6 +516,7 @@ function register(app, ctx) {
       // v174
       isOwner: isOwnerActor(actor), canAssign: canAssign(actor), myAreas: areasOf(actor), areaList: AREAS.map(a => ({ key: a[0], name: a[1], hint: a[2] })), adminRoles: isOwnerActor(actor) ? assignableAdmins().filter(a => !a.main).map(a => ({ id: a.id, name: a.name, areas: areasOf({ telegramId: a.id }) })) : [], assignable: assignableAdmins(), meId: String(actor?.telegramId || ""),
       records: typeof R().wsRecords === "function" ? R().wsRecords() : [],
+      moves: movesFor(actor), // v175: Confirmation Movements (owner: everything waiting; sender admin: own requests)
       confirm: isOwnerActor(actor) ? confirmInfo() : null
     };
   };
@@ -531,10 +532,23 @@ function register(app, ctx) {
     for (const a of apps) { const id = String(a.telegramId || ""); if (!/^\d+$/.test(id) || out.has(id) || a.viewer) continue; if (a.main || (Array.isArray(a.perms) && a.perms.includes("workshop"))) out.set(id, { id, name: clip(a.name, 60) || "Admin " + id, main: !!a.main }); }
     return [...out.values()];
   }
+  const tagMoves = (list, type) => list.map(x => ({ ...x, type }));
+  function pendingMoves() { // everything waiting for the main admin, oldest-last (newest first)
+    const cuts = tagMoves(typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], "cut");
+    const adds = tagMoves(typeof R().wsAddRequests === "function" ? R().wsAddRequests() : [], "add");
+    const at = x => ((x.created && x.created.d) || "") + " " + ((x.created && x.created.t) || "");
+    return [...cuts, ...adds].sort((a, b) => at(b).localeCompare(at(a)));
+  }
+  function movesFor(actor) { // v175: Confirmation Movements — main admin: all pending; sender admin: only his own (pending first, then recently decided adds)
+    const me = String(actor?.telegramId || ""), owner = isOwnerActor(actor);
+    const pending = pendingMoves().filter(x => owner || String(x.telegramId || "") === me);
+    const decided = owner || typeof R().wsAddHistory !== "function" ? [] : tagMoves(R().wsAddHistory(me, 10), "add");
+    return { pending, decided, total: pending.length };
+  }
   function confirmInfo() {
-    const list = typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [];
-    const oldest = list.length ? list[list.length - 1] : null; // wsCutRequests is newest-first
-    return { pending: list.length, cutters: list.length, status: list.length ? "waiting" : "clear", oldest: oldest && oldest.created ? [oldest.created.d, oldest.created.t].filter(Boolean).join(" ") : "", items: list.slice(0, 50) };
+    const list = pendingMoves(), cuts = list.filter(x => x.type === "cut").length, adds = list.length - cuts;
+    const oldest = list.length ? list[list.length - 1] : null; // newest-first list
+    return { pending: list.length, cutters: cuts, adds, status: list.length ? "waiting" : "clear", oldest: oldest && oldest.created ? [oldest.created.d, oldest.created.t].filter(Boolean).join(" ") : "", items: list.slice(0, 50) };
   }
   const ownerGuard = (req, res, next) => isOwnerActor(req.actor) ? next() : res.status(403).json({ ok: false, error: "Only the main admin can do this." });
   router.get("/confirmations", ownerGuard, (req, res) => res.json({ ok: true, ...confirmInfo() })); // the red badge + status on the Home / Workshop headers
@@ -874,20 +888,39 @@ function register(app, ctx) {
     const r = await applyCut(req, req.body || {}, "Workshop → Material");
     res.status(r.ok ? 200 : 400).json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
-  // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
-  router.post("/material/add", (req, res) => {
+  // v175: Material ADD by a non-main admin is a REQUEST (Pending Admin Confirmation). It reaches the Material Stock only after the main admin approves it.
+  // The main admin's own adds are applied at once. CUT works as before (v165 / v172).
+  const matLabel = r => r.material + (r.mtype ? " " + r.mtype : "");
+  async function postAddRequest(req, r) { // best effort: tell the Material topic (from the admin's own account) that a request is waiting
+    const target = settingsOf(keyOf(req.actor)).material; if (!target) return " No Material topic is selected yet.";
+    try { await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n⏳ <b>MATERIAL ADD — WAITING FOR CONFIRMATION</b>\n\nMaterial: ${esc(matLabel(r))}${r.kind === "new" ? " (new material)" : ""}\nQuantity: ${esc(String(r.qty))} ${esc(r.unit)}\nRequested by: ${esc(r.by)}${r.note ? "\nNote: " + esc(r.note) : ""}\n\n⏳ Not in the stock until the main admin approves.`, true); return " Sent to the Material topic."; }
+    catch (e) { return " Telegram send failed: " + clip(e.message, 160); }
+  }
+  async function addOrRequest(req, res, kind, body) {
     if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
-    const r = R().wsMaterial("add", req.body, req.actor?.name);
-    if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
-    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
-  });
-  router.post("/material/move", (req, res) => {
-    if (req.body?.type === "cut") return res.status(400).json({ ...view(req.actor), ok: false, error: "Use the Cut request button. Main admin approval is required." });
-    if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
-    // FIX: adding stock to an EXISTING material is a "move" (+qty). It used to call "add", which tries to create a NEW material and fails with "already exists".
-    const r = R().wsMaterial("move", { ...(req.body || {}), type: "add" }, req.actor?.name);
-    if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
-    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+    if (isOwnerActor(req.actor)) { // main admin: no one above him to confirm
+      const r = kind === "new" ? R().wsMaterial("add", body, req.actor?.name) : R().wsMaterial("move", { ...(body || {}), type: "add" }, req.actor?.name);
+      if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
+      return res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+    }
+    if (typeof R().wsRequestAdd !== "function") return res.json({ ...view(req.actor), ok: false, error: "Material requests are not available." });
+    const r = R().wsRequestAdd(kind, body, req.actor);
+    if (!r.ok) return res.json({ ...view(req.actor), ok: false, error: r.error });
+    const tg = await postAddRequest(req, r.request);
+    log(keyOf(req.actor), req.actor, `Material · request ${matLabel(r.request)} +${r.request.qty} (pending)`, true, tg); persist();
+    res.json({ ...view(req.actor), ok: true, pending: true, message: r.message });
+  }
+  router.post("/material/add", (req, res) => addOrRequest(req, res, "new", req.body));
+  router.post("/material/move", (req, res) => addOrRequest(req, res, "add", req.body)); // adding stock to an EXISTING material
+  router.post("/material/add-decide", async (req, res) => { // main admin: approve / reject a pending material add
+    if (!isOwnerActor(req.actor)) return res.json({ ...view(req.actor), ok: false, error: "Only the main admin can approve or reject material requests." });
+    const approve = req.body?.approve === true || req.body?.approve === "true";
+    const r = typeof R().wsApproveAdd === "function" ? R().wsApproveAdd(req.body?.id, approve, req.actor, req.body?.note) : { ok: false, error: "Material approval is not available." };
+    if (!r.ok) return res.json({ ...view(req.actor), ok: false, error: r.error });
+    log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, ""); persist();
+    const target = settingsOf(keyOf(req.actor)).material;
+    if (target) { try { await userPost(req.actor, target, null, `<b>AMBAR FURNITURE</b>\n${approve ? "✅ <b>MATERIAL ADD APPROVED</b>" : "❌ <b>MATERIAL ADD REJECTED</b>"}\n\nMaterial: ${esc(matLabel(r.request))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\n${approve ? "Stock now: " + esc(String(r.request.after)) + " " + esc(r.request.unit) + "\n" : ""}Requested by: ${esc(r.request.by)}\nDecided by: ${esc(req.actor?.name || "Main admin")}`, true); } catch {} }
+    res.json({ ...view(req.actor), ok: true, message: r.message });
   });
   router.post("/material/cut-request", async (req, res) => {
     if (typeof R().wsRequestCut !== "function") return res.json({ ...view(req.actor), ok: false, error: "Material cut requests are not available." });
@@ -1197,7 +1230,7 @@ function register(app, ctx) {
     finally { resetBusy = false; }
   });
 
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v174", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v175", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
