@@ -33,7 +33,7 @@ function register(app, ctx) {
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
   const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], senders: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
-  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, materialCutRequests: [], idCounters: {}, savedAt: "", tg: { ...TG0 } };
+  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, materialCutRequests: [], materialAddRequests: [], idCounters: {}, savedAt: "", tg: { ...TG0 } };
   let workshopSource = null; // v174: Workshop → Reports live feed (dispatches, production jobs, assignments); read-only here
   const feed = () => { try { return workshopSource ? workshopSource() : { dispatches: [], jobs: [] }; } catch { return { dispatches: [], jobs: [] }; } };
 
@@ -65,7 +65,7 @@ function register(app, ctx) {
     }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
     if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { products: [], materials: [], log: [], materialCutRequests: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { products: [], materials: [], log: [], materialCutRequests: [], materialAddRequests: [], savedAt: "", ...d };
     db.tg = { ...TG0, ...(db.tg || {}) };
     if (!Array.isArray(db.tg.targets)) db.tg.targets = [];
     if (Array.isArray(db.tg.channels) && db.tg.channels.length) { for (const u of db.tg.channels) if (!db.tg.targets.some(x => x.chat === u)) db.tg.targets.push({ chat: u, title: "@" + u, topic: 0, topicTitle: "" }); db.tg.channels = []; }
@@ -75,6 +75,7 @@ function register(app, ctx) {
     for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     if (!Array.isArray(db.materialCutRequests)) db.materialCutRequests = [];
+    if (!Array.isArray(db.materialAddRequests)) db.materialAddRequests = []; // v175
     if (!db.idCounters || typeof db.idCounters !== "object") db.idCounters = {};
     for (const p of db.products) bumpCounter(p.code);
     layoutMaterials();
@@ -843,6 +844,68 @@ function register(app, ctx) {
     persist(); scheduleBackup(1500);
     return { ok: true, request: r, message: `✅ Cut approved: ${matName(m)} ${r.qty} ${m.unit || "pcs"}. Left: ${m.qty}.` };
   }
+  // v175: Material ADD (new material or more stock) by a non-main admin goes to the "Pending Admin Confirmation" queue. Nothing reaches the confirmed stock
+  // until the main admin approves it. The main admin's own adds are applied at once (nobody above him to confirm).
+  const addReqView = x => ({ ...x });
+  function wsAddRequests() { // pending, newest first
+    return db.materialAddRequests.filter(x => x.status === "pending").slice().reverse().map(addReqView);
+  }
+  function wsAddHistory(telegramId, limit) { // recently decided requests (approved / rejected), newest first; telegramId "" = everybody
+    return db.materialAddRequests.filter(x => x.status !== "pending" && (!telegramId || String(x.telegramId) === String(telegramId))).slice().reverse().slice(0, limit || 15).map(addReqView);
+  }
+  function wsRequestAdd(kind, body, actor) {
+    const b = body || {}, by = clip(actor?.name || "Admin", 60), tid = String(actor?.telegramId || "");
+    let r;
+    if (kind === "new") {
+      const name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || (groupsOrdered()[1] || groupsOrdered()[0] || MAT_G2);
+      if (!name) return { ok: false, error: "Write the material name." };
+      if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return { ok: false, error: `“${name} ${type}” already exists. Use ➕ Add on it.` };
+      if (db.materialAddRequests.some(x => x.status === "pending" && x.kind === "new" && matKey(x.material, x.mtype) === matKey(name, type))) return { ok: false, error: `“${name} ${type}” is already waiting for confirmation.` };
+      const qty = (b.qty === "" || b.qty == null) ? 0 : num(b.qty), min = (b.min === "" || b.min == null) ? 0 : num(b.min);
+      if (Number.isNaN(qty) || qty < 0) return { ok: false, error: "The quantity must be a number (0 or more)." };
+      if (Number.isNaN(min) || min < 0) return { ok: false, error: "The low-stock alert must be a number." };
+      r = { kind: "new", materialId: "", material: name, mtype: type, unit, group, qty, min, before: 0, after: qty };
+    } else {
+      const m = findM(b.id);
+      if (!m) return { ok: false, error: "Material not found." };
+      const qty = num(b.qty);
+      if (Number.isNaN(qty) || qty <= 0) return { ok: false, error: "Write a quantity bigger than 0." };
+      r = { kind: "add", materialId: m.id, material: m.name, mtype: m.type || "", unit: m.unit || "pcs", group: m.group || "MATERIAL", qty, min: 0, before: m.qty, after: Math.round((m.qty + qty) * 1000) / 1000 };
+    }
+    const req = { id: uid(), ...r, note: clip(b.note, 200), by, telegramId: tid, created: stamp({ actor }), status: "pending", decidedBy: "", decidedAt: "", decisionNote: "" };
+    db.materialAddRequests.push(req);
+    audit("Report: material add requested", `${req.material}${req.mtype ? " " + req.mtype : ""} +${req.qty} ${req.unit} — pending main-admin confirmation`, actor);
+    persist();
+    return { ok: true, request: req, message: `⏳ ${req.material}${req.mtype ? " " + req.mtype : ""}: ${req.qty} ${req.unit} sent for confirmation. It is NOT in the stock until the main admin approves it.` };
+  }
+  function wsApproveAdd(id, approve, actor, note) {
+    const r = db.materialAddRequests.find(x => String(x.id) === String(id));
+    if (!r) return { ok: false, error: "Request not found." };
+    if (r.status !== "pending") return { ok: false, error: "This request was already decided." };
+    const label = r.material + (r.mtype ? " " + r.mtype : "");
+    r.decidedBy = clip(actor?.name || "Main admin", 60); r.decidedAt = stamp({ actor }); r.decisionNote = clip(note, 200) || "";
+    if (!approve) {
+      r.status = "rejected";
+      audit("Report: material add rejected", `${label} +${r.qty} ${r.unit}`, actor);
+      persist();
+      return { ok: true, request: r, message: `❌ Material request rejected: ${label} ${r.qty} ${r.unit}. Stock unchanged.` };
+    }
+    // apply with the same handlers as an immediate add; the movement is logged under the requester's name, with the approver in the note
+    const noteTxt = clip((r.note ? r.note + " · " : "") + "Approved by " + r.decidedBy, 200);
+    let out = { ok: false, error: "No answer." };
+    const fake = { body: r.kind === "new" ? { name: r.material, type: r.mtype, unit: r.unit, group: r.group, qty: r.qty, min: r.min, note: noteTxt } : { id: r.materialId, type: "add", qty: r.qty, note: noteTxt }, actor: { name: r.by, telegramId: r.telegramId } };
+    (r.kind === "new" ? H.add : H.move)(fake, { json: o => { out = o; } });
+    if (!out.ok) { // e.g. the same material was created meanwhile, or it was deleted: the request cannot be applied
+      r.status = "rejected"; r.decisionNote = clip("Could not be applied: " + (out.error || "unknown"), 200); persist();
+      return { ok: false, error: "Could not add it: " + (out.error || "unknown error") + " The request was closed." };
+    }
+    r.status = "approved";
+    const m = r.kind === "new" ? db.materials.find(x => matKey(x.name, x.type) === matKey(r.material, r.mtype)) : findM(r.materialId);
+    if (m) { r.materialId = m.id; r.after = m.qty; }
+    audit("Report: material add approved", `${label} +${r.qty} ${r.unit}`, actor);
+    persist(); scheduleBackup(1500);
+    return { ok: true, request: r, message: `✅ Approved: ${label} +${r.qty} ${r.unit} added to Material Stock.` };
+  }
   // v171: Material dispatch → the cut is applied to the stock at the SAME moment it is posted to the group (no approval step for the main admin).
   function wsCutNow(body, actor, note) {
     const m = findM(body?.id);
@@ -896,6 +959,7 @@ function register(app, ctx) {
     db.products = db.products.filter(p => !soldSet.has(p));
     db.log = db.log.filter(l => !logSet.has(l));
     db.materialCutRequests = db.materialCutRequests.filter(x => !cutSet.has(x));
+    db.materialAddRequests = db.materialAddRequests.filter(x => x.status === "pending" || !old((x.decidedAt && x.decidedAt.d) || (x.created && x.created.d) || ""));
     persist(); scheduleBackup(1500);
     sold.forEach(p => dropPhoto(p.photo).catch(() => {}));
     audit("Report: START FROM 0 (workshop settings)", `${sold.length} sold, ${logOld.length} material movement(s), ${cutOld.length} cut request(s) cleared`, { name: clip(byName, 60) || "Main admin" });
@@ -910,6 +974,6 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
