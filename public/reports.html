@@ -324,15 +324,22 @@ input,textarea,select{border:1px solid #dcd8cb;border-radius:12px}
  .lrow .mid .meta{white-space:normal}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* v174: Reports is VIEW-ONLY. Every edit / delete / finish / sold / restock / fix button is hidden; the server refuses them too. Only the history (📜) buttons remain. */
+button[data-a]:not([data-a="hist"]):not([data-a="mhist"]){display:none!important}
+.vo{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:2px 9px;vertical-align:middle}
+.dpx{background:var(--card,#fff);border:1px solid var(--line,#e9e4d8);border-radius:16px;padding:12px 14px;margin-bottom:10px}
+.dpx .t{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.dpx .t b{font-size:14.5px}.dpx .m{font-size:12.5px;color:#6b6b60;margin-top:4px;line-height:1.45}
+.dpx .pl{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap}.dpx .pl.way{background:#fff1d4;color:#8a5a00}.dpx .pl.ok{background:#e2f5ea;color:#17824c}
+.asg{display:inline-block;background:#e5f1fb;color:#14598f;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:700}
 </style>
 </head>
 <body>
 <header>
   <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><button class="gear" id="gearBtn" type="button" aria-label="Settings">⚙</button></div>
-  <div class="sub">Workflow · Stock · Material</div>
+  <div class="sub">Workflow · Stock · Material · Dispatch <span class="vo">👁 View only — products &amp; materials are managed in Workshop</span></div>
 </header>
 <main>
-<div id="reportsReadOnlyNotice" role="note" style="margin:10px 0 14px;padding:12px 14px;border:1px solid #e7c98c;border-radius:12px;background:#fff8e8;color:#76520b;font-size:13px;font-weight:700">👁 Reports is view-only. Product and material entries, corrections and status changes are managed in Workshop.</div>
   <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg">Reports are only for admins the main admin gave this section.</p></div>
   <div id="view" style="display:none">
     <div class="seg" id="seg"></div>
@@ -429,7 +436,18 @@ const lowOf=m=>m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");
 const RED5=m=>Number(m.qty)<5,redSt=m=>RED5(m)?' style="color:#cc0000;font-weight:800"':"";   // quantity below 5 → red text
 function render(){
   const wf=by("workflow"),st=by("stock"),sd=by("sold");
-  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"],["sv","🖼 Stock view",st.length+" in stock"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
+  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"],["sv","🖼 Stock view",st.length+" in stock"],["dp","🚚 Dispatch",((S.workshop&&S.workshop.dispatches)||[]).filter(d=>d.status==="sent").length+" on the way"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
+  document.querySelector(".tools").style.display=tab==="dp"?"none":"";
+  if(tab==="dp"){ // v174: Workshop (Product + Dispatch) → Reports, live and read-only
+    const D=(S.workshop&&S.workshop.dispatches)||[],J=(S.workshop&&S.workshop.jobs)||[],way=D.filter(d=>d.status==="sent"),dn=D.filter(d=>d.status!=="sent");
+    $("kpis").innerHTML='<div class="kpi" style="border-left-color:#d9a21b"><div class="l">On the way</div><div class="n">'+way.length+'</div><div class="s">dispatched, not delivered</div></div><div class="kpi" style="border-left-color:#1f8f55"><div class="l">Delivered</div><div class="n">'+dn.length+'</div><div class="s">confirmed by the driver</div></div><div class="kpi" style="border-left-color:#14598f"><div class="l">In production</div><div class="n">'+J.length+'</div><div class="s">workshop + finishing</div></div>';
+    $("vt").style.display="none";$("sub2").style.display="none";$("out").className="list";
+    const row=d=>{const c=d.customer||{};return '<div class="dpx"><div class="t"><b>'+esc((d.codes||[]).join(", ")||d.name||"Product")+(d.name&&(d.codes||[]).length?" · "+esc(d.name):"")+'</b><span class="pl '+(d.status==="sent"?"way":"ok")+'">'+(d.status==="sent"?"🚚 On the way":"✅ Delivered")+'</span></div><div class="m">'+(c.name?"👤 "+esc(c.name)+(c.phone?" · "+esc(c.phone):"")+"<br>":"")+(c.location&&!/^https?:/i.test(c.location)?"📍 "+esc(c.location)+"<br>":"")+(d.orderLabel?"Order "+esc(d.orderLabel)+" · ":"")+(d.size?esc(d.size)+" · ":"")+"Qty "+(d.qty||1)+" · Balance "+Number(d.balance||0).toLocaleString("en-US")+' Birr<br>Sent '+esc(d.sentAt||"")+(d.sentBy?" by "+esc(d.sentBy):"")+(d.deliveredAt?" · Delivered "+esc(d.deliveredAt)+(d.deliveredBy?" · "+esc(d.deliveredBy):""):"")+'</div></div>';};
+    const jr=j=>'<div class="dpx"><div class="t"><b>'+esc((j.codes||[]).join(", ")||"—")+" · "+esc(j.name||"")+'</b><span class="pl way">'+esc(j.stageName||j.stage)+'</span></div><div class="m">'+(Object.keys(j.assign||{}).length?Object.entries(j.assign).map(([k,a])=>'<span class="asg">👤 '+esc(a.name)+" · "+(k==="finishing"?"Finishing":"Workshop")+'</span>').join(" ")+"<br>":"")+"Sent "+esc(j.createdAt||"")+(j.by?" by "+esc(j.by):"")+'</div></div>';
+    $("out").innerHTML='<div class="gh"><span>🚚 Driver dispatch</span><span>'+D.length+'</span></div>'+(D.length?D.map(row).join(""):'<div class="empty">No dispatch yet. Dispatches made in <b>Workshop</b> appear here by themselves.</div>')+'<div class="gh"><span>🛠 Production (Workshop products)</span><span>'+J.length+'</span></div>'+(J.length?J.map(jr).join(""):'<div class="empty">Nothing in production.</div>');
+    $("extra").innerHTML="";
+    return;
+  }
   const low=S.materials.filter(m=>lowOf(m)!=="ok").length,today=S.log.filter(l=>l.d===S.now.d).length,soldToday=sd.filter(p=>p.sold&&p.sold.d===S.now.d).length;
   // a new Ethiopian month starts clean: finished (Workflow) and sold (Stock) products of earlier months are not listed any more
   const cm=String(S.now.d||"").slice(0,7),inM=o=>!!(o&&o.d&&String(o.d).slice(0,7)===cm),sdm=sd.filter(p=>inM(p.sold));
@@ -449,6 +467,7 @@ function render(){
   const hit=t=>!q||String(t).toLowerCase().includes(q);
   const text=p=>[p.code,p.ptype,p.model,p.desc,p.note,p.sno,p.salesName,p.location,p.category,p.changes,p.handle,p.capacity].join(" ");
   const facts=p=>{const f=[];if(p.handle)f.push("🔧 Handle <b>"+esc(p.handle)+"</b>");if(p.capacity)f.push("👟 Capacity <b>"+esc(p.capacity)+"</b>");if(p.sno)f.push("S.No <b>"+esc(p.sno)+"</b>");if(p.salesName)f.push("Sales <b>"+esc(p.salesName)+"</b>");if(p.location)f.push("📍 "+esc(p.location));if(p.deliveryDate)f.push("Delivery <b>"+esc(fmtD(p.deliveryDate))+"</b>");if(p.changes)f.push("Changes: "+esc(p.changes));return f.length?'<div class="facts">'+f.join(" · ")+'</div>':"";};
+  const asgOf=p=>{const J=(S.workshop&&S.workshop.jobs)||[],j=J.find(x=>(x.productIds||[]).includes(p.id));return j&&Object.keys(j.assign||{}).length?" · "+Object.entries(j.assign).map(([k,a])=>'<span class="asg">👤 '+esc(a.name)+" · "+(k==="finishing"?"Finishing":"Workshop")+'</span>').join(" "):"";};
   const prPill=p=>p.priority==="HIGH"?'<span class="pill hi">HIGH</span>':p.priority==="MEDIUM"?'<span class="pill med">MEDIUM</span>':'<span class="pill low2">LOW</span>';
   const tyPill=p=>isCus(p)?'<span class="pill cus">ORDER</span>':'<span class="pill rdy">READYMADE</span>';
   const thumbBig=p=>photoSrc(p)?'<img class="thumb" loading="lazy" src="'+photoSrc(p)+'" alt="">':'';
@@ -463,8 +482,8 @@ function render(){
   const lrow=(p,metaTxt,acts,cls)=>'<div class="lrow '+(cls||"")+'">'+th(p)+'<div class="mid"><div class="nm">'+esc(lab(p))+'</div><div class="meta">'+small(p,metaTxt)+'</div></div><div class="rt">'+acts+'</div></div>';
   if(tab==="wf"){
     const L=wf.filter(p=>hit(text(p)));
-    h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+(p.workshopStage?" · Workshop: "+(p.workshopStage==="finishing"?"In finishing":"In workshop"):"")+" · "+esc(fmtDT(p.added)),(p.jobId?'<span class="pill wait">Workshop manages stage</span>':'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>')+ic("edit",p.id,"✏️ Edit")+ic("times",p.id,"🕒 Dates & times")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
-      :'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+(p.workshopStage?' · <b>Workshop: '+(p.workshopStage==='finishing'?'In finishing':'In workshop')+'</b>':'')+'</div>'
+    h=L.map(p=>LM?lrow(p,tyPill(p)+" "+prPill(p)+(p.workshopStage?" · Workshop: "+(p.workshopStage==="finishing"?"In finishing":"In workshop"):"")+asgOf(p)+" · "+esc(fmtDT(p.added)),(p.jobId?'<span class="pill wait">Workshop manages stage</span>':'<button class="b sm main" data-a="finish" data-id="'+p.id+'" title="Finished → In Stock">✅</button>')+ic("edit",p.id,"✏️ Edit")+ic("times",p.id,"🕒 Dates & times")+ic("hist",p.id,"📜 History")+ic("del",p.id,"🗑 Delete","red"))
+      :'<div class="item">'+head(p)+'<div class="meta">Started <b>'+esc(fmtDT(p.added))+'</b>'+(p.added&&p.added.by?' · '+esc(p.added.by):'')+(p.workshopStage?' · <b>Workshop: '+(p.workshopStage==='finishing'?'In finishing':'In workshop')+'</b>':'')+asgOf(p)+'</div>'
       +'<div class="acts">'+(p.jobId?'<span class="pill wait">Workshop manages stage</span>':'<button class="b main" data-a="finish" data-id="'+p.id+'">✅ Finished → In Stock</button>')+'<button class="b" data-a="hist" data-id="'+p.id+'">📜</button><button class="b" data-a="edit" data-id="'+p.id+'">✏️</button><button class="b" data-a="times" data-id="'+p.id+'" title="Dates & times">🕒</button><button class="b red" data-a="del" data-id="'+p.id+'">🗑</button></div></div>').join("");
     if(!L.length)h='<div class="empty">'+(wf.length?"No product matches your search.":"<b>No product in Workflow yet.</b><br>Products are added in the <b>Workshop</b> section (they get their Product ID there).<br>When it is finished, press <b>Finished → In Stock</b> — it appears in <b>Stock</b> and <b>Stock view</b> at once.")+'</div>';
     // products that moved on to Stock this Ethiopian month stay here with RED text; next month they are gone
@@ -638,6 +657,7 @@ $("addBtn").onclick=()=>{
 async function act(path,body,ask){if(ask&&!confirm(ask))return;busy("Saving…");const d=await api(path,body);busy("");if(d.ok){toast(d.message||"✅ Saved");render();}else say("vMsg",d.error||"Could not save.","bad");}
 document.addEventListener("click",e=>{
   const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a,id=b.dataset.id;say("vMsg","");
+  if(a!=="hist"&&a!=="mhist"){toast("👁 Reports is view-only. Create, edit and delete products and materials in the Workshop section.");return;} // v174
   if(b.closest("#hOv")&&a!=="hist"&&a!=="mhist")$("hOv").classList.remove("on");
   const p=P(id),m=M(id);
   if(a==="finish"&&p)return act("/api/reports/product/finish",{id},"Product “"+p.code+" · "+lab(p)+"” is finished?\nIt will be sent to IN STOCK.");
@@ -827,6 +847,7 @@ const syncDrops=()=>{document.querySelectorAll("#out .mlist").forEach(l=>{const 
   const clearPend=()=>{clearTimeout(timer);timer=null;pend=null;};
   out.addEventListener("contextmenu",e=>{if(tab==="mt"&&e.target.closest("[data-mid]"))e.preventDefault();});
   out.addEventListener("pointerdown",e=>{
+    return; // v174: Reports is view-only — hold-and-drag re-arranging of materials now lives in Workshop (main admin)
     if(tab!=="mt"||msub!=="list"||q||drag)return;
     if(e.pointerType==="mouse"&&e.button!==0)return;
     if(e.target.closest("button,input,select,textarea,a"))return;
