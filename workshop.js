@@ -795,7 +795,7 @@ function register(app, ctx) {
   // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
   router.post("/material/add", (req, res) => {
     if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
-    const r = R().wsMaterial("add", req.body, req.actor?.name);
+    const r = R().wsRequestMaterialAdd ? R().wsRequestMaterialAdd(req.body, req.actor) : { ok:false, error:"Material confirmation is unavailable." };
     if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
@@ -820,6 +820,13 @@ function register(app, ctx) {
     } else tg = " No Material topic is selected yet.";
     log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, tg);
     res.json({ ...view(req.actor), ok: true, message: r.message + tg });
+  });
+  router.post("/material/add-decide", async (req,res)=>{
+    if(req.actor?.role!=="owner") return res.json({...view(req.actor),ok:false,error:"Only the main admin can confirm new materials."});
+    const approve=req.body?.approve===true||req.body?.approve==="true";
+    const r=R().wsApproveMaterialAdd?R().wsApproveMaterialAdd(req.body?.id,approve,req.actor,req.body?.note):{ok:false,error:"Material approval is unavailable."};
+    if(!r.ok)return res.json({...view(req.actor),ok:false,error:r.error});
+    res.json({...view(req.actor),ok:true,message:r.message});
   });
   router.post("/material/cut-decide", async (req, res) => {
     if (req.actor?.role !== "owner") return res.json({ ...view(req.actor), ok: false, error: "Only the main admin can approve or reject material cuts." });
