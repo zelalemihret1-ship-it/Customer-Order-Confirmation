@@ -230,8 +230,19 @@ details.set{border-radius:var(--r)}
 .idbox{margin:12px 0 0;padding:11px 12px;border-radius:15px;background:#f0f8f4;border:1px solid #cfe3d8}
 .idbox .idh{font-size:11.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#4f6158}
 .idbox .ids{margin-top:8px}.idbox .ids:empty::before{content:"…";color:var(--mute)}.idbox .ids:empty{display:flex}
-#dispatchFab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:1000;width:58px;height:58px;border:0;border-radius:50%;background:linear-gradient(135deg,#0f3d30,#17604b);color:#fff;font-size:25px;box-shadow:0 8px 28px #09291f55;cursor:pointer}
-#dispatchFab:active{transform:scale(.96)}
+/* v171 dispatch: two small buttons at the bottom + two sheets */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;justify-content:center;gap:8px;padding:8px 14px calc(8px + env(safe-area-inset-bottom,0px));background:rgba(244,242,236,.94);backdrop-filter:blur(10px);border-top:1px solid var(--line)}
+.dock button{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:#fff;color:var(--green);border-radius:999px;padding:8px 14px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(15,40,30,.08);transition:transform .12s}
+.dock button:active{transform:scale(.96)}
+.dock .bn{display:none;background:var(--green);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px}
+.dsec{margin-top:18px;border-top:1px solid var(--line2)}
+.dsec h3{margin:14px 0 4px;font-size:14px;color:var(--ink)}
+.dprev{display:none;margin:10px 0 0}
+.dscroll{max-height:210px;overflow:auto;border:1px solid var(--line);border-radius:14px;padding:2px 12px;background:#fcfbf8}
+.dscroll .r{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line2);font-size:13.5px}
+.dscroll .r:last-child{border-bottom:0}
+.r2e{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:420px){.r2e{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -315,8 +326,12 @@ details.set{border-radius:var(--r)}
 
     <div id="basket"></div>
     <details class="card" style="margin-top:14px" id="lastSends"><summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px"><b><svg class="i"><use href="#i-list"/></svg> My last sends</b><span class="pill gray">Tap to view</span></summary><div style="padding-top:12px"><div class="log-head"><span class="hint">Send history</span><select id="logFilter" aria-label="Choose sends to view"><option value="all">All sends</option><option value="success">Successful</option><option value="failed">Failed</option></select></div><div id="log" class="log"></div></div></details>
+    <div class="dock" id="dock">
+      <button type="button" id="openDrv">🚚 Driver dispatch <span class="bn" id="drvN"></span></button>
+      <button type="button" id="openMat">🧱 Material dispatch</button>
+    </div>
   </div>
-</main><button id="dispatchFab" type="button" aria-label="Open dispatch" title="Dispatch">🚚</button>
+</main>
 
 <div class="ov" id="pickOv"><div class="box">
   <h2 id="pickTitle" style="margin:0 0 6px">Choose the group</h2>
@@ -363,6 +378,69 @@ details.set{border-radius:var(--r)}
   <div id="mNoteBox"><label class="lab">Note (optional)</label><input type="text" id="mNote" autocomplete="off"></div>
   <div id="mMsg" class="msg" style="margin-top:10px"></div>
   <div class="btns"><button class="btn" id="mOk" type="button">Save</button><button class="btn sec" id="mNo" type="button">Cancel</button></div>
+</div></div>
+<div class="ov" id="drvOv"><div class="box">
+  <h2 style="margin:0 0 2px">🚚 Driver dispatch</h2>
+  <div class="hint" style="margin:0">Posted in your Driver topic from your own Telegram account: product photo, customer info and the remaining balance.</div>
+  <div id="dWarn"></div>
+  <label class="lab">What are you sending?</label>
+  <div class="tog"><button type="button" id="dkReady" data-dm="ready">🛋 Readymade sale</button><button type="button" id="dkOrder" data-dm="order">📦 Finished order</button></div>
+  <label class="lab" id="dPickLab">Product</label>
+  <select id="dPick"></select>
+  <div class="hint" id="dEmpty" style="margin:6px 0 0"></div>
+  <div class="item dprev" id="dPrev"></div>
+
+  <label class="lab">Customer — pick from the directory, or type</label>
+  <input type="text" id="dCustQ" placeholder="Search customer name, phone or ID…" autocomplete="off">
+  <select id="dCust" style="margin-top:8px"></select>
+  <div class="r2e">
+    <div><label class="lab">Name</label><input type="text" id="dName" autocomplete="off"></div>
+    <div><label class="lab">Phone</label><input type="text" id="dPhone" inputmode="tel" autocomplete="off"></div>
+  </div>
+  <label class="lab">Location</label>
+  <input type="text" id="dLoc" placeholder="Address, or a Google Maps link" autocomplete="off">
+  <label class="lab">Remaining balance (Birr)</label>
+  <input type="number" id="dBal" inputmode="decimal" min="0" step="any" placeholder="0">
+  <div class="hint" id="dBalHint" style="margin:6px 0 0"></div>
+  <label class="lab">Note for the driver (optional)</label>
+  <textarea id="dNote" placeholder="Delivery time, floor, handling…"></textarea>
+  <div id="dMsg" class="msg" style="margin-top:10px"></div>
+  <div class="btns"><button class="btn block" id="dSend" type="button">🚚 Send to driver</button></div>
+
+  <div class="dsec">
+    <h3>🚛 On the way <span class="pill wait" id="dWayN">0</span></h3>
+    <div class="hint" style="margin:0 0 8px">Press <b>Delivered</b> when the customer has the product. It posts “✅ DELIVERED” as a reply in the driver topic.</div>
+    <div id="dWay"></div>
+    <div id="dDoneBox"></div>
+  </div>
+  <div class="btns"><button class="btn sec" id="dClose" type="button">Close</button></div>
+</div></div>
+<div class="ov" id="mdOv"><div class="box">
+  <h2 style="margin:0 0 2px">🧱 Material dispatch</h2>
+  <div class="hint" style="margin:0">Posted in your Material topic from your own Telegram account.</div>
+  <div id="mdWarn"></div>
+
+  <h3 style="margin:16px 0 4px;font-size:14px">✂️ Cut a material</h3>
+  <div class="hint" style="margin:0">Choose the material and the amount you cut. It is posted in the group <b>and</b> taken off the stock here at the same moment.</div>
+  <label class="lab">Material</label>
+  <select id="mdSel"></select>
+  <label class="lab">Amount cut</label>
+  <input type="number" id="mdQty" inputmode="decimal" min="0" step="any" placeholder="0">
+  <div class="hint" id="mdLeft" style="margin:6px 0 0"></div>
+  <label class="lab">Note (optional)</label>
+  <input type="text" id="mdNote" placeholder="e.g. for order 1052" autocomplete="off">
+  <div class="btns"><button class="btn block" id="mdCut" type="button">✂️ Cut &amp; send to group</button></div>
+
+  <div class="dsec">
+    <h3>📤 Send available materials <span class="pill gray" id="mdCount">0</span></h3>
+    <div class="hint" style="margin:0 0 8px">Sends every material that still has stock, with its quantity, to the Material topic.</div>
+    <div class="dscroll" id="mdList"></div>
+    <label class="lab">Note (optional)</label>
+    <input type="text" id="mdAllNote" placeholder="Pickup point, needed date…" autocomplete="off">
+    <div class="btns"><button class="btn gold block" id="mdAll" type="button">📤 Send all available to the group</button></div>
+  </div>
+  <div id="mdMsg" class="msg" style="margin-top:12px"></div>
+  <div class="btns"><button class="btn sec" id="mdClose" type="button">Close</button></div>
 </div></div>
 <div class="ov" id="catOv"><div class="box">
   <h2 id="cTitle" style="margin:0 0 2px">Add standard product</h2><div class="hint" style="margin:0 0 4px">The workshop sees this photo, so make it clear. Measurements appear as one-tap choices.</div>
@@ -424,9 +502,6 @@ function matList(){
   if(!L.length)h+=q?emptyBox("search","No material found","Nothing matches “"+esc(matQ)+"”."):emptyBox("box","No material yet","Tap <b>New material</b>. Materials added here also appear in Reports → Material.");
   return h;
 }
-document.addEventListener("change",e=>{if(e.target.id==="dispatchMaterialSelect"){const m=(S.materials||[]).find(x=>String(x.id)===e.target.value);$("dispatchMaterialAvailable").value=m?m.qty+" "+m.unit:"";$("dispatchMaterialQty").max=m?m.qty:"";}});
-document.addEventListener("change",e=>{if(e.target.id==="driverSourceType"){const ready=e.target.value==="ready",sel=$("driverProductSelect");if(sel){const items=ready?(S.readymade||[]):(S.catalog||[]);sel.innerHTML='<option value="">Choose '+(ready?'a readymade product…':'an order product…')+'</option>'+items.map(p=>'<option value="'+esc(p.id)+'">ID: '+esc(p.code||p.id)+' — Model: '+esc(p.model||p.desc||p.name||'Product')+'</option>').join("");}}});
-document.addEventListener("change",e=>{if(e.target.id==="driverCustomerType"){const type=e.target.value,sel=$("driverCustomerSelect"),prev=sel.value;sel.innerHTML='<option value="">Choose any customer…</option>'+(S.customers||[]).filter(c=>!type||(c.customerType||"Customer")===type).map(c=>'<option value="'+esc(c.telegramId||c.id)+'">'+esc(c.customerCode?c.customerCode+' · ':'')+esc(c.name||"Customer")+(c.phone?' · '+esc(c.phone):'')+' · '+esc(c.customerType||"Customer")+'</option>').join("");if([...sel.options].some(o=>o.value===prev))sel.value=prev;}});
 document.addEventListener("input",e=>{if(e.target.id==="mSearch"){matQ=e.target.value;const l=$("matList");if(l)l.innerHTML=matList();}});
 let MAT=null;
 function openMat(kind,m){
@@ -468,22 +543,11 @@ function pickedOrder(selId,typedId){const v=$(selId).value;if(v==="__typed"){con
 const wireOrderBox=(selId,typedId,sizeId)=>{$(selId).onchange=()=>{const t=$(selId).value==="__typed";$(typedId).style.display=t?"block":"none";if(t)$(typedId).focus();const p=pickedOrder(selId,typedId);if(p&&p.size&&!$(sizeId).value.trim())$(sizeId).value=p.size;};};
 function render(){
   renderSettings();
-  const tabs=[["m","box","Materials",(S.materials||[]).length],["d","send","Send & Dispatch",0],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length]];
+  updDock();
+  const tabs=[["m","box","Materials",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length]];
   $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
   $("subWrap").style.display=tab==="s"?"block":"none";
   if(tab==="m"){$("out").innerHTML=matView();$("cusForm").style.display="none";$("basket").innerHTML="";return;}
-  if(tab==="d"){
-    $("cusForm").style.display="none";$("basket").innerHTML="";
-    const orderOptions='<option value="">No order selected (optional)</option>'+(S.allOrders||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.orderId||('#'+o.id))+' · '+esc(o.product||'Product')+' · '+esc(o.customerName||'Customer')+'</option>').join('');
-    const customerTypes=[...new Set((S.customers||[]).map(c=>c.customerType||'Customer'))].sort();
-    const customerTypeOptions='<option value="">All customer types</option>'+customerTypes.map(t=>'<option value="'+esc(t)+'">'+esc(t)+'</option>').join('');
-    const customerOptions='<option value="">Choose any customer…</option>'+(S.customers||[]).map(c=>'<option value="'+esc(c.telegramId||c.id)+'" data-type="'+esc(c.customerType||'Customer')+'">'+esc(c.customerCode?c.customerCode+' · ':'')+esc(c.name||'Customer')+(c.phone?' · '+esc(c.phone):'')+' · '+esc(c.customerType||'Customer')+'</option>').join('');
-    const productOptions='<option value="">Choose an available product…</option>'+(S.catalog||[]).map(p=>'<option value="'+esc(p.id)+'">ID: '+esc(p.code||p.id)+' — Model: '+esc(p.model||p.name)+' · '+esc(p.ptype||'Standard')+'</option>').join('')+(S.readymade||[]).map(p=>'<option value="'+esc(p.id)+'">ID: '+esc(p.code||p.id)+' — Model: '+esc(p.model||p.desc||p.name||'Workflow product')+'</option>').join('');
-    const availableMaterials=(S.materials||[]).filter(m=>Number(m.qty)>0);
-    const availableMaterialRows=availableMaterials.map(m=>'<div class="item" style="align-items:center"><div class="mid"><div class="nm">'+esc(m.name+(m.type?' '+m.type:''))+'</div><div class="meta">Available: <b>'+esc(String(m.qty))+' '+esc(m.unit||'')+'</b></div></div><button class="btn sm" type="button" data-sendmaterial="'+esc(m.id)+'" data-qty="'+esc(String(m.qty))+'">Send this material</button></div>').join('')||'<div class="hint">No materials currently have available stock.</div>';
-    $("out").innerHTML='<div class="card"><h2>🚚 PRODUCT DELIVERY DISPATCH</h2><p class="hint">Choose an ORDER product or a READYMADE product, then select the buyer/customer. The driver receives customer name, phone, location, product ID/model and product photo when available.</p><label class="lab">Customer type</label><select id="driverCustomerType" class="field">'+customerTypeOptions+'</select><label class="lab">Customer</label><select id="driverCustomerSelect" class="field">'+customerOptions+'</select><label class="lab">Product source</label><select id="driverSourceType" class="field"><option value="order">Order product</option><option value="ready">Readymade product</option></select><label class="lab">Customer order (for order products)</label><select id="driverOrderSelect" class="field">'+orderOptions+'</select><label class="lab">Available product (optional — Product ID + Model)</label><select id="driverProductSelect" class="field">'+productOptions+'</select><label class="lab">Additional driver instructions</label><textarea id="driverDispatchText" placeholder="Pickup point, delivery time, handling instructions…"></textarea><button class="btn block" id="sendDriverDispatch" type="button">🚚 Send customer, order and product details to driver</button></div><div class="card"><h2>🧱 MATERIAL DISPATCH</h2><p class="hint">Send materials individually. Each message contains one material and its selected quantity.</p><div class="sec-h"><b>Available materials</b><span>'+availableMaterials.length+' types</span></div><div style="max-height:300px;overflow:auto">'+availableMaterialRows+'</div><label class="lab">Notes / pickup / destination</label><textarea id="dispatchMaterialNote" placeholder="Supplier, pickup point, required date, transport instructions…"></textarea></div>';
-    return;
-  }
   $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
   $("cusForm").style.display=tab==="s"&&sub==="cus"?"block":"none";
   let h="";
@@ -660,26 +724,6 @@ $("aAdd").onclick=()=>{
   $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
 };
 $("out").addEventListener("click",async e=>{
-  const oneMaterial=e.target.closest("[data-sendmaterial]");
-  if(oneMaterial){
-    const id=oneMaterial.dataset.sendmaterial,qty=oneMaterial.dataset.qty;
-    const chosen=(S.materials||[]).find(m=>String(m.id)===String(id));
-    const amount=prompt("Quantity to dispatch (available "+qty+" "+(chosen?.unit||"")+")",qty);
-    if(amount===null)return;
-    if(!(Number(amount)>0)||Number(amount)>Number(qty))return say("Enter a quantity within available stock.","bad");
-    busy("Sending material…");
-    const r=await api("/api/workshop/dispatch/send",{kind:"material",materialId:id,qty:amount,text:$("dispatchMaterialNote")?.value.trim()||""});
-    busy("");say(r.ok?r.message:(r.error||"Could not send material."),r.ok?"ok":"bad");return;
-  }
-  const sendDriver=e.target.closest("#sendDriverDispatch"),sendMaterial=e.target.closest("#sendMaterialDispatch");
-  if(sendDriver||sendMaterial){
-    const kind=sendDriver?"driver":"material";
-    const text=sendDriver?$("driverDispatchText").value.trim():$("dispatchMaterialNote").value.trim();
-    const payload={kind,text};
-    if(sendDriver){payload.customerId=$("driverCustomerSelect").value;payload.orderId=$("driverOrderSelect").value;payload.productId=$("driverProductSelect").value;if(!payload.customerId&&!payload.orderId&&!payload.productId&&!text)return say("Choose a customer, customer order or available product.","bad");}
-    else{payload.allAvailableMaterials=true;if(!((S.materials||[]).some(m=>Number(m.qty)>0)))return say("There are no materials with available stock to send.","bad");}
-    busy("Sending dispatch message…");const r=await api("/api/workshop/dispatch/send",payload);busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");return;
-  }
   const so=e.target.closest("button[data-sendorder],button[data-again]");
   if(so){const again=!!so.dataset.again,id=so.dataset.sendorder||so.dataset.again;busy("Sending to the workshop…");const r=await api("/api/workshop/send-order",{id,again});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
   const sp=e.target.closest("button[data-sendprod]");
@@ -760,6 +804,112 @@ $("cDel").onclick=async()=>{
   busy("Deleting…");const d=await api("/api/workshop/catalog/delete",{id:editId});busy("");
   if(!d.ok)return say2("cMsg",d.error||"Could not delete.");
   $("catOv").classList.remove("on");basket=basket.filter(l=>l.custom||S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
+};
+// ── v171 DISPATCH: two small buttons at the bottom open two sheets ──
+const money=n=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
+const onWay=()=>(S.dispatches||[]).filter(d=>d.status==="sent");
+function updDock(){const n=onWay().length,b=$("drvN");if(b){b.textContent=n;b.style.display=n?"inline-block":"none";}}
+const placeWarn=(id,place,label)=>{$(id).innerHTML=place?"":'<div class="msg bad" style="display:block;margin:12px 0 0">The <b>'+label+'</b> topic is not chosen yet. Open <b>Workshop, finishing, stock &amp; driver places</b> at the top, choose it and press Save.<div class="btns" style="margin-top:8px"><button class="btn sec sm" type="button" data-gosettings="1">Open settings</button></div></div>';};
+document.addEventListener("click",e=>{if(!e.target.closest("[data-gosettings]"))return;$("drvOv").classList.remove("on");$("mdOv").classList.remove("on");$("setBox").open=true;$("setBox").scrollIntoView({behavior:"smooth",block:"start"});});
+
+// DRIVER ─ readymade sale (product + customer + balance) or a finished order (customer + balance come from the order)
+let dMode="ready",dPick=null;
+const dItems=()=>dMode==="ready"?(S.stockProducts||[]):(S.dispatchOrders||[]);
+const dKey=x=>String(dMode==="ready"?x.id:x.jobId);
+function dFillPick(){
+  const L=dItems(),prev=$("dPick").value;
+  $("dkReady").classList.toggle("on",dMode==="ready");$("dkOrder").classList.toggle("on",dMode==="order");
+  $("dPickLab").textContent=dMode==="ready"?"Readymade product (Product ID — Model)":"Finished order";
+  $("dPick").innerHTML='<option value="">'+(dMode==="ready"?"— Choose the readymade product —":"— Choose the finished order —")+'</option>'+L.map(x=>dMode==="ready"
+    ?'<option value="'+esc(x.id)+'">'+esc((x.code||"—")+" — "+(x.model||x.desc||"Product")+(x.status==="sold"?"  · sold":""))+'</option>'
+    :'<option value="'+esc(x.jobId)+'">'+esc((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name+(x.orderLabel?" · "+x.orderLabel:"")+(x.customerName?" · "+x.customerName:""))+'</option>').join("");
+  if(L.some(x=>dKey(x)===prev))$("dPick").value=prev;
+  $("dEmpty").textContent=L.length?"":(dMode==="ready"?"No readymade product is in stock (Reports → Stock), or all of them are already on their way.":"No finished order is waiting. An order appears here after the finishing team presses Finished.");
+  dPreview(false);
+}
+function dPreview(fill){
+  const x=dItems().find(v=>dKey(v)===$("dPick").value);dPick=x||null;
+  const pv=$("dPrev");if(!x){pv.style.display="none";if(fill)$("dBalHint").textContent="";return;}
+  const src=x.photo?(dMode==="ready"?"/api/reports-photo/":"/api/workshop-photo/")+x.photo+".jpg":"";
+  const title=dMode==="ready"?(x.code?x.code+" — ":"")+(x.model||x.desc||"Product"):((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name);
+  const meta=dMode==="ready"?(x.desc&&x.model?esc(x.desc)+"<br>":"")+(x.status==="sold"?'<span class="pill bad">Sold out</span>':'<span class="pill ok">In stock</span>'):(x.orderLabel?'<b style="color:var(--ink)">Order '+esc(x.orderLabel)+'</b>':"")+(x.size?" · "+esc(x.size):"")+(x.qty>1?" · ×"+x.qty:"");
+  pv.innerHTML=(src?'<img src="'+esc(src)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(title)+'</div><div class="meta">'+meta+'</div></div>';pv.style.display="flex";
+  if(fill&&dMode==="order"){
+    $("dName").value=x.customerName||"";$("dPhone").value=x.phone||"";$("dLoc").value=x.location||"";
+    if(x.hasOrder){$("dBal").value=x.balance;$("dBalHint").textContent=x.paidFull?"This order is marked paid in full, so the balance is 0.":"Payment "+money(x.total)+" − advance "+money(x.advance)+" = "+money(x.balance)+" Birr. Change it if needed.";}
+    else{$("dBal").value="";$("dBalHint").textContent="This order ID was typed by hand, so there is no customer record. Pick the customer above and write the balance.";}
+  }
+}
+function dCustList(){
+  const q=$("dCustQ").value.trim().toLowerCase(),L=(S.customers||[]).filter(c=>!q||((c.name||"")+" "+(c.phone||"")+" "+(c.customerCode||"")+" "+(c.username||"")).toLowerCase().includes(q)).slice(0,60);
+  $("dCust").innerHTML='<option value="">'+(L.length?"— Choose a customer (optional) —":"No customer found")+'</option>'+L.map(c=>'<option value="'+esc(c.id)+'">'+esc((c.customerCode?c.customerCode+" · ":"")+(c.name||"Customer")+(c.phone?" · "+c.phone:""))+'</option>').join("");
+}
+function dWayList(){
+  const W=onWay(),D=(S.dispatches||[]).filter(d=>d.status==="delivered").slice(0,5);
+  const row=(d,w)=>'<div class="item">'+(d.photoSrc?'<img loading="lazy" src="'+esc(d.photoSrc)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc((d.codes&&d.codes.length?d.codes.join(", ")+" — ":"")+d.name)+'</div><div class="meta"><b style="color:var(--ink)">'+esc((d.customer||{}).name||"")+'</b> · '+esc((d.customer||{}).phone||"")+((d.customer||{}).location?"<br>📍 "+esc(d.customer.location):"")+"<br>💰 "+money(d.balance)+" Birr · "+(w?"sent "+esc(d.sentAt):"✅ delivered "+esc(d.deliveredAt))+'</div></div>'+(w?'<div class="act"><button class="btn sm" type="button" data-ddeliv="'+esc(d.id)+'">✅ Delivered</button><button class="btn sec sm" type="button" data-dcancel="'+esc(d.id)+'">Remove</button></div>':"")+'</div>';
+  $("dWayN").textContent=W.length;
+  $("dWay").innerHTML=W.map(d=>row(d,true)).join("")||'<div class="hint" style="margin:0 0 6px">Nothing on the way.</div>';
+  $("dDoneBox").innerHTML=D.length?'<h3 style="margin:14px 0 6px;font-size:13px;color:var(--mute)">✅ Delivered lately</h3>'+D.map(d=>row(d,false)).join(""):"";
+  updDock();
+}
+function openDrv(){placeWarn("dWarn",S.settings&&S.settings.driver,"Driver");say2("dMsg","");dFillPick();dCustList();dWayList();$("drvOv").classList.add("on");}
+$("openDrv").onclick=openDrv;
+$("dClose").onclick=()=>$("drvOv").classList.remove("on");
+$("dkReady").onclick=()=>{dMode="ready";$("dPick").value="";dFillPick();$("dBalHint").textContent="Type what the customer still has to pay. Write 0 if everything is paid.";};
+$("dkOrder").onclick=()=>{dMode="order";$("dPick").value="";dFillPick();$("dBalHint").textContent="";};
+$("dPick").onchange=()=>dPreview(true);
+$("dCustQ").addEventListener("input",dCustList);
+$("dCust").onchange=()=>{const c=(S.customers||[]).find(x=>String(x.id)===$("dCust").value);if(c){$("dName").value=c.name||"";$("dPhone").value=c.phone||"";$("dLoc").value=c.location||"";}};
+$("dSend").onclick=async()=>{
+  if(!dPick)return say2("dMsg",dMode==="ready"?"Choose the readymade product.":"Choose the finished order.");
+  const name=$("dName").value.trim(),phone=$("dPhone").value.trim(),bal=$("dBal").value;
+  if(!name)return say2("dMsg","Write the customer name.");
+  if(!phone)return say2("dMsg","Write the customer phone number.");
+  if(bal===""||!(Number(bal)>=0))return say2("dMsg","Write the remaining balance (0 if the customer paid everything).");
+  say2("dMsg","");busy("Sending to the driver…");
+  const r=await api("/api/workshop/dispatch/driver/send",{mode:dMode,productId:dMode==="ready"?dPick.id:undefined,jobId:dMode==="order"?dPick.jobId:undefined,customer:{name,phone,location:$("dLoc").value.trim()},balance:bal,note:$("dNote").value.trim()});busy("");
+  if(!r.ok)return say2("dMsg",r.error||"Could not send.");
+  ["dName","dPhone","dLoc","dBal","dNote","dCustQ"].forEach(i=>$(i).value="");$("dBalHint").textContent="";
+  dFillPick();dCustList();dWayList();render();say2("dMsg",r.message||"Sent.","ok");
+};
+$("dWay").addEventListener("click",async e=>{
+  const dv=e.target.closest("[data-ddeliv]"),cn=e.target.closest("[data-dcancel]");
+  if(dv){if(!confirm("Mark this as delivered? “✅ DELIVERED” will be posted in the driver topic."))return;busy("Posting delivered…");const r=await api("/api/workshop/dispatch/driver/delivered",{id:dv.dataset.ddeliv});busy("");dWayList();render();say2("dMsg",r.ok?r.message:(r.error||"Could not mark delivered."),r.ok?"ok":"bad");}
+  else if(cn){if(!confirm("Remove this from “On the way”? The message already posted in Telegram stays there."))return;const r=await api("/api/workshop/dispatch/driver/cancel",{id:cn.dataset.dcancel});dFillPick();dWayList();render();say2("dMsg",r.ok?r.message:(r.error||"Could not remove."),r.ok?"ok":"bad");}
+});
+
+// MATERIAL ─ cut (group + app at once) and send everything that is available
+const mdAvail=()=>(S.materials||[]).filter(m=>Number(m.qty)>0);
+function mdRender(){
+  const A=mdAvail(),prev=$("mdSel").value;
+  $("mdSel").innerHTML='<option value="">— Choose the material —</option>'+A.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name+(m.type?" "+m.type:""))+" · "+nfm(m.qty)+" "+esc(m.unit||"")+'</option>').join("");
+  if(A.some(m=>m.id===prev))$("mdSel").value=prev;
+  mdLeft();
+  $("mdCount").textContent=A.length+" kinds";
+  $("mdList").innerHTML=A.map(m=>'<div class="r"><span>'+esc(m.name+(m.type?" "+m.type:""))+'</span><b>'+nfm(m.qty)+" "+esc(m.unit||"")+'</b></div>').join("")||'<div class="hint" style="padding:10px 0">No material has stock right now.</div>';
+  $("mdAll").disabled=!A.length;
+}
+function mdLeft(){const m=mdAvail().find(x=>x.id===$("mdSel").value),q=Number($("mdQty").value);$("mdLeft").textContent=m?(q>0?(q>m.qty?"⚠ Only "+nfm(m.qty)+" "+m.unit+" available.":"Left after the cut: "+nfm(Math.round((m.qty-q)*1000)/1000)+" "+m.unit):"Available: "+nfm(m.qty)+" "+m.unit):"";}
+$("mdSel").onchange=mdLeft;$("mdQty").addEventListener("input",mdLeft);
+$("openMat").onclick=()=>{placeWarn("mdWarn",S.settings&&S.settings.material,"Material");say2("mdMsg","");mdRender();$("mdOv").classList.add("on");};
+$("mdClose").onclick=()=>$("mdOv").classList.remove("on");
+$("mdCut").onclick=async()=>{
+  const m=mdAvail().find(x=>x.id===$("mdSel").value),q=Number($("mdQty").value);
+  if(!m)return say2("mdMsg","Choose the material you cut.");
+  if(!(q>0))return say2("mdMsg","Write the amount you cut (bigger than 0).");
+  if(q>m.qty)return say2("mdMsg","Only "+nfm(m.qty)+" "+m.unit+" is available.");
+  if(!confirm("Cut "+nfm(q)+" "+m.unit+" of "+m.name+(m.type?" "+m.type:"")+"?\nIt is posted in the group and taken off the stock now."))return;
+  say2("mdMsg","");busy("Cutting and sending…");
+  const r=await api("/api/workshop/dispatch/material/cut",{id:m.id,qty:q,note:$("mdNote").value.trim()});busy("");
+  if(r.ok){$("mdQty").value="";$("mdNote").value="";}
+  mdRender();render();say2("mdMsg",r.ok?r.message:(r.error||"Could not cut."),r.ok?"ok":"bad");
+};
+$("mdAll").onclick=async()=>{
+  if(!mdAvail().length)return say2("mdMsg","No material has stock to send.");
+  say2("mdMsg","");busy("Sending the available materials…");
+  const r=await api("/api/workshop/dispatch/material/send-all",{note:$("mdAllNote").value.trim()});busy("");
+  if(r.ok)$("mdAllNote").value="";
+  say2("mdMsg",r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");
 };
 (async()=>{
   let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
