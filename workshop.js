@@ -22,7 +22,7 @@ function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop-data.json");
-  let db = { admins: {}, sent: {}, jobs: {}, dispatches: {}, log: [], catalog: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
+  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], dispatches: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
 
   // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
   let chain = Promise.resolve();
@@ -35,9 +35,10 @@ function register(app, ctx) {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "workshop_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { admins: {}, sent: {}, jobs: {}, dispatches: {}, log: [], catalog: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", ...d };
     if (!Array.isArray(db.catalog)) db.catalog = [];
-    for (const k of ["admins", "sent", "jobs", "dispatches"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
+    if (!Array.isArray(db.dispatches)) db.dispatches = [];
+    for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
     // v157: start the Workshop queue fresh from this deployment; retain historical records in storage.
     if (db.cutoverVersion !== 157 || !db.cutoverAt) { db.cutoverAt = new Date().toISOString(); db.cutoverVersion = 157; await persist(); }
@@ -131,7 +132,7 @@ function register(app, ctx) {
     const entity = await resolveTarget(acc, g);
     const replyTo = g.topic > 1 ? Number(g.topic) : undefined;
     if (buf) return await acc.client.sendFile(entity, { file: buf, caption: html ? caption : String(caption || "").slice(0, 4000), parseMode: html ? "html" : undefined, forceDocument: false, ...(replyTo ? { replyTo } : {}) });
-    return await acc.client.sendMessage(entity, { message: html ? caption : String(caption || "").slice(0, 4000), ...(replyTo ? { replyTo } : {}) });
+    return await acc.client.sendMessage(entity, { message: html ? caption : String(caption || "").slice(0, 4000), parseMode: html ? "html" : undefined, ...(replyTo ? { replyTo } : {}) }); // v171: text posts were missing parseMode, so <b> tags showed literally
   }
 
   async function botEdit(ref, caption, markup, html) { // change the text of a posted message (and drop its button); never throws
@@ -352,17 +353,6 @@ function register(app, ctx) {
   async function onButton(cb) {
     const [action, id] = String(cb?.data || "").split(":");
     const answer = (text, alert) => tg("answerCallbackQuery", { callback_query_id: cb.id, text: String(text).slice(0, 190), show_alert: !!alert }).catch(() => {});
-    if (action === "wdispatchdone") {
-      const d = db.dispatches && db.dispatches[String(id)];
-      if (!d) return answer("Dispatch record not found.", true);
-      if (d.deliveredAt) return answer("Already marked delivered.", true);
-      if (d.target && chatId !== String(d.target.chat)) return answer("Use the delivery button in the assigned Driver topic.", true);
-      d.deliveredAt = stamp(); d.deliveredBy = [cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") || "Driver";
-      log(d.key || "open", { name: d.deliveredBy }, "Driver marked delivered · " + (d.label || id), true, "Delivery report recorded for Main Admin.");
-      persist();
-      try { await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [[{ text: "✅ DELIVERED · " + d.deliveredBy, callback_data: "wdispatchdone:" + id }]] } }); } catch {}
-      return answer("✅ Delivery reported to Main Admin.", false);
-    }
     const j = db.jobs[String(id)];
     if (!j) return answer("This job was not found any more.", true);
     const chatId = String(cb.message?.chat?.id || "");
@@ -445,6 +435,10 @@ function register(app, ctx) {
       // v169: Driver dispatch can target every saved customer, including customers without orders.
       customers: (() => { const records = typeof ctx.getCustomerRecords === "function" ? ctx.getCustomerRecords() : []; const tg = typeof ctx.getCustomers === "function" ? ctx.getCustomers() : []; const byId = new Map(); for (const c of records || []) { const id = String(c.telegramId || c.id || ""); byId.set(id || "record:" + c.id, { id: String(c.id || id), telegramId: id, name: clip(c.name, 120), phone: clip(c.phone || c.additionalPhone, 40), location: clip(c.location, 240), customerType: clip(c.customerStatus || "Customer", 40), username: clip(c.username, 80), source: clip(c.source, 40), additionalPhone: clip(c.additionalPhone, 40), lastConversation: clip(c.lastConversation, 500), photo: c.photo || c.photoId || "", interests: Array.isArray(c.interests) ? c.interests : [], customerCode: clip(c.id, 40) }); } for (const c of tg || []) { const id = String(c.id || ""); if (!byId.has(id)) byId.set(id, { id, telegramId: id, name: clip(c.name || c.first_name, 120), username: c.username ? "@" + clip(c.username, 60) : "", customerType: "Telegram contact", phone: "", location: "" }); else { const v = byId.get(id); if (!v.name) v.name = clip(c.name || c.first_name, 120); if (!v.username && c.username) v.username = "@" + clip(c.username, 60); } } return [...byId.values()].filter(c => c.name || c.phone || c.username).slice(0, 1000); })(),
       readymade: inProg,
+      // v171 Driver dispatch: readymade products a customer can buy (minus the ones already on their way) + finished ORDER jobs not yet with the driver
+      stockProducts: (typeof R().wsStockProducts === "function" ? R().wsStockProducts() : []).filter(p => !dispatchesOf(key).some(d => d.productId === p.id && d.status === "sent")),
+      dispatchOrders: Object.values(db.jobs).filter(j => j.key === key && j.stage === "finished" && isOrderJob(j) && !j.driver).sort((a, b) => String(b.createdAtIso || b.createdAt).localeCompare(String(a.createdAtIso || a.createdAt))).slice(0, 120).map(j => { const o = j.orderId ? findOrder(j.orderId) : null, bal = balanceOfOrder(o); return { jobId: j.id, name: j.name, codes: j.codes || [], size: fmtSize(j.size) || "", qty: j.qty || 1, orderLabel: j.orderLabel || "", photo: j.photoId || "", customerName: clip(o?.customerName, 100), phone: clip(o?.phone || o?.telegramPhone, 40), location: clip(o?.location, 240), total: bal.total, advance: bal.advance, balance: bal.balance, paidFull: bal.paidFull, hasOrder: !!o }; }),
+      dispatches: [...dispatchesOf(key)].reverse().slice(0, 60).map(compactDispatch),
       // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
       // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
       jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
@@ -599,93 +593,165 @@ function register(app, ctx) {
     if (j.stockMsg) await botEdit(j.stockMsg, jobCaption(j, "stock", stockExtra(j)), kbStock(j));
     persist(); res.json({ ...view(req.actor), ok: true, message: "♻️ Product restocked and returned to In Stock." });
   });
-  // Explicit dispatch messages from the Production & Dispatch workspace.
-  router.post("/dispatch/send", async (req, res) => {
-    const kind = String(req.body?.kind || "");
-    if (!["driver", "material"].includes(kind)) return res.status(400).json({ ...view(req.actor), ok: false, error: "Choose a valid dispatch destination." });
-    const target = settingsOf(keyOf(req.actor))[kind];
-    if (!target) return res.status(400).json({ ...view(req.actor), ok: false, error: `The ${kind.toUpperCase()} Telegram topic is not selected. Choose it in Production & Dispatch settings and save first.` });
-    let message = String(req.body?.text || "").trim().slice(0, 3000);
-    if (!message && !req.body?.orderId && !req.body?.materialId && !req.body?.allAvailableMaterials) return res.status(400).json({ ...view(req.actor), ok: false, error: "Select an order, choose all available materials, or enter dispatch details." });
-    let media = null;
-    if (kind === "driver" && req.body?.customerId) {
-      const customerId = String(req.body.customerId);
-      const records = typeof ctx.getCustomerRecords === "function" ? ctx.getCustomerRecords() : [];
-      const tg = typeof ctx.getCustomers === "function" ? ctx.getCustomers() : [];
-      const rec = (records || []).find(c => String(c.id) === customerId || String(c.telegramId || "") === customerId);
-      const contact = (tg || []).find(c => String(c.id) === customerId);
-      if (!rec && !contact) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer was not found in the customer directory." });
-      const customer = rec || {};
-      const tgCustomer = contact || {};
-      const name = customer.name || tgCustomer.name || tgCustomer.first_name || "Customer";
-      const phone = customer.phone || customer.additionalPhone || "";
-      const location = customer.location || "";
-      const username = customer.username || (tgCustomer.username ? "@" + tgCustomer.username : "");
-      const customerType = customer.customerStatus || "Telegram contact";
-      const details = [["Customer", name], ["Customer ID", customer.id || customerId], ["Type / Status", customerType], ["Phone", phone], ["Additional phone", customer.additionalPhone], ["Telegram", username], ["Location", location], ["Source", customer.source], ["Last conversation", customer.lastConversation], ["Interested products", Array.isArray(customer.interests) ? customer.interests.join(", ") : ""]].filter(x => clip(x[1], 500));
-      message += "\n\n" + details.map(([k,v]) => `${k}: ${clip(v,500)}`).join("\n");
-      if (location) { const mapUrl = /^https?:\/\//i.test(location) ? location : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(location); message += `\nLocation map: ${mapUrl}`; }
-      if (customer.photo || customer.photoId) media = await photoBuf(customer.photo || customer.photoId);
-    }
-    if (kind === "driver" && req.body?.productId) {
-      const cat = db.catalog.find(p => String(p.id) === String(req.body.productId));
-      const live = (typeof R().inProgress === "function" ? R().inProgress() : []).find(p => String(p.id) === String(req.body.productId));
-      const chosen = cat || live;
-      if (!chosen) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected available product was not found." });
-      const productIdLabel = clip(chosen.code || chosen.productId || chosen.id, 60); const modelLabel = clip(chosen.model || chosen.desc || chosen.name || chosen.ptype, 100); message += `\n\nAvailable product\nProduct ID: ${productIdLabel}\nModel: ${modelLabel}\nProduct: ${clip(chosen.name || chosen.model || chosen.desc || chosen.code, 120)}`;
-      if (cat?.photo) media = await photoBuf(cat.photo);
-      else if (chosen.photo) media = await orderPhotoBuf({ photo: chosen.photo });
-    }
-    if (kind === "driver" && req.body?.orderId) {
-      const order = (ctx.getOrders() || []).find(o => String(o.id) === String(req.body.orderId));
-      if (!order) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected customer order was not found." });
-      const loc = clip(order.location, 240);
-      const mapUrl = /^https?:\/\//i.test(loc) ? loc : (loc ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(loc) : "");
-      const details = [["Customer", order.customerName], ["Phone", order.phone || order.telegramPhone], ["Product", order.product], ["Product ID", order.productId || order.code], ["Model", order.model], ["Order ID", order.orderId], ["Location", loc], ["Delivery date", order.deliveryDate]].filter(x => clip(x[1], 240));
-      message += "\n\n" + details.map(([k,v]) => `${k}: ${clip(v,240)}`).join("\n");
-      if (mapUrl) message += `\nLocation map: ${mapUrl}`;
-      media = await orderPhotoBuf(order);
-    }
-    if (kind === "material" && req.body?.allAvailableMaterials) {
-      const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
-      const available = inventory.filter(m => Number(m.qty) > 0);
-      if (!available.length) return res.status(400).json({ ...view(req.actor), ok: false, error: "There are no materials with available stock to send." });
-      const rows = available.map((m, i) => `${i + 1}. ${clip(m.name, 120)}${m.type ? " " + clip(m.type, 80) : ""} — ${clip(String(m.qty), 40)} ${clip(m.unit || "", 30)}`);
-      message = `ALL AVAILABLE WORKSHOP MATERIALS\nTotal material types: ${available.length}\n\n${rows.join("\n")}` + (message ? `\n\nNotes / dispatch instructions: ${message}` : "");
-    } else if (kind === "material" && req.body?.materialId) {
-      const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
-      const item = inventory.find(m => String(m.id) === String(req.body.materialId));
-      if (!item) return res.status(404).json({ ...view(req.actor), ok: false, error: "Selected material was not found in current inventory." });
-      const qty = Number(req.body.qty);
-      if (!(qty > 0) || qty > Number(item.qty || 0)) return res.status(400).json({ ...view(req.actor), ok: false, error: `Enter a quantity up to the available ${item.qty} ${item.unit}.` });
-      message = `Material: ${item.name}${item.type ? " " + item.type : ""}\nRequested quantity: ${qty} ${item.unit}\nAvailable stock: ${item.qty} ${item.unit}` + (message ? `\nNotes: ${message}` : "");
+  // ═══ v171 DISPATCH (rebuilt) ═════════════════════════════════════════════════════════════════
+  // Opened from the two small buttons at the bottom of the page. Every message is sent from the admin's OWN Telegram account (never the bot).
+  // A user account cannot attach inline buttons, so "Delivered" is a button in the mini app; pressing it replies "✅ DELIVERED" in the driver topic.
+  const birr = n => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }) + " Birr";
+  const num0 = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "").replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : NaN; };
+  const mapLink = loc => { const l = clip(loc, 240); if (!l) return ""; return /^https?:\/\//i.test(l) ? l : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(l); };
+  const capLines = (lines, max) => { let out = ""; for (const l of lines) { if ((out ? out.length + 1 : 0) + l.length > max) break; out += (out ? "\n" : "") + l; } return out; };
+  const balanceOfOrder = o => { if (!o) return { total: 0, advance: 0, balance: 0, paidFull: false }; const total = Math.max(0, num0(o.payment) || 0), advance = Math.max(0, num0(o.advance) || 0); return { total, advance, paidFull: !!o.paidFull, balance: o.paidFull ? 0 : Math.max(0, Math.round((total - advance) * 100) / 100) }; };
+  const dispatchesOf = key => (db.dispatches || []).filter(d => d.key === key);
+  const compactDispatch = d => ({ id: d.id, kind: d.kind, name: d.name, codes: d.codes || [], size: d.size || "", qty: d.qty || 1, orderLabel: d.orderLabel || "", customer: d.customer || {}, balance: d.balance, note: d.note || "", status: d.status, sentAt: d.sentAt, sentBy: d.sentBy, deliveredAt: d.deliveredAt || "", deliveredBy: d.deliveredBy || "", photo: d.photo || "", photoSrc: d.photoSrc || "" });
+  async function userReply(actor, g, replyToId, text) { // a reply in the same topic, from the admin's own account
+    const acc = accountOf(actor);
+    if (!acc?.ready) throw new Error("Your own Telegram account is not connected. Connect it before sending to topics.");
+    const entity = await resolveTarget(acc, g);
+    const replyTo = replyToId ? Number(replyToId) : (g.topic > 1 ? Number(g.topic) : undefined);
+    return await acc.client.sendMessage(entity, { message: text, parseMode: "html", ...(replyTo ? { replyTo } : {}) });
+  }
+  function driverDispatchCaption(d, by, at, max) {
+    const model = clip(d.model || d.name, 100), codes = d.codes && d.codes.length ? d.codes : [];
+    const shown = codes.slice(0, 6).map(c => "<b>" + esc(c + (model ? "-" + model : "")) + "</b>");
+    if (codes.length > 6) shown.push("+" + (codes.length - 6) + " more");
+    if (!codes.length && model) shown.push("<b>" + esc(model) + "</b>");
+    const c = d.customer || {}, url = mapLink(c.location), locIsUrl = /^https?:\/\//i.test(clip(c.location, 240));
+    const lines = [
+      "<b>AMBAR FURNITURE</b>", "<b>🚚 AMBAR DELIVERY — FOR THE DRIVER</b>", "",
+      ...shown,
+      ...(d.orderLabel ? ["Order ID: " + esc(clip(d.orderLabel, 40))] : []),
+      ...(d.size ? ["Measurement: " + esc(clip(d.size, 80))] : []),
+      "Quantity: " + (d.qty || 1), "",
+      "👤 Customer: <b>" + esc(clip(c.name, 100)) + "</b>",
+      "📞 Phone: " + esc(clip(c.phone, 40)),
+      ...(c.location ? ["📍 Location: " + (locIsUrl ? "see map" : esc(clip(c.location, 160)))] : []),
+      ...(url ? ['🗺 <a href="' + esc(url).replace(/"/g, "&quot;") + '">Open map</a>'] : []),
+      "💰 Remaining balance: <b>" + esc(birr(d.balance)) + "</b>" + (d.balance > 0 ? " — collect on delivery" : " — fully paid"),
+      ...(d.note ? ["", "📝 " + esc(clip(d.note, 220))] : []),
+      "", "Sent by " + esc(by) + " · " + esc(at)
+    ];
+    return capLines(lines, max);
+  }
+  router.post("/dispatch/driver/send", async (req, res) => {
+    const key = keyOf(req.actor), s = settingsOf(key), b = req.body || {};
+    const fail = (error, code = 400) => res.status(code).json({ ...view(req.actor), ok: false, error });
+    if (!s.driver) return fail("The DRIVER topic is not chosen. Choose it in the settings at the top of this page and save first.");
+    const mode = b.mode === "order" ? "order" : b.mode === "ready" ? "ready" : "";
+    if (!mode) return fail("Choose Readymade sale or Finished order.");
+    const cu = b.customer || {}, customer = { name: clip(cu.name, 100), phone: clip(cu.phone, 40), location: clip(cu.location, 240) };
+    if (!customer.name) return fail("Write the customer name.");
+    if (!customer.phone) return fail("Write the customer phone number.");
+    const balance = num0(b.balance);
+    if (b.balance === "" || b.balance == null || !Number.isFinite(balance) || balance < 0) return fail("Write the remaining balance (0 if the customer already paid everything).");
+    const d = { id: uid(), key, kind: mode, customer, balance: Math.round(balance * 100) / 100, note: clip(b.note, 300), status: "sent", sentBy: clip(req.actor?.name, 60) || "Admin", sentAt: stamp(), sentAtIso: new Date().toISOString(), codes: [], name: "", size: "", qty: 1, orderLabel: "", photo: "", photoSrc: "" };
+    let buf = null, job = null;
+    if (mode === "order") {
+      job = db.jobs[String(b.jobId)];
+      if (!job || job.key !== key) return fail("This finished order was not found any more.", 404);
+      if (job.stage !== "finished") return fail("This product is not finished yet.");
+      if (job.driver) return fail("This order was already sent to the driver.");
+      Object.assign(d, { jobId: job.id, name: job.name, model: job.name, codes: job.codes || [], size: fmtSize(job.size) || "", qty: job.qty || 1, orderLabel: job.orderLabel || "", photo: job.photoId || "", photoSrc: job.photoId ? "/api/workshop-photo/" + job.photoId + ".jpg" : "" });
+      buf = job.photoId ? await photoBuf(job.photoId) : null;
+    } else {
+      const p = (typeof R().wsStockProducts === "function" ? R().wsStockProducts() : []).find(x => String(x.id) === String(b.productId));
+      if (!p) return fail("This readymade product was not found in Reports (it may have been moved).", 404);
+      if (dispatchesOf(key).some(x => x.productId === p.id && x.status === "sent")) return fail("This product is already on its way to a customer.");
+      Object.assign(d, { productId: p.id, name: p.model || p.desc || p.code, model: p.model || p.desc || "", codes: p.code ? [p.code] : [], size: clip(p.desc && p.model ? p.desc : "", 80), photo: p.photo || "", photoSrc: p.photo ? "/api/reports-photo/" + p.photo + ".jpg" : "" });
+      if (p.photo && typeof R().readymade === "function") { try { buf = await R().readymade().photoBuf(p.photo); } catch {} }
     }
     try {
-      const title = kind === "driver" ? "🚚 DRIVER DISPATCH" : "🧱 MATERIAL DISPATCH";
-      const lines = String(message).split("\n");
-      const parts = []; let part = "";
-      for (const line of lines) {
-        if (part && (part.length + line.length + 1) > 3400) { parts.push(part); part = ""; }
-        part += (part ? "\n" : "") + line;
-      }
-      if (part || !parts.length) parts.push(part);
-      for (let i = 0; i < parts.length; i++) {
-        const continuation = parts.length > 1 ? `\nPART ${i + 1}/${parts.length}` : "";
-        const caption = `<b>AMBAR FURNITURE</b>\n<b>${esc(title)}</b>${continuation}\n\n${esc(parts[i])}\n\nSent by: ${esc(req.actor?.name || "Admin")}`;
-        await userPost(req.actor, target, kind === "driver" ? media : null, caption, true);
-      }
-      if (kind === "driver") {
-        const dispatchId = uid();
-        db.dispatches[dispatchId] = { key: keyOf(req.actor), target, label: clip(message.split("\\n")[0] || "Product delivery", 100), createdAt: stamp(), deliveredAt: "", deliveredBy: "" };
-        await tg("sendMessage", { chat_id: target.chat, ...(target.topic > 1 ? { message_thread_id: target.topic } : {}), text: "🚚 <b>Delivery confirmation</b>\\nWhen the product reaches the customer, tap the button below. Main Admin will receive the delivery report.", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "✅ DELIVERED — REPORT TO MAIN ADMIN", callback_data: "wdispatchdone:" + dispatchId }]] } });
-        persist();
-      }
-      log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, true, "Sent to the selected Telegram topic.");
-      return res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "driver" ? "Driver" : "Material"} dispatch sent to the selected Telegram topic.` });
+      const ref = await userPost(req.actor, s.driver, buf, driverDispatchCaption(d, d.sentBy, d.sentAt, buf ? 1000 : 3900), true);
+      d.msgId = Number(ref?.id) || 0;
     } catch (e) {
-      log(keyOf(req.actor), req.actor, `${kind === "driver" ? "Driver" : "Material"} dispatch message`, false, clip(e.message, 180));
-      return res.status(400).json({ ...view(req.actor), ok: false, error: `Telegram send failed: ${clip(e.message, 180)}` });
+      log(key, req.actor, `Driver dispatch · ${d.name}`, false, clip(e.message, 180));
+      return fail("Telegram send failed: " + clip(e.message, 180));
     }
+    db.dispatches = db.dispatches || []; db.dispatches.push(d); if (db.dispatches.length > 600) db.dispatches.splice(0, db.dispatches.length - 600);
+    if (job) { // the order job is now with the driver (also hides the old "Send to driver" button)
+      job.driver = { by: d.sentBy, at: d.sentAt, dispatchId: d.id };
+      if (job.stockMsg) await botEdit(job.stockMsg, jobCaption(job, "stock", stockExtra(job)), kbStock(job));
+      await saveOrderStage(job, { driverAt: d.sentAt, driverBy: d.sentBy });
+    }
+    log(key, req.actor, `Driver dispatch · ${d.name} → ${customer.name}`, true, "");
+    persist();
+    res.json({ ...view(req.actor), ok: true, message: "🚚 Sent to the driver topic. Press Delivered when the customer has received it." });
+  });
+  router.post("/dispatch/driver/delivered", async (req, res) => {
+    const key = keyOf(req.actor), s = settingsOf(key), d = dispatchesOf(key).find(x => x.id === String(req.body?.id));
+    const fail = (error, code = 400) => res.status(code).json({ ...view(req.actor), ok: false, error });
+    if (!d) return fail("This dispatch was not found.", 404);
+    if (d.status === "delivered") return fail("Already marked as delivered.");
+    if (!s.driver) return fail("The DRIVER topic is not chosen any more. Choose it in the settings and save first.");
+    const by = clip(req.actor?.name, 60) || "Admin", at = stamp(), c = d.customer || {};
+    const text = `<b>AMBAR FURNITURE</b>\n<b>✅ DELIVERED</b>\n\n${d.codes && d.codes.length ? "<b>" + esc(d.codes.join(", ") + (d.model ? "-" + clip(d.model, 100) : "")) + "</b>\n" : ""}${d.orderLabel ? "Order ID: " + esc(clip(d.orderLabel, 40)) + "\n" : ""}Customer: ${esc(clip(c.name, 100))}\nPhone: ${esc(clip(c.phone, 40))}\n\nMarked delivered by ${esc(by)} · ${esc(at)}`;
+    try { await userReply(req.actor, s.driver, d.msgId, text); }
+    catch (e) { log(key, req.actor, `Delivered · ${d.name}`, false, clip(e.message, 180)); return fail("Telegram send failed: " + clip(e.message, 180)); }
+    Object.assign(d, { status: "delivered", deliveredAt: at, deliveredBy: by });
+    const job = d.jobId ? db.jobs[String(d.jobId)] : null;
+    if (job) await saveOrderStage(job, { deliveredAt: at, deliveredBy: by });
+    log(key, req.actor, `Delivered · ${d.name} → ${c.name}`, true, "");
+    persist();
+    res.json({ ...view(req.actor), ok: true, message: "✅ Marked as delivered and posted in the driver topic." });
+  });
+  router.post("/dispatch/driver/cancel", (req, res) => { // wrong product / customer chosen: remove the "on the way" entry (the Telegram message stays)
+    const key = keyOf(req.actor), d = dispatchesOf(key).find(x => x.id === String(req.body?.id));
+    if (!d) return res.json({ ...view(req.actor), ok: false, error: "This dispatch was not found." });
+    if (d.status !== "sent") return res.json({ ...view(req.actor), ok: false, error: "A delivered dispatch cannot be removed." });
+    db.dispatches = db.dispatches.filter(x => x !== d);
+    const job = d.jobId ? db.jobs[String(d.jobId)] : null;
+    if (job && job.driver && job.driver.dispatchId === d.id) delete job.driver;
+    log(key, req.actor, `Driver dispatch removed · ${d.name}`, true, ""); persist();
+    res.json({ ...view(req.actor), ok: true, message: "Removed from “On the way”. The message already in Telegram is not deleted." });
+  });
+
+  // MATERIAL DISPATCH — (1) send everything that is available to the Material topic, (2) cut: choose material + amount → posted in the group AND cut in the app at once.
+  router.post("/dispatch/material/send-all", async (req, res) => {
+    const key = keyOf(req.actor), s = settingsOf(key);
+    const fail = (error, code = 400) => res.status(code).json({ ...view(req.actor), ok: false, error });
+    if (!s.material) return fail("The MATERIAL topic is not chosen. Choose it in the settings at the top of this page and save first.");
+    const inventory = typeof R().wsMaterials === "function" ? R().wsMaterials().materials || [] : [];
+    const available = inventory.filter(m => Number(m.qty) > 0);
+    if (!available.length) return fail("There are no materials with available stock to send.");
+    const note = clip(req.body?.note, 300), by = clip(req.actor?.name, 60) || "Admin", at = stamp();
+    const rows = available.map((m, i) => `${i + 1}. ${esc(clip(m.name, 120))}${m.type ? " " + esc(clip(m.type, 80)) : ""} — <b>${esc(clip(String(m.qty), 40))}</b> ${esc(clip(m.unit || "", 30))}`);
+    const head = `<b>AMBAR FURNITURE</b>\n<b>🧱 AVAILABLE MATERIALS</b>\nTotal: ${available.length} kinds · ${esc(at)}\n`;
+    const foot = (note ? `\n📝 ${esc(note)}` : "") + `\n\nSent by ${esc(by)}`;
+    const parts = []; let part = "";
+    for (const r of rows) { if (part && (part.length + r.length + 1) > 3300) { parts.push(part); part = ""; } part += (part ? "\n" : "") + r; }
+    if (part) parts.push(part);
+    try {
+      for (let i = 0; i < parts.length; i++) await userPost(req.actor, s.material, null, head + (parts.length > 1 ? `PART ${i + 1}/${parts.length}\n` : "") + "\n" + parts[i] + (i === parts.length - 1 ? foot : ""), true);
+    } catch (e) { log(key, req.actor, "Material dispatch · available list", false, clip(e.message, 180)); return fail("Telegram send failed: " + clip(e.message, 180)); }
+    log(key, req.actor, `Material dispatch · available list (${available.length})`, true, ""); persist();
+    res.json({ ...view(req.actor), ok: true, message: `✅ ${available.length} available materials sent to the Material topic.` });
+  });
+  router.post("/dispatch/material/cut", async (req, res) => {
+    const key = keyOf(req.actor), s = settingsOf(key), b = req.body || {};
+    const fail = (error, code = 400) => res.status(code).json({ ...view(req.actor), ok: false, error });
+    if (!s.material) return fail("The MATERIAL topic is not chosen. Choose it in the settings at the top of this page and save first.");
+    if (typeof R().wsCutNow !== "function") return fail("Material cutting is not available.");
+    const note = clip(b.note, 200), by = clip(req.actor?.name, 60) || "Admin", at = stamp();
+    const direct = req.actor?.role === "owner" || req.actor?.role === "open"; // other admins keep the v165 rule: the main admin approves the cut
+    if (!direct) {
+      const r = R().wsRequestCut({ id: b.id, qty: b.qty, note }, req.actor);
+      if (!r.ok) return fail(r.error);
+      let tgMsg = "";
+      try { await userPost(req.actor, s.material, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT REQUEST</b>\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\nAvailable: ${esc(String(r.request.before))} ${esc(r.request.unit)}\nRequested by: ${esc(r.request.by)}${note ? "\nNote: " + esc(note) : ""}\n\n⏳ Waiting for main admin approval.`, true); tgMsg = " Sent to the Material topic."; }
+      catch (e) { tgMsg = " Telegram send failed: " + clip(e.message, 180); }
+      log(key, req.actor, `Material · ${r.message}`, true, tgMsg); persist();
+      return res.json({ ...view(req.actor), ok: true, message: r.message + tgMsg });
+    }
+    const cut = R().wsCutNow({ id: b.id, qty: b.qty }, req.actor, note);
+    if (!cut.ok) return fail(cut.error);
+    try {
+      await userPost(req.actor, s.material, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT</b>\n\nMaterial: <b>${esc(cut.material)}</b>\nCut: <b>${esc(String(cut.qty))}</b> ${esc(cut.unit)}\nLeft: ${esc(String(cut.after))} ${esc(cut.unit)}${note ? "\nNote: " + esc(note) : ""}\n\nCut by ${esc(by)} · ${esc(at)}`, true);
+    } catch (e) {
+      R().wsRevertCut(cut.id, cut.qty, req.actor); // keep the app and the group in agreement
+      log(key, req.actor, `Material cut · ${cut.material} ${cut.qty}`, false, clip(e.message, 180)); persist();
+      return fail("Telegram send failed, so nothing was cut: " + clip(e.message, 180));
+    }
+    log(key, req.actor, `Material cut · ${cut.material} ${cut.qty} ${cut.unit}`, true, ""); persist();
+    res.json({ ...view(req.actor), ok: true, message: `✂️ Cut ${cut.qty} ${cut.unit} of ${cut.material}. Left: ${cut.after}. Posted in the group.` });
   });
   // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
   router.post("/material/add", (req, res) => {
@@ -813,7 +879,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v165", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v171", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
