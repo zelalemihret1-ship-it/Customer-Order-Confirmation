@@ -883,3 +883,11 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - Fixed the Workshop state response so the saved Material topic is returned to the interface after reload; this was the reason the saved slot displayed “Not chosen yet” again.
 - Added compact top-of-Workshop shortcuts to Material, Reports sold-out controls, and product records.
 - Expanded the test-message success text to describe all configured destinations.
+
+
+## v173.1 — Admin approvals, read-only Reports and product IDs
+- Home screen: Main Admin-only confirmation shortcut beside the AMBAR Furniture heading, with a red pending-movement count and live cutter sign-off status (15-second refresh). The shortcut opens Workshop → Materials, where pending cut requests can be approved/rejected.
+- Reports: product edits, status changes, deletion, material corrections/edits/reordering/deletion and reset are rejected by the API. Reports remains a live view of the same product/material records updated by Workshop. A read-only notice is displayed.
+- Product IDs: footwear types now receive sequential `CH0001`, `CH0002`… IDs; consult types receive `CON0001`, `CON0002`… IDs. Existing IDs are retained and new IDs skip used codes. Other product types keep their existing ID sequence.
+- Workshop assignment data endpoints are available to the Main Admin: `GET /api/workshop/assignments` and `POST /api/workshop/assignments` for `design`, `purchasing`, `material_transport`, `cutting`, `workshop`, `finishing` and `delivery`.
+- Google Sheets: the supplied Apps Script is a one-way backup (app → spreadsheet); it has no spreadsheet-read action. The existing connection is preserved and the backend workflow is not changed. A true continuous spreadsheet → app pull needs a separate, explicitly designed read/sync endpoint and Apps Script change; it is not represented as completed here.
