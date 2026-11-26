@@ -33,7 +33,9 @@ function register(app, ctx) {
   const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
   let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
   const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], senders: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
-  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, materialCutRequests: [], savedAt: "", tg: { ...TG0 } };
+  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, materialCutRequests: [], idCounters: {}, savedAt: "", tg: { ...TG0 } };
+  let workshopSource = null; // v174: Workshop → Reports live feed (dispatches, production jobs, assignments); read-only here
+  const feed = () => { try { return workshopSource ? workshopSource() : { dispatches: [], jobs: [] }; } catch { return { dispatches: [], jobs: [] }; } };
 
   // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
   const nowEth = () => {
@@ -73,6 +75,8 @@ function register(app, ctx) {
     for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
     for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
     if (!Array.isArray(db.materialCutRequests)) db.materialCutRequests = [];
+    if (!db.idCounters || typeof db.idCounters !== "object") db.idCounters = {};
+    for (const p of db.products) bumpCounter(p.code);
     layoutMaterials();
     if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
     if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
@@ -82,7 +86,8 @@ function register(app, ctx) {
     setTimeout(() => { tgTick().catch(() => {}); }, 20000); // a restart / redeploy refreshes the backup once
     // New Ethiopian month → the backup runs by itself so the next month's Workflow / Stock / Material tabs appear (checked every 20 minutes)
     // New Ethiopian day → S.TODAY turns into SOLD in the sheet (checked every 5 minutes); a new month also creates its tabs.
-    const t = setInterval(() => { if (cfg.scriptUrl && cfg.backup.d !== nowEth().d) backupNow().catch(() => {}); }, 5 * 60 * 1000);
+    // v174: the same check also catches a change that was not backed up yet (db.savedAt newer than the last backup) or a failed backup, so the sheet always catches up by itself.
+    const t = setInterval(() => { if (cfg.scriptUrl && (cfg.backup.d !== nowEth().d || cfg.backup.ok === false || (db.savedAt && cfg.backup.at && db.savedAt > cfg.backup.at))) backupNow().catch(() => {}); }, 2 * 60 * 1000);
     if (t.unref) t.unref();
   }
 
@@ -157,20 +162,21 @@ function register(app, ctx) {
   // v160: Shoe Shelf products keep the old Z1, Z2 … sequence. EVERY OTHER product type uses 1A, 1B … 1Z, 2A … 2Z, 3A … (number first, then the letter).
   const isShoeType = pt => /shoe\s*shelf/i.test(String(pt || ""));
   const otherCode = i => (Math.floor(i / 26) + 1) + "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i % 26];
+  // v174: SEQUENTIAL Product IDs by type — footwear (Shoe Shelf) → CH1, CH2, CH3 …; Console products → CON1, CON2, CON3 … Numbers only go up (a deleted ID is never handed out again).
+  // Every other product type keeps 1A, 1B … 1Z, 2A …
+  const isConType = pt => /\b(console|consult)/i.test(String(pt || ""));
+  const prefixOf = pt => isShoeType(pt) ? "CH" : isConType(pt) ? "CON" : "";
+  const numOf = (prefix, code) => { const m = new RegExp("^" + prefix + "(\\d+)$", "i").exec(String(code || "").trim()); return m ? +m[1] : 0; };
+  const counterOf = prefix => { let max = Math.max(0, Number((db.idCounters || {})[prefix]) || 0); for (const p of db.products) max = Math.max(max, numOf(prefix, p.code)); for (const c of reservedSet()) max = Math.max(max, numOf(prefix, c)); return max; };
   const peekSeqCodes = (n, ptype) => {
-    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())), out = [], gen = isShoeType(ptype) ? seqCode : otherCode;
-    for (let i = 0; out.length < n && i < 100000; i++) { const c = gen(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
+    const prefix = prefixOf(ptype), out = [];
+    if (prefix) { const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())); let i = counterOf(prefix); while (out.length < n && i < 1000000) { i++; const c = prefix + i; if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); } return out; }
+    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase()));
+    for (let i = 0; out.length < n && i < 100000; i++) { const c = otherCode(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
     return out;
   };
-  const nextSeqCode = ptype => {
-    const type = String(ptype || "").toLowerCase();
-    const prefix = /footwear|shoe/i.test(type) ? "CH" : /consult/i.test(type) ? "CON" : "";
-    if (!prefix) return peekSeqCodes(1, ptype)[0];
-    const used = new Set(db.products.map(p => String(p.code || "").toUpperCase()));
-    let n = 1;
-    while (used.has(prefix + String(n).padStart(4, "0"))) n++;
-    return prefix + String(n).padStart(4, "0");
-  };
+  const bumpCounter = code => { for (const prefix of ["CH", "CON"]) { const k = numOf(prefix, code); if (k) { db.idCounters = db.idCounters || {}; if (k > (db.idCounters[prefix] || 0)) db.idCounters[prefix] = k; } } };
+  const nextSeqCode = ptype => peekSeqCodes(1, ptype)[0];
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
     if (db.log.length > 6000) db.log.length = 6000;
@@ -178,7 +184,7 @@ function register(app, ctx) {
   const fail = (res, error) => res.json({ ok: false, error });
   const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
   const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v158", tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
+  const view = () => ({ appBuild: "v174", viewOnly: true, workshop: feed(), tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
   const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
 
   // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
@@ -417,15 +423,11 @@ function register(app, ctx) {
   router.use((req, res, next) => hasPerm(req.actor, "reports") ? next() : res.status(403).json({ ok: false, error: "Reports are only for admins the main admin gave the Reports section." }));
   const ownerOnly = (req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Only a main admin can do this." });
   router.use(express.json({ limit: "200kb" }));
-  // Reports is a live, read-only mirror of Workshop data. No role may edit,
-  // delete, move, sell, restock, correct or create products/materials here.
-  router.use((req, res, next) => {
-    if (req.method !== "POST") return next();
-    const p = String(req.path || "");
-    if (/^\/(product\/(edit|finish|sold|restock|times|undo|delete)|material\/(correct|edit|arrange|delete)|reset)$/.test(p))
-      return res.status(403).json({ ok: false, code: "REPORTS_READ_ONLY", error: "Reports is view-only. Make all product and material changes in Workshop." });
-    return next();
-  });
+  // v174: Reports is VIEW-ONLY for products and materials. Creating, editing and deleting happens ONLY in Workshop; these handlers are kept below (collected in OPS)
+  // and are reachable only through the Workshop module (wsOp). The old Reports URLs answer 403.
+  const OPS = {};
+  const wr = { post: (p, ...fns) => { OPS[p] = fns[fns.length - 1]; } };
+  router.use((req, res, next) => (req.method !== "GET" && /^\/(product|material)\//.test(req.path)) ? res.status(403).json({ ok: false, error: "Reports is view-only. Do this in the Workshop section." }) : next());
 
   router.get("/state", (req, res) => res.json({ ok: true, ...view() }));
 
@@ -446,7 +448,7 @@ function register(app, ctx) {
   }
   const readErr = f => (!f.model && !f.desc && !f.ptype) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
   // v160: products are NOT added in Reports any more — they are added only from the Workshop section (wsAddProduct below).
-  router.post("/product/edit", async (req, res) => {
+  wr.post("/product/edit", async (req, res) => {
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
     const f = readProduct(b), err = readErr(f);
@@ -463,7 +465,7 @@ function register(app, ctx) {
     audit("Report: product edited", `${p.code} ${lab(p)}`, req.actor);
     done(res, "✅ Saved.");
   });
-  router.post("/product/finish", (req, res) => { // Workflow → In Stock
+  wr.post("/product/finish", (req, res) => { // Workflow → In Stock
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     if (p.status !== "workflow") return fail(res, "This product is not in Workflow.");
@@ -471,7 +473,7 @@ function register(app, ctx) {
     audit("Report: product finished", `${p.code} → In Stock`, req.actor);
     done(res, `✅ ${p.code} is finished and now IN STOCK.`);
   });
-  router.post("/product/sold", (req, res) => { // In Stock → Sold (Ethiopian date + time recorded)
+  wr.post("/product/sold", (req, res) => { // In Stock → Sold (Ethiopian date + time recorded)
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
     if (p.status !== "stock") return fail(res, "Only a product that is IN STOCK can be sold.");
@@ -487,7 +489,7 @@ function register(app, ctx) {
     audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
     done(res, `💰 ${p.code} sold — ${p.sold.d} · ${ethClock(p.sold.t)}.`);
   });
-  router.post("/product/restock", (req, res) => {
+  wr.post("/product/restock", (req, res) => {
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     if (p.status !== "sold") return fail(res, "Only a Sold Out product can be restocked.");
@@ -498,7 +500,7 @@ function register(app, ctx) {
     done(res, `♻️ ${p.code} restocked and returned to In Stock.`);
   });
 
-  router.post("/product/times", (req, res) => { // adjust the Ethiopian dates + clock times (Started · Finished/jumped to stock · Sold) and the Sold type
+  wr.post("/product/times", (req, res) => { // adjust the Ethiopian dates + clock times (Started · Finished/jumped to stock · Sold) and the Sold type
     const b = req.body || {}, p = findP(b.id);
     if (!p) return fail(res, "Product not found.");
     const parts = [["added", "Start"], ["finished", "Finished (moved to Stock)"], ["sold", "Sold"]], applied = [];
@@ -519,7 +521,7 @@ function register(app, ctx) {
     audit("Report: dates adjusted", `${p.code} ${applied.join(" · ")}`, req.actor);
     done(res, `🕒 ${p.code}: dates and times saved.`);
   });
-  router.post("/product/undo", (req, res) => { // fix a mistake: Sold → In Stock, In Stock → Workflow
+  wr.post("/product/undo", (req, res) => { // fix a mistake: Sold → In Stock, In Stock → Workflow
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     if (p.status === "sold") { p.status = "stock"; delete p.sold; hist(p, "Sale cancelled → In Stock", req); }
@@ -528,7 +530,7 @@ function register(app, ctx) {
     audit("Report: product undo", `${p.code} → ${p.status}`, req.actor);
     done(res, `↩ ${p.code} moved back to ${p.status === "stock" ? "In Stock" : "Workflow"}.`);
   });
-  router.post("/product/delete", ownerOnly, (req, res) => {
+  wr.post("/product/delete", (req, res) => {
     const p = findP(req.body?.id);
     if (!p) return fail(res, "Product not found.");
     db.products = db.products.filter(x => x !== p);
@@ -567,7 +569,7 @@ function register(app, ctx) {
     done(res, type === "cut" ? `✂️ Cut ${qty} of ${matName(m)}. Left: ${m.qty}.` : `➕ Added ${qty} to ${matName(m)}. Now: ${m.qty}.`);
 };
   // STOCK EDIT (correction): wrong quantity typed by mistake → set the real quantity. Recorded as a "fix" movement (signed difference) with the reason.
-  router.post("/material/correct", (req, res) => {
+  wr.post("/material/correct", (req, res) => {
     const b = req.body || {}, m = findM(b.id);
     if (!m) return fail(res, "Material not found.");
     const to = num(b.qty);
@@ -579,7 +581,7 @@ function register(app, ctx) {
     audit("Report: material corrected", `${matName(m)} ${old} → ${to}`, req.actor);
     done(res, `✏️ ${matName(m)} corrected: ${old} → ${to}.`);
   });
-  router.post("/material/edit", (req, res) => {
+  wr.post("/material/edit", (req, res) => {
     const b = req.body || {}, m = findM(b.id);
     if (!m) return fail(res, "Material not found.");
     const name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || "MATERIAL", min = (b.min === "" || b.min == null) ? 0 : num(b.min);
@@ -591,7 +593,7 @@ function register(app, ctx) {
     done(res, "✅ Saved.");
   });
   // HOLD + DRAG: the app sends the new arrangement — the tables in order and, inside each table, the materials in order.
-  router.post("/material/arrange", (req, res) => {
+  wr.post("/material/arrange", (req, res) => {
     const b = req.body || {}, list = Array.isArray(b.order) ? b.order : [], gl = Array.isArray(b.groups) ? b.groups : [];
     const byId = new Map(db.materials.map(m => [m.id, m])), seen = new Set(), next = [];
     for (const it of list) {
@@ -608,7 +610,7 @@ function register(app, ctx) {
     audit("Report: materials rearranged", `${next.length} material(s)`, req.actor);
     done(res, "✅ Arrangement saved.");
   });
-  router.post("/material/delete", (req, res) => {
+  wr.post("/material/delete", (req, res) => {
     const m = findM(req.body?.id);
     if (!m) return fail(res, "Material not found.");
     db.materials = db.materials.filter(x => x !== m);
@@ -775,7 +777,7 @@ function register(app, ctx) {
       category: /^shoe shelf$/i.test(String(f.ptype || "").trim()) ? "SHOE SHELF" : "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
       photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40) };
     hist(p, "Added to Workflow (sent to the workshop)", req);
-    db.products.unshift(p); persist(); scheduleBackup();
+    bumpCounter(p.code); db.products.unshift(p); persist(); scheduleBackup();
     audit("Report: product added", `${p.code} ${lab(p)} (workshop)`, req.actor);
     return { id: p.id, code: p.code };
   }
@@ -812,12 +814,18 @@ function register(app, ctx) {
     persist(); scheduleBackup(); audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
     return { ok: true, code: p.code };
   }
+  // v174: Workshop runs the product / material write handlers (edit, correct, delete, arrange …). Same data, same Google Sheet backup (done() schedules it).
+  async function wsOp(name, body, actor) {
+    const fn = OPS[name]; if (!fn) return { ok: false, error: "Unknown action." };
+    let out = { ok: false, error: "No answer." };
+    await fn({ body: body || {}, actor: { name: clip(actor?.name, 60) || "Workshop", role: actor?.role, telegramId: actor?.telegramId } }, { json: o => { out = o; return o; } });
+    return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
+  }
   // v161: the Workshop "Material" tab uses the SAME materials and log as Reports → Material
   // v165: material cuts requested from Workshop require main-admin approval.
   function wsCutRequests() {
     return db.materialCutRequests.filter(x => x.status === "pending").slice().reverse().map(x => ({ ...x }));
   }
-  function wsCutHistory() { return db.materialCutRequests.slice().reverse().map(x => ({ ...x })); }
   function wsRequestCut(body, actor) {
     const m = findM(body?.id);
     if (!m) return { ok: false, error: "Material not found." };
@@ -835,21 +843,6 @@ function register(app, ctx) {
     audit("Report: material cut requested", `${matName(m)} ${qty} ${m.unit || "pcs"} — pending main-admin approval`, actor);
     persist();
     return { ok: true, request: req, message: `✂️ Cut request submitted for ${matName(m)}: ${qty} ${m.unit || "pcs"}. Waiting for main admin approval.` };
-  }
-  function wsRequestMaterialAdd(body, actor) {
-    const name = clip(body?.name, 100); if (!name) return { ok:false, error:"Write the material name." };
-    const qty = num(body?.qty || 0); if (Number.isNaN(qty) || qty < 0) return { ok:false, error:"Quantity must be 0 or more." };
-    const req = { id:uid(), requestType:"new", material:name, mtype:clip(body?.type,80), unit:clip(body?.unit,30)||"pcs", group:clip(body?.group,80)||"MATERIAL", qty, note:clip(body?.note,200), by:clip(actor?.name||"Workshop",60), created:stamp({actor}), status:"pending", decidedBy:"", decidedAt:"", decisionNote:"" };
-    db.materialCutRequests.push(req); persist(); audit("Report: material add requested", `${name} · ${qty} ${req.unit} pending main-admin approval`, actor);
-    return {ok:true, request:req, message:`Material add request submitted: ${name}. Waiting for main-admin confirmation.`};
-  }
-  function wsApproveMaterialAdd(id, approve, actor, note) {
-    const r=db.materialCutRequests.find(x=>String(x.id)===String(id)&&x.requestType==="new"); if(!r||r.status!=="pending") return {ok:false,error:"Material request not found or already decided."};
-    r.decidedBy=clip(actor?.name||"Main admin",60); r.decidedAt=stamp({actor}); r.decisionNote=clip(note,200)||"";
-    if(!approve){r.status="rejected";persist();return {ok:true,request:r,message:`Material request rejected: ${r.material}.`};}
-    const out=wsMaterial("new",{name:r.material,type:r.mtype,unit:r.unit,group:r.group,qty:r.qty,note:r.note},actor?.name);
-    if(!out.ok){r.status="pending";return {ok:false,error:out.error||"Could not create material."};}
-    r.status="approved"; r.after=r.qty; persist(); scheduleBackup(1500); return {ok:true,request:r,message:`Material confirmed and added: ${r.material}.`};
   }
   function wsApproveCut(id, approve, actor, note) {
     const r = db.materialCutRequests.find(x => String(x.id) === String(id));
@@ -909,6 +902,8 @@ function register(app, ctx) {
     fn({ body: body || {}, actor: { name: clip(byName, 60) || "Workshop" } }, { json: o => { out = o; } });
     return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
   }
+  // v174: every Reports product, read-only, for the Workshop "Records" tab (where products are edited / deleted)
+  const wsRecords = () => db.products.slice(0, 800).map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", status: p.status, salesName: p.salesName || "", note: p.note || "", sno: p.sno || "", category: p.category || "", capacity: p.capacity || "", location: p.location || "", deliveryDate: p.deliveryDate || "", changes: p.changes || "", photo: p.photo || "", stage: p.workshopStage || "", jobId: p.jobId || "", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "" }));
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
   // v173: data for the monthly PDF report (read only). The Workshop module filters it by month.
   const wsReportData = () => ({
@@ -939,6 +934,6 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsCutHistory, wsRequestCut, wsRequestMaterialAdd, wsApproveMaterialAdd, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
