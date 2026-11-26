@@ -137,6 +137,12 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 .drop b{color:var(--ink);font-size:14px}
 
 /* overlays */
+.gearbtn{width:40px;height:40px;border-radius:13px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0}
+.gearbtn:active{background:rgba(255,255,255,.25)}.gearbtn .i{width:21px;height:21px}
+.stcard{border:1px solid var(--line,#e6e1d6);border-radius:16px;padding:12px 14px;margin:12px 0;background:#fff}
+.stcard h3{margin:0 0 4px;font-size:14px}.stcard.danger{border-color:#f0c2be;background:#fff8f7}
+.stlist{margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.5}.stlist li{margin:1px 0}
+.sttog{display:flex;gap:10px;align-items:flex-start;margin:10px 0 0;font-size:13px}.sttog input{margin-top:3px;width:auto}
 .ov{position:fixed;inset:0;background:rgba(10,25,19,.55);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center;z-index:90}
 .ov.on{display:flex}
 .box{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:560px;max-height:88vh;overflow:auto;padding:12px 16px calc(18px + env(safe-area-inset-bottom,0px));animation:up .22s ease-out}
@@ -268,6 +274,7 @@ details.set{border-radius:var(--r)}
   <div class="row1">
     <a class="back" href="/home.html"><svg class="i" style="width:16px;height:16px"><use href="#i-left"/></svg>Home</a>
     <div class="ttl"><h1>Production &amp; Dispatch</h1><div class="sub">Workshop production, materials and driver coordination</div></div>
+    <button class="gearbtn" id="openSt" type="button" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
     <div class="logo">A</div>
   </div>
 </header>
@@ -420,6 +427,44 @@ details.set{border-radius:var(--r)}
   </div>
   <div class="btns"><button class="btn sec" id="dClose" type="button">Close</button></div>
 </div></div>
+<div class="ov" id="stOv"><div class="box">
+  <h2 style="margin:0 0 2px">⚙️ Settings</h2>
+  <div class="hint" style="margin:0">Workshop places, the monthly report and Start from 0.</div>
+  <div id="stMsg" class="msg" style="display:none"></div>
+
+  <div class="stcard">
+    <h3>📍 Workshop, finishing, stock &amp; driver places</h3>
+    <div class="hint" style="margin:0">Choose the Telegram groups and topics that jobs are posted in.</div>
+    <div class="btns"><button class="btn sec sm" id="stPlaces" type="button">Open places</button></div>
+  </div>
+
+  <div class="stcard">
+    <h3>📄 Monthly report (PDF)</h3>
+    <div class="hint" style="margin:0">When an Ethiopian month is finished, the <b>bot</b> sends the full PDF report (sold, finished, stock, workflow, jobs, dispatches, materials and movements, with photos) to the main admins. The new month then starts and the next report counts only the new month.</div>
+    <div class="hint" id="stMonth" style="margin:8px 0 0"></div>
+    <div id="stOwnerBox">
+      <label class="sttog"><input type="checkbox" id="stAuto"><span><b>Send the report automatically</b> when the month is finished</span></label>
+      <label class="sttog"><input type="checkbox" id="stZeroAuto"><span>After it is sent, also <b>start from 0</b> automatically (only the movements of the finished month are cleared)</span></label>
+    </div>
+    <div class="btns"><button class="btn gold sm" id="stSendNow" type="button">📄 Send this month's report to me now</button></div>
+  </div>
+
+  <div class="stcard danger" id="stZeroCard">
+    <h3>🔄 Start from 0</h3>
+    <div class="hint" style="margin:0">First the bot sends you the full PDF report. Then only the <b>old movements</b> are cleared.</div>
+    <div class="hint" style="margin:8px 0 0"><b>Kept — never removed:</b></div>
+    <ul class="stlist"><li>Standard products</li><li>Progress (jobs in the workshop / finishing) and Workflow orders</li><li>Products in stock</li><li>All materials and their stock</li></ul>
+    <div class="hint" style="margin:8px 0 0"><b>Cleared:</b> sold products, the material movements list, delivered driver dispatches and finished jobs already delivered. Deliveries still on the way stay.</div>
+    <div id="stOwnerOnly" class="hint" style="display:none;margin-top:8px">Only a main admin can start from 0.</div>
+    <div id="stZeroBox">
+      <label class="lab">Type <b>ZERO</b> to confirm</label>
+      <input type="text" id="stConfirm" placeholder="ZERO" autocomplete="off" autocapitalize="characters">
+      <div class="btns"><button class="btn danger" id="stZero" type="button">Start from 0</button><button class="btn sec sm" id="stForce" type="button" style="display:none">Reset anyway (no PDF)</button></div>
+    </div>
+  </div>
+  <div class="btns"><button class="btn sec" id="stClose" type="button">Close</button></div>
+</div></div>
+
 <div class="ov" id="mdOv"><div class="box">
   <h2 style="margin:0 0 2px">🧱 Material dispatch</h2>
   <div class="hint" style="margin:0">Posted in your Material topic from your own Telegram account.</div>
@@ -932,6 +977,29 @@ function mdLeft(){const m=mdAvail().find(x=>x.id===$("mdSel").value),q=Number($(
 $("mdSel").onchange=mdLeft;$("mdQty").addEventListener("input",mdLeft);
 $("openMat").onclick=()=>{placeWarn("mdWarn",S.settings&&S.settings.material,"Material");say2("mdMsg","");mdRender();$("mdOv").classList.add("on");};
 $("mdClose").onclick=()=>$("mdOv").classList.remove("on");
+// ── v173 ⚙ Settings: monthly PDF report + Start from 0 ──
+function stRender(){
+  const r=S.report||{},own=!!r.canManage;
+  $("stMonth").innerHTML="Current month: <b>"+esc(r.monthLabel||"")+"</b>"+(r.lastSent?"<br>Last report sent: <b>"+esc(r.lastSent.label)+"</b> · "+esc(r.lastSent.at)+" · "+(r.lastSent.sent||0)+" chat"+((r.lastSent.sent||0)===1?"":"s"):"<br>No monthly report has been sent yet.")+(r.lastReset?"<br>Last start from 0: "+esc(r.lastReset.at)+" · "+esc(r.lastReset.by):"")+((r.pending||[]).length?'<br><span style="color:var(--bad)">Waiting to be sent: '+r.pending.map(p=>esc(p.month)+(p.error?" ("+esc(p.error)+")":"")).join(", ")+"</span>":"");
+  $("stAuto").checked=r.auto!==false;$("stZeroAuto").checked=!!r.autoZero;
+  $("stAuto").disabled=$("stZeroAuto").disabled=!own;
+  $("stZeroBox").style.display=own?"block":"none";$("stOwnerOnly").style.display=own?"none":"block";
+}
+$("openSt").onclick=()=>{say2("stMsg","");$("stForce").style.display="none";$("stConfirm").value="";stRender();$("stOv").classList.add("on");};
+$("stClose").onclick=()=>$("stOv").classList.remove("on");
+$("stPlaces").onclick=()=>{$("stOv").classList.remove("on");$("setBox").open=true;$("setBox").scrollIntoView({behavior:"smooth",block:"start"});};
+async function stCfg(){const d=await api("/api/workshop/report/config",{auto:$("stAuto").checked,autoZero:$("stZeroAuto").checked});say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");stRender();}
+$("stAuto").onchange=stCfg;$("stZeroAuto").onchange=stCfg;
+$("stSendNow").onclick=async()=>{busy("Building the PDF…");const d=await api("/api/workshop/report/send-now",{});busy("");say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");stRender();};
+async function stDoZero(force){
+  if($("stConfirm").value.trim().toUpperCase()!=="ZERO"){say2("stMsg","Type ZERO in the box to confirm.","bad");return;}
+  busy(force?"Starting from 0…":"Sending the PDF, then starting from 0…");
+  const d=await api("/api/workshop/reset",{confirm:"ZERO",force:!!force});busy("");
+  say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");
+  $("stForce").style.display=(!d.ok&&d.canForce)?"inline-flex":"none";
+  if(d.ok){$("stConfirm").value="";render();}stRender();$("stOv").querySelector(".box").scrollTo({top:0,behavior:"smooth"});
+}
+$("stZero").onclick=()=>stDoZero(false);$("stForce").onclick=()=>stDoZero(true);
 $("mdCut").onclick=async()=>{
   const m=mdAvail().find(x=>x.id===$("mdSel").value),q=Number($("mdQty").value);
   if(!m)return say2("mdMsg","Choose the material you cut.");
