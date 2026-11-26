@@ -1,4 +1,8 @@
-## v172 — Photo as photo, Delivered button in the driver topic
+## v172 — Each topic only once, Photo as photo, Delivered button in the driver topic, working material Cut
+- **Each topic can be assigned only once.** The admin chooses his own places (Workshop, Finishing, Stock, Driver, Material). A topic already used by another admin, or by another place of the same admin, is hidden in the pickers, and Save refuses it too.
+- **✂️ Cut** (Material tab) now cuts at once for the main admin: stock goes down, the movement is saved in **Reports → Material** (and the Google Sheet backup) and it is posted in the Material topic if one is chosen. Before, this button only sent a pending request.
+- Material dispatch → Cut uses the same flow. A failed Telegram post (or no Material topic) no longer undoes the cut; it stays saved in Reports and the message tells you what happened.
+- Other admins still send a cut request that the main admin approves.
 - Dispatch photos are now sent as a real **photo** (before, the picture had no file name, so Telegram showed it as a file). Applies to every post sent from the admin's own account (workshop, finishing, stock, driver).
 - **✅ Delivered** is now a button in the **driver topic**: right under the dispatch message the bot adds one small reply with the button (a user account cannot attach buttons; the dispatch itself is still sent from the admin's own account). The driver presses it when the product arrives: the button message changes to "✅ DELIVERED · name · time", and 
 - No separate bot message about the delivery is sent to the admin any more (only the button message in the driver topic changes to ✅ DELIVERED).
