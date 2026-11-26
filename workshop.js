@@ -373,7 +373,6 @@ function register(app, ctx) {
       const job = d.jobId ? db.jobs[String(d.jobId)] : null;
       if (job) { try { await saveOrderStage(job, { deliveredAt: at, deliveredBy: by }); } catch {} }
       log(d.key, { name: by }, `Delivered · ${d.name} → ${c.name}`, true, "");
-      if (d.telegramId) { try { await tg("sendMessage", { chat_id: String(d.telegramId), parse_mode: "HTML", text: `<b>AMBAR FURNITURE</b>\n<b>✅ DELIVERED</b>\n\n${d.codes && d.codes.length ? "<b>" + esc(d.codes.join(", ") + (d.model ? "-" + clip(d.model, 100) : "")) + "</b>\n" : ""}${d.orderLabel ? "Order ID: " + esc(clip(d.orderLabel, 40)) + "\n" : ""}Customer: ${esc(clip(c.name, 100))}\nPhone: ${esc(clip(c.phone, 40))}\n\nDelivered by ${esc(by)} · ${esc(at)}` }); } catch {} } // tells the admin who sent it (works once he has started the bot)
       persist();
       return answer("✅ Delivered — thank you!");
     }
@@ -459,7 +458,7 @@ function register(app, ctx) {
       readymade: inProg,
       // v171 Driver dispatch: readymade products a customer can buy (minus the ones already on their way) + finished ORDER jobs not yet with the driver
       stockProducts: (typeof R().wsStockProducts === "function" ? R().wsStockProducts() : []).filter(p => !dispatchesOf(key).some(d => d.productId === p.id && d.status === "sent")),
-      dispatchOrders: Object.values(db.jobs).filter(j => j.key === key && j.stage === "finished" && isOrderJob(j) && !j.driver).sort((a, b) => String(b.createdAtIso || b.createdAt).localeCompare(String(a.createdAtIso || a.createdAt))).slice(0, 120).map(j => { const o = j.orderId ? findOrder(j.orderId) : null, bal = balanceOfOrder(o); return { jobId: j.id, name: j.name, codes: j.codes || [], size: fmtSize(j.size) || "", qty: j.qty || 1, orderLabel: j.orderLabel || "", photo: j.photoId || "", customerName: clip(o?.customerName, 100), phone: clip(o?.phone || o?.telegramPhone, 40), location: clip(o?.location, 240), total: bal.total, advance: bal.advance, balance: bal.balance, paidFull: bal.paidFull, hasOrder: !!o }; }),
+      dispatchOrders: Object.values(db.jobs).filter(j => { if (j.key !== key || j.stage !== "finished" || !isOrderJob(j) || j.driver) return false; const o = j.orderId ? findOrder(j.orderId) : null; return !!o && o.status !== "Rejected"; }).sort((a, b) => String(b.createdAtIso || b.createdAt).localeCompare(String(a.createdAtIso || a.createdAt))).slice(0, 120).map(j => { const o = j.orderId ? findOrder(j.orderId) : null, bal = balanceOfOrder(o); return { jobId: j.id, name: j.name, codes: j.codes || [], size: fmtSize(j.size) || "", qty: j.qty || 1, orderLabel: j.orderLabel || "", photo: j.photoId || "", customerName: clip(o?.customerName, 100), phone: clip(o?.phone || o?.telegramPhone, 40), location: clip(o?.location, 240), total: bal.total, advance: bal.advance, balance: bal.balance, paidFull: bal.paidFull, hasOrder: !!o }; }),
       dispatches: [...dispatchesOf(key)].reverse().slice(0, 60).map(compactDispatch),
       // v159: Progress must match the Workflow Products tab. Besides my own jobs it also lists every job linked to a product that is currently in Reports -> Workflow
       // (sent by another admin, or created before the cutover stamp) so a product shown "In workshop" is never missing from Progress.
