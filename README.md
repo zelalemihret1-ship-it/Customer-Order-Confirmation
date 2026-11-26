@@ -1,3 +1,16 @@
+## v171 — Dispatch rebuilt: two small buttons at the bottom
+- The old **Send & Dispatch** tab (Driver dispatch + Material dispatch) was removed completely, with its route `/api/workshop/dispatch/send`.
+- Production & Dispatch now ends with two small buttons fixed at the bottom of the page: **🚚 Driver dispatch** (badge = deliveries on the way) and **🧱 Material dispatch**. Each opens a sheet.
+- **Driver dispatch** → posted in the Driver topic from the admin's own Telegram account (never the bot): product photo, Product ID-Model, customer name / phone / location (+ map link), **remaining balance** and an optional note.
+  - 🛋 *Readymade sale*: choose a readymade product (Reports → Stock, or already Sold Out), pick the customer from the directory (or type), write the remaining balance.
+  - 📦 *Finished order*: choose a finished order; customer and balance are filled from the order (Payment − Advance, or 0 when Paid in full) and can be edited. The order then leaves the old Progress "Send to driver" button.
+  - **On the way** list with **✅ Delivered**: a Telegram user account cannot attach inline buttons, so the button is in the mini app. Pressing it posts "✅ DELIVERED" as a reply to the dispatch message in the Driver topic. **Remove** takes a wrong entry off the list (the Telegram message stays).
+- **Material dispatch** → Material topic, from the admin's own account:
+  - **✂️ Cut**: choose the material, write the amount → posted in the group AND taken off the stock (and written in the movement log / Sheet backup) at the same moment. If the Telegram post fails the stock is put back. Admins who are not the main admin still send a *cut request* that the main admin approves (v165 rule).
+  - **📤 Send available materials**: every material with stock > 0 and its quantity.
+- Fix: text-only posts from the user account were missing `parseMode: "html"`, so `<b>` tags appeared literally (also affected the v165 cut-request posts).
+- Files changed: `workshop.js`, `reports.js` (wsCutNow, wsRevertCut, wsStockProducts), `public/workshop.html`, `README.md`. Check: `/api/workshop-version` → v171.
+
 ## v165 — Material cut approval + user-account topic sending
 - Added a dedicated **Material topic** setting.
 - Material **Cut** now creates a pending request; stock is reduced only after the **main admin approves** it.
@@ -845,11 +858,3 @@ NOTE: Archiving is performed on the next full rebuild/sync after this script is 
 - Fixed the Workshop state response so the saved Material topic is returned to the interface after reload; this was the reason the saved slot displayed “Not chosen yet” again.
 - Added compact top-of-Workshop shortcuts to Material, Reports sold-out controls, and product records.
 - Expanded the test-message success text to describe all configured destinations.
-
-
-## v171 — Rebuilt Driver + Material Dispatch
-- Replaced the old combined dispatch presentation with a new dispatch workspace opened from a compact floating bottom-corner 🚚 icon.
-- Product delivery dispatch distinguishes ORDER products from READYMADE products and lets the admin select the buyer/customer, order and product.
-- Driver dispatch includes the selected customer/order details and sends the selected product/order photo when one is available.
-- The Driver Telegram topic receives a separate **DELIVERED — REPORT TO MAIN ADMIN** button. Pressing it records who marked the delivery and when in the workshop activity log for Main Admin review.
-- Material dispatch now sends each material separately, with an editable quantity limited to the current available stock.
