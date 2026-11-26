@@ -390,9 +390,13 @@ details.set{border-radius:var(--r)}
   <div class="hint" id="dEmpty" style="margin:6px 0 0"></div>
   <div class="item dprev" id="dPrev"></div>
 
+  <div id="dCusBox"></div>
+  <div id="dDir">
   <label class="lab">Customer — pick from the directory, or type</label>
   <input type="text" id="dCustQ" placeholder="Search customer name, phone or ID…" autocomplete="off">
   <select id="dCust" style="margin-top:8px"></select>
+  </div>
+  <div id="dForm">
   <div class="r2e">
     <div><label class="lab">Name</label><input type="text" id="dName" autocomplete="off"></div>
     <div><label class="lab">Phone</label><input type="text" id="dPhone" inputmode="tel" autocomplete="off"></div>
@@ -406,6 +410,7 @@ details.set{border-radius:var(--r)}
   <textarea id="dNote" placeholder="Delivery time, floor, handling…"></textarea>
   <div id="dMsg" class="msg" style="margin-top:10px"></div>
   <div class="btns"><button class="btn block" id="dSend" type="button">🚚 Send to driver</button></div>
+  </div>
 
   <div class="dsec">
     <h3>🚛 On the way <span class="pill wait" id="dWayN">0</span></h3>
@@ -816,6 +821,21 @@ document.addEventListener("click",e=>{if(!e.target.closest("[data-gosettings]"))
 let dMode="ready",dPick=null;
 const dItems=()=>dMode==="ready"?(S.stockProducts||[]):(S.dispatchOrders||[]);
 const dKey=x=>String(dMode==="ready"?x.id:x.jobId);
+let dCus="";
+const dCusKey=x=>((x.customerName||"")+"|"+(x.phone||"")).toLowerCase();
+function dCusRender(){
+  const ord=dMode==="order",box=$("dCusBox");
+  $("dDir").style.display=ord?"none":"";$("dPick").style.display=ord?"none":"";$("dPickLab").style.display=ord?"none":"";
+  if(!ord){box.innerHTML="";$("dForm").style.display="";return;}
+  const L=S.dispatchOrders||[],groups={};L.forEach(x=>{(groups[dCusKey(x)]=groups[dCusKey(x)]||[]).push(x);});
+  const keys=Object.keys(groups),picked=!!$("dPick").value;
+  $("dForm").style.display=picked?"":"none";
+  if(picked){const g=groups[dCus]||[];box.innerHTML='<div class="hint" style="margin:8px 0 0"><a href="#" data-dback="1">← Back to '+(g.length>1?"this customer's products":"customers")+'</a></div>';return;}
+  if(!keys.length){box.innerHTML='<div class="hint" style="margin:10px 0">No customer has a finished order waiting for the driver. An order appears here after the finishing team presses Finished.</div>';return;}
+  if(dCus&&groups[dCus]){const g=groups[dCus],c=g[0];
+    box.innerHTML='<div class="hint" style="margin:8px 0 6px"><a href="#" data-dallc="1">← All customers</a></div><label class="lab">'+esc(c.customerName||"Customer")+' · '+esc(c.phone||"")+' — choose the product</label>'+g.map(x=>'<div class="item" data-dprod="'+esc(x.jobId)+'" style="cursor:pointer">'+(x.photo?'<img loading="lazy" src="/api/workshop-photo/'+esc(x.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name)+'</div><div class="meta">'+(x.orderLabel?'<b style="color:var(--ink)">Order '+esc(x.orderLabel)+'</b>':"")+(x.size?" · "+esc(x.size):"")+(x.qty>1?" · ×"+x.qty:"")+'</div></div></div>').join("");return;}
+  box.innerHTML='<label class="lab">Customers with a finished order <span class="pill wait">'+keys.length+'</span></label>'+keys.map(k=>{const g=groups[k],c=g[0];return '<div class="item" data-dcus="'+esc(k)+'" style="cursor:pointer"><div class="mid"><div class="nm">'+esc(c.customerName||"Customer")+'</div><div class="meta">'+esc(c.phone||"")+(c.location?"<br>📍 "+esc(c.location):"")+'<br>'+g.length+' finished product'+(g.length>1?"s":"")+' ready for the driver</div></div></div>';}).join("");
+}
 function dFillPick(){
   const L=dItems(),prev=$("dPick").value;
   $("dkReady").classList.toggle("on",dMode==="ready");$("dkOrder").classList.toggle("on",dMode==="order");
@@ -825,7 +845,7 @@ function dFillPick(){
     :'<option value="'+esc(x.jobId)+'">'+esc((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name+(x.orderLabel?" · "+x.orderLabel:"")+(x.customerName?" · "+x.customerName:""))+'</option>').join("");
   if(L.some(x=>dKey(x)===prev))$("dPick").value=prev;
   $("dEmpty").textContent=L.length?"":(dMode==="ready"?"No readymade product is in stock (Reports → Stock), or all of them are already on their way.":"No finished order is waiting. An order appears here after the finishing team presses Finished.");
-  dPreview(false);
+  dPreview(false);dCusRender();
 }
 function dPreview(fill){
   const x=dItems().find(v=>dKey(v)===$("dPick").value);dPick=x||null;
@@ -833,7 +853,8 @@ function dPreview(fill){
   const src=x.photo?(dMode==="ready"?"/api/reports-photo/":"/api/workshop-photo/")+x.photo+".jpg":"";
   const title=dMode==="ready"?(x.code?x.code+" — ":"")+(x.model||x.desc||"Product"):((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name);
   const meta=dMode==="ready"?(x.desc&&x.model?esc(x.desc)+"<br>":"")+(x.status==="sold"?'<span class="pill bad">Sold out</span>':'<span class="pill ok">In stock</span>'):(x.orderLabel?'<b style="color:var(--ink)">Order '+esc(x.orderLabel)+'</b>':"")+(x.size?" · "+esc(x.size):"")+(x.qty>1?" · ×"+x.qty:"");
-  pv.innerHTML=(src?'<img src="'+esc(src)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(title)+'</div><div class="meta">'+meta+'</div></div>';pv.style.display="flex";
+  const cinfo=dMode==="order"?'<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line2)">👤 <b style="color:var(--ink)">'+esc(x.customerName||"—")+'</b><br>📞 '+esc(x.phone||"—")+(x.location?"<br>📍 "+esc(x.location):"")+"<br>💰 "+(x.paidFull?"Paid in full":"Total "+money(x.total)+" · advance "+money(x.advance)+" · <b style=\"color:var(--ink)\">balance "+money(x.balance)+" Birr</b>")+'</div>':"";
+  pv.innerHTML=(src?'<img src="'+esc(src)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(title)+'</div><div class="meta">'+meta+cinfo+'</div></div>';pv.style.display="flex";
   if(fill&&dMode==="order"){
     $("dName").value=x.customerName||"";$("dPhone").value=x.phone||"";$("dLoc").value=x.location||"";
     if(x.hasOrder){$("dBal").value=x.balance;$("dBalHint").textContent=x.paidFull?"This order is marked paid in full, so the balance is 0.":"Payment "+money(x.total)+" − advance "+money(x.advance)+" = "+money(x.balance)+" Birr. Change it if needed.";}
@@ -857,8 +878,15 @@ $("openDrv").onclick=openDrv;
 setInterval(async()=>{if(document.visibilityState!=="visible"||!$("drvOv").classList.contains("on"))return;const d=await api("/api/workshop/state");if(d.ok)dWayList();},6000); // the Delivered button is pressed in Telegram, so refresh while this sheet is open
 $("dClose").onclick=()=>$("drvOv").classList.remove("on");
 $("dkReady").onclick=()=>{dMode="ready";$("dPick").value="";dFillPick();$("dBalHint").textContent="Type what the customer still has to pay. Write 0 if everything is paid.";};
-$("dkOrder").onclick=()=>{dMode="order";$("dPick").value="";dFillPick();$("dBalHint").textContent="";};
+$("dkOrder").onclick=()=>{dMode="order";dCus="";$("dPick").value="";dFillPick();$("dBalHint").textContent="";};
 $("dPick").onchange=()=>dPreview(true);
+$("dCusBox").addEventListener("click",e=>{
+  const cu=e.target.closest("[data-dcus]"),pr=e.target.closest("[data-dprod]"),bk=e.target.closest("[data-dback]"),al=e.target.closest("[data-dallc]");
+  if(cu){dCus=cu.dataset.dcus;const g=(S.dispatchOrders||[]).filter(x=>dCusKey(x)===dCus);if(g.length===1){$("dPick").value=String(g[0].jobId);dPreview(true);}dCusRender();}
+  else if(pr){$("dPick").value=pr.dataset.dprod;dPreview(true);dCusRender();}
+  else if(bk){e.preventDefault();$("dPick").value="";dPreview(false);const g=(S.dispatchOrders||[]).filter(x=>dCusKey(x)===dCus);if(g.length<2)dCus="";dCusRender();}
+  else if(al){e.preventDefault();dCus="";dCusRender();}
+});
 $("dCustQ").addEventListener("input",dCustList);
 $("dCust").onchange=()=>{const c=(S.customers||[]).find(x=>String(x.id)===$("dCust").value);if(c){$("dName").value=c.name||"";$("dPhone").value=c.phone||"";$("dLoc").value=c.location||"";}};
 $("dSend").onclick=async()=>{
