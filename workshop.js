@@ -471,7 +471,7 @@ function register(app, ctx) {
       jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
       doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
-      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], // v165
+      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], cutHistory: typeof R().wsCutHistory === "function" ? R().wsCutHistory() : [], // v174
       log: db.log.filter(l => l.key === key).slice(-100).reverse(),
       report: reportInfo(actor) // v173
     };
