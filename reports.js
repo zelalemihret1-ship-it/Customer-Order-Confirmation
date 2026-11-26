@@ -877,6 +877,35 @@ function register(app, ctx) {
     return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  // v173: data for the monthly PDF report (read only). The Workshop module filters it by month.
+  const wsReportData = () => ({
+    products: db.products.map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", orderType: p.orderType || "", orderRef: p.orderRef || "", priority: p.priority || "", status: p.status, workshopStage: p.workshopStage || "", salesName: p.salesName || "", location: p.location || "", deliveryDate: p.deliveryDate || "", photo: p.photo || "", added: p.added || null, finished: p.finished || null, sold: p.sold || null })),
+    materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })),
+    log: db.log.map(l => ({ d: l.d || "", t: l.t || "", material: l.material || "", mtype: l.mtype || "", unit: l.unit || "", type: l.type || "", qty: l.qty, balance: l.balance, note: l.note || "", by: l.by || "" }))
+  });
+  // v173 START FROM 0 (Workshop settings): keeps standard products (workshop), Workflow products, In-stock products and ALL materials with their stock.
+  // Removes only the finished movements: Sold products, the material movement log and decided cut requests. Never throws; returns what was removed.
+  async function wsResetKeep(byName, upto) { // upto = Ethiopian month "2019/03": only movements up to that month are removed (used after the automatic monthly report)
+    const old = d => !upto || String(d || "").slice(0, 7) <= upto;
+    const sold = db.products.filter(p => p.status === "sold" && old(p.sold && p.sold.d)), logOld = db.log.filter(l => old(l.d)), cutOld = db.materialCutRequests.filter(x => x.status !== "pending" && old((x.decidedAt && x.decidedAt.d) || (x.created && x.created.d) || ""));
+    const soldSet = new Set(sold), logSet = new Set(logOld), cutSet = new Set(cutOld);
+    db.products = db.products.filter(p => !soldSet.has(p));
+    db.log = db.log.filter(l => !logSet.has(l));
+    db.materialCutRequests = db.materialCutRequests.filter(x => !cutSet.has(x));
+    persist(); scheduleBackup(1500);
+    sold.forEach(p => dropPhoto(p.photo).catch(() => {}));
+    audit("Report: START FROM 0 (workshop settings)", `${sold.length} sold, ${logOld.length} material movement(s), ${cutOld.length} cut request(s) cleared`, { name: clip(byName, 60) || "Main admin" });
+    return { sold: sold.length, log: logOld.length, cuts: cutOld.length };
+  }
+  // The same Google-Sheet safety step as the Reports "Start from ZERO": save, then keep the old month tabs as "Archive …" tabs. Throws if the sheet is connected but fails.
+  async function wsArchiveSheet() {
+    if (!cfg.scriptUrl) return { archived: 0, connected: false };
+    clearTimeout(timer);
+    const b = await backupNow();
+    if (!b.ok && !b.queued) throw new Error("The Google Sheet backup failed: " + b.error);
+    const a = await callScript({ action: "archive", data: { now: nowEth() } });
+    return { archived: a.archived || 0, connected: true };
+  }
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
