@@ -817,6 +817,7 @@ function register(app, ctx) {
   function wsCutRequests() {
     return db.materialCutRequests.filter(x => x.status === "pending").slice().reverse().map(x => ({ ...x }));
   }
+  function wsCutHistory() { return db.materialCutRequests.slice().reverse().map(x => ({ ...x })); }
   function wsRequestCut(body, actor) {
     const m = findM(body?.id);
     if (!m) return { ok: false, error: "Material not found." };
@@ -923,6 +924,6 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsCutHistory, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
