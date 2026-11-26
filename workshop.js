@@ -22,7 +22,7 @@ function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop-data.json");
-  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], dispatches: [], savedAt: "", cutoverAt: "", cutoverVersion: 157, report: null };
+  let db = { admins: {}, sent: {}, jobs: {}, access: {}, log: [], catalog: [], dispatches: [], savedAt: "", cutoverAt: "", cutoverVersion: 157, report: null };
 
   // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
   let chain = Promise.resolve();
@@ -38,7 +38,7 @@ function register(app, ctx) {
     if (d && typeof d === "object") db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], savedAt: "", ...d };
     if (!Array.isArray(db.catalog)) db.catalog = [];
     if (!Array.isArray(db.dispatches)) db.dispatches = [];
-    for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
+    for (const k of ["admins", "sent", "jobs", "access"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
     db.report = { month: "", auto: true, autoZero: false, lastSent: null, pending: [], history: [], lastReset: null, ...(db.report && typeof db.report === "object" ? db.report : {}) }; // v173
     if (!Array.isArray(db.report.pending)) db.report.pending = [];
@@ -448,6 +448,42 @@ function register(app, ctx) {
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
   router.use(express.json({ limit: "25mb" }));
+  // ═══ ROLE-BASED WORKSHOP ACCESS: the main admin decides WHICH workshop details each admin can use ═══
+  // Admins without a saved choice keep full access (nothing changes for existing admins until the main admin restricts them).
+  const AREAS = [["materials", "Materials", "Add / cut / edit materials"], ["orders", "Orders", "Send customer orders to the workshop"], ["workflow", "Workflow", "Send ready-made products to the workshop"], ["progress", "Progress", "Move jobs: workshop → finishing → stock"], ["products", "Products", "Standard product catalog"], ["records", "Records", "Edit product records"], ["driver", "Driver", "Driver dispatch"]];
+  const AREA_KEYS = AREAS.map(a => a[0]);
+  const isOwnerA = a => a?.role === "owner" || a?.role === "open";
+  const areasOf = actor => { if (isOwnerA(actor)) return AREA_KEYS.slice(); const v = db.access[String(actor?.telegramId || "")]; return Array.isArray(v) ? AREA_KEYS.filter(k => v.includes(k)) : AREA_KEYS.slice(); };
+  const areaOfPath = p => {
+    if (/^\/(material|dispatch\/material)\b/.test(p)) return "materials";
+    if (/^\/(send-order|send-items|preview-ids)\b/.test(p)) return "orders";
+    if (/^\/send-product\b/.test(p)) return "workflow";
+    if (/^\/job\b/.test(p)) return "progress";
+    if (/^\/catalog\b/.test(p)) return "products";
+    if (/^\/product\b/.test(p)) return "records";
+    if (/^\/dispatch\/driver\b/.test(p)) return "driver";
+    return "";
+  };
+  router.use((req, res, next) => {
+    const area = areaOfPath(req.path);
+    if (!area || isOwnerA(req.actor) || areasOf(req.actor).includes(area)) return next();
+    if (area === "progress" && req.path === "/job/assign") return next(); // checked by canAssign
+    // an admin who was ASSIGNED a job can always work on that job even without the Progress area
+    if (area === "progress" && req.body && Object.values(db.jobs).some(j => String(j.id) === String(req.body.id) && assignedTo(j, req.actor))) return next();
+    const label = (AREAS.find(a => a[0] === area) || [])[1] || area;
+    res.status(403).json({ ok: false, error: `🔒 The main admin has not given you the “${label}” part of the Workshop.` });
+  });
+  router.post("/access/set", (req, res) => { // MAIN ADMIN ONLY: { adminId, areas: ["materials", ...] }
+    if (!isOwnerA(req.actor)) return res.status(403).json({ ...view(req.actor), ok: false, error: "Only the main admin can change admin roles." });
+    const id = String(req.body?.adminId || ""), who = assignableAdmins().find(a => a.id === id);
+    if (!who) return res.json({ ...view(req.actor), ok: false, error: "That admin needs the Workshop section first (turn it on in Manage Admins)." });
+    if (who.main) return res.json({ ...view(req.actor), ok: false, error: "The main admin always has every part." });
+    const areas = AREA_KEYS.filter(k => (Array.isArray(req.body?.areas) ? req.body.areas : []).includes(k));
+    db.access[id] = areas;
+    log(keyOf(req.actor), req.actor, `Workshop roles · ${who.name}: ${areas.join(", ") || "none"}`, true, "");
+    persist();
+    res.json({ ...view(req.actor), ok: true, message: `✅ ${who.name} can now use: ${areas.length ? areas.map(k => (AREAS.find(a => a[0] === k) || [])[1]).join(", ") : "nothing (view only)"}.` });
+  });
   const compactOrder = (o, actor) => { const j = orderJob(o.id); return { id: o.id, orderId: o.orderId || "", productId: originalProductCode(o), size: sizeOfOrder(o), status: clip(o.status, 20), product: clip(o.product, 80), customerName: clip(o.customerName, 60), phone: clip(o.phone || o.telegramPhone, 40), location: clip(o.location, 240), createdAt: o.createdAt || "", completionDate: clip(o.completionDate, 30), deliveryDate: clip(o.deliveryDate, 30), photo: o.photo || "", job: j ? { id: j.id, stage: j.stage, stageName: STAGES[j.stage] } : null }; };
   const view = actor => {
     const key = keyOf(actor), s = settingsOf(key), acc = accountOf(actor);
@@ -478,7 +514,7 @@ function register(app, ctx) {
       log: db.log.filter(l => l.key === key).slice(-100).reverse(),
       report: reportInfo(actor), // v173
       // v174
-      isOwner: isOwnerActor(actor), canAssign: canAssign(actor), assignable: assignableAdmins(), meId: String(actor?.telegramId || ""),
+      isOwner: isOwnerActor(actor), canAssign: canAssign(actor), myAreas: areasOf(actor), areaList: AREAS.map(a => ({ key: a[0], name: a[1], hint: a[2] })), adminRoles: isOwnerActor(actor) ? assignableAdmins().filter(a => !a.main).map(a => ({ id: a.id, name: a.name, areas: areasOf({ telegramId: a.id }) })) : [], assignable: assignableAdmins(), meId: String(actor?.telegramId || ""),
       records: typeof R().wsRecords === "function" ? R().wsRecords() : [],
       confirm: isOwnerActor(actor) ? confirmInfo() : null
     };
@@ -848,7 +884,8 @@ function register(app, ctx) {
   router.post("/material/move", (req, res) => {
     if (req.body?.type === "cut") return res.status(400).json({ ...view(req.actor), ok: false, error: "Use the Cut request button. Main admin approval is required." });
     if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
-    const r = R().wsMaterial("add", req.body, req.actor?.name);
+    // FIX: adding stock to an EXISTING material is a "move" (+qty). It used to call "add", which tries to create a NEW material and fails with "already exists".
+    const r = R().wsMaterial("move", { ...(req.body || {}), type: "add" }, req.actor?.name);
     if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
