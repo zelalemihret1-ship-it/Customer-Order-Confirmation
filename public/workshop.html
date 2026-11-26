@@ -138,11 +138,11 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 
 /* overlays */
 .gearbtn{width:40px;height:40px;border-radius:13px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0}
-.confbtn{position:relative;display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 12px;border-radius:13px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.14);color:#fff;font:700 11.5px/1.1 inherit;font-family:inherit;cursor:pointer;flex:none}
-.confbtn.hide{display:none}.confbtn .lb{text-align:left}
-.confbtn .bdg{position:absolute;top:-8px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#e53935;color:#fff;font-weight:800;font-size:12px;line-height:20px;text-align:center;border:2px solid #0f3d30;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.confbtn{position:relative;display:inline-flex;align-items:center;gap:0;height:30px;width:30px;justify-content:center;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.14);color:#fff;font:700 11.5px/1.1 inherit;font-family:inherit;cursor:pointer;flex:none}
+.confbtn.hide{display:none}.confbtn .lb{display:none}
+.confbtn .bdg{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#e53935;color:#fff;font-weight:800;font-size:10px;line-height:16px;text-align:center;border:2px solid #0f3d30;box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .confbtn .bdg[hidden]{display:none}
-.confbtn .dot{width:9px;height:9px;border-radius:50%;background:#46d68b;box-shadow:0 0 0 3px rgba(70,214,139,.25)}
+.confbtn .dot{width:8px;height:8px;border-radius:50%;background:#46d68b;box-shadow:0 0 0 3px rgba(70,214,139,.25)}
 .confbtn.wait .dot{background:#ffb300;box-shadow:0 0 0 3px rgba(255,179,0,.3);animation:cp 1.4s infinite}
 @keyframes cp{50%{box-shadow:0 0 0 7px rgba(255,179,0,0)}}
 @media(max-width:420px){.confbtn .lb{display:none}header .ttl .sub{display:none}}
@@ -153,6 +153,7 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 .statusbar.wait{background:#fff1d4;color:#8a5a00}.statusbar .dot{width:11px;height:11px;border-radius:50%;background:currentColor;flex:none}
 .statusbar.wait .dot{animation:cp 1.4s infinite}
 .gearbtn:active{background:rgba(255,255,255,.25)}.gearbtn .i{width:21px;height:21px}
+.roleRow{border-top:1px solid var(--line,#e6e1d6);padding:10px 0}.roleRow b{font-size:13px}.roleRow label{display:inline-flex;align-items:center;gap:5px;margin:6px 12px 0 0;font-size:12.5px}.roleRow input{width:auto}
 .stcard{border:1px solid var(--line,#e6e1d6);border-radius:16px;padding:12px 14px;margin:12px 0;background:#fff}
 .stcard h3{margin:0 0 4px;font-size:14px}.stcard.danger{border-color:#f0c2be;background:#fff8f7}
 .stlist{margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.5}.stlist li{margin:1px 0}
@@ -470,6 +471,12 @@ details.set{border-radius:var(--r)}
     <div class="btns"><button class="btn sec sm" id="stPlaces" type="button">Open places</button></div>
   </div>
 
+  <div class="stcard" id="roleCard" style="display:none">
+    <h3>🔐 Admin roles</h3>
+    <div class="hint" style="margin:0">Choose which Workshop details each admin can use. Tick only what that admin should see and work on. Admins you have not changed keep everything.</div>
+    <div id="roleList"></div>
+  </div>
+
   <div class="stcard">
     <h3>📄 Monthly report (PDF)</h3>
     <div class="hint" style="margin:0">When an Ethiopian month is finished, the <b>bot</b> sends the full PDF report (sold, finished, stock, workflow, jobs, dispatches, materials and movements, with photos) to the main admins. The new month then starts and the next report counts only the new month.</div>
@@ -695,9 +702,12 @@ $("confClose").onclick=()=>$("confOv").classList.remove("on");
 setInterval(async()=>{if(!$("confOv").classList.contains("on")||document.visibilityState!=="visible")return;const d=await api("/api/workshop/state");if(d.ok){updConf();}},6000);
 function render(){
   updConf();
+  {const dv=$("openDrv");if(dv)dv.style.display=myAreas().includes("driver")?"":"none";}
   renderSettings();
   updDock();
-  const tabs=[["m","box","Materials",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length],["x","list","Records",(S.records||[]).length]];
+  const tabs=[["m","box","Materials",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length],["x","list","Records",(S.records||[]).length]].filter(t=>myAreas().includes(AREA_TAB[t[0]]));
+  if(!tabs.some(t=>t[0]===tab)&&tabs.length)tab=tabs[0][0];
+  if(!tabs.length){$("seg").innerHTML="";$("out").innerHTML='<div class="msg bad" style="display:block">The main admin has not given you any part of the Workshop yet.</div>';return;}
   $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
   $("subWrap").style.display=tab==="s"?"block":"none";
   if(tab==="x"){$("out").innerHTML=recView();$("cusForm").style.display="none";$("basket").innerHTML="";$("subWrap").style.display="none";return;}
@@ -1082,7 +1092,24 @@ $("mdSel").onchange=mdLeft;$("mdQty").addEventListener("input",mdLeft);
 $("openMat").onclick=()=>{placeWarn("mdWarn",S.settings&&S.settings.material,"Material");say2("mdMsg","");mdRender();$("mdOv").classList.add("on");};
 $("mdClose").onclick=()=>$("mdOv").classList.remove("on");
 // ── v173 ⚙ Settings: monthly PDF report + Start from 0 ──
+// ── ROLE-BASED ACCESS: the main admin picks which Workshop details each admin can use ──
+const AREA_TAB={m:"materials",o:"orders",r:"workflow",p:"progress",s:"products",x:"records"};
+const myAreas=()=>Array.isArray(S.myAreas)?S.myAreas:Object.values(AREA_TAB).concat(["driver"]);
+function roleRender(){
+  const c=$("roleCard");if(!c)return;
+  c.style.display=S.isOwner?"block":"none";if(!S.isOwner)return;
+  const list=S.adminRoles||[];
+  $("roleList").innerHTML=list.length?list.map(a=>'<div class="roleRow" data-admin="'+esc(a.id)+'"><b>👤 '+esc(a.name)+'</b><div>'+(S.areaList||[]).map(x=>'<label title="'+esc(x.hint)+'"><input type="checkbox" data-area="'+esc(x.key)+'"'+((a.areas||[]).includes(x.key)?" checked":"")+'>'+esc(x.name)+'</label>').join("")+'</div></div>').join(""):'<div class="hint" style="margin-top:8px">No other admin has the Workshop section yet. Turn it on in Manage Admins first.</div>';
+}
+document.addEventListener("change",async e=>{
+  const cb=e.target.closest("#roleList [data-area]");if(!cb)return;
+  const row=cb.closest("[data-admin]"),areas=[...row.querySelectorAll("[data-area]:checked")].map(x=>x.dataset.area);
+  const d=await api("/api/workshop/access/set",{adminId:row.dataset.admin,areas});
+  say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");
+  if(d.ok){S=Object.assign(S,d);}roleRender();
+});
 function stRender(){
+  roleRender();
   const r=S.report||{},own=!!r.canManage;
   $("stMonth").innerHTML="Current month: <b>"+esc(r.monthLabel||"")+"</b>"+(r.lastSent?"<br>Last report sent: <b>"+esc(r.lastSent.label)+"</b> · "+esc(r.lastSent.at)+" · "+(r.lastSent.sent||0)+" chat"+((r.lastSent.sent||0)===1?"":"s"):"<br>No monthly report has been sent yet.")+(r.lastReset?"<br>Last start from 0: "+esc(r.lastReset.at)+" · "+esc(r.lastReset.by):"")+((r.pending||[]).length?'<br><span style="color:var(--bad)">Waiting to be sent: '+r.pending.map(p=>esc(p.month)+(p.error?" ("+esc(p.error)+")":"")).join(", ")+"</span>":"");
   $("stAuto").checked=r.auto!==false;$("stZeroAuto").checked=!!r.autoZero;
