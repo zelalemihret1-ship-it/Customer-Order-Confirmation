@@ -836,6 +836,21 @@ function register(app, ctx) {
     persist();
     return { ok: true, request: req, message: `✂️ Cut request submitted for ${matName(m)}: ${qty} ${m.unit || "pcs"}. Waiting for main admin approval.` };
   }
+  function wsRequestMaterialAdd(body, actor) {
+    const name = clip(body?.name, 100); if (!name) return { ok:false, error:"Write the material name." };
+    const qty = num(body?.qty || 0); if (Number.isNaN(qty) || qty < 0) return { ok:false, error:"Quantity must be 0 or more." };
+    const req = { id:uid(), requestType:"new", material:name, mtype:clip(body?.type,80), unit:clip(body?.unit,30)||"pcs", group:clip(body?.group,80)||"MATERIAL", qty, note:clip(body?.note,200), by:clip(actor?.name||"Workshop",60), created:stamp({actor}), status:"pending", decidedBy:"", decidedAt:"", decisionNote:"" };
+    db.materialCutRequests.push(req); persist(); audit("Report: material add requested", `${name} · ${qty} ${req.unit} pending main-admin approval`, actor);
+    return {ok:true, request:req, message:`Material add request submitted: ${name}. Waiting for main-admin confirmation.`};
+  }
+  function wsApproveMaterialAdd(id, approve, actor, note) {
+    const r=db.materialCutRequests.find(x=>String(x.id)===String(id)&&x.requestType==="new"); if(!r||r.status!=="pending") return {ok:false,error:"Material request not found or already decided."};
+    r.decidedBy=clip(actor?.name||"Main admin",60); r.decidedAt=stamp({actor}); r.decisionNote=clip(note,200)||"";
+    if(!approve){r.status="rejected";persist();return {ok:true,request:r,message:`Material request rejected: ${r.material}.`};}
+    const out=wsMaterial("new",{name:r.material,type:r.mtype,unit:r.unit,group:r.group,qty:r.qty,note:r.note},actor?.name);
+    if(!out.ok){r.status="pending";return {ok:false,error:out.error||"Could not create material."};}
+    r.status="approved"; r.after=r.qty; persist(); scheduleBackup(1500); return {ok:true,request:r,message:`Material confirmed and added: ${r.material}.`};
+  }
   function wsApproveCut(id, approve, actor, note) {
     const r = db.materialCutRequests.find(x => String(x.id) === String(id));
     if (!r) return { ok: false, error: "Cut request not found." };
@@ -924,6 +939,6 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsCutHistory, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsCutHistory, wsRequestCut, wsRequestMaterialAdd, wsApproveMaterialAdd, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
