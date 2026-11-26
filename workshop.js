@@ -449,6 +449,7 @@ function register(app, ctx) {
       ok: true, me: { key, name: clip(actor?.name, 60) },
       settings: { workshop: s.workshop, finishing: s.finishing, stock: s.stock, driver: s.driver, material: s.material, mode: s.mode, workshopName: targetName(s.workshop), finishingName: targetName(s.finishing), stockName: targetName(s.stock), driverName: targetName(s.driver), materialName: targetName(s.material) },
       sender: { ready: !!acc?.ready, label: clip(acc?.label, 60) },
+      takenTopics: takenByOthers(key), // v172: topics already assigned to other admins (hidden in the pickers)
       // Once sent to the workshop, remove the order from this sending queue permanently.
       // This also hides older orders that were already sent before this update.
       orders: (ctx.getOrders() || []).filter(o => mineOnly(actor, o) && isOrderable(o) && !orderJob(o.id) && (() => { const t = Date.parse(o.createdAt || o.created || ""); return Number.isFinite(t) && t >= Date.parse(db.cutoverAt); })()).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 120).map(o => compactOrder(o, actor)),
@@ -469,6 +470,10 @@ function register(app, ctx) {
       log: db.log.filter(l => l.key === key).slice(-100).reverse()
     };
   };
+  // v172: a topic (group + topic) can be assigned ONCE: not twice by one admin, and not by two admins.
+  const PLACES = [["workshop", "WORKSHOP"], ["finishing", "FINISHING"], ["stock", "STOCK"], ["driver", "DRIVER"], ["material", "MATERIAL"]];
+  const topicKeyOf = g => g && g.chat ? String(g.chat).replace(/^@/, "").toLowerCase() + "|" + (Number(g.topic) > 1 ? Number(g.topic) : 0) : "";
+  const takenByOthers = key => { const out = []; for (const [k, a] of Object.entries(db.admins || {})) { if (k === key || !a) continue; for (const [pl, label] of PLACES) { const tk = topicKeyOf(a[pl]); if (tk) out.push({ k: tk, place: label }); } } return out; };
   router.get("/state", (req, res) => res.json(view(req.actor)));
   router.post("/settings", (req, res) => {
     const key = keyOf(req.actor), mode = String(req.body?.mode || "manual");
@@ -480,6 +485,16 @@ function register(app, ctx) {
     if (workshop && stock && workshop.chat.toLowerCase() === stock.chat.toLowerCase() && workshop.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the WORKSHOP place." });
     if (finishing && stock && finishing.chat.toLowerCase() === stock.chat.toLowerCase() && finishing.topic === stock.topic) return res.json({ ok: false, error: "Choose a different STOCK place from the FINISHING place." });
     for (const [n, g] of [["WORKSHOP", workshop], ["FINISHING", finishing], ["STOCK", stock]]) if (driver && g && driver.chat.toLowerCase() === g.chat.toLowerCase() && driver.topic === g.topic) return res.json({ ok: false, error: `Choose a different DRIVER place from the ${n} place.` });
+    { // v172: every topic only once — among this admin's own places, and against the other admins
+      const mine = { workshop, finishing, stock, driver, material }, seen = {}, others = takenByOthers(key);
+      for (const [pl, label] of PLACES) {
+        const tk = topicKeyOf(mine[pl]); if (!tk) continue;
+        if (seen[tk]) return res.json({ ok: false, error: `The ${label} place is the same topic as the ${seen[tk]} place. Each topic can be assigned only once.` });
+        const hit = others.find(o => o.k === tk);
+        if (hit) return res.json({ ok: false, error: `The ${label} topic is already assigned to another admin (${hit.place}). Choose a different topic.` });
+        seen[tk] = label;
+      }
+    }
     db.admins[key] = { workshop, finishing, stock, driver, material, mode, updatedAt: stamp() }; persist();
     res.json({ ...view(req.actor), message: mode === "manual" ? "✅ Saved. You send orders to the workshop yourself." : "✅ Saved. Every order goes to the workshop automatically AFTER the customer confirms." });
   });
@@ -736,33 +751,40 @@ function register(app, ctx) {
     log(key, req.actor, `Material dispatch · available list (${available.length})`, true, ""); persist();
     res.json({ ...view(req.actor), ok: true, message: `✅ ${available.length} available materials sent to the Material topic.` });
   });
-  router.post("/dispatch/material/cut", async (req, res) => {
-    const key = keyOf(req.actor), s = settingsOf(key), b = req.body || {};
-    const fail = (error, code = 400) => res.status(code).json({ ...view(req.actor), ok: false, error });
-    if (!s.material) return fail("The MATERIAL topic is not chosen. Choose it in the settings at the top of this page and save first.");
-    if (typeof R().wsCutNow !== "function") return fail("Material cutting is not available.");
+  // v172: ONE cut flow for both places (Material tab ✂️ Cut and Material dispatch). The main admin's cut is applied at once: stock goes down, the movement is written in Reports → Material
+  // (with the Google Sheet backup), and it is posted in the Material topic when one is chosen. A failed Telegram post never undoes the cut (it is already saved in Reports).
+  // Other admins keep the v165 rule: they send a cut REQUEST that the main admin approves.
+  async function applyCut(req, b, from) {
+    const key = keyOf(req.actor), s = settingsOf(key);
+    if (typeof R().wsCutNow !== "function") return { ok: false, error: "Material cutting is not available." };
     const note = clip(b.note, 200), by = clip(req.actor?.name, 60) || "Admin", at = stamp();
-    const direct = req.actor?.role === "owner" || req.actor?.role === "open"; // other admins keep the v165 rule: the main admin approves the cut
+    const direct = req.actor?.role === "owner" || req.actor?.role === "open";
     if (!direct) {
       const r = R().wsRequestCut({ id: b.id, qty: b.qty, note }, req.actor);
-      if (!r.ok) return fail(r.error);
+      if (!r.ok) return { ok: false, error: r.error };
       let tgMsg = "";
-      try { await userPost(req.actor, s.material, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT REQUEST</b>\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\nAvailable: ${esc(String(r.request.before))} ${esc(r.request.unit)}\nRequested by: ${esc(r.request.by)}${note ? "\nNote: " + esc(note) : ""}\n\n⏳ Waiting for main admin approval.`, true); tgMsg = " Sent to the Material topic."; }
-      catch (e) { tgMsg = " Telegram send failed: " + clip(e.message, 180); }
+      if (s.material) { try { await userPost(req.actor, s.material, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT REQUEST</b>\n\nMaterial: ${esc(r.request.material + (r.request.mtype ? " " + r.request.mtype : ""))}\nQuantity: ${esc(String(r.request.qty))} ${esc(r.request.unit)}\nAvailable: ${esc(String(r.request.before))} ${esc(r.request.unit)}\nRequested by: ${esc(r.request.by)}${note ? "\nNote: " + esc(note) : ""}\n\n⏳ Waiting for main admin approval.`, true); tgMsg = " Sent to the Material topic."; } catch (e) { tgMsg = " Telegram send failed: " + clip(e.message, 180); } }
       log(key, req.actor, `Material · ${r.message}`, true, tgMsg); persist();
-      return res.json({ ...view(req.actor), ok: true, message: r.message + tgMsg });
+      return { ok: true, message: r.message + tgMsg };
     }
-    const cut = R().wsCutNow({ id: b.id, qty: b.qty }, req.actor, note);
-    if (!cut.ok) return fail(cut.error);
-    try {
-      await userPost(req.actor, s.material, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT</b>\n\nMaterial: <b>${esc(cut.material)}</b>\nCut: <b>${esc(String(cut.qty))}</b> ${esc(cut.unit)}\nLeft: ${esc(String(cut.after))} ${esc(cut.unit)}${note ? "\nNote: " + esc(note) : ""}\n\nCut by ${esc(by)} · ${esc(at)}`, true);
-    } catch (e) {
-      R().wsRevertCut(cut.id, cut.qty, req.actor); // keep the app and the group in agreement
-      log(key, req.actor, `Material cut · ${cut.material} ${cut.qty}`, false, clip(e.message, 180)); persist();
-      return fail("Telegram send failed, so nothing was cut: " + clip(e.message, 180));
+    const cut = R().wsCutNow({ id: b.id, qty: b.qty }, req.actor, note || ("Cut from " + from));
+    if (!cut.ok) return { ok: false, error: cut.error };
+    let tgMsg = "";
+    if (!s.material) tgMsg = " (No Material topic is chosen, so it was not posted in a group.)";
+    else {
+      try { await userPost(req.actor, s.material, null, `<b>AMBAR FURNITURE</b>\n✂️ <b>MATERIAL CUT</b>\n\nMaterial: <b>${esc(cut.material)}</b>\nCut: <b>${esc(String(cut.qty))}</b> ${esc(cut.unit)}\nLeft: ${esc(String(cut.after))} ${esc(cut.unit)}${note ? "\nNote: " + esc(note) : ""}\n\nCut by ${esc(by)} · ${esc(at)}`, true); tgMsg = " Posted in the Material topic."; }
+      catch (e) { tgMsg = " ⚠ The Telegram post failed (" + clip(e.message, 140) + "), but the cut is saved."; log(key, req.actor, `Material cut post · ${cut.material}`, false, clip(e.message, 180)); }
     }
     log(key, req.actor, `Material cut · ${cut.material} ${cut.qty} ${cut.unit}`, true, ""); persist();
-    res.json({ ...view(req.actor), ok: true, message: `✂️ Cut ${cut.qty} ${cut.unit} of ${cut.material}. Left: ${cut.after}. Posted in the group.` });
+    return { ok: true, message: `✂️ Cut ${cut.qty} ${cut.unit} of ${cut.material}. Left: ${cut.after}. Saved in Reports → Material.${tgMsg}` };
+  }
+  router.post("/dispatch/material/cut", async (req, res) => {
+    const r = await applyCut(req, req.body || {}, "Material dispatch");
+    res.status(r.ok ? 200 : 400).json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
+  });
+  router.post("/material/cut", async (req, res) => { // the ✂️ Cut button on a material in the Material tab
+    const r = await applyCut(req, req.body || {}, "Workshop → Material");
+    res.status(r.ok ? 200 : 400).json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
   // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
   router.post("/material/add", (req, res) => {
