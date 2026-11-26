@@ -149,6 +149,7 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 #matList .item{flex-wrap:wrap}#matList .item .mid{flex:1 1 60%;min-width:0}#matList .item .act{width:100%;justify-content:flex-start!important}
 .asgbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 10px;padding:9px 12px;background:#eef6fb;border:1px solid #d4e6f3;border-radius:0 0 14px 14px;font-size:12.5px;color:#14598f}
 .asgbar select{flex:1;min-width:140px;padding:7px 9px;border-radius:10px;border:1px solid #c4dbea;background:#fff;font:inherit;font-size:13px}
+.moves{border:2px solid #e8b94a;background:linear-gradient(180deg,#fffaf0,#fff)}.moves.clear{border-color:var(--line);background:var(--card)}.moves .mh{display:flex;align-items:center;gap:10px;margin-bottom:10px}.moves .mh b{font-size:16px;flex:1}.moves .mh .cnt{min-width:26px;height:26px;border-radius:13px;background:#d93025;color:#fff;font-weight:800;font-size:13px;display:inline-flex;align-items:center;justify-content:center;padding:0 7px}.moves.clear .mh .cnt{background:#17824c}.moves .sub2{font-size:12px;color:var(--mute);margin:10px 2px 4px;font-weight:700}
 .statusbar{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:#e2f5ea;color:#17824c;font-weight:700;margin-bottom:12px}
 .statusbar.wait{background:#fff1d4;color:#8a5a00}.statusbar .dot{width:11px;height:11px;border-radius:50%;background:currentColor;flex:none}
 .statusbar.wait .dot{animation:cp 1.4s infinite}
@@ -297,6 +298,8 @@ details.set{border-radius:var(--r)}
 <main>
   <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg" class="hint">The Production &amp; Dispatch section is only for admins the main admin gave it to.</p></div>
   <div id="view" style="display:none">
+    <!-- v175: CONFIRMATION MOVEMENTS — always the first thing on the page -->
+    <section id="movesTop" class="card moves" aria-live="polite" style="display:none"></section>
     <div id="msg" class="msg"></div>
 
     <details class="card set" id="setBox">
@@ -579,13 +582,12 @@ const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="
 const nfm=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
 let matQ="";
 function matView(){
-  const pending=S.cutRequests||[];
-  const approvals=(meRole==="owner"&&pending.length)?'<div class="card" style="margin:12px 0"><div class="sec-h"><b>⏳ Pending cut approvals</b><span>'+pending.length+'</span></div>'+pending.map(r=>'<div class="item"><div class="mid"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+'</div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' '+esc(r.unit)+(r.note?" · "+esc(r.note):"")+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'">✅ Approve</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'">❌ Reject</button></div></div>').join('')+'</div>':'';
-  return approvals+'<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
+  return '<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
 }
 function matList(){
   const q=matQ.trim().toLowerCase(),L=(S.materials||[]).filter(m=>!q||(m.name+" "+m.type+" "+m.unit+" "+m.group).toLowerCase().includes(q)),gs=(S.matGroups||[]).slice();L.forEach(m=>{if(!gs.includes(m.group))gs.push(m.group);});
-  const row=m=>{const low=m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");const pill=low==="ok"?'<span class="pill ok">OK</span>':'<span class="pill '+(low==="out"?"bad":"wait")+'">'+(low==="out"?"OUT":"LOW")+'</span>';
+  const pendAdd=id=>((S.moves&&S.moves.pending)||[]).filter(x=>x.type==="add"&&x.kind==="add"&&x.materialId===id);
+  const row=m=>{const pa=pendAdd(m.id);const low=m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");const pill=low==="ok"?'<span class="pill ok">OK</span>':'<span class="pill '+(low==="out"?"bad":"wait")+'">'+(low==="out"?"OUT":"LOW")+'</span>';
     return '<div class="item"><div class="mid"><div class="nm">'+esc(m.name+(m.type?" "+m.type:""))+'</div><div class="meta"><b style="font-size:15px;color:'+(m.qty<5?"#cc0000":"var(--ink)")+'">'+nfm(m.qty)+'</b> '+esc(m.unit)+' · '+pill+'</div></div><div class="act" style="flex-direction:row;flex-wrap:wrap;justify-content:flex-end"><button class="btn sec sm" type="button" data-medit="'+esc(m.id)+'" title="Edit">✏️</button>'+(S.isOwner?'<button class="btn sec sm" type="button" data-mfix="'+esc(m.id)+'" title="Fix stock">🛠</button><button class="btn sec sm" type="button" data-mdel="'+esc(m.id)+'" title="Delete">🗑</button>':'')+'<button class="btn sm" type="button" data-madd="'+esc(m.id)+'">➕ Add</button><button class="btn sec sm" type="button" data-mcut="'+esc(m.id)+'">✂️ Cut</button></div></div>';};
   let h=gs.map(g=>{const X=L.filter(m=>m.group===g);return X.length?'<div class="sec-h" style="margin-top:14px"><b style="font-size:13px;color:var(--mute)">'+esc(g)+'</b><span>'+X.length+'</span></div>'+X.map(row).join(""):"";}).join("");
   if(!L.length)h+=q?emptyBox("search","No material found","Nothing matches “"+esc(matQ)+"”."):emptyBox("box","No material yet","Tap <b>New material</b>. Materials added here also appear in Reports → Material.");
@@ -601,7 +603,8 @@ function openMat(kind,m){
   $("mQtyLab").textContent=kind==="new"?"Available now (optional)":"Quantity";
   $("mName").value="";$("mType").value="";$("mUnit").value="244-122";$("mQty").value="";$("mNote").value="";
   const gs=(S.matGroups||[]);$("mGroup").value=gs[1]||gs[0]||"MATERIAL";$("mGroups").innerHTML=gs.map(g=>'<option value="'+esc(g)+'">').join("");
-  $("mOk").textContent=kind==="new"?"Save material":(kind==="add"?"Add":"✂️ Cut now");
+  $("mOk").textContent=S.isOwner?(kind==="new"?"Save material":(kind==="add"?"Add":"✂️ Cut now")):(kind==="new"?"Send for confirmation":(kind==="add"?"Send for confirmation":"✂️ Request cut"));
+  if(!S.isOwner&&(kind==="new"||kind==="add"))$("mInfo").textContent=($("mInfo").textContent||"")+" · ⏳ The Main Admin must approve this before it is added to the stock.";
   if(kind==="edit"||kind==="fix"){ // v174: Material edit / stock fix live ONLY here (Reports is view-only)
     $("mNew").style.display=kind==="edit"?"block":"none";
     $("mTitle").textContent=(kind==="edit"?"✏️ Edit ":"🛠 Fix stock of ")+(m?m.name+(m.type?" "+m.type:""):"");
@@ -630,6 +633,13 @@ document.addEventListener("click",e=>{
   if(dl){const id=dl.dataset.mdel,m=(S.materials||[]).find(x=>x.id===id);if(m&&confirm("Delete “"+m.name+(m.type?" "+m.type:"")+"”? Its movements stay in the log."))(async()=>{busy("Deleting…");const d=await api("/api/workshop/material/delete",{id});busy("");if(d.ok){render();say(d.message||"Deleted.","ok");}else say(d.error||"Could not delete.","bad");})();return;}
   const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
   const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
+});
+document.addEventListener("click",async e=>{ // v175: approve / reject a pending material ADD
+  const a=e.target.closest("[data-addapprove]"),r=e.target.closest("[data-addreject]"),el=a||r;if(!el)return;
+  const id=el.dataset.addapprove||el.dataset.addreject,approve=!!a;
+  if(!confirm(approve?"Approve this material request? It will be added to the Material Stock.":"Reject this material request? The stock stays unchanged."))return;
+  busy(approve?"Approving…":"Rejecting…");const d=await api("/api/workshop/material/add-decide",{id,approve});busy("");
+  if(d.ok){render();say(d.message||"Done.","ok");}else say(d.error||"Could not decide the request.","bad");
 });
 document.addEventListener("click",async e=>{
   const a=e.target.closest("[data-cutapprove]"),r=e.target.closest("[data-cutreject]"),el=a||r;if(!el)return;
@@ -684,24 +694,52 @@ $("prOk").onclick=async()=>{
     orderType:PR.orderType,sno:PR.sno,category:PR.category,capacity:PR.capacity,salesName:PR.salesName,location:PR.location,deliveryDate:PR.deliveryDate,changes:PR.changes});
   busy("");if(d.ok){$("prOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("prMsg",d.error||"Could not save.");
 };
+// ── v175: CONFIRMATION MOVEMENTS — pending material requests + inventory movements waiting for the main admin ──
+const mvName=r=>esc(r.material+(r.mtype?" "+r.mtype:""));
+function mvItem(r,canAct){
+  const add=r.type==="add",st=r.status||"pending";
+  const pill=st==="approved"?'<span class="pill ok">✅ Approved</span>':st==="rejected"?'<span class="pill bad">❌ Rejected</span>':'<span class="pill wait">⏳ Pending Admin Confirmation</span>';
+  const title=(add?(r.kind==="new"?"🆕 New material · ":"➕ Add · "):"✂️ Cut · ")+mvName(r)+' · '+esc(String(r.qty))+' '+esc(r.unit);
+  const stock=add?(r.kind==="new"?"Opening stock: "+esc(String(r.qty))+" "+esc(r.unit):"Stock "+esc(String(r.before))+" → "+esc(String(r.after))+(st==="pending"?" after approval":"")):"Available "+esc(String(r.before))+" → after "+esc(String(r.after));
+  const who=canAct?"Requested by "+esc(r.by)+" · ":"";
+  const when=r.created?esc([r.created.d,r.created.t].filter(Boolean).join(" ")):"";
+  const dec=st!=="pending"&&r.decidedBy?'<br>'+(st==="approved"?"Approved":"Rejected")+' by '+esc(r.decidedBy)+(r.decisionNote?' · '+esc(r.decisionNote):''):'';
+  const a=add?"addapprove":"cutapprove",x=add?"addreject":"cutreject";
+  const btns=canAct&&st==="pending"?'<div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-'+a+'="'+esc(r.id)+'">✅ Approve</button><button class="btn sec sm" type="button" data-'+x+'="'+esc(r.id)+'">❌ Reject</button></div>':'';
+  return '<div class="item"><div class="mid"><div class="nm">'+title+'</div><div class="meta">'+who+stock+(r.note?'<br>'+esc(r.note):'')+(when?'<br>'+when:'')+dec+'</div><div class="tags">'+pill+'</div></div>'+btns+'</div>';
+}
+function updMoves(){
+  const el=$("movesTop");if(!el)return;
+  const m=S.moves||{pending:[],decided:[]},owner=!!S.isOwner,n=(m.pending||[]).length;
+  if(owner&&!n){el.style.display="none";return;} // main admin: the section appears only when something waits (he also has the Admin Confirmation button)
+  el.style.display="block";el.classList.toggle("clear",!n);
+  let h='<div class="mh"><b>🛡 Confirmation Movements</b><span class="cnt">'+n+'</span></div>';
+  if(owner)h+='<div class="hint" style="margin:0 2px 8px">Waiting for <b>your</b> approval. Nothing below is in the Material Stock until you approve it.</div>';
+  else h+='<div class="hint" style="margin:0 2px 8px">'+(n?'These requests are <b>waiting for the Main Admin</b>. They are not in the Material Stock yet.':'Nothing is waiting for the Main Admin. Materials you add are sent here first.')+'</div>';
+  h+=(m.pending||[]).map(r=>mvItem(r,owner)).join("");
+  if(!owner&&!n&&!(m.decided||[]).length)h+=emptyBox("box","No pending movements","New materials and stock additions you submit wait here until the Main Admin approves them.");
+  if(!owner&&(m.decided||[]).length)h+='<div class="sub2">Recently decided</div>'+m.decided.map(r=>mvItem(r,false)).join("");
+  el.innerHTML=h;
+}
 // ── v174: ADMIN CONFIRMATION (main admin only): red number = pending inventory movements; dot = cutter actions awaiting approval ──
 function updConf(){
   const b=$("confBtn"),c=S.confirm;if(!b)return;
   b.classList.toggle("hide",!S.isOwner);if(!S.isOwner||!c)return;
-  const n=c.pending||0;$("confN").hidden=!n;$("confN").textContent=n>99?"99+":n;b.classList.toggle("wait",!!c.cutters);
+  const n=c.pending||0;$("confN").hidden=!n;$("confN").textContent=n>99?"99+":n;b.classList.toggle("wait",!!c.pending);
   if($("confOv").classList.contains("on"))confRender();
 }
 function confRender(){
   const c=S.confirm||{pending:0,cutters:0,items:[]};
-  $("confBody").innerHTML='<div class="statusbar '+(c.cutters?"wait":"")+'"><span class="dot"></span><span>'+(c.cutters?c.cutters+" cutter action"+(c.cutters===1?"":"s")+" awaiting approval":"No cutter actions waiting — all clear")+'</span></div>'
+  $("confBody").innerHTML='<div class="statusbar '+(c.cutters?"wait":"")+'"><span class="dot"></span><span>'+(c.pending?c.pending+" action"+(c.pending===1?"":"s")+" awaiting approval"+(c.adds?" ("+c.adds+" material add"+(c.adds===1?"":"s")+(c.cutters?", "+c.cutters+" cut"+(c.cutters===1?"":"s"):"")+")":""):"No actions waiting — all clear")+'</span></div>'
     +'<div class="hint" style="margin:0 2px 10px">Pending inventory movements: <b>'+(c.pending||0)+'</b>'+(c.oldest?' · oldest since '+esc(c.oldest):'')+'. Only the main admin can approve or reject them.</div>'
-    +((c.items||[]).map(r=>'<div class="item"><div class="mid"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+'</div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' → after '+esc(String(r.after))+(r.note?'<br>'+esc(r.note):'')+(r.created?'<br>'+esc([r.created.d,r.created.t].filter(Boolean).join(" ")):'')+'</div></div><div class="act"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'">Approve</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'">Reject</button></div></div>').join("")||emptyBox("box","Nothing to confirm","New cutter requests show up here with a red number on the Admin Confirmation button."));
+    +((c.items||[]).map(r=>mvItem(r,true)).join("")||emptyBox("box","Nothing to confirm","New cutter and material requests show up here with a red number on the Admin Confirmation button."));
 }
 $("confBtn").onclick=()=>{confRender();$("confOv").classList.add("on");};
 $("confClose").onclick=()=>$("confOv").classList.remove("on");
+setInterval(async()=>{if(document.visibilityState!=="visible"||!$("view")||$("view").style.display==="none"||$("matOv").classList.contains("on"))return;const d=await api("/api/workshop/state");if(d.ok){updMoves();updConf();}},15000); // v175: the top section stays fresh (status changes after the Main Admin decides)
 setInterval(async()=>{if(!$("confOv").classList.contains("on")||document.visibilityState!=="visible")return;const d=await api("/api/workshop/state");if(d.ok){updConf();}},6000);
 function render(){
-  updConf();
+  updConf();updMoves();
   {const dv=$("openDrv");if(dv)dv.style.display=myAreas().includes("driver")?"":"none";}
   renderSettings();
   updDock();
