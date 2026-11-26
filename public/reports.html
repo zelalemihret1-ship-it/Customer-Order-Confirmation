@@ -173,7 +173,7 @@ h3.sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(
 .srow{display:flex;align-items:center;gap:13px;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:18px;padding:13px 14px;cursor:pointer;font-family:inherit;box-shadow:var(--shadow);transition:transform .15s,box-shadow .2s}
 .srow:hover{box-shadow:var(--shadow2)}
 .srow .ic{flex:none;width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:21px}
-.srow .ic.pdf{background:#fde7e5}.srow .ic.bk{background:#e4f0fb}.srow .ic.tg{background:#e0f3fb}.srow .ic.zr{background:#fde7e5}
+.srow .ic.pdf{background:#fde7e5}.srow .ic.bk{background:#e4f0fb}.srow .ic.tg{background:#e0f3fb}
 .srow .tx{flex:1;min-width:0}
 .srow .tx b{display:block;font-size:15px;color:var(--ink);font-weight:800}
 .srow .tx small{display:block;margin-top:2px;font-size:12px;color:var(--mute);line-height:1.35}
@@ -357,7 +357,6 @@ button[data-a]:not([data-a="hist"]):not([data-a="mhist"]){display:none!important
     <button class="srow" id="bPdf" type="button"><span class="ic pdf">📄</span><span class="tx"><b>Make PDF</b><small>Build a printable A4 report of the current view</small></span><span class="ch">›</span></button>
     <button class="srow" id="cloud" type="button"><span class="ic bk">☁</span><span class="tx"><b>Google Sheet backup</b><small id="bkState">Backup copy in your Google Sheet</small></span><span class="ch">›</span></button>
     <button class="srow" id="tgBtn" type="button"><span class="ic tg">📨</span><span class="tx"><b>Stock → Telegram</b><small>Send the Stock view to a Telegram group / topic or to admins</small></span><span class="ch">›</span></button>
-    <button class="srow danger" id="bZero" type="button" style="display:none"><span class="ic zr">🗑</span><span class="tx"><b>Start from 0</b><small>Save the old report to the sheet, then clear everything</small></span><span class="ch">›</span></button>
   </div>
 </div></div>
 
@@ -423,7 +422,7 @@ let IS_OWNER=false,ME_NAME="",ME_ID="";
     $("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Reports section. Ask them to turn it on in Manage Admins.":(me.error||"Access denied.");
     return;
   }
-  $("view").style.display="block";$("bZero").style.display=IS_OWNER?"flex":"none";
+  $("view").style.display="block";
   const d=await api("/api/reports/state");
   if(!d.ok){say("vMsg",d.error||"Could not open the reports.","bad");}
   render();
@@ -689,12 +688,6 @@ $("hNo").onclick=()=>$("hOv").classList.remove("on");
 $("hOv").addEventListener("click",e=>{if(e.target===$("hOv"))$("hOv").classList.remove("on");});
 
 
-// ── START FROM 0 (main admin): the old report is saved in the Google Sheet first, then everything is cleared ──
-$("bZero").onclick=()=>{
-  const b=S.backup||{},n=S.products.length+" product(s), "+S.materials.length+" material(s)";
-  openForm({title:"🗑 Start Reports from 0",info:"This clears <b>"+esc(n)+"</b> and all movements, so Workflow, Stock and Material start from <b>0</b>.<br><br>"+(b.configured?"✅ The Google Sheet is connected: the old report is first saved there (kept as <b>Archive …</b> tabs) — if that fails, nothing is deleted.":"⚠ The Google Sheet is NOT connected, so there will be <b>no backup</b>. Connect it first with ☁ Backup if you want to keep the old data.")+"<br><br>Type <b>ZERO</b> to confirm.",ok:"Start from 0",cls:"cut",
-    fields:[{k:"confirm",label:"Type ZERO",ph:"ZERO"}],submit:v=>api("/api/reports/reset",{confirm:String(v.confirm||"").trim().toUpperCase()})});
-};
 // A new day: "S.TODAY" becomes "SOLD" by itself (the server also refreshes the Google Sheet at midnight).
 setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/reports/state");if(d.ok)render();},5000);
 
