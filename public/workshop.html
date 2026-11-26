@@ -138,6 +138,20 @@ details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
 
 /* overlays */
 .gearbtn{width:40px;height:40px;border-radius:13px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0}
+.confbtn{position:relative;display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 12px;border-radius:13px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.14);color:#fff;font:700 11.5px/1.1 inherit;font-family:inherit;cursor:pointer;flex:none}
+.confbtn.hide{display:none}.confbtn .lb{text-align:left}
+.confbtn .bdg{position:absolute;top:-8px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#e53935;color:#fff;font-weight:800;font-size:12px;line-height:20px;text-align:center;border:2px solid #0f3d30;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.confbtn .bdg[hidden]{display:none}
+.confbtn .dot{width:9px;height:9px;border-radius:50%;background:#46d68b;box-shadow:0 0 0 3px rgba(70,214,139,.25)}
+.confbtn.wait .dot{background:#ffb300;box-shadow:0 0 0 3px rgba(255,179,0,.3);animation:cp 1.4s infinite}
+@keyframes cp{50%{box-shadow:0 0 0 7px rgba(255,179,0,0)}}
+@media(max-width:420px){.confbtn .lb{display:none}header .ttl .sub{display:none}}
+#matList .item{flex-wrap:wrap}#matList .item .mid{flex:1 1 60%;min-width:0}#matList .item .act{width:100%;justify-content:flex-start!important}
+.asgbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 10px;padding:9px 12px;background:#eef6fb;border:1px solid #d4e6f3;border-radius:0 0 14px 14px;font-size:12.5px;color:#14598f}
+.asgbar select{flex:1;min-width:140px;padding:7px 9px;border-radius:10px;border:1px solid #c4dbea;background:#fff;font:inherit;font-size:13px}
+.statusbar{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:#e2f5ea;color:#17824c;font-weight:700;margin-bottom:12px}
+.statusbar.wait{background:#fff1d4;color:#8a5a00}.statusbar .dot{width:11px;height:11px;border-radius:50%;background:currentColor;flex:none}
+.statusbar.wait .dot{animation:cp 1.4s infinite}
 .gearbtn:active{background:rgba(255,255,255,.25)}.gearbtn .i{width:21px;height:21px}
 .stcard{border:1px solid var(--line,#e6e1d6);border-radius:16px;padding:12px 14px;margin:12px 0;background:#fff}
 .stcard h3{margin:0 0 4px;font-size:14px}.stcard.danger{border-color:#f0c2be;background:#fff8f7}
@@ -274,6 +288,7 @@ details.set{border-radius:var(--r)}
   <div class="row1">
     <a class="back" href="/home.html"><svg class="i" style="width:16px;height:16px"><use href="#i-left"/></svg>Home</a>
     <div class="ttl"><h1>Production &amp; Dispatch</h1><div class="sub">Workshop production, materials and driver coordination</div></div>
+    <button class="confbtn hide" id="confBtn" type="button" aria-label="Admin Confirmation" title="Admin Confirmation"><span class="dot"></span><span class="lb">Admin<br>Confirmation</span><i class="bdg" id="confN" hidden>0</i></button>
     <button class="gearbtn" id="openSt" type="button" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
     <div class="logo">A</div>
   </div>
@@ -372,6 +387,23 @@ details.set{border-radius:var(--r)}
   <textarea id="aNote" placeholder="Anything the workshop must know…"></textarea>
   <div id="aMsg" class="msg" style="margin-top:10px"></div>
   <div class="btns"><button class="btn" id="aAdd" type="button"><svg class="i"><use href="#i-plus"/></svg>Add to list</button><button class="btn sec" id="aClose" type="button">Cancel</button></div>
+</div></div>
+<div class="ov" id="confOv"><div class="box">
+  <h2 style="margin:0 0 10px">🛡 Admin Confirmation</h2>
+  <div id="confBody"></div>
+  <div class="btns"><button class="btn sec" id="confClose" type="button">Close</button></div>
+</div></div>
+<div class="ov" id="prOv"><div class="box">
+  <h2 style="margin:0 0 4px">✏️ Edit product</h2><div class="hint" id="prInfo" style="margin:0"></div>
+  <label class="lab">Product ID</label><input type="text" id="prCode" autocomplete="off">
+  <label class="lab">Product type</label><input type="text" id="prType" list="prTypes" autocomplete="off"><datalist id="prTypes"></datalist>
+  <label class="lab">Model / name</label><input type="text" id="prModel" autocomplete="off">
+  <label class="lab">Measurement / description</label><input type="text" id="prDesc" autocomplete="off">
+  <label class="lab">Handle</label><input type="text" id="prHandle" autocomplete="off">
+  <label class="lab">Priority</label><select id="prPrio"><option value="LOW">Normal</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option></select>
+  <label class="lab">Note</label><input type="text" id="prNote" autocomplete="off">
+  <div id="prMsg" class="msg" style="margin-top:10px"></div>
+  <div class="btns"><button class="btn" id="prOk" type="button">Save changes</button><button class="btn sec" id="prNo" type="button">Cancel</button></div>
 </div></div>
 <div class="ov" id="matOv"><div class="box">
   <h2 id="mTitle" style="margin:0 0 4px">Material</h2><div class="hint" id="mInfo" style="margin:0"></div>
@@ -511,7 +543,7 @@ const typeSet=(id,otherId,t)=>{t=t||"";const k=PTYPES.includes(t);$(id).value=t?
 const typeWire=(id,otherId)=>$(id).addEventListener("change",()=>{const o=$(id).value==="__other";$(otherId).style.display=o?"block":"none";if(o)$(otherId).focus();});
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ic=(n,st)=>'<svg class="i"'+(st?' style="'+st+'"':"")+'><use href="#i-'+n+'"/></svg>';
-let meRole="";let S={settings:{workshop:null,finishing:null,stock:null,driver:null,material:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab=(new URLSearchParams(location.search).get("confirm")==="1"?"m":"o"),sub="std",ws=null,fin=null,stock=null,drv=null,matTopic=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
+let meRole="";let S={settings:{workshop:null,finishing:null,stock:null,driver:null,material:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,drv=null,matTopic=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
 const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
 const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
 const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
@@ -540,19 +572,14 @@ const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="
 const nfm=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
 let matQ="";
 function matView(){
-  const pending=S.cutRequests||[], history=S.cutHistory||[];
-  const statusLabel=r=>r.status==="approved"?"✅ CONFIRMED":r.status==="rejected"?"❌ REJECTED":"🔴 WAITING FOR CONFIRMATION";
-  const historyRows=history.length?history.map(r=>'<details class="item" style="display:block"><summary style="cursor:pointer;list-style:none"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+' <span class="pill '+(r.status==="approved"?"ok":r.status==="rejected"?"bad":"wait")+'">'+statusLabel(r)+'</span></div><div class="meta">Requested by '+esc(r.by||"Admin")+' · '+esc(r.created?.d||"")+' '+esc(r.created?.t||"")+'</div></summary><div class="meta" style="padding:10px 0">Material: '+esc(r.material)+'<br>Quantity: '+esc(String(r.qty))+' '+esc(r.unit)+'<br>Stock before: '+esc(String(r.before))+' '+esc(r.unit)+'<br>Stock after: '+(r.status==="approved"?esc(String(r.after))+" "+esc(r.unit):"Not changed")+'<br>Requested by: '+esc(r.by||"Admin")+'<br>Request note: '+esc(r.note||"—")+'<br>Decision by: '+esc(r.decidedBy||"—")+'<br>Decision time: '+esc((r.decidedAt?.d||"")+" "+(r.decidedAt?.t||""))+'<br>Decision note: '+esc(r.decisionNote||"—")+'</div></details>').join(""):'<div class="empty">No confirmation requests yet.</div>';
-  const approvals=(meRole==="owner"&&pending.length)?'<div class="card" style="margin:12px 0"><div class="sec-h"><b>🔴 Awaiting confirmation</b><span>'+pending.length+'</span></div>'+pending.map(r=>'<details class="item" style="display:block"><summary style="cursor:pointer;list-style:none"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+' <span class="pill wait">WAITING</span></div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' '+esc(r.unit)+'</div></summary><div class="meta" style="padding:10px 0">Requested by: '+esc(r.by)+'<br>Material: '+esc(r.material)+'<br>Quantity: '+esc(String(r.qty))+' '+esc(r.unit)+'<br>Available before: '+esc(String(r.before))+' '+esc(r.unit)+'<br>Expected after: '+esc(String(r.after))+' '+esc(r.unit)+'<br>Request note: '+esc(r.note||"—")+'</div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'" data-requesttype="'+esc(r.requestType||"cut")+'">✅ Confirm</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'" data-requesttype="'+esc(r.requestType||"cut")+'">❌ Reject</button></div></details>').join('')+'</div>':'';
-  const viewer='<details class="card" style="margin:12px 0"><summary style="cursor:pointer"><b>📋 Confirmation history</b> · '+history.length+' total <span class="pill gray">Tap to view</span></summary><div class="meta" style="margin:8px 0">Open any request to view its full details and decision history.</div>'+historyRows+'</details>';
-  const confirmOnly=new URLSearchParams(location.search).get("confirm")==="1";
-  if(confirmOnly)return approvals+viewer;
-  return approvals+viewer+'<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
+  const pending=S.cutRequests||[];
+  const approvals=(meRole==="owner"&&pending.length)?'<div class="card" style="margin:12px 0"><div class="sec-h"><b>⏳ Pending cut approvals</b><span>'+pending.length+'</span></div>'+pending.map(r=>'<div class="item"><div class="mid"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+'</div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' '+esc(r.unit)+(r.note?" · "+esc(r.note):"")+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'">✅ Approve</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'">❌ Reject</button></div></div>').join('')+'</div>':'';
+  return approvals+'<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
 }
 function matList(){
   const q=matQ.trim().toLowerCase(),L=(S.materials||[]).filter(m=>!q||(m.name+" "+m.type+" "+m.unit+" "+m.group).toLowerCase().includes(q)),gs=(S.matGroups||[]).slice();L.forEach(m=>{if(!gs.includes(m.group))gs.push(m.group);});
   const row=m=>{const low=m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");const pill=low==="ok"?'<span class="pill ok">OK</span>':'<span class="pill '+(low==="out"?"bad":"wait")+'">'+(low==="out"?"OUT":"LOW")+'</span>';
-    return '<div class="item"><div class="mid"><div class="nm">'+esc(m.name+(m.type?" "+m.type:""))+'</div><div class="meta"><b style="font-size:15px;color:'+(m.qty<5?"#cc0000":"var(--ink)")+'">'+nfm(m.qty)+'</b> '+esc(m.unit)+' · '+pill+'</div></div><div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-madd="'+esc(m.id)+'">➕ Add</button><button class="btn sec sm" type="button" data-mcut="'+esc(m.id)+'">✂️ Cut</button></div></div>';};
+    return '<div class="item"><div class="mid"><div class="nm">'+esc(m.name+(m.type?" "+m.type:""))+'</div><div class="meta"><b style="font-size:15px;color:'+(m.qty<5?"#cc0000":"var(--ink)")+'">'+nfm(m.qty)+'</b> '+esc(m.unit)+' · '+pill+'</div></div><div class="act" style="flex-direction:row;flex-wrap:wrap;justify-content:flex-end"><button class="btn sec sm" type="button" data-medit="'+esc(m.id)+'" title="Edit">✏️</button>'+(S.isOwner?'<button class="btn sec sm" type="button" data-mfix="'+esc(m.id)+'" title="Fix stock">🛠</button><button class="btn sec sm" type="button" data-mdel="'+esc(m.id)+'" title="Delete">🗑</button>':'')+'<button class="btn sm" type="button" data-madd="'+esc(m.id)+'">➕ Add</button><button class="btn sec sm" type="button" data-mcut="'+esc(m.id)+'">✂️ Cut</button></div></div>';};
   let h=gs.map(g=>{const X=L.filter(m=>m.group===g);return X.length?'<div class="sec-h" style="margin-top:14px"><b style="font-size:13px;color:var(--mute)">'+esc(g)+'</b><span>'+X.length+'</span></div>'+X.map(row).join(""):"";}).join("");
   if(!L.length)h+=q?emptyBox("search","No material found","Nothing matches “"+esc(matQ)+"”."):emptyBox("box","No material yet","Tap <b>New material</b>. Materials added here also appear in Reports → Material.");
   return h;
@@ -568,18 +595,32 @@ function openMat(kind,m){
   $("mName").value="";$("mType").value="";$("mUnit").value="244-122";$("mQty").value="";$("mNote").value="";
   const gs=(S.matGroups||[]);$("mGroup").value=gs[1]||gs[0]||"MATERIAL";$("mGroups").innerHTML=gs.map(g=>'<option value="'+esc(g)+'">').join("");
   $("mOk").textContent=kind==="new"?"Save material":(kind==="add"?"Add":"✂️ Cut now");
+  if(kind==="edit"||kind==="fix"){ // v174: Material edit / stock fix live ONLY here (Reports is view-only)
+    $("mNew").style.display=kind==="edit"?"block":"none";
+    $("mTitle").textContent=(kind==="edit"?"✏️ Edit ":"🛠 Fix stock of ")+(m?m.name+(m.type?" "+m.type:""):"");
+    $("mInfo").textContent=kind==="edit"?"Change the name, type, unit or table. To change the quantity use Add / Cut.":"Wrong quantity typed? Write the REAL quantity now. It is saved as a correction in the movement log. Now: "+(m?nfm(m.qty)+" "+m.unit:"");
+    if(m){$("mName").value=m.name;$("mType").value=m.type||"";$("mUnit").value=m.unit||"";$("mGroup").value=m.group||"";}
+    $("mQtyLab").textContent=kind==="edit"?"Low-stock alert (optional)":"Correct quantity";$("mQty").value=kind==="edit"?(m&&m.min?m.min:""):(m?m.qty:"");
+    $("mOk").textContent=kind==="edit"?"Save changes":"Save correction";
+  }
   $("matOv").classList.add("on");setTimeout(()=>$(kind==="new"?"mName":"mQty").focus(),50);
 }
 $("mNo").onclick=()=>$("matOv").classList.remove("on");
 $("mOk").onclick=async()=>{
   if(!MAT)return;let path,body;
-  if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
+  if(MAT.kind==="edit"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/edit";body={id:MAT.id,name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,min:$("mQty").value};}
+  else if(MAT.kind==="fix"){if($("mQty").value==="")return say2("mMsg","Write the correct quantity.");path="/api/workshop/material/correct";body={id:MAT.id,qty:$("mQty").value,note:$("mNote").value};}
+  else if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
   else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path=MAT.kind==="cut"?"/api/workshop/material/cut":"/api/workshop/material/move";body={id:MAT.id,type:"add",qty:$("mQty").value,note:$("mNote").value};}
   busy("Saving…");const d=await api(path,body);busy("");
   if(d.ok){$("matOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("mMsg",d.error||"Could not save.");
 };
 document.addEventListener("click",e=>{
   const n=e.target.closest("[data-mnew]");if(n)return openMat("new");
+  const ed=e.target.closest("[data-medit]"),fx=e.target.closest("[data-mfix]");
+  if(ed||fx){const id=(ed||fx).dataset.medit||(ed||fx).dataset.mfix,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(ed?"edit":"fix",m);return;}
+  const dl=e.target.closest("[data-mdel]");
+  if(dl){const id=dl.dataset.mdel,m=(S.materials||[]).find(x=>x.id===id);if(m&&confirm("Delete “"+m.name+(m.type?" "+m.type:"")+"”? Its movements stay in the log."))(async()=>{busy("Deleting…");const d=await api("/api/workshop/material/delete",{id});busy("");if(d.ok){render();say(d.message||"Deleted.","ok");}else say(d.error||"Could not delete.","bad");})();return;}
   const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
   const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
 });
@@ -588,7 +629,7 @@ document.addEventListener("click",async e=>{
   const id=el.dataset.cutapprove||el.dataset.cutreject,approve=!!a;
   if(!confirm(approve?"Approve this material cut?":"Reject this material cut?"))return;
   busy(approve?"Approving cut…":"Rejecting cut…");
-  const endpoint=el.dataset.requesttype==="new"?"/api/workshop/material/add-decide":"/api/workshop/material/cut-decide";const d=await api(endpoint,{id,approve});
+  const d=await api("/api/workshop/material/cut-decide",{id,approve});
   busy("");
   if(d.ok){render();say(d.message||"Done.","ok");}else say(d.error||"Could not decide the cut.","bad");
 });
@@ -596,12 +637,70 @@ const orderOpts=first=>'<option value="">'+first+'</option><option value="__type
 // the order chosen in a "Which order?" box: a listed order (any status) or a TYPED order ID → {orderId,orderLabel} (null = nothing chosen)
 function pickedOrder(selId,typedId){const v=$(selId).value;if(v==="__typed"){const t=$(typedId).value.trim().slice(0,40);return t?{orderId:"",orderLabel:t,typed:true}:null;}if(!v)return null;const o=(S.allOrders||[]).find(x=>String(x.id)===v);return o?{orderId:o.id,orderLabel:o.orderId||("#"+o.id),size:o.size}:null;}
 const wireOrderBox=(selId,typedId,sizeId)=>{$(selId).onchange=()=>{const t=$(selId).value==="__typed";$(typedId).style.display=t?"block":"none";if(t)$(typedId).focus();const p=pickedOrder(selId,typedId);if(p&&p.size&&!$(sizeId).value.trim())$(sizeId).value=p.size;};};
+// ── v174: ASSIGN admins to production activities (managers = main admin + admins with the Workshop section) ──
+function asgBar(j,stage){
+  const a=(j.assign||{})[stage],mine=a&&String(a.id)===String(S.meId);
+  const label='<span>👤 <b>'+(stage==="workshop"?"Workshop":"Finishing")+'</b> assigned to: '+(a?'<b>'+esc(a.name)+'</b>'+(mine?' <span class="pill ok">You</span>':''):'<i>nobody</i>')+'</span>';
+  if(!S.canAssign)return '<div class="asgbar">'+label+'</div>';
+  return '<div class="asgbar">'+label+'<select data-assign="'+esc(j.id)+'" data-stage="'+stage+'"><option value="">— Nobody —</option>'+(S.assignable||[]).map(x=>'<option value="'+esc(x.id)+'"'+(a&&String(a.id)===String(x.id)?" selected":"")+'>'+esc(x.name)+(x.main?" (main admin)":"")+'</option>').join("")+'</select></div>';
+}
+document.addEventListener("change",async e=>{
+  const sel=e.target.closest&&e.target.closest("select[data-assign]");if(!sel)return;
+  busy("Assigning…");const d=await api("/api/workshop/job/assign",{id:sel.dataset.assign,stage:sel.dataset.stage,adminId:sel.value});busy("");
+  render();say(d.ok?d.message:(d.error||"Could not assign."),d.ok?"ok":"bad");
+});
+// ── v174: RECORDS = every Reports product; products are edited / deleted ONLY here ──
+let recQ="";
+const stPill=s=>s==="workflow"?'<span class="pill wait">🛠 Workflow</span>':s==="stock"?'<span class="pill ok">📦 In stock</span>':'<span class="pill gray">💰 Sold</span>';
+function recView(){
+  const q=recQ.trim().toLowerCase(),L=(S.records||[]).filter(r=>!q||[r.code,r.model,r.desc,r.ptype,r.handle,r.orderRef,r.status].join(" ").toLowerCase().includes(q));
+  return '<div class="sec-h"><b>📋 Product records</b><span>'+L.length+' of '+(S.records||[]).length+' · linked to Reports</span></div><div class="hint" style="margin:-4px 2px 10px">Reports only <b>shows</b> products. Edit or delete a product here.'+(S.isOwner?'':' Deleting is for the main admin.')+'</div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="rSearch" placeholder="Search ID, model, type…" autocomplete="off" value="'+esc(recQ)+'"></div></div><div id="recList">'+recList(L)+'</div>';
+}
+function recList(L){
+  if(!L.length)return emptyBox("list","No product records","Products sent to the workshop appear here and in Reports.");
+  return L.slice(0,200).map(r=>'<div class="item">'+(r.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(r.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(r.model||r.desc||r.code)+'</div><div class="meta"><b style="color:var(--ink)">'+esc(r.code)+'</b>'+(r.ptype?' · '+esc(r.ptype):'')+(r.desc&&r.model?'<br>'+esc(r.desc):'')+(r.orderRef?' · Order '+esc(r.orderRef):'')+'</div><div class="tags">'+stPill(r.status)+'</div></div><div class="act"><button class="btn sec sm" type="button" data-pedit="'+esc(r.id)+'">'+ic("edit","width:15px;height:15px")+'Edit</button>'+(S.isOwner?'<button class="btn sec sm" type="button" data-pdel="'+esc(r.id)+'">🗑</button>':'')+'</div></div>').join("");
+}
+document.addEventListener("input",e=>{if(e.target.id==="rSearch"){recQ=e.target.value;const l=$("recList");if(l){const q=recQ.trim().toLowerCase();l.innerHTML=recList((S.records||[]).filter(r=>!q||[r.code,r.model,r.desc,r.ptype,r.handle,r.orderRef,r.status].join(" ").toLowerCase().includes(q)));}}});
+let PR=null;
+document.addEventListener("click",async e=>{
+  const ed=e.target.closest("[data-pedit]"),dl=e.target.closest("[data-pdel]");
+  if(ed){PR=(S.records||[]).find(x=>x.id===ed.dataset.pedit);if(!PR)return;say2("prMsg","");$("prInfo").textContent=PR.code+" · "+(PR.status==="workflow"?"in Workflow":PR.status==="stock"?"in Stock":"sold");
+    $("prTypes").innerHTML=PTYPES.map(t=>'<option value="'+t+'">').join("");$("prCode").value=PR.code;$("prType").value=PR.ptype||"";$("prModel").value=PR.model||"";$("prDesc").value=PR.desc||"";$("prHandle").value=PR.handle||"";$("prPrio").value=PR.priority||"LOW";$("prNote").value=PR.note||"";$("prOv").classList.add("on");return;}
+  if(dl){const r=(S.records||[]).find(x=>x.id===dl.dataset.pdel);if(!r||!confirm("Delete “"+r.code+" · "+(r.model||r.desc)+"” for good?"))return;busy("Deleting…");const d=await api("/api/workshop/product/delete",{id:r.id});busy("");render();say(d.ok?d.message:(d.error||"Could not delete."),d.ok?"ok":"bad");}
+});
+$("prNo").onclick=()=>$("prOv").classList.remove("on");
+$("prOk").onclick=async()=>{
+  if(!PR)return;const code=$("prCode").value.trim();if(!code)return say2("prMsg","The Product ID is needed.");
+  if(!$("prModel").value.trim()&&!$("prDesc").value.trim()&&!$("prType").value.trim())return say2("prMsg","Write the model or the description.");
+  busy("Saving…");
+  const d=await api("/api/workshop/product/edit",{id:PR.id,code,ptype:$("prType").value,model:$("prModel").value,desc:$("prDesc").value,handle:$("prHandle").value,priority:$("prPrio").value,note:$("prNote").value,
+    orderType:PR.orderType,sno:PR.sno,category:PR.category,capacity:PR.capacity,salesName:PR.salesName,location:PR.location,deliveryDate:PR.deliveryDate,changes:PR.changes});
+  busy("");if(d.ok){$("prOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("prMsg",d.error||"Could not save.");
+};
+// ── v174: ADMIN CONFIRMATION (main admin only): red number = pending inventory movements; dot = cutter actions awaiting approval ──
+function updConf(){
+  const b=$("confBtn"),c=S.confirm;if(!b)return;
+  b.classList.toggle("hide",!S.isOwner);if(!S.isOwner||!c)return;
+  const n=c.pending||0;$("confN").hidden=!n;$("confN").textContent=n>99?"99+":n;b.classList.toggle("wait",!!c.cutters);
+  if($("confOv").classList.contains("on"))confRender();
+}
+function confRender(){
+  const c=S.confirm||{pending:0,cutters:0,items:[]};
+  $("confBody").innerHTML='<div class="statusbar '+(c.cutters?"wait":"")+'"><span class="dot"></span><span>'+(c.cutters?c.cutters+" cutter action"+(c.cutters===1?"":"s")+" awaiting approval":"No cutter actions waiting — all clear")+'</span></div>'
+    +'<div class="hint" style="margin:0 2px 10px">Pending inventory movements: <b>'+(c.pending||0)+'</b>'+(c.oldest?' · oldest since '+esc(c.oldest):'')+'. Only the main admin can approve or reject them.</div>'
+    +((c.items||[]).map(r=>'<div class="item"><div class="mid"><div class="nm">✂️ '+esc(r.material+(r.mtype?" "+r.mtype:""))+' · '+esc(String(r.qty))+' '+esc(r.unit)+'</div><div class="meta">Requested by '+esc(r.by)+' · available '+esc(String(r.before))+' → after '+esc(String(r.after))+(r.note?'<br>'+esc(r.note):'')+(r.created?'<br>'+esc([r.created.d,r.created.t].filter(Boolean).join(" ")):'')+'</div></div><div class="act"><button class="btn sm" type="button" data-cutapprove="'+esc(r.id)+'">Approve</button><button class="btn sec sm" type="button" data-cutreject="'+esc(r.id)+'">Reject</button></div></div>').join("")||emptyBox("box","Nothing to confirm","New cutter requests show up here with a red number on the Admin Confirmation button."));
+}
+$("confBtn").onclick=()=>{confRender();$("confOv").classList.add("on");};
+$("confClose").onclick=()=>$("confOv").classList.remove("on");
+setInterval(async()=>{if(!$("confOv").classList.contains("on")||document.visibilityState!=="visible")return;const d=await api("/api/workshop/state");if(d.ok){updConf();}},6000);
 function render(){
+  updConf();
   renderSettings();
   updDock();
-  const confirmOnly=new URLSearchParams(location.search).get("confirm")==="1";const tabs=confirmOnly?[["m","check-circle","Confirmations",(S.cutRequests||[]).length]]:[["m","box","Materials",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length]];
+  const tabs=[["m","box","Materials",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length],["x","list","Records",(S.records||[]).length]];
   $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
   $("subWrap").style.display=tab==="s"?"block":"none";
+  if(tab==="x"){$("out").innerHTML=recView();$("cusForm").style.display="none";$("basket").innerHTML="";$("subWrap").style.display="none";return;}
   if(tab==="m"){$("out").innerHTML=matView();$("cusForm").style.display="none";$("basket").innerHTML="";return;}
   $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
   $("cusForm").style.display=tab==="s"&&sub==="cus"?"block":"none";
@@ -624,8 +723,8 @@ function render(){
   }else if(tab==="p"){
     // the chain: In workshop → In finishing → Finished (the same buttons as in Telegram)
     const inW=S.jobs.filter(j=>j.stage==="workshop"),inF=S.jobs.filter(j=>j.stage==="finishing");
-    h='<div class="sec-h"><b>🛠 In workshop</b><span>'+inW.length+'</span></div>'+(inW.map(j=>jobCard(j,'<div class="act"><button class="btn sm" type="button" data-jws="'+esc(j.id)+'">Finished workshop</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in the workshop.</div>')
-      +'<div class="sec-h" style="margin-top:14px"><b>🪚 In finishing</b><span>'+inF.length+'</span></div>'+(inF.map(j=>jobCard(j,'<div class="act"><button class="btn gold sm" type="button" data-jfin="'+esc(j.id)+'">✅ Finished</button></div>')).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in finishing.</div>')
+    h='<div class="sec-h"><b>🛠 In workshop</b><span>'+inW.length+'</span></div>'+(inW.map(j=>jobCard(j,'<div class="act"><button class="btn sm" type="button" data-jws="'+esc(j.id)+'">Finished workshop</button></div>')+asgBar(j,"workshop")).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in the workshop.</div>')
+      +'<div class="sec-h" style="margin-top:14px"><b>🪚 In finishing</b><span>'+inF.length+'</span></div>'+(inF.map(j=>jobCard(j,'<div class="act"><button class="btn gold sm" type="button" data-jfin="'+esc(j.id)+'">✅ Finished</button></div>')+asgBar(j,"finishing")).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in finishing.</div>')
       +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,'<div class="act">'+(j.stockState==="sold"?'<button class="btn gold sm" type="button" data-restockjob="'+esc(j.id)+'">♻️ Restock</button>':'<button class="btn sec sm" type="button" data-soldjob="'+esc(j.id)+'">🔴 Sold Out</button>')+(j.driverAt?'<span class="pill ok">🚚 Sent to driver</span>':((j.ordered||j.stockState==="sold")?'<button class="btn sm" type="button" data-driverjob="'+esc(j.id)+'">🚚 Send to driver</button>':""))+'</div>')).join(""):"");
   }else if(sub==="std"){
     // v159: ANY admin with the Workshop section can add / change standard products (the input is always visible)
@@ -1033,6 +1132,7 @@ $("mdAll").onclick=async()=>{
   if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
   else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
   render();
+  try{if(new URLSearchParams(location.search).get("open")==="confirm"&&S.isOwner){confRender();$("confOv").classList.add("on");}}catch{}
 })();
 document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
 setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/workshop/state");if(d.ok)render();},10000);
