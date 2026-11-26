@@ -22,6 +22,20 @@ svg.i{width:20px;height:20px}
 header{background:radial-gradient(120% 140% at 85% -20%,#2a8a6c 0%,transparent 55%),linear-gradient(160deg,var(--brand),var(--brand2));color:#fff;padding:calc(20px + env(safe-area-inset-top,0px)) 20px 66px}
 .top{max-width:760px;margin:auto;display:flex;align-items:center;gap:14px}
 .logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(150deg,#ffe58f,#e0a21a);color:#5a3a00;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;box-shadow:0 8px 14px rgba(0,0,0,.3),inset 0 2px 2px rgba(255,255,255,.7),inset 0 -4px 6px rgba(120,70,0,.3)}
+.top .ttl{min-width:0}
+.conf{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+.conf.hide{display:none}
+.conf .cb{position:relative;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(8px);border-radius:16px;padding:8px 12px;font-size:11.5px;font-weight:700;line-height:1.15;color:#fff;box-shadow:0 6px 16px rgba(0,0,0,.18);transition:transform .12s}
+.conf:active .cb{transform:scale(.96)}
+.conf .badge{position:absolute;top:-8px;right:-6px;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#e53935;color:#fff;font-weight:800;font-size:12px;line-height:21px;font-style:normal;text-align:center;border:2px solid #14604a;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.conf .badge[hidden]{display:none}
+.conf .cs{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#dff0e9}
+.conf .cs u{width:9px;height:9px;border-radius:50%;background:#46d68b;box-shadow:0 0 0 3px rgba(70,214,139,.25)}
+.conf .cs em{font-style:normal}
+.conf .cs.wait{color:#ffe9a8}.conf .cs.wait u{background:#ffb300;box-shadow:0 0 0 3px rgba(255,179,0,.3);animation:cpulse 1.4s infinite}
+.conf .cs.off u{background:#9aa7a1;box-shadow:none}
+@keyframes cpulse{50%{box-shadow:0 0 0 7px rgba(255,179,0,0)}}
+@media(max-width:380px){.conf .lb{display:none}.conf .cb{padding:9px}}
 .top h1{margin:0;font-size:20px;font-weight:700}.top .sub{font-size:13px;opacity:.78;margin-top:2px}
 main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
 .hello{margin:0 4px 14px;font-size:15px;font-weight:600;color:#fff;min-height:20px}
@@ -123,11 +137,12 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 <path d="M12 18 H34" stroke="#fff" stroke-opacity=".65" stroke-width="2.5" stroke-linecap="round"/></symbol><symbol id="i-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol></svg>
 <div id="gate"><div class="panel"><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 
-<header><div class="top"><div class="logo">A</div><div class="brand"><h1>Ambar Furniture</h1><div class="sub">Admin Home</div></div><a class="admin-confirm own hide" id="adminConfirm" href="/workshop.html?confirm=1#material" aria-label="Open main admin confirmations"><span>Admin confirmation</span><b id="movementBadge">0</b></a></div><div class="approval-status own hide" id="cutterApprovalStatus"><i></i><span>Checking cutter actions awaiting sign-off…</span></div></header>
-<style>
-header .top{display:flex;align-items:center;gap:12px}header .brand{min-width:0;flex:1}.admin-confirm{display:flex;align-items:center;gap:9px;white-space:nowrap;text-decoration:none;background:#fff;color:#173d30;border:1px solid #d8e3dd;border-radius:10px;padding:5px 7px;font-size:10px;font-weight:800;box-shadow:0 3px 12px #0002}.admin-confirm b{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 5px;border-radius:50px;background:#d71920;color:white;font-size:12px}.approval-status{display:flex;align-items:center;gap:8px;margin:10px 2px 0;color:#fff;font-size:11px;opacity:.95}.approval-status i{width:8px;height:8px;border-radius:50%;background:#ffbd35;box-shadow:0 0 0 3px #ffbd3533;flex:none}
-@media(max-width:420px){.admin-confirm{padding:4px 5px;font-size:9px;gap:4px}.admin-confirm b{min-width:17px;height:17px}}
-</style>
+<header><div class="top"><div class="logo">A</div><div class="ttl"><h1>Ambar Furniture</h1><div class="sub">Admin Home</div></div>
+  <!-- v174: Admin Confirmation (main admin only) — red number = pending inventory movements, dot = cutter actions awaiting approval -->
+  <a class="conf hide" id="confBtn" href="/workshop.html?open=confirm" aria-label="Admin Confirmation">
+    <span class="cb"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span class="lb">Admin<br>Confirmation</span><i class="badge" id="confN" hidden>0</i></span>
+    <span class="cs clear" id="confS"><u></u><em id="confT">Cutter clear</em></span>
+  </a></div></header>
 
 <main>
   <p class="hello" id="hello"></p>
@@ -149,7 +164,7 @@ header .top{display:flex;align-items:center;gap:12px}header .brand{min-width:0;f
   <div class="hide" data-perm="reports">
     <div class="sec">Reports</div>
     <div class="list">
-      <a class="row" href="/reports.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Reports</b><span class="d">Workflow · Stock · Material — work inside the app</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+      <a class="row" href="/reports.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Reports</b><span class="d">Workflow · Stock · Material · Dispatch — view only, fed by Workshop</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
     </div>
   </div>
 
@@ -182,16 +197,6 @@ const $=id=>document.getElementById(id);
 // every link keeps the Telegram #hash so the Mini App identity survives the page change
 document.querySelectorAll("a[href^='/']").forEach(a=>a.addEventListener("click",e=>{if(location.hash){e.preventDefault();location.href=a.getAttribute("href")+location.hash;}}));
 document.body.classList.add("hasq");
-async function refreshAdminApprovals(){
-  const link=$("adminConfirm"), badge=$("movementBadge"), status=$("cutterApprovalStatus");
-  if(!link||link.classList.contains("hide"))return;
-  try{const r=await fetch("/api/workshop/admin-summary",{credentials:"same-origin"});const d=await r.json();if(!r.ok||!d.ok)return;
-    badge.textContent=String(d.pendingMovements||0);
-    const n=Number(d.pendingCuts||0);status.querySelector("span").textContent=n?`${n} cutter action${n===1?"":"s"} awaiting administrative sign-off`:"No cutter actions awaiting sign-off";
-    status.querySelector("i").style.background=n?"#ffbd35":"#54d68a";
-  }catch(e){status.querySelector("span").textContent="Cutter approval status unavailable";}
-}
-refreshAdminApprovals();setInterval(refreshAdminApprovals,15000);
 (function(){const q=$("quick"),set=()=>document.documentElement.style.setProperty("--q-h",q.offsetHeight+"px");set();addEventListener("resize",set);addEventListener("load",set);new MutationObserver(set).observe(q,{attributes:true,subtree:true,attributeFilter:["style","class"]});})();
 $("btnSh").addEventListener("click",async()=>{
   const b=$("btnSh"),lab=b.querySelector("span"),old=lab.textContent;
@@ -205,6 +210,20 @@ $("btnSh").addEventListener("click",async()=>{
   }catch(e){(window.AppToast||alert)("Could not reach the server. Try again.");}
   b.disabled=false;lab.textContent=old;
 });
+// v174: Admin Confirmation badge + cutter status (main admin only; the server refuses everybody else)
+let confTimer=0;
+async function pullConfirm(){
+  if(document.visibilityState==="hidden")return;
+  try{
+    const r=await fetch("/api/workshop/confirmations"),d=await r.json();
+    if(!d||!d.ok){$("confS").className="cs off";$("confT").textContent="Status unavailable";return;}
+    const n=Number(d.pending)||0,c=Number(d.cutters)||0,b=$("confN");
+    b.hidden=!n;b.textContent=n>99?"99+":String(n);
+    $("confS").className="cs "+(c?"wait":"clear");
+    $("confT").textContent=c?(c+" cutter action"+(c===1?"":"s")+" awaiting approval"):"Cutter clear";
+  }catch(e){$("confS").className="cs off";$("confT").textContent="Status unavailable";}
+}
+function startConfirm(){$("confBtn").classList.remove("hide");pullConfirm();if(!confTimer)confTimer=setInterval(pullConfirm,20000);document.addEventListener("visibilitychange",pullConfirm);}
 (async()=>{
   // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
   try{
@@ -212,7 +231,7 @@ $("btnSh").addEventListener("click",async()=>{
     const allowed=m.role==="owner"||m.role==="admin"||m.enforced===false;
     if(allowed){
       $("hello").textContent="Hello"+(m.name?", "+m.name:"")+" 👋";
-      if(m.role==="owner"||m.enforced===false)document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});
+      if(m.role==="owner"||m.enforced===false){document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});startConfirm();}
       // Section access: the main admin decides which sections each assigned admin sees (e.g. turn on Reports → it appears here).
       const full=m.role==="owner"||m.enforced===false,have=m.perms||[];
       document.querySelectorAll("[data-perm]").forEach(function(e){const ok=full||e.dataset.perm.split(",").some(function(k){return have.indexOf(k)>-1;});e.classList.toggle("hide",!ok);});
