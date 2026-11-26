@@ -22,7 +22,7 @@ function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop-data.json");
-  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], dispatches: [], savedAt: "", cutoverAt: "", cutoverVersion: 157 };
+  let db = { admins: {}, sent: {}, jobs: {}, log: [], catalog: [], dispatches: [], savedAt: "", cutoverAt: "", cutoverVersion: 157, report: null };
 
   // ── storage (file + Supabase, restored on every start) ─────────────────────────────────────
   let chain = Promise.resolve();
@@ -40,8 +40,12 @@ function register(app, ctx) {
     if (!Array.isArray(db.dispatches)) db.dispatches = [];
     for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
+    db.report = { month: "", auto: true, autoZero: false, lastSent: null, pending: [], history: [], lastReset: null, ...(db.report && typeof db.report === "object" ? db.report : {}) }; // v173
+    if (!Array.isArray(db.report.pending)) db.report.pending = [];
+    if (!Array.isArray(db.report.history)) db.report.history = [];
     // v157: start the Workshop queue fresh from this deployment; retain historical records in storage.
     if (db.cutoverVersion !== 157 || !db.cutoverAt) { db.cutoverAt = new Date().toISOString(); db.cutoverVersion = 157; await persist(); }
+    startReportTimers(); // v173: the monthly PDF report
   }
 
   // ── who is who ──────────────────────────────────────────────────────────────────────────────
@@ -467,7 +471,8 @@ function register(app, ctx) {
       doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
       materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], // v165
-      log: db.log.filter(l => l.key === key).slice(-100).reverse()
+      log: db.log.filter(l => l.key === key).slice(-100).reverse(),
+      report: reportInfo(actor) // v173
     };
   };
   // v172: a topic (group + topic) can be assigned ONCE: not twice by one admin, and not by two admins.
@@ -912,7 +917,203 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v172", cutoverAt: db.cutoverAt }));
+  // ═══ v173 MONTHLY REPORT (PDF, sent by the bot) + START FROM 0 ═══════════════════════════════
+  // • At the end of every Ethiopian month the BOT sends the full PDF report to the main admins, and the new month starts (the report of the new month only counts the new month).
+  // • Workshop → ⚙ Settings → "Start from 0": first sends the PDF (everything since the last start), then removes only the finished MOVEMENTS.
+  //   KEPT: standard products, products in Progress / Workflow (orders + readymade), products In Stock, every material with its stock, pending cut requests, deliveries still ON THE WAY.
+  //   REMOVED: Sold products, the material movement log, decided cut requests, delivered driver dispatches, finished jobs that are already delivered / sold, the workshop activity log.
+  const MONTHS = ["Meskerem", "Tikimt", "Hidar", "Tahsas", "Tir", "Yekatit", "Megabit", "Miazia", "Ginbot", "Sene", "Hamle", "Nehase", "Pagume"];
+  const monthLabel = m => { const x = /^(\d{4})\/(\d{2})$/.exec(String(m || "")); return x ? `${MONTHS[+x[2] - 1] || "Month " + x[2]} ${x[1]} (${m})` : String(m || ""); };
+  const curMonth = () => nowEth().d.slice(0, 7);
+  const isOwnerActor = a => a?.role === "owner" || a?.role === "open";
+  const ownerChatIds = () => [...new Set((ctx.ownerIds || []).map(String).filter(x => /^\d+$/.test(x)))];
+  const stampOf = o => (o && typeof o === "object") ? [o.d, o.t].filter(Boolean).join(" ") : String(o || "");
+
+  function reportInfo(actor) {
+    const r = db.report || {};
+    return { month: r.month || curMonth(), monthLabel: monthLabel(r.month || curMonth()), auto: r.auto !== false, autoZero: !!r.autoZero, lastSent: r.lastSent || null, lastReset: r.lastReset || null, pending: (r.pending || []).map(p => ({ month: monthLabel(p.month), tries: p.tries || 0, error: p.error || "" })), canManage: isOwnerActor(actor), recipients: ownerChatIds().length };
+  }
+
+  async function buildReportPdf(month) { // month = "2019/03" → that month only · null → everything since the last start from 0
+    const { Doc } = require("./pdfmini");
+    const rd = typeof R().wsReportData === "function" ? R().wsReportData() : { products: [], materials: [], log: [] };
+    const n = nowEth(), inM = s => !month || String(s || "").startsWith(month);
+    const label = month ? monthLabel(month) : "Everything since the last start from 0";
+    const doc = new Doc({ title: "AMBAR Furniture - " + label, footer: "AMBAR FURNITURE  -  " + label + "  -  created " + n.d + " " + n.t });
+    const P = rd.products, lab = p => [p.ptype, p.model, p.desc].filter(Boolean).join(" ") || p.code;
+    const bySold = P.filter(p => p.status === "sold" && inM(p.sold && p.sold.d));
+    const byFinished = P.filter(p => p.finished && inM(p.finished.d));
+    const byAdded = P.filter(p => inM(p.added && p.added.d));
+    const inStock = P.filter(p => p.status === "stock"), inFlow = P.filter(p => p.status === "workflow");
+    const jobs = Object.values(db.jobs).filter(j => inM(j.createdAt)).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const disp = (db.dispatches || []).filter(d => inM(d.sentAt) || inM(d.deliveredAt)).sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
+    const logM = rd.log.filter(l => inM(l.d)).slice().reverse();
+    const acts = (db.log || []).filter(l => inM(l.at));
+    let photoBudget = 24 * 1024 * 1024; // keep the PDF under Telegram's 50 MB limit
+    const thumbs = async list => { const out = []; for (const p of list) { let b = null; if (p.photo && photoBudget > 0 && typeof R().wsPhotoBuf === "function") { try { b = await R().wsPhotoBuf(p.photo); } catch {} if (b) photoBudget -= b.length; } out.push(b || null); } return out; };
+    const sec = async (title, list, cols, rowFn, withThumbs) => {
+      doc.h2(title, `${list.length} item${list.length === 1 ? "" : "s"}`);
+      if (!list.length) return doc.empty("Nothing in this period.");
+      doc.table(cols, list.map(rowFn), withThumbs ? { thumbs: await thumbs(list) } : {});
+    };
+    const sumMat = (types) => rd.log.filter(l => inM(l.d) && types.includes(l.type)).reduce((a, l) => a + (Number(l.qty) || 0), 0);
+
+    doc.title1("AMBAR FURNITURE - Monthly Report", label + "   |   created " + n.d + " " + n.t + " (Ethiopian date, Addis Ababa clock)");
+    doc.stats([
+      ["Products sent to workflow", byAdded.length], ["Finished (to stock)", byFinished.length], ["Sold", bySold.length], ["In stock now", inStock.length], ["In workflow now", inFlow.length],
+      ["Workshop jobs", jobs.length], ["Driver dispatches", disp.length], ["Delivered", disp.filter(d => d.status === "delivered").length], ["Material movements", logM.length], ["Standard products", (db.catalog || []).length]
+    ]);
+    await sec("Sold products", bySold, [{ h: "Code", w: 0.8, bold: true }, { h: "Product", w: 2.6 }, { h: "Handle", w: 1 }, { h: "Type", w: 0.9 }, { h: "Sold", w: 1.2 }, { h: "Sales name", w: 1.2 }, { h: "Note", w: 2 }],
+      p => [p.code, lab(p), p.handle, p.orderType, stampOf(p.sold), p.sold && p.sold.salesName || p.salesName, p.sold && p.sold.note], true);
+    await sec("Finished - moved to stock", byFinished, [{ h: "Code", w: 0.8, bold: true }, { h: "Product", w: 2.6 }, { h: "Type", w: 0.9 }, { h: "Started", w: 1.2 }, { h: "Finished", w: 1.2 }, { h: "By", w: 1.2 }, { h: "Status now", w: 1 }],
+      p => [p.code, lab(p), p.orderType, stampOf(p.added), stampOf(p.finished), p.finished && p.finished.by, p.status], true);
+    await sec("In stock now", inStock, [{ h: "Code", w: 0.8, bold: true }, { h: "Product", w: 3 }, { h: "Handle", w: 1 }, { h: "Type", w: 0.9 }, { h: "Finished", w: 1.3 }],
+      p => [p.code, lab(p), p.handle, p.orderType, stampOf(p.finished)], true);
+    await sec("In progress - workflow now", inFlow, [{ h: "Code", w: 0.8, bold: true }, { h: "Product", w: 2.6 }, { h: "Type", w: 0.9 }, { h: "Order", w: 1 }, { h: "Priority", w: 0.8 }, { h: "Stage", w: 1 }, { h: "Started", w: 1.2 }],
+      p => [p.code, lab(p), p.orderType, p.orderRef, p.priority, p.workshopStage || "-", stampOf(p.added)], true);
+    await sec("Workshop jobs", jobs, [{ h: "Product", w: 2.2, bold: true }, { h: "Codes", w: 1.6 }, { h: "Qty", w: 0.5 }, { h: "Kind", w: 0.9 }, { h: "Order", w: 1 }, { h: "Stage", w: 1.1 }, { h: "Created", w: 1.2 }, { h: "Workshop done", w: 1.2 }, { h: "Finished", w: 1.2 }],
+      j => [j.name, (j.codes || []).join(", "), j.qty || 1, j.kind, j.orderLabel, STAGES[j.stage] || j.stage, j.createdAt, j.wsDone && j.wsDone.at || "", j.finDone && j.finDone.at || ""], false);
+    await sec("Driver dispatches", disp, [{ h: "Product", w: 2, bold: true }, { h: "Codes", w: 1.2 }, { h: "Customer", w: 1.4 }, { h: "Phone", w: 1 }, { h: "Balance", w: 0.8, align: "right" }, { h: "Status", w: 0.8 }, { h: "Sent", w: 1.2 }, { h: "Delivered", w: 1.2 }],
+      d => [d.name, (d.codes || []).join(", "), d.customer && d.customer.name, d.customer && d.customer.phone, Number(d.balance || 0).toLocaleString("en-US") + " Birr", d.status === "delivered" ? "Delivered" : "On the way", (d.sentAt || "") + (d.sentBy ? " " + d.sentBy : ""), (d.deliveredAt || "") + (d.deliveredBy ? " " + d.deliveredBy : "")], false);
+    // materials: stock now + what came in / went out in the period
+    doc.h2("Materials - stock now", `${rd.materials.length} material${rd.materials.length === 1 ? "" : "s"}  |  in: ${sumMat(["add", "new"])}  out: ${sumMat(["cut"])}`);
+    if (!rd.materials.length) doc.empty("No materials.");
+    else {
+      const mv = new Map(); for (const l of rd.log) if (inM(l.d)) { const k = (l.material + "|" + l.mtype).toLowerCase(), o = mv.get(k) || { inn: 0, out: 0, fix: 0 }; const q = Number(l.qty) || 0; if (l.type === "add" || l.type === "new") o.inn += q; else if (l.type === "cut") o.out += q; else if (l.type === "fix") o.fix += q; mv.set(k, o); }
+      doc.table([{ h: "Table", w: 1.6 }, { h: "Material", w: 2, bold: true }, { h: "Type", w: 1 }, { h: "Unit", w: 0.8 }, { h: "In (period)", w: 0.8, align: "right" }, { h: "Out (period)", w: 0.8, align: "right" }, { h: "Correction", w: 0.8, align: "right" }, { h: "Stock now", w: 0.8, align: "right", bold: true }, { h: "Min", w: 0.5, align: "right" }],
+        rd.materials.map(m => { const o = mv.get((m.name + "|" + m.type).toLowerCase()) || { inn: 0, out: 0, fix: 0 }; const low = m.min > 0 && m.qty <= m.min; return [m.group, m.name, m.type, m.unit, o.inn || "", o.out || "", o.fix || "", { t: m.qty, color: low ? [0.7, 0.15, 0.15] : undefined }, m.min || ""]; }));
+    }
+    await sec("Material movements", logM, [{ h: "Date", w: 1 }, { h: "Time", w: 0.6 }, { h: "Material", w: 2, bold: true }, { h: "Type", w: 0.8 }, { h: "Action", w: 0.7 }, { h: "Qty", w: 0.6, align: "right" }, { h: "Balance", w: 0.7, align: "right" }, { h: "By", w: 1.2 }, { h: "Note", w: 2 }],
+      l => [l.d, l.t, l.material, l.mtype, l.type, l.qty, l.balance, l.by, l.note], false);
+    { // standard products use the workshop's own photo store
+      const cat = db.catalog || [];
+      doc.h2("Standard products (catalog)", `${cat.length} item${cat.length === 1 ? "" : "s"}`);
+      if (!cat.length) doc.empty("No standard products.");
+      else { const th = []; for (const c of cat) { let b = null; if (c.photo && photoBudget > 0) { try { b = await photoBuf(c.photo); } catch {} if (b) photoBudget -= b.length; } th.push(b || null); }
+        doc.table([{ h: "Name", w: 2.5, bold: true }, { h: "Product type", w: 1.5 }, { h: "Sizes", w: 2 }], cat.map(c => [c.name, c.ptype, (c.sizes || []).map(x => typeof x === "object" ? (x.label || x.size || x.name || "") : x).join(", ")]), { thumbs: th }); }
+    }
+    if (acts.length) await sec("Workshop activity", acts.slice(-120), [{ h: "When", w: 1.2 }, { h: "By", w: 1.2 }, { h: "What", w: 4 }, { h: "Result", w: 1.4 }], a => [a.at, a.by, a.what, a.ok ? "OK" : (a.error || "failed")], false);
+    return doc.build();
+  }
+
+  const pdfName = month => "AMBAR-Report-" + (month ? month.replace("/", "-") : "since-last-start-" + nowEth().d.replace(/\//g, "-")) + ".pdf";
+  async function sendPdfToChats(buf, name, caption, ids) { // by the BOT; → { sent: n, failed: [{ id, error }] }
+    const out = { sent: 0, failed: [] };
+    for (const id of ids) {
+      try {
+        await ctx.tgApi.sendForm("sendDocument", () => { const body = new FormData(); body.append("chat_id", String(id)); body.append("caption", caption.slice(0, 1000)); body.append("document", new Blob([buf], { type: "application/pdf" }), name); return body; });
+        out.sent++;
+      } catch (e) { out.failed.push({ id, error: /chat not found|bot can't initiate|blocked|deactivated/i.test(String(e.message)) ? "has not pressed Start in the AMBAR bot chat" : clip(e.message, 120) }); }
+    }
+    return out;
+  }
+
+  // ── automatic month end ──
+  let monthBusy = false, timersOn = false;
+  async function monthTick() {
+    if (monthBusy) return; monthBusy = true;
+    try {
+      const r = db.report, cur = curMonth();
+      if (!r.month) { r.month = cur; persist(); }
+      else if (r.month !== cur) { // the month is finished → the report is queued and the new month starts right now
+        if (r.auto !== false && !r.pending.some(p => p.month === r.month)) r.pending.push({ month: r.month, tries: 0, error: "", zero: !!r.autoZero });
+        r.month = cur; persist();
+      }
+      for (const p of [...r.pending]) {
+        const ids = ownerChatIds();
+        p.tries = (p.tries || 0) + 1;
+        let err = "";
+        if (!ids.length) err = "There is no main admin to send the report to.";
+        else {
+          try {
+            const buf = await buildReportPdf(p.month), res = await sendPdfToChats(buf, pdfName(p.month), `📄 AMBAR FURNITURE — Monthly report\n${monthLabel(p.month)}\nThe month is finished. A new month has started.`, ids);
+            if (res.sent) {
+              r.pending = r.pending.filter(x => x !== p);
+              r.lastSent = { month: p.month, label: monthLabel(p.month), at: stamp(), sent: res.sent, failed: res.failed.length, kb: Math.round(buf.length / 1024) };
+              r.history = [r.lastSent, ...r.history].slice(0, 24);
+              if (p.zero) { try { await doReset({ name: "Monthly report" }, { upto: p.month }); } catch (e) { r.lastSent.note = "Automatic start from 0 failed: " + clip(e.message, 100); } }
+              persist(); continue;
+            }
+            err = "Nobody could be reached: " + res.failed.map(f => f.id + " " + f.error).join("; ");
+          } catch (e) { err = clip(e.message, 200); }
+        }
+        p.error = err; if (p.tries >= 300) r.pending = r.pending.filter(x => x !== p); // about 2 days of retries, then give up (the data stays; the admin can send it by hand)
+        persist();
+      }
+    } catch {} finally { monthBusy = false; }
+  }
+  function startReportTimers() {
+    if (timersOn) return; timersOn = true;
+    const t = setInterval(() => { monthTick().catch(() => {}); }, 10 * 60 * 1000); if (t.unref) t.unref();
+    const s = setTimeout(() => { monthTick().catch(() => {}); }, 25000); if (s.unref) s.unref();
+  }
+
+  // ── START FROM 0 (keeps standard products, progress, workflow, stock and materials) ──
+  async function doReset(actor, { upto } = {}) {
+    const old = d => !upto || String(d || "").slice(0, 7) <= upto;
+    const rr = typeof R().wsResetKeep === "function" ? await R().wsResetKeep(actor?.name || "Main admin", upto) : { sold: 0, log: 0, cuts: 0 };
+    const before = { jobs: Object.keys(db.jobs).length, disp: (db.dispatches || []).length, log: db.log.length };
+    for (const [id, j] of Object.entries(db.jobs)) {
+      if (j.stage !== "finished" || !old(j.createdAt)) continue;
+      const sts = (j.productIds || []).map(pid => typeof R().wsStatus === "function" ? R().wsStatus(pid) : null);
+      const stillThere = sts.some(x => x && (x.status === "stock" || x.status === "workflow"));
+      if (j.driver || (!stillThere && !isOrderJob(j))) delete db.jobs[id];
+    }
+    db.dispatches = (db.dispatches || []).filter(d => !(d.status === "delivered" && old(d.deliveredAt || d.sentAt)));
+    db.log = db.log.filter(l => !old(l.at));
+    const gone = { jobs: before.jobs - Object.keys(db.jobs).length, dispatches: before.disp - db.dispatches.length, activity: before.log - db.log.length };
+    db.report.lastReset = { at: stamp(), by: clip(actor?.name || "Admin", 60), upto: upto || "", sold: rr.sold, materialMoves: rr.log, ...gone };
+    if (!upto) db.report.month = curMonth(); // a manual start from 0 also starts the current month's count fresh
+    persist();
+    return { ...rr, ...gone };
+  }
+  let resetBusy = false;
+  router.post("/report/config", (req, res) => {
+    if (!isOwnerActor(req.actor)) return res.json({ ...view(req.actor), ok: false, error: "Only a main admin can change the monthly report." });
+    const b = req.body || {};
+    if (b.auto !== undefined) db.report.auto = b.auto === true || b.auto === "true";
+    if (b.autoZero !== undefined) db.report.autoZero = b.autoZero === true || b.autoZero === "true";
+    persist();
+    res.json({ ...view(req.actor), ok: true, message: db.report.auto !== false ? "✅ Saved. The bot sends the PDF report to the main admins when the month is finished." + (db.report.autoZero ? " After it, the old movements are cleared automatically." : "") : "✅ Saved. The monthly report is OFF." });
+  });
+  router.post("/report/send-now", async (req, res) => { // this month so far, to the admin who presses the button (from the bot)
+    const me = String(req.actor?.telegramId || "");
+    if (!/^\d+$/.test(me)) return res.json({ ...view(req.actor), ok: false, error: "Open the app from Telegram so the bot knows where to send the PDF." });
+    try {
+      const month = curMonth(), buf = await buildReportPdf(month);
+      const r = await sendPdfToChats(buf, pdfName(month), `📄 AMBAR FURNITURE — Report so far\n${monthLabel(month)}\nCreated ${stamp()}`, [me]);
+      if (!r.sent) return res.json({ ...view(req.actor), ok: false, error: "The bot could not send it: " + (r.failed[0] ? r.failed[0].error : "unknown") + ". Open the AMBAR bot chat and press Start once." });
+      res.json({ ...view(req.actor), ok: true, message: `✅ The PDF report (${Math.round(buf.length / 1024)} KB) was sent to your chat with the bot.` });
+    } catch (e) { res.json({ ...view(req.actor), ok: false, error: "Could not build the report: " + clip(e.message, 160) }); }
+  });
+  router.post("/reset", async (req, res) => {
+    if (!isOwnerActor(req.actor)) return res.json({ ...view(req.actor), ok: false, error: "Only a main admin can start from 0." });
+    if (String(req.body?.confirm || "").trim().toUpperCase() !== "ZERO") return res.json({ ...view(req.actor), ok: false, error: "Not confirmed. Type ZERO to confirm." });
+    if (resetBusy) return res.json({ ...view(req.actor), ok: false, error: "A reset is already running." });
+    resetBusy = true;
+    try {
+      const force = req.body?.force === true;
+      let note = "";
+      const me = String(req.actor?.telegramId || "");
+      const ids = [...new Set([...ownerChatIds(), ...(/^\d+$/.test(me) ? [me] : [])])];
+      // 1) the PDF first — if it cannot be sent, NOTHING is deleted (unless "Reset anyway")
+      if (!force) {
+        if (!ids.length) return res.json({ ...view(req.actor), ok: false, canForce: true, error: "The PDF report could not be sent (no Telegram chat to send it to), so nothing was deleted." });
+        const buf = await buildReportPdf(null), r = await sendPdfToChats(buf, pdfName(null), `📄 AMBAR FURNITURE — Report before START FROM 0\nEverything since the last start · ${stamp()}\nStarted by ${clip(req.actor?.name, 60) || "Main admin"}`, ids);
+        if (!r.sent) return res.json({ ...view(req.actor), ok: false, canForce: true, error: "The PDF report could not be sent by the bot (" + (r.failed[0] ? r.failed[0].error : "unknown") + "), so nothing was deleted. Open the AMBAR bot chat and press Start, then try again." });
+        note = ` The PDF report was sent by the bot to ${r.sent} chat${r.sent === 1 ? "" : "s"}.`;
+      } else note = " ⚠️ Reset anyway: no PDF was sent.";
+      // 2) the Google Sheet copy (only when connected)
+      try { if (typeof R().wsArchiveSheet === "function") { const a = await R().wsArchiveSheet(); if (a.connected) note += ` The old report is also kept in the Google Sheet (${a.archived} “Archive …” tab${a.archived === 1 ? "" : "s"}).`; } }
+      catch (e) { if (!force) return res.json({ ...view(req.actor), ok: false, canForce: true, error: e.message + " — nothing was deleted." }); note += " (Google Sheet archive skipped.)"; }
+      // 3) clear only the movements
+      const g = await doReset(req.actor, {});
+      res.json({ ...view(req.actor), ok: true, message: `✅ Started from 0.${note} Removed: ${g.sold} sold product${g.sold === 1 ? "" : "s"}, ${g.log} material movement${g.log === 1 ? "" : "s"}, ${g.dispatches} delivered dispatch${g.dispatches === 1 ? "" : "es"}, ${g.jobs} finished job${g.jobs === 1 ? "" : "s"}. Kept: standard products, progress, workflow orders, stock and all materials.` });
+    } catch (e) { res.json({ ...view(req.actor), ok: false, error: "Could not start from 0: " + clip(e.message, 200) }); }
+    finally { resetBusy = false; }
+  });
+
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v173", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
