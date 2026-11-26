@@ -10,7 +10,7 @@
 //    (file + Supabase) or set in Render as REPORTS_SCRIPT_URL. The old order sheet is never touched.
 // v121: products have a HANDLE TYPE and an uploaded PHOTO (stored as small JPEG files + Supabase app_settings rows "rphoto_<id>"); the app's Stock view groups in-stock products by model + handle.
 // Access: main admins, plus any assigned admin the main admin gave the "Reports" section (Manage Admins). View-only admins are refused on writes by requireAccess.
-// Connecting the backup sheet, disconnecting it and "Start from ZERO" stay main-admin only.
+// Connecting the backup sheet and disconnecting it stay main-admin only.
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -616,30 +616,6 @@ function register(app, ctx) {
     db.materials = db.materials.filter(x => x !== m);
     audit("Report: material deleted", matName(m), req.actor);
     done(res, `🗑 ${matName(m)} deleted. Its movements stay in the log.`);
-  });
-
-  // START FROM ZERO: the current data is first saved in the Google Sheet (the month tabs are kept as "Archive …" tabs),
-  // then every product, material and movement is cleared. If the sheet backup fails, NOTHING is deleted.
-  router.post("/reset", ownerOnly, async (req, res) => {
-    try {
-      if (req.body?.confirm !== "ZERO") return fail(res, "Not confirmed. Type ZERO to confirm.");
-      const had = db.products.length + db.materials.length + db.log.length;
-      let note = " (The backup sheet is not connected, so nothing was saved in Google Sheets.)";
-      if (cfg.scriptUrl && had) {
-        clearTimeout(timer);
-        const b = await backupNow();
-        if (!b.ok && !b.queued) return fail(res, "The Google Sheet backup failed, so nothing was deleted: " + b.error);
-        const a = await callScript({ action: "archive", data: { now: nowEth() } });
-        note = ` The old report is kept in the Google Sheet (${a.archived || 0} tab${a.archived === 1 ? "" : "s"} saved as “Archive …”).`;
-      }
-      const oldPhotos = db.products.map(x => x.photo).filter(Boolean);
-      db.products = []; db.materials = []; db.log = []; db.matGroups = []; db.matLayout = 0; layoutMaterials();
-      oldPhotos.forEach(id => dropPhoto(id).catch(() => {}));
-      audit("Report: START FROM ZERO", `${had} record(s) cleared`, req.actor);
-      persist();
-      if (cfg.scriptUrl) scheduleBackup(1500);
-      res.json({ ok: true, message: "✅ Reports started from 0." + note, ...view() });
-    } catch (e) { fail(res, "Could not start from zero: " + e.message + " — nothing was deleted."); }
   });
 
   // DAILY STOCK → TELEGRAM (main admin only)
