@@ -40,7 +40,6 @@ function register(app, ctx) {
     if (!Array.isArray(db.dispatches)) db.dispatches = [];
     for (const k of ["admins", "sent", "jobs"]) if (!db[k] || typeof db[k] !== "object" || Array.isArray(db[k])) db[k] = {};
     if (!Array.isArray(db.log)) db.log = [];
-    if (!db.activityAssignments || typeof db.activityAssignments !== "object" || Array.isArray(db.activityAssignments)) db.activityAssignments = {};
     db.report = { month: "", auto: true, autoZero: false, lastSent: null, pending: [], history: [], lastReset: null, ...(db.report && typeof db.report === "object" ? db.report : {}) }; // v173
     if (!Array.isArray(db.report.pending)) db.report.pending = [];
     if (!Array.isArray(db.report.history)) db.report.history = [];
@@ -225,7 +224,8 @@ function register(app, ctx) {
   const reservedSet = () => new Set(Object.values(db.reserved || {}));
   // v160: Shoe Shelf → Z1, Z2 … (old sequence). Every other product type → 1A, 1B … 1Z, 2A … 2Z …
   const isShoe = pt => /shoe\s*shelf/i.test(String(pt || ""));
-  const orderPtype = o => clip(o?.ptype || o?.productType || "", 40) || (/shoe/i.test(String(o?.product || o?.model || "")) ? "Shoe Shelf" : "");
+  const isCon = pt => /\b(console|consult)/i.test(String(pt || "")); // v174: Console products → CON1, CON2 …; Shoe Shelf (footwear) → CH1, CH2 …
+  const orderPtype = o => clip(o?.ptype || o?.productType || "", 40) || (/shoe/i.test(String(o?.product || o?.model || "")) ? "Shoe Shelf" : /console/i.test(String(o?.product || o?.model || "")) ? "Console Table" : "");
   const orderCodeFor = (o, reserve) => {
     db.reserved = db.reserved || {}; R().setReservedCodes?.(reservedSet);
     const taken = c => typeof R().codeTaken === "function" && R().codeTaken(c); // v159: orders always take the next Z/Y/X ID (no original code)
@@ -267,7 +267,10 @@ function register(app, ctx) {
     o.workshop = { ...(o.workshop || {}), jobId: j.id, stage: j.stage, ...patch };
     try { if (typeof ctx.saveOrder === "function") await ctx.saveOrder(o); } catch (e) { console.warn("Workshop: order stage not saved:", e.message); }
   }
-  const compactJob = j => ({ id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, stockState: j.stockState || "stock", ordered: isOrderJob(j), driverAt: j.driver ? j.driver.at : "", by: j.by || "", photo: j.photoId || "" });
+  // v174: a production activity (a job's stage) can be ASSIGNED to a specific admin. The assigned admin may work on that job even when another admin created it; the main admin may work on every job.
+  const assignedTo = (j, actor) => !!actor?.telegramId && Object.values(j?.assign || {}).some(a => a && String(a.id) === String(actor.telegramId));
+  const canActJob = (j, actor) => !!j && (j.key === keyOf(actor) || actor?.role === "owner" || actor?.role === "open" || assignedTo(j, actor));
+  const compactJob = j => ({ assign: j.assign || {}, id: j.id, kind: j.kind, custom: !!j.custom, name: j.name, qty: j.qty || 0, size: j.size || "", orderLabel: j.orderLabel || "", codes: j.codes || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, createdAt: j.createdAt || "", wsDone: j.wsDone || null, finDone: j.finDone || null, stockState: j.stockState || "stock", ordered: isOrderJob(j), driverAt: j.driver ? j.driver.at : "", by: j.by || "", photo: j.photoId || "" });
   const log = (key, actor, what, ok, error) => { db.log.push({ at: stamp(), key, by: clip(actor?.name || "Admin", 60), what, ok: !!ok, error: error || "" }); if (db.log.length > 300) db.log.splice(0, db.log.length - 300); };
 
   // create the job, make its Reports product(s), post it in the WORKSHOP topic with the button
@@ -471,15 +474,58 @@ function register(app, ctx) {
       jobs: (() => { const live = new Set(inProg.filter(p => p.job).map(p => p.job.id)); const seen = new Set(); return Object.values(db.jobs).filter(j => j.stage !== "finished" && (live.has(j.id) || (j.key === key && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)))).sort((x, y) => String(y.createdAtIso || y.createdAt).localeCompare(String(x.createdAtIso || x.createdAt))).filter(j => !seen.has(j.id) && seen.add(j.id)).slice(0, 100).map(compactJob); })(),
       doneJobs: mine.filter(j => j.stage === "finished" && j.createdAtIso && Date.parse(j.createdAtIso) >= Date.parse(db.cutoverAt)).slice(0, 15).map(compactJob),
       catalog: db.catalog.map(compactCat), canManage: canManage(actor),
-      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], cutHistory: typeof R().wsCutHistory === "function" ? R().wsCutHistory() : [], // v174
+      materials: typeof R().wsMaterials === "function" ? R().wsMaterials().materials : [], matGroups: typeof R().wsMaterials === "function" ? R().wsMaterials().groups : [], cutRequests: typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [], // v165
       log: db.log.filter(l => l.key === key).slice(-100).reverse(),
-      report: reportInfo(actor) // v173
+      report: reportInfo(actor), // v173
+      // v174
+      isOwner: isOwnerActor(actor), canAssign: canAssign(actor), assignable: assignableAdmins(), meId: String(actor?.telegramId || ""),
+      records: typeof R().wsRecords === "function" ? R().wsRecords() : [],
+      confirm: isOwnerActor(actor) ? confirmInfo() : null
     };
   };
   // v172: a topic (group + topic) can be assigned ONCE: not twice by one admin, and not by two admins.
   const PLACES = [["workshop", "WORKSHOP"], ["finishing", "FINISHING"], ["stock", "STOCK"], ["driver", "DRIVER"], ["material", "MATERIAL"]];
   const topicKeyOf = g => g && g.chat ? String(g.chat).replace(/^@/, "").toLowerCase() + "|" + (Number(g.topic) > 1 ? Number(g.topic) : 0) : "";
   const takenByOthers = key => { const out = []; for (const [k, a] of Object.entries(db.admins || {})) { if (k === key || !a) continue; for (const [pl, label] of PLACES) { const tk = topicKeyOf(a[pl]); if (tk) out.push({ k: tk, place: label }); } } return out; };
+  // ═══ v174 ADMIN CONFIRMATION (main admin only) + ASSIGNMENT + Workshop-only product / material editing ═══
+  const canAssign = actor => !!actor && !actor.viewer && hasPerm(actor, "workshop"); // managers = the main admin and every admin who has the Workshop section
+  function assignableAdmins() {
+    const apps = typeof ctx.getAppAdmins === "function" ? (ctx.getAppAdmins() || []) : [], out = new Map();
+    for (const id of (ctx.ownerIds || []).map(String)) if (/^\d+$/.test(id)) out.set(id, { id, name: clip((apps.find(a => String(a.telegramId) === id) || {}).name, 60) || "Main admin", main: true });
+    for (const a of apps) { const id = String(a.telegramId || ""); if (!/^\d+$/.test(id) || out.has(id) || a.viewer) continue; if (a.main || (Array.isArray(a.perms) && a.perms.includes("workshop"))) out.set(id, { id, name: clip(a.name, 60) || "Admin " + id, main: !!a.main }); }
+    return [...out.values()];
+  }
+  function confirmInfo() {
+    const list = typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [];
+    const oldest = list.length ? list[list.length - 1] : null; // wsCutRequests is newest-first
+    return { pending: list.length, cutters: list.length, status: list.length ? "waiting" : "clear", oldest: oldest && oldest.created ? [oldest.created.d, oldest.created.t].filter(Boolean).join(" ") : "", items: list.slice(0, 50) };
+  }
+  const ownerGuard = (req, res, next) => isOwnerActor(req.actor) ? next() : res.status(403).json({ ok: false, error: "Only the main admin can do this." });
+  router.get("/confirmations", ownerGuard, (req, res) => res.json({ ok: true, ...confirmInfo() })); // the red badge + status on the Home / Workshop headers
+  router.post("/job/assign", (req, res) => { // { id, stage: "workshop" | "finishing", adminId: "" (= nobody) }
+    if (!canAssign(req.actor)) return res.status(403).json({ ...view(req.actor), ok: false, error: "Only managers (main admin or admins with the Workshop section) can assign admins." });
+    const j = db.jobs[String(req.body?.id)];
+    if (!j || !(isOwnerActor(req.actor) || canActJob(j, req.actor))) return res.json({ ...view(req.actor), ok: false, error: "Job not found." });
+    const stage = String(req.body?.stage || j.stage);
+    if (!["workshop", "finishing"].includes(stage)) return res.json({ ...view(req.actor), ok: false, error: "Only the Workshop and Finishing activities can be assigned." });
+    const adminId = String(req.body?.adminId || ""), who = adminId ? assignableAdmins().find(a => a.id === adminId) : null;
+    if (adminId && !who) return res.json({ ...view(req.actor), ok: false, error: "That admin cannot be assigned (they need the Workshop section)." });
+    j.assign = { ...(j.assign || {}) };
+    if (who) j.assign[stage] = { id: who.id, name: who.name, by: clip(req.actor?.name, 60) || "Manager", at: stamp() }; else delete j.assign[stage];
+    log(j.key, req.actor, who ? `Assigned · ${j.name} (${stage}) → ${who.name}` : `Assignment removed · ${j.name} (${stage})`, true, "");
+    persist();
+    res.json({ ...view(req.actor), ok: true, message: who ? `👤 ${who.name} is now assigned to ${stage === "workshop" ? "WORKSHOP" : "FINISHING"} for ${j.name}.` : "Assignment removed." });
+  });
+  // products + materials are edited / deleted ONLY here (Reports is view-only). Edit = every admin with the Workshop section; delete, stock correction and re-arranging = main admin only.
+  const asRes = (req, r) => ({ ...view(req.actor), ok: r.ok, error: r.error || undefined, message: r.ok ? r.message : undefined });
+  router.post("/product/edit", async (req, res) => { const r = await R().wsOp("/product/edit", req.body, req.actor); if (r.ok) log(keyOf(req.actor), req.actor, "Product edited", true, ""); res.json(asRes(req, r)); });
+  router.post("/product/delete", ownerGuard, async (req, res) => { const r = await R().wsOp("/product/delete", req.body, req.actor); res.json(asRes(req, r)); });
+  router.post("/product/undo", ownerGuard, async (req, res) => { const r = await R().wsOp("/product/undo", req.body, req.actor); res.json(asRes(req, r)); });
+  router.post("/product/times", ownerGuard, async (req, res) => { const r = await R().wsOp("/product/times", req.body, req.actor); res.json(asRes(req, r)); });
+  router.post("/material/edit", async (req, res) => { const r = await R().wsOp("/material/edit", req.body, req.actor); res.json(asRes(req, r)); });
+  router.post("/material/correct", ownerGuard, async (req, res) => { const r = await R().wsOp("/material/correct", req.body, req.actor); res.json(asRes(req, r)); });
+  router.post("/material/delete", ownerGuard, async (req, res) => { const r = await R().wsOp("/material/delete", req.body, req.actor); res.json(asRes(req, r)); });
+  router.post("/material/arrange", ownerGuard, async (req, res) => { const r = await R().wsOp("/material/arrange", req.body, req.actor); res.json(asRes(req, r)); });
   router.get("/state", (req, res) => res.json(view(req.actor)));
   router.post("/settings", (req, res) => {
     const key = keyOf(req.actor), mode = String(req.body?.mode || "manual");
@@ -601,25 +647,25 @@ function register(app, ctx) {
   });
   router.post("/job/finish-workshop", async (req, res) => { // the same as the Telegram button
     const j = db.jobs[String(req.body?.id)];
-    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    if (!canActJob(j, req.actor)) return res.json({ ok: false, error: "Job not found, or it is not assigned to you." });
     const r = await toFinishing(j.id, req.actor?.name || "Admin");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "✅ Sent to FINISHING." : undefined });
   });
   router.post("/job/finish", async (req, res) => {
     const j = db.jobs[String(req.body?.id)];
-    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    if (!canActJob(j, req.actor)) return res.json({ ok: false, error: "Job not found, or it is not assigned to you." });
     const r = await toStock(j.id, req.actor?.name || "Admin");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "✅ Finished — the product is now IN STOCK (Reports)." + (r.warning ? " ⚠ " + r.warning : "") : undefined });
   });
   router.post("/job/send-driver", async (req, res) => {
     const j = db.jobs[String(req.body?.id)];
-    if (!j || j.key !== keyOf(req.actor)) return res.json({ ok: false, error: "Job not found." });
+    if (!canActJob(j, req.actor)) return res.json({ ok: false, error: "Job not found, or it is not assigned to you." });
     const r = await sendToDriver(j.id, req.actor?.name || "Admin");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🚚 Sent to the driver." : undefined });
   });
   router.post("/job/sold-out", async (req, res) => {
     const j = db.jobs[String(req.body?.id)];
-    if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
+    if (!canActJob(j, req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
     const results = (j.productIds || []).map(pid => R().wsSoldOut ? R().wsSoldOut(pid, req.actor?.name || "Admin") : { ok: false, error: "Sold Out is unavailable." });
     const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
     j.stockState = "sold"; j.soldAt = stamp(); j.soldBy = req.actor?.name || "Admin";
@@ -628,7 +674,7 @@ function register(app, ctx) {
   });
   router.post("/job/restock", async (req, res) => {
     const j = db.jobs[String(req.body?.id)];
-    if (!j || j.key !== keyOf(req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
+    if (!canActJob(j, req.actor) || j.stage !== "finished") return res.json({ ok: false, error: "Finished job not found." });
     const results = (j.productIds || []).map(pid => R().wsRestock ? R().wsRestock(pid, req.actor?.name || "Admin") : { ok: false, error: "Restock is unavailable." });
     const bad = results.find(x => !x.ok); if (bad) return res.json({ ...view(req.actor), ok: false, error: bad.error });
     j.stockState = "stock"; j.restockAt = stamp(); j.restockBy = req.actor?.name || "Admin";
@@ -795,7 +841,7 @@ function register(app, ctx) {
   // v165: Material ADD is immediate; CUT is a request and requires main-admin approval.
   router.post("/material/add", (req, res) => {
     if (typeof R().wsMaterial !== "function") return res.json({ ...view(req.actor), ok: false, error: "Materials are not available." });
-    const r = R().wsRequestMaterialAdd ? R().wsRequestMaterialAdd(req.body, req.actor) : { ok:false, error:"Material confirmation is unavailable." };
+    const r = R().wsMaterial("add", req.body, req.actor?.name);
     if (r.ok) log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, "");
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
@@ -820,13 +866,6 @@ function register(app, ctx) {
     } else tg = " No Material topic is selected yet.";
     log(keyOf(req.actor), req.actor, `Material · ${r.message}`, true, tg);
     res.json({ ...view(req.actor), ok: true, message: r.message + tg });
-  });
-  router.post("/material/add-decide", async (req,res)=>{
-    if(req.actor?.role!=="owner") return res.json({...view(req.actor),ok:false,error:"Only the main admin can confirm new materials."});
-    const approve=req.body?.approve===true||req.body?.approve==="true";
-    const r=R().wsApproveMaterialAdd?R().wsApproveMaterialAdd(req.body?.id,approve,req.actor,req.body?.note):{ok:false,error:"Material approval is unavailable."};
-    if(!r.ok)return res.json({...view(req.actor),ok:false,error:r.error});
-    res.json({...view(req.actor),ok:true,message:r.message});
   });
   router.post("/material/cut-decide", async (req, res) => {
     if (req.actor?.role !== "owner") return res.json({ ...view(req.actor), ok: false, error: "Only the main admin can approve or reject material cuts." });
@@ -876,9 +915,9 @@ function register(app, ctx) {
     }
     const counts = (Array.isArray(req.body?.counts) ? req.body.counts : []).slice(0, 40).map(n => Math.max(1, Math.min(100, Math.floor(Number(n)) || 1)));
     const types = Array.isArray(req.body?.types) ? req.body.types : [];
-    const fam = i => isShoe(types[i]) ? "s" : "o", need = { s: 0, o: 0 }; counts.forEach((n, i) => { need[fam(i)] += n; });
+    const fam = i => isShoe(types[i]) ? "s" : isCon(types[i]) ? "c" : "o", need = { s: 0, c: 0, o: 0 }; counts.forEach((n, i) => { need[fam(i)] += n; });
     const peek = (n, pt) => n && typeof R().peekSeqCodes === "function" ? R().peekSeqCodes(n, pt) : [];
-    const pool = { s: peek(need.s, "Shoe Shelf"), o: peek(need.o, "") }, pos = { s: 0, o: 0 };
+    const pool = { s: peek(need.s, "Shoe Shelf"), c: peek(need.c, "Console Table"), o: peek(need.o, "") }, pos = { s: 0, c: 0, o: 0 };
     res.json({ ok: true, codes: counts.map((n, i) => { const f = fam(i), out = pool[f].slice(pos[f], pos[f] + n); pos[f] += n; return out; }) });
   });
   router.post("/send-items", async (req, res) => {
@@ -1121,34 +1160,7 @@ function register(app, ctx) {
     finally { resetBusy = false; }
   });
 
-  // Main-admin-only summary used by the home-screen confirmation control.
-  app.get("/api/workshop/admin-summary", requireAccess, (req, res) => {
-    if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Main admin only." });
-    const cuts = typeof R().wsCutRequests === "function" ? R().wsCutRequests() : [];
-    const pendingCuts = cuts.filter(x => x.status === "pending").length;
-    const pendingDispatches = Object.values(db.dispatches || {}).filter(x => x && x.status === "pending_approval").length;
-    res.json({ ok: true, pendingCuts, pendingMovements: pendingCuts + pendingDispatches, cutterStatus: pendingCuts ? "awaiting_signoff" : "clear" });
-  });
-  // Activity assignment directory. Assignments are configuration only; job records remain in Workshop.
-  app.get("/api/workshop/assignments", requireAccess, (req, res) => {
-    if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Main admin only." });
-    res.json({ ok: true, assignments: db.activityAssignments || {} });
-  });
-  app.post("/api/workshop/assignments", requireAccess, express.json({ limit: "50kb" }), (req, res) => {
-    if (req.actor?.role !== "owner") return res.status(403).json({ ok: false, error: "Main admin only." });
-    const allowed = new Set(["design", "purchasing", "material_transport", "cutting", "workshop", "finishing", "delivery"]);
-    const input = req.body?.assignments;
-    if (!input || typeof input !== "object" || Array.isArray(input)) return res.status(400).json({ ok: false, error: "Provide an assignments object." });
-    const next = {};
-    for (const [activity, ids] of Object.entries(input)) {
-      if (!allowed.has(activity)) return res.status(400).json({ ok: false, error: `Unknown production activity: ${activity}` });
-      const list = Array.isArray(ids) ? [...new Set(ids.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 20) : [];
-      next[activity] = list;
-    }
-    db.activityAssignments = { ...(db.activityAssignments || {}), ...next }; persist();
-    res.json({ ok: true, assignments: db.activityAssignments });
-  });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v173", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v174", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
@@ -1161,6 +1173,14 @@ function register(app, ctx) {
     }
     persist();
   }
-  return { load, onOrderCreated, onOrderConfirmed, onButton, deleteReportProducts };
+  // v174: Workshop → Reports (read-only live feed). Reports calls this on every refresh, so every dispatch and production job shows up there automatically.
+  function reportFeed() {
+    return {
+      dispatches: [...(db.dispatches || [])].reverse().slice(0, 300).map(d => ({ ...compactDispatch(d), by: d.sentBy || "" })),
+      jobs: Object.values(db.jobs).filter(j => j.stage !== "finished").slice(0, 400).map(j => ({ id: j.id, name: j.name, codes: j.codes || [], productIds: j.productIds || [], stage: j.stage, stageName: STAGES[j.stage] || j.stage, assign: j.assign || {}, by: j.by || "", createdAt: j.createdAt || "" })),
+      activity: db.log.slice(-60).reverse().map(l => ({ at: l.at, by: l.by, what: l.what, ok: l.ok }))
+    };
+  }
+  return { load, onOrderCreated, onOrderConfirmed, onButton, deleteReportProducts, reportFeed, confirmInfo };
 }
 module.exports = { register };
