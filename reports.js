@@ -841,6 +841,34 @@ function register(app, ctx) {
     persist(); scheduleBackup(1500);
     return { ok: true, request: r, message: `✅ Cut approved: ${matName(m)} ${r.qty} ${m.unit || "pcs"}. Left: ${m.qty}.` };
   }
+  // v171: Material dispatch → the cut is applied to the stock at the SAME moment it is posted to the group (no approval step for the main admin).
+  function wsCutNow(body, actor, note) {
+    const m = findM(body?.id);
+    if (!m) return { ok: false, error: "Material not found." };
+    const qty = num(body?.qty);
+    if (Number.isNaN(qty) || qty <= 0) return { ok: false, error: "Write a quantity bigger than 0." };
+    if (qty > m.qty) return { ok: false, error: `Only ${m.qty} ${m.unit || "pcs"} left of ${matName(m)}. You cannot cut ${qty}.` };
+    const before = m.qty;
+    m.qty = Math.round((before - qty) * 1000) / 1000;
+    addLog({ body: {}, actor }, m, "cut", qty, m.qty, clip(note, 200) || "Cut from Material dispatch");
+    audit("Report: material cut (dispatch)", `${matName(m)} ${qty} → ${m.qty}`, actor);
+    persist(); scheduleBackup(1500);
+    return { ok: true, id: m.id, material: matName(m), unit: m.unit || "pcs", qty, before, after: m.qty };
+  }
+  function wsRevertCut(id, qty, actor) { // the Telegram post failed → put the stock back so the app and the group never disagree
+    const m = findM(id); if (!m) return false;
+    m.qty = Math.round((m.qty + Number(qty)) * 1000) / 1000;
+    addLog({ body: {}, actor }, m, "add", Number(qty), m.qty, "Cut reverted — the Telegram post failed");
+    audit("Report: material cut reverted", `${matName(m)} +${qty} → ${m.qty}`, actor);
+    persist(); scheduleBackup(1500);
+    return true;
+  }
+  // v171: readymade products a customer can buy (In Stock, or already marked Sold Out) — used by Driver dispatch
+  const wsStockProducts = () => db.products
+    .filter(p => (p.status === "stock" || p.status === "sold") && !/CUS|ORD/i.test(String(p.orderType || "")))
+    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", photo: p.photo || "", status: p.status }))
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === "stock" ? -1 : 1))
+    .slice(0, 400);
   const wsMaterials = () => ({ materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })), groups: groupsOrdered() });
   function wsMaterial(kind, body, byName) {
     let out = { ok: false, error: "Unknown material action." };
@@ -849,6 +877,6 @@ function register(app, ctx) {
     return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
   }
   const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  return { load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
