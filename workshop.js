@@ -131,7 +131,13 @@ function register(app, ctx) {
     if (!acc?.ready) throw new Error("Your own Telegram account is not connected. Connect it before sending to topics.");
     const entity = await resolveTarget(acc, g);
     const replyTo = g.topic > 1 ? Number(g.topic) : undefined;
-    if (buf) return await acc.client.sendFile(entity, { file: buf, caption: html ? caption : String(caption || "").slice(0, 4000), parseMode: html ? "html" : undefined, forceDocument: false, ...(replyTo ? { replyTo } : {}) });
+    if (buf) { // v172: a bare Buffer has no file name, so Telegram showed it as a FILE. Write it with a real image extension so it goes as a PHOTO.
+      const ext = buf.slice(0, 4).toString("hex") === "89504e47" ? ".png" : buf.slice(0, 4).toString("hex") === "52494646" ? ".webp" : ".jpg";
+      const tmp = path.join(os.tmpdir(), "ambar-photo-" + uid() + ext);
+      fs.writeFileSync(tmp, buf);
+      try { return await acc.client.sendFile(entity, { file: tmp, caption: html ? caption : String(caption || "").slice(0, 1000), parseMode: html ? "html" : undefined, forceDocument: false, supportsStreaming: false, ...(replyTo ? { replyTo } : {}) }); }
+      finally { fs.unlink(tmp, () => {}); }
+    }
     return await acc.client.sendMessage(entity, { message: html ? caption : String(caption || "").slice(0, 4000), parseMode: html ? "html" : undefined, ...(replyTo ? { replyTo } : {}) }); // v171: text posts were missing parseMode, so <b> tags showed literally
   }
 
@@ -145,6 +151,7 @@ function register(app, ctx) {
   const kbFinishing = id => ({ inline_keyboard: [[{ text: "✅ Finished", callback_data: "wfin:" + id }]] });
   const kbSoldOut = id => ({ inline_keyboard: [[{ text: "🔴 Sold Out", callback_data: "wsold:" + id }]] });
   const kbRestock = id => ({ inline_keyboard: [[{ text: "♻️ Restock", callback_data: "wrestock:" + id }]] });
+  const kbDelivered = id => ({ inline_keyboard: [[{ text: "✅ Delivered", callback_data: "wdel:" + id }]] });
   // v164: STOCK-post buttons. ORDER (finished): 🚚 Send to driver (+ Sold Out). READYMADE: Sold Out → then Restock + 🚚 Send to driver. Driver button disappears once sent.
   const isOrderJob = j => j.kind === "order" || !!j.orderLabel;
   const kbStock = j => {
@@ -353,10 +360,25 @@ function register(app, ctx) {
   async function onButton(cb) {
     const [action, id] = String(cb?.data || "").split(":");
     const answer = (text, alert) => tg("answerCallbackQuery", { callback_query_id: cb.id, text: String(text).slice(0, 190), show_alert: !!alert }).catch(() => {});
-    const j = db.jobs[String(id)];
-    if (!j) return answer("This job was not found any more.", true);
     const chatId = String(cb.message?.chat?.id || "");
     const by = [cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") || (cb.from?.username ? "@" + cb.from.username : "Workshop");
+    if (action === "wdel") { // v172: the driver presses ✅ Delivered in the driver topic
+      const d = (db.dispatches || []).find(x => x.id === String(id));
+      if (!d) return answer("This delivery was not found any more.", true);
+      if (d.btnMsg && chatId && String(d.btnMsg.chat) !== chatId) return answer("This button belongs to the driver group only.", true);
+      if (d.status === "delivered") { await botEdit(d.btnMsg, "✅ DELIVERED — " + (d.deliveredBy || "") + " · " + (d.deliveredAt || ""), null, false); return answer("Already marked as delivered."); }
+      const at = stamp(), c = d.customer || {};
+      Object.assign(d, { status: "delivered", deliveredAt: at, deliveredBy: by });
+      await botEdit(d.btnMsg, `✅ DELIVERED\n${d.codes && d.codes.length ? d.codes.join(", ") + (d.model ? "-" + clip(d.model, 100) : "") + "\n" : ""}${d.orderLabel ? "Order ID: " + d.orderLabel + "\n" : ""}Customer: ${clip(c.name, 100)}\nDelivered by ${by} · ${at}`, null, false);
+      const job = d.jobId ? db.jobs[String(d.jobId)] : null;
+      if (job) { try { await saveOrderStage(job, { deliveredAt: at, deliveredBy: by }); } catch {} }
+      log(d.key, { name: by }, `Delivered · ${d.name} → ${c.name}`, true, "");
+      if (d.telegramId) { try { await tg("sendMessage", { chat_id: String(d.telegramId), parse_mode: "HTML", text: `<b>AMBAR FURNITURE</b>\n<b>✅ DELIVERED</b>\n\n${d.codes && d.codes.length ? "<b>" + esc(d.codes.join(", ") + (d.model ? "-" + clip(d.model, 100) : "")) + "</b>\n" : ""}${d.orderLabel ? "Order ID: " + esc(clip(d.orderLabel, 40)) + "\n" : ""}Customer: ${esc(clip(c.name, 100))}\nPhone: ${esc(clip(c.phone, 40))}\n\nDelivered by ${esc(by)} · ${esc(at)}` }); } catch {} } // tells the admin who sent it (works once he has started the bot)
+      persist();
+      return answer("✅ Delivered — thank you!");
+    }
+    const j = db.jobs[String(id)];
+    if (!j) return answer("This job was not found any more.", true);
     if (action === "wsf") {
       if (j.wsMsg && chatId && String(j.wsMsg.chat) !== chatId) return answer("This button belongs to another group.", true);
       const r = await toFinishing(j.id, by);
@@ -595,7 +617,7 @@ function register(app, ctx) {
   });
   // ═══ v171 DISPATCH (rebuilt) ═════════════════════════════════════════════════════════════════
   // Opened from the two small buttons at the bottom of the page. Every message is sent from the admin's OWN Telegram account (never the bot).
-  // A user account cannot attach inline buttons, so "Delivered" is a button in the mini app; pressing it replies "✅ DELIVERED" in the driver topic.
+  // v172: a user account cannot attach inline buttons, so the bot adds ONE small reply with a ✅ Delivered button under the dispatch in the driver topic; the driver presses it there.
   const birr = n => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }) + " Birr";
   const num0 = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "").replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : NaN; };
   const mapLink = loc => { const l = clip(loc, 240); if (!l) return ""; return /^https?:\/\//i.test(l) ? l : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(l); };
@@ -666,6 +688,13 @@ function register(app, ctx) {
       log(key, req.actor, `Driver dispatch · ${d.name}`, false, clip(e.message, 180));
       return fail("Telegram send failed: " + clip(e.message, 180));
     }
+    d.telegramId = req.actor?.telegramId || "";
+    let btnWarn = ""; // v172: the ✅ Delivered button lives in the driver topic (a user account cannot attach buttons, so the bot posts ONLY this small button reply)
+    try {
+      const topic = s.driver.topic > 1 ? Number(s.driver.topic) : 0;
+      const r = await tg("sendMessage", { chat_id: chatKey(s.driver), ...(topic ? { message_thread_id: topic } : {}), ...(d.msgId ? { reply_to_message_id: d.msgId, allow_sending_without_reply: true } : {}), text: "🚚 Driver: press the button below when the customer has received the product.", reply_markup: kbDelivered(d.id) });
+      d.btnMsg = { chat: r.chat?.id != null ? String(r.chat.id) : chatKey(s.driver), message_id: r.message_id, photo: false };
+    } catch (e) { btnWarn = botFriendly(e); }
     db.dispatches = db.dispatches || []; db.dispatches.push(d); if (db.dispatches.length > 600) db.dispatches.splice(0, db.dispatches.length - 600);
     if (job) { // the order job is now with the driver (also hides the old "Send to driver" button)
       job.driver = { by: d.sentBy, at: d.sentAt, dispatchId: d.id };
@@ -674,24 +703,7 @@ function register(app, ctx) {
     }
     log(key, req.actor, `Driver dispatch · ${d.name} → ${customer.name}`, true, "");
     persist();
-    res.json({ ...view(req.actor), ok: true, message: "🚚 Sent to the driver topic. Press Delivered when the customer has received it." });
-  });
-  router.post("/dispatch/driver/delivered", async (req, res) => {
-    const key = keyOf(req.actor), s = settingsOf(key), d = dispatchesOf(key).find(x => x.id === String(req.body?.id));
-    const fail = (error, code = 400) => res.status(code).json({ ...view(req.actor), ok: false, error });
-    if (!d) return fail("This dispatch was not found.", 404);
-    if (d.status === "delivered") return fail("Already marked as delivered.");
-    if (!s.driver) return fail("The DRIVER topic is not chosen any more. Choose it in the settings and save first.");
-    const by = clip(req.actor?.name, 60) || "Admin", at = stamp(), c = d.customer || {};
-    const text = `<b>AMBAR FURNITURE</b>\n<b>✅ DELIVERED</b>\n\n${d.codes && d.codes.length ? "<b>" + esc(d.codes.join(", ") + (d.model ? "-" + clip(d.model, 100) : "")) + "</b>\n" : ""}${d.orderLabel ? "Order ID: " + esc(clip(d.orderLabel, 40)) + "\n" : ""}Customer: ${esc(clip(c.name, 100))}\nPhone: ${esc(clip(c.phone, 40))}\n\nMarked delivered by ${esc(by)} · ${esc(at)}`;
-    try { await userReply(req.actor, s.driver, d.msgId, text); }
-    catch (e) { log(key, req.actor, `Delivered · ${d.name}`, false, clip(e.message, 180)); return fail("Telegram send failed: " + clip(e.message, 180)); }
-    Object.assign(d, { status: "delivered", deliveredAt: at, deliveredBy: by });
-    const job = d.jobId ? db.jobs[String(d.jobId)] : null;
-    if (job) await saveOrderStage(job, { deliveredAt: at, deliveredBy: by });
-    log(key, req.actor, `Delivered · ${d.name} → ${c.name}`, true, "");
-    persist();
-    res.json({ ...view(req.actor), ok: true, message: "✅ Marked as delivered and posted in the driver topic." });
+    res.json({ ...view(req.actor), ok: true, message: btnWarn ? "🚚 Sent to the driver topic, but the ✅ Delivered button could not be added: " + btnWarn : "🚚 Sent to the driver topic with a ✅ Delivered button. The driver presses it when the customer has the product." });
   });
   router.post("/dispatch/driver/cancel", (req, res) => { // wrong product / customer chosen: remove the "on the way" entry (the Telegram message stays)
     const key = keyOf(req.actor), d = dispatchesOf(key).find(x => x.id === String(req.body?.id));
@@ -879,7 +891,7 @@ function register(app, ctx) {
     persist();
     res.json({ ...view(req.actor), ok: okN > 0, error: okN ? (okN < specs.length ? `${specs.length - okN} could not be sent: ${err}` : "") : err, message: okN ? `✅ ${okN} product${okN === 1 ? "" : "s"} sent to the workshop.` : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v171", cutoverAt: db.cutoverAt }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v172", cutoverAt: db.cutoverAt }));
   app.use("/api/workshop", router);
 
   function deleteReportProducts(ids) {
