@@ -1,3 +1,4 @@
+// v178: ALERT to the main admin (Telegram message with ✅ Approve / ❌ Reject buttons + red alert on Home and on the Material page) · the sender sees ⏳ Waiting confirmation and gets a Telegram message when it is decided.
 // ── MATERIAL v177 (module + page: /material.html) ───────────────────────────────────────────────
 // The Material section of the Home screen. Same materials and same movement log as Reports → Material (view-only there).
 //   ✂️ Cut · ➕ Add (new material or more stock) · ✏️ Edit (name, type, unit, low-stock alert, stock correction)
@@ -14,6 +15,8 @@ const numOf = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "
 
 function register(app, ctx) {
   const { requireAccess, supabase, baseDir, helpers } = ctx;
+  const esc = v => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const owners = () => [...new Set((ctx.ownerIds || []).map(String).filter(x => /^\d+$/.test(x)))];
   const R = () => ctx.reports || {};
   const DATA_FILE = path.join(baseDir, "material-data.json");
   let db = { editRequests: [], savedAt: "" }; // cut + add requests live in Reports (v165 / v175); the edit requests live here
@@ -63,8 +66,92 @@ function register(app, ctx) {
     const r = reports(), q = allRequests(actor), owner = isOwnerA(actor);
     return {
       ok: true, me: { name: by(actor), owner }, materials: r.materials, groups: r.groups,
-      pending: q.pending, history: q.history // main admin: everything waiting · other admins: their own requests
+      pending: q.pending, history: q.history, waitingCount: q.pending.length // main admin: everything waiting · other admins: their own requests
     };
+  }
+
+
+  // ── v178 ALERTS ─────────────────────────────────────────────────────────────────────────────
+  const ICON = { cut: "✂️ Cut", add: "➕ Add", edit: "✏️ Edit" };
+  const fnum = n => { n = Number(n); return Number.isFinite(n) ? String(Math.round(n * 1000) / 1000) : "—"; };
+  function reqText(q) { // plain description of a waiting request (shape())
+    const n = q.material + (q.mtype ? " " + q.mtype : "");
+    const L = [];
+    if (q.kind === "cut") L.push(`${ICON.cut} · ${n}`, `Quantity: ${fnum(q.qty)} ${q.unit}`, `Stock: ${fnum(q.before)} → ${fnum(q.after)} ${q.unit}`);
+    else if (q.kind === "add") L.push(q.addKind === "new" ? `🆕 New material · ${n}` : `${ICON.add} · ${n}`, `Quantity: +${fnum(q.qty)} ${q.unit}`, `Stock: ${fnum(q.before)} → ${fnum(q.after)} ${q.unit}`);
+    else {
+      L.push(`${ICON.edit} · ${n}`);
+      const c = q.changes || {};
+      if (c.name && c.name !== q.material) L.push(`Name: ${q.material} → ${c.name}`);
+      if ((c.type || "") !== (q.mtype || "")) L.push(`Type: ${q.mtype || "—"} → ${c.type || "—"}`);
+      if (c.unit && c.unit !== q.unit) L.push(`Unit: ${q.unit || "—"} → ${c.unit}`);
+      if (c.min) L.push(`Low-stock alert: ${fnum(c.min)}`);
+      if (c.qty !== null && c.qty !== undefined) L.push(`Stock: ${fnum(q.before)} → ${fnum(c.qty)}`);
+    }
+    return L;
+  }
+  const tgSend = async (chat, text, markup) => { try { await ctx.tgApi.call("sendMessage", { chat_id: String(chat), text: text.slice(0, 4000), parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}) }); return true; } catch (e) { return false; } };
+  // 🔔 a waiting request → every main admin gets a Telegram message with Approve / Reject buttons
+  function alertOwners(q) {
+    if (!ctx.tgApi || typeof ctx.tgApi.call !== "function") return;
+    const txt = ["🔔 <b>MATERIAL — needs your confirmation</b>", "", ...reqText(q).map(esc), "", "👤 " + esc(q.by) + (q.created ? " · " + esc(q.created) : ""), q.note ? "📝 " + esc(q.note) : "", "", "⏳ The stock does NOT change until you approve."].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i !== a.length - 1)).join("\n");
+    const markup = { inline_keyboard: [[{ text: "✅ Approve", callback_data: `mat:y:${q.kind}:${q.id}` }, { text: "❌ Reject", callback_data: `mat:n:${q.kind}:${q.id}` }]] };
+    for (const id of owners()) { if (id === String(q.telegramId)) continue; tgSend(id, txt, markup); }
+  }
+  // the sender is told in Telegram when the main admin decides
+  function tellSender(q, approved, r, by) {
+    if (!q || !/^\d+$/.test(String(q.telegramId || ""))) return;
+    const head = approved && r.ok ? "✅ <b>MATERIAL — approved</b>" : "❌ <b>MATERIAL — " + (approved ? "could not be applied" : "rejected") + "</b>";
+    tgSend(q.telegramId, [head, "", ...reqText(q).map(esc), "", (approved && r.ok ? "Approved" : "Decided") + " by " + esc(by), r.ok ? "" : esc(r.error || "")].filter(x => x !== undefined).join("\n").trim());
+  }
+  const alertView = () => ({ owners: owners().length });
+
+  // ✅ / ❌ one decision, used by the page and by the Telegram buttons
+  async function decideReq(kind, id, approve, a, note) {
+    const actor = { name: by(a), telegramId: tid(a), role: a.role };
+    let snap = null, r;
+    if (kind === "cut") { const f = (R().wsCutRequests() || []).find(x => String(x.id) === id); if (f) snap = shape("cut", f); r = R().wsApproveCut(id, approve, actor, note); }
+    else if (kind === "add") { const f = (R().wsAddRequests() || []).find(x => String(x.id) === id); if (f) snap = shape("add", f); r = R().wsApproveAdd(id, approve, actor, note); }
+    else if (kind === "edit") {
+      const rq = db.editRequests.find(x => x.id === id);
+      if (!rq) r = { ok: false, error: "Request not found." };
+      else if (rq.status !== "pending") r = { ok: false, error: "This request was already decided." };
+      else {
+        snap = shape("edit", rq);
+        rq.decidedBy = by(a); rq.decidedAt = stamp(); rq.decisionNote = clip(note, 200);
+        if (!approve) { rq.status = "rejected"; persist(); r = { ok: true, message: `❌ Edit rejected: ${label(rq)}. Nothing changed.` }; }
+        else {
+          const m = findMat(rq.materialId);
+          if (!m) { rq.status = "rejected"; rq.decisionNote = "Material no longer exists."; persist(); r = { ok: false, error: "The material no longer exists. The request was closed." }; }
+          else {
+            const e = cleanEdit({ id: m.id, name: rq.changes.name, type: rq.changes.type, unit: rq.changes.unit, min: rq.changes.min, qty: rq.changes.qty == null ? "" : rq.changes.qty });
+            if (e.error) { rq.status = "rejected"; rq.decisionNote = clip("Could not be applied: " + e.error, 200); persist(); r = { ok: false, error: "Could not apply it: " + e.error + " The request was closed." }; }
+            else {
+              const out = await applyEdit(e, { name: rq.by, telegramId: rq.telegramId, role: "admin" }, (rq.note ? rq.note + " · " : "") + "Approved by " + by(a));
+              if (!out.ok) { rq.status = "rejected"; rq.decisionNote = clip("Could not be applied: " + out.error, 200); persist(); r = { ok: false, error: "Could not apply it: " + out.error + " The request was closed." }; }
+              else { rq.status = "approved"; persist(); r = { ok: true, message: `✅ Approved: ${label(rq)} edited.` }; }
+            }
+          }
+        }
+      }
+    } else r = { ok: false, error: "Unknown request." };
+    if (snap && !/already decided|not found/i.test(r.error || "")) tellSender(snap, approve, r, by(a));
+    return r;
+  }
+  // Telegram button (called from server.js for callback data "mat:y|n:kind:id")
+  async function handleCallback(cb) {
+    const m = /^mat:([yn]):(cut|add|edit):([0-9a-f]{6,32})$/.exec(String(cb?.data || "")); if (!m) return false;
+    const answer = (text, alert) => ctx.tgApi.call("answerCallbackQuery", { callback_query_id: cb.id, text: String(text || "").slice(0, 190), ...(alert ? { show_alert: true } : {}) }).catch(() => {});
+    const from = String(cb.from?.id || "");
+    if (!owners().includes(from)) { await answer("Only the main admin can approve or reject.", true); return true; }
+    const name = [cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") || "Main admin";
+    const approve = m[1] === "y", r = await decideReq(m[2], m[3], approve, { name, telegramId: from, role: "owner" }, "");
+    await answer(r.ok ? (approve ? "✅ Approved" : "❌ Rejected") : (r.error || "Could not apply."), !r.ok);
+    if (cb.message?.chat?.id && cb.message?.message_id) {
+      const done = r.ok ? (approve ? "✅ Approved by " : "❌ Rejected by ") + name : (/already decided/i.test(r.error || "") ? "ℹ️ Already decided." : "⚠️ " + (r.error || "Not applied."));
+      ctx.tgApi.call("editMessageText", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text: String(cb.message.text || "Material request").slice(0, 3800) + "\n\n" + done, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+    }
+    return true;
   }
 
   // ── routes ──────────────────────────────────────────────────────────────────────────────────
@@ -86,6 +173,7 @@ function register(app, ctx) {
       return res.json({ ...view(a), ok: !!r.ok, error: r.error, message: r.ok ? `✂️ Cut ${r.qty} ${r.unit} of ${r.material}. Left: ${r.after}.` : undefined });
     }
     const r = R().wsRequestCut({ id: b.id, qty: b.qty, note: b.note }, { name: by(a), telegramId: tid(a) });
+    if (r.ok) alertOwners(shape("cut", r.request));
     res.json({ ...view(a), ok: !!r.ok, error: r.error, pendingConfirmation: !!r.ok, message: r.ok ? `⏳ Cut request sent for confirmation: ${r.request.material}${r.request.mtype ? " " + r.request.mtype : ""} ${r.request.qty} ${r.request.unit}. The stock changes only after the main admin approves.` : undefined });
   });
 
@@ -97,6 +185,7 @@ function register(app, ctx) {
       return res.json({ ...view(a), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
     }
     const r = R().wsRequestAdd(kind, b, { name: by(a), telegramId: tid(a) });
+    if (r.ok) alertOwners(shape("add", r.request));
     res.json({ ...view(a), ok: !!r.ok, error: r.error, pendingConfirmation: !!r.ok, message: r.ok ? r.message : undefined });
   });
 
@@ -136,7 +225,7 @@ function register(app, ctx) {
     const changes = { name: e.name, type: e.type, unit: e.unit, min: e.min, qty: e.qty };
     const rq = { id: uid(), materialId: e.m.id, material: e.m.name, mtype: e.m.type || "", unit: e.m.unit || "", qty: e.qty === null ? 0 : e.qty, before: e.m.qty, after: e.qty === null ? e.m.qty : e.qty, note: clip(b.note, 200), by: by(a), telegramId: tid(a), created: stamp(), status: "pending", decidedBy: "", decidedAt: "", decisionNote: "", changes };
     db.editRequests.push(rq); if (db.editRequests.length > 300) db.editRequests.splice(0, db.editRequests.length - 300);
-    persist();
+    persist(); alertOwners(shape("edit", rq));
     res.json({ ...view(a), ok: true, pendingConfirmation: true, message: `⏳ Edit of ${label(rq)} sent for confirmation. Nothing changes until the main admin approves it.` });
   });
 
@@ -144,37 +233,12 @@ function register(app, ctx) {
   router.post("/decide", async (req, res) => {
     const a = req.actor, b = req.body || {};
     if (!isOwnerA(a)) return res.json({ ...view(a), ok: false, error: "Only the main admin can approve or reject." });
-    const approve = b.approve === true || b.approve === "true", actor = { name: by(a), telegramId: tid(a), role: a.role }, id = String(b.id || "");
-    let r;
-    if (b.kind === "cut") r = R().wsApproveCut(id, approve, actor, b.note);
-    else if (b.kind === "add") r = R().wsApproveAdd(id, approve, actor, b.note);
-    else if (b.kind === "edit") {
-      const rq = db.editRequests.find(x => x.id === id);
-      if (!rq) r = { ok: false, error: "Request not found." };
-      else if (rq.status !== "pending") r = { ok: false, error: "This request was already decided." };
-      else {
-        rq.decidedBy = by(a); rq.decidedAt = stamp(); rq.decisionNote = clip(b.note, 200);
-        if (!approve) { rq.status = "rejected"; persist(); r = { ok: true, message: `❌ Edit rejected: ${label(rq)}. Nothing changed.` }; }
-        else {
-          const m = findMat(rq.materialId);
-          if (!m) { rq.status = "rejected"; rq.decisionNote = "Material no longer exists."; persist(); r = { ok: false, error: "The material no longer exists. The request was closed." }; }
-          else {
-            const e = cleanEdit({ id: m.id, name: rq.changes.name, type: rq.changes.type, unit: rq.changes.unit, min: rq.changes.min, qty: rq.changes.qty == null ? "" : rq.changes.qty });
-            if (e.error) { rq.status = "rejected"; rq.decisionNote = clip("Could not be applied: " + e.error, 200); persist(); r = { ok: false, error: "Could not apply it: " + e.error + " The request was closed." }; }
-            else {
-              const out = await applyEdit(e, { name: rq.by, telegramId: rq.telegramId, role: "admin" }, (rq.note ? rq.note + " · " : "") + "Approved by " + by(a));
-              if (!out.ok) { rq.status = "rejected"; rq.decisionNote = clip("Could not be applied: " + out.error, 200); persist(); r = { ok: false, error: "Could not apply it: " + out.error + " The request was closed." }; }
-              else { rq.status = "approved"; persist(); r = { ok: true, message: `✅ Approved: ${label(rq)} edited.` }; }
-            }
-          }
-        }
-      }
-    } else r = { ok: false, error: "Unknown request." };
+    const r = await decideReq(String(b.kind || ""), String(b.id || ""), b.approve === true || b.approve === "true", a, b.note);
     res.json({ ...view(a), ok: !!r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
 
-  app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v177" }));
+  app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v178" }));
   app.use("/api/material", router);
-  return { load, pending: () => allRequests({ role: "owner" }).pending.length };
+  return { load, handleCallback, pending: () => allRequests({ role: "owner" }).pending.length };
 }
 module.exports = { register };
