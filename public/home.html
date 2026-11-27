@@ -71,6 +71,11 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 .btn .d3{background:rgba(255,255,255,.95);border-radius:10px;padding:3px}
 
 .hide{display:none!important}
+@keyframes matRing{0%,100%{box-shadow:0 0 0 0 rgba(179,38,30,.45)}50%{box-shadow:0 0 0 9px rgba(179,38,30,0)}}
+.matAlert{display:none;margin:0 0 14px;padding:13px 15px;border-radius:16px;font-size:14px;font-weight:800;line-height:1.45;text-decoration:none}
+.matAlert.own{display:block;background:#fde8e6;border:2px solid #b3261e;color:#b3261e;animation:matRing 1.6s infinite}
+.matAlert.snd{display:block;background:#fff1d4;border:2px solid #e8c36a;color:#8a5a00}
+.matAlert small{display:block;font-weight:500;font-size:12.5px;margin-top:2px}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#0d1714;color:#fff;align-items:center;justify-content:center;padding:24px;text-align:center}
 #gate .panel{max-width:380px;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:28px;background:#14231e}
 #gate h2{margin:0 0 10px;font-size:20px;color:var(--gold)}#gate p{margin:0;color:#c7d3ce;line-height:1.5}
@@ -163,6 +168,7 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 
 <main>
   <p class="hello" id="hello"></p>
+  <a class="matAlert" id="matAlert" href="/material.html"></a>
 
 
 
@@ -270,9 +276,12 @@ async function pullMat(){
   if(document.visibilityState==="hidden"||!$("matSub"))return;
   const box=$("matSub").closest("[data-perm]");if(box&&box.classList.contains("hide"))return; // no Material access
   try{const d=await (await fetch("/api/material/state")).json();
-    if(d&&d.ok){const n=(d.pending||[]).length;$("matSub").textContent=n?(d.me.owner?n+" waiting for your confirmation":n+" of your requests waiting for confirmation"):"Cut · Add · Edit materials — with confirmation";}}catch(e){}
+    if(d&&d.ok){const n=(d.pending||[]).length,al=$("matAlert");$("matSub").textContent=n?(d.me.owner?"🔔 "+n+" waiting for your confirmation":"⏳ Waiting confirmation: "+n):"Cut · Add · Edit materials — with confirmation";
+      if(!n){al.className="matAlert";al.innerHTML="";}
+      else if(d.me.owner){al.className="matAlert own";al.innerHTML="🔔 "+n+" material request"+(n===1?"":"s")+" need"+(n===1?"s":"")+" your confirmation<small>Tap to approve or reject →</small>";}
+      else{al.className="matAlert snd";al.innerHTML="⏳ Waiting confirmation — "+n+" material request"+(n===1?"":"s")+"<small>The main admin has not decided yet.</small>";}}}catch(e){}
 }
-pullMat();setInterval(pullMat,30000);
+pullMat();setInterval(pullMat,12000);
 pullStock();setInterval(pullStock,30000);document.addEventListener("visibilitychange",pullStock);
 (async()=>{
   // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
