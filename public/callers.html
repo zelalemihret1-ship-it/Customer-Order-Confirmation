@@ -78,6 +78,9 @@ button:disabled{opacity:.5;cursor:default}
 .dl div:last-child{border-bottom:0}
 .dl span{flex:0 0 112px;color:#6d675d;font-weight:700}
 .dl b{flex:1;font-weight:600;color:#18382e;word-break:break-word;white-space:pre-wrap}
+.wsBtn{border:0;background:linear-gradient(135deg,#ffd877,#e0b22e);color:#153a2e;border-radius:999px;padding:8px 13px;font-weight:800;font-size:12.5px;cursor:pointer;margin-left:auto;margin-right:8px;white-space:nowrap}
+.wsTabs{display:flex;gap:6px;margin:10px 0}.wsTabs button{flex:1;border:1.5px solid #ddd4c4;background:#fff;border-radius:11px;padding:10px 4px;font-weight:800;font-size:13px;color:#153a2e;cursor:pointer}.wsTabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
+.wsIt{display:flex;gap:10px;align-items:center;padding:10px;border:1.5px solid #e4ded2;border-radius:13px;margin-top:8px;cursor:pointer}.wsIt.on{border-color:#17604b;background:#eef8f3}.wsIt img,.wsIt .ph{width:52px;height:52px;border-radius:10px;object-fit:cover;background:#f1ede2;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px}.wsIt b{font-size:14px}.wsIt small{display:block;color:#6d675d;font-size:12px;line-height:1.45;margin-top:2px}
 .acts2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .acts2 button{border:0;border-radius:14px;padding:15px 10px;font-weight:800;font-size:15px;cursor:pointer;color:#fff}
 .acts2 .mk{background:#153a2e}.acts2 .ed{background:#b89552}
@@ -194,6 +197,7 @@ button:disabled{opacity:.5;cursor:default}
   </section>
 </main>
 <div class="sheetOv" id="cvOv"><div class="sheetBox" id="cvBox"></div></div>
+<div class="sheetOv" id="wsOv" style="z-index:160"><div class="sheetBox" id="wsBox"></div></div>
 <script>
 const $=id=>document.getElementById(id);
 const REJ=["Price too high","Changed mind","Delivery problem","Found elsewhere","No response","Other"];
@@ -304,7 +308,7 @@ let VIEWED=null;
 function openView(c){
   VIEWED=c;
   const row=(l,v)=>v?`<div><span>${l}</span><b>${esc(v)}</b></div>`:"";
-  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
+  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="wsBtn" type="button" data-go="ws">🛠 Send to workshop</button><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
   <div class="nm2">${esc(c.name)}</div>
   <div><span class="pill ${esc(c.customerStatus)}" style="margin-left:0">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></div>
   <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("✈️ Telegram name",c.telegramName)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("⭐ Wants",(c.interests||[]).join(", "))}${row("⭐ Note",c.interestNote)}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
@@ -316,10 +320,59 @@ $("cvOv").addEventListener("click",e=>{
   if(e.target===$("cvOv")||e.target.closest("[data-x]")){closeView();return;}
   const g=e.target.closest("[data-go]");if(!g||!VIEWED)return;
   const c=VIEWED;closeView();
+  if(g.dataset.go==="ws"){openWs(c);return;}
   if(g.dataset.go==="edit"){load(c);return;}
   if(g.dataset.go==="star"){load(c);showInt(c);return;}
   try{sessionStorage.removeItem("ambarGoHome");}catch{}
   location.href="/orders.html?customer="+encodeURIComponent(c.id)+(location.hash||"");
+});
+
+// 🛠 Send to workshop (top of the customer details, beside the Customer ID): after making an order, send that order's product — or a readymade product — with this customer's info to the workshop Telegram group
+let WS=null,WSTAB="order",WSPICK=new Set();
+const wsClose=()=>{$("wsOv").classList.remove("on");WS=null;};
+async function openWs(c){
+  WS={c,data:null};WSTAB="order";WSPICK=new Set();
+  $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div><div class="empty">Loading…</div>';
+  $("wsOv").classList.add("on");
+  const d=await api("/api/workshop/customer/"+encodeURIComponent(c.id));
+  if(!WS)return;
+  if(!d.ok){$("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1">✕</button></div><div class="notice bad" style="display:block;margin-top:10px">'+esc(d.error||"Could not open the workshop.")+'</div>';return;}
+  WS.data=d;
+  const first=(d.orders||[]).find(o=>!o.sent&&o.status!=="Rejected")||(d.orders||[])[0];if(first)WSPICK.add("o:"+first.id);
+  wsDraw();
+}
+function wsDraw(msg,kind){
+  const d=WS.data,c=d.customer,T=WSTAB;
+  const th=u=>u?'<img loading="lazy" src="'+esc(u)+'" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>';
+  const orders=(d.orders||[]).map(o=>'<div class="wsIt '+(WSPICK.has("o:"+o.id)?"on":"")+'" data-wo="'+esc(o.id)+'">'+th(o.photo)+'<div><b>'+esc(o.product||"Order")+'</b><small>'+esc(o.orderId)+' · '+esc(o.status||"Pending")+(o.sent?' · ✅ already sent '+esc(o.sent.at||""):"")+'</small></div></div>').join("");
+  const stock=(d.stock||[]).map(p=>'<div class="wsIt '+(WSPICK.has("p:"+p.id)?"on":"")+'" data-wp="'+esc(p.id)+'">'+(p.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="">':'<div class="ph">🛋</div>')+'<div><b>'+esc(p.code+(p.model?"-"+p.model:""))+'</b><small>'+esc([p.ptype,p.desc,p.handle].filter(Boolean).join(" · ")||"—")+'</small></div></div>').join("");
+  $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div>'+
+   '<div class="nm2">🛠 Send to workshop</div><div style="font-size:13px;color:#6d675d;line-height:1.5">👤 <b>'+esc(c.name)+'</b>'+(c.phone?' · 📞 '+esc(c.phone):'')+(c.location?'<br>📍 '+esc(c.location):'')+'</div>'+
+   '<div class="notice '+(d.group?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(d.group?'Group: <b>'+esc(d.group)+'</b>':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.')+'</div>'+
+   '<div class="wsTabs"><button type="button" data-wt="order" class="'+(T==="order"?"on":"")+'">📋 Order products</button><button type="button" data-wt="ready" class="'+(T==="ready"?"on":"")+'">🛋 Readymade</button></div>'+
+   (msg?'<div class="notice '+kind+'" style="display:block">'+esc(msg)+'</div>':'')+
+   (T==="order"?(orders||'<div class="empty">No order for this customer yet.<br>Make an order first, then come back here.</div>'):(stock||'<div class="empty">No readymade product in stock.</div>'))+
+   '<textarea id="wsNote" placeholder="Extra note for the workshop (optional)" style="min-height:56px;margin-top:10px"></textarea>'+
+   '<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(d.group?"":"disabled")+'>📤 Send to workshop</button></div>';
+}
+$("wsOv").addEventListener("click",async e=>{
+  if(e.target===$("wsOv")||e.target.closest("[data-wx]")){wsClose();return;}
+  if(!WS||!WS.data)return;
+  const t=e.target.closest("[data-wt]");if(t){WSTAB=t.dataset.wt;WSPICK=new Set();wsDraw();return;}
+  const o=e.target.closest("[data-wo]");if(o){WSPICK=new Set(["o:"+o.dataset.wo]);const n=$("wsNote").value;wsDraw();$("wsNote").value=n;return;}
+  const p=e.target.closest("[data-wp]");if(p){const k="p:"+p.dataset.wp;WSPICK.has(k)?WSPICK.delete(k):WSPICK.add(k);const n=$("wsNote").value;wsDraw();$("wsNote").value=n;return;}
+  if(e.target.closest("#wsGo")){
+    const pick=[...WSPICK].filter(k=>k.startsWith(WSTAB==="order"?"o:":"p:")).map(k=>k.slice(2));
+    if(!pick.length){wsDraw(WSTAB==="order"?"Tap the order to send.":"Tap at least one product to send.","bad");return;}
+    const note=$("wsNote").value,b=$("wsGo");b.disabled=true;b.textContent="Sending…";
+    let r;
+    if(WSTAB==="order"){const ord=WS.data.orders.find(x=>String(x.id)===pick[0]);
+      r=await api("/api/workshop/send-order","POST",{id:pick[0],note,again:!!(ord&&ord.sent)});
+      if(r.ok&&ord){ord.sent={at:"just now"};}}
+    else{r=await api("/api/workshop/send-product","POST",{ids:pick,customerId:WS.c.id,note});}
+    if(r.ok){WSPICK=new Set();wsDraw("✅ "+(r.message||"Sent to the workshop group."),"ok");}
+    else wsDraw(r.error||"Could not send.","bad");
+  }
 });
 $("list").addEventListener("click",e=>{const b=e.target.closest(".cust");if(!b)return;const c=ALL.find(x=>x.id===b.dataset.id);if(c)openView(c);});
 ["q","fStatus","fSales","fInt"].forEach(i=>$(i).addEventListener("input",renderList));
