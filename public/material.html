@@ -56,6 +56,12 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 .cf{border:1.5px solid var(--line);border-radius:14px;padding:12px;margin-top:10px;background:#fbfcfd}.cf.wait{border-color:#f0d9a3;background:#fffaf0}
 .cf .t{font-weight:800;font-size:14px;line-height:1.4}.cf .m{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
 .diff{font-size:12.5px;margin-top:6px;line-height:1.6}.diff i{font-style:normal;color:var(--muted)}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(179,38,30,.45)}50%{box-shadow:0 0 0 9px rgba(179,38,30,0)}}
+.alert{display:none;border-radius:16px;padding:14px;margin-bottom:14px;font-size:14px;line-height:1.5;font-weight:700}
+.alert.own{display:block;background:#fde8e6;border:2px solid var(--bad);color:var(--bad);animation:ring 1.6s infinite}
+.alert.snd{display:block;background:var(--warnbg);border:2px solid #e8c36a;color:var(--warn)}
+.alert small{display:block;font-weight:500;font-size:12.5px;margin-top:3px;opacity:.9}
+.alert .btns{margin-top:8px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 </style>
 </head>
@@ -64,6 +70,8 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 <header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🧱 Material</h1><div class="sub" id="sub">Cut · Add · Edit materials</div></div></div></header>
 <main>
   <div class="msg" id="msg"></div>
+
+  <div class="alert" id="alert"></div>
 
   <div class="card" id="cfCard">
     <h2>✅ Confirmation <span class="pill wait" id="cfCount" style="display:none"></span></h2>
@@ -114,8 +122,25 @@ function render(){
   if(!S)return;
   const owner=S.me.owner;
   $("sub").textContent=owner?"Cut · Add · Edit — your changes apply at once":"Cut · Add · Edit — changes wait for the main admin's confirmation";
-  drawConfirm();drawList();
+  drawAlert();drawConfirm();drawList();
 }
+
+// ── ALERT (main admin: red, rings, vibrates when a new request arrives · sender: ⏳ Waiting confirmation sign) ──
+let LASTN=null;
+function drawAlert(){
+  const n=S.pending.length,a=$("alert"),owner=S.me.owner;
+  if(!n){a.className="alert";a.innerHTML="";LASTN=0;return;}
+  if(owner){
+    a.className="alert own";
+    a.innerHTML='🔔 '+n+' material request'+(n===1?'':'s')+' need'+(n===1?'s':'')+' your confirmation<small>'+S.pending.slice(0,3).map(r=>esc(KIND[r.kind]+" · "+r.material+(r.mtype?" "+r.mtype:"")+" — "+r.by)).join("<br>")+(n>3?"<br>…and "+(n-3)+" more":"")+'</small><div class="btns"><button class="btn sm" id="alGo" type="button">Review below ↓</button></div>';
+    if(LASTN!==null&&n>LASTN){try{navigator.vibrate&&navigator.vibrate([200,100,200]);}catch{}try{Telegram.WebApp.HapticFeedback.notificationOccurred("warning");}catch{}say("🔔 New material request waiting for your confirmation.","warn");}
+  }else{
+    a.className="alert snd";
+    a.innerHTML='⏳ Waiting confirmation — '+n+' of your request'+(n===1?'':'s')+'<small>The stock changes only after the main admin approves. You will also get a Telegram message when it is decided.</small>';
+  }
+  LASTN=n;
+}
+document.addEventListener("click",e=>{if(e.target.closest("#alGo"))$("cfCard").scrollIntoView({behavior:"smooth",block:"start"});});
 
 // ── CONFIRMATION ────────────────────────────────────────────────────────────
 function reqTitle(r){
@@ -142,7 +167,7 @@ function drawConfirm(){
   $("cfHint").textContent=owner?"Changes made by other admins wait here. Nothing reaches the stock until you approve it.":"Your cut, add and edit requests wait here for the main admin. The stock changes only after approval.";
   let h="";
   if(P.length)h+=P.map(r=>'<div class="cf wait"><div class="t">'+reqTitle(r)+'</div><div class="diff">'+reqDiff(r)+'</div><div class="m">👤 '+esc(r.by)+' · '+esc(r.created)+(r.note?'<br>📝 '+esc(r.note):'')+'</div>'+
-    (owner?'<div class="btns"><button class="btn sm" data-ok="'+esc(r.kind+"|"+r.id)+'">✅ Approve</button><button class="btn sm red" data-no="'+esc(r.kind+"|"+r.id)+'">❌ Reject</button></div>':'<div class="m" style="margin-top:6px"><span class="pill wait">⏳ Pending Admin Confirmation</span></div>')+'</div>').join("");
+    (owner?'<div class="btns"><button class="btn sm" data-ok="'+esc(r.kind+"|"+r.id)+'">✅ Approve</button><button class="btn sm red" data-no="'+esc(r.kind+"|"+r.id)+'">❌ Reject</button></div>':'<div class="m" style="margin-top:6px"><span class="pill wait">⏳ Waiting confirmation</span></div>')+'</div>').join("");
   else h+='<div class="empty" style="padding:14px 8px">Nothing is waiting for confirmation.</div>';
   if(H.length)h+='<div class="hint" style="margin-top:14px;font-weight:700">Recently decided</div>'+H.map(r=>'<div class="cf"><div class="t">'+reqTitle(r)+' <span class="pill '+(r.status==="approved"?"ok":"bad")+'">'+(r.status==="approved"?"✅ Approved":"❌ Rejected")+'</span></div><div class="m">👤 '+esc(r.by)+(r.decidedBy?' · by '+esc(r.decidedBy):'')+' · '+esc(r.decidedAt||r.created)+(r.decisionNote?'<br>'+esc(r.decisionNote):'')+'</div></div>').join("");
   $("cfList").innerHTML=h;
@@ -165,7 +190,7 @@ function drawList(){
     const items=L.filter(m=>m.group===g);if(!items.length)continue;
     h+='<div class="grpt">'+esc(g)+'<span class="pill">'+items.length+'</span></div><div class="card" style="padding:4px 15px">'+items.map(m=>{
       const low=m.min>0&&m.qty<=m.min,w=waiting(m);
-      return '<div class="mr"><div class="nm"><b>'+esc(nm(m))+'</b><div class="m">'+(m.min>0?'Low-stock alert at '+esc(fmt(m.min))+' ':'')+(w.length?'<span class="pill wait">⏳ '+w.length+' waiting</span>':'')+'</div></div>'+
+      return '<div class="mr"><div class="nm"><b>'+esc(nm(m))+'</b><div class="m">'+(m.min>0?'Low-stock alert at '+esc(fmt(m.min))+' ':'')+(w.length?'<span class="pill wait">⏳ Waiting confirmation'+(w.length>1?' ('+w.length+')':'')+'</span>':'')+'</div></div>'+
         '<div class="qt'+(low?' low':'')+'">'+esc(fmt(m.qty))+'<small>'+esc(m.unit||"pcs")+(low?' · LOW':'')+'</small></div>'+
         '<div class="ac"><button class="btn sm" data-cut="'+esc(m.id)+'">✂️ Cut</button><button class="btn sm sec" data-add="'+esc(m.id)+'">➕ Add</button><button class="btn sm sec" data-edit="'+esc(m.id)+'">✏️ Edit</button></div></div>';}).join("")+'</div>';
   }
@@ -219,7 +244,7 @@ function editSheet(id){
   guard($("fGo"),S.me.owner?"Save changes":"Send for confirmation",()=>api("/api/material/edit",{id:m.id,name:$("fName").value,type:$("fType").value,unit:$("fUnit").value,qty:$("fQty").value,min:$("fMin").value,note:$("fNote").value}));
 }
 
-setInterval(()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();},15000);
+setInterval(()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();},8000);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
 refresh();
 </script>
