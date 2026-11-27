@@ -19,7 +19,7 @@ function register(app, ctx) {
   const owners = () => [...new Set((ctx.ownerIds || []).map(String).filter(x => /^\d+$/.test(x)))];
   const R = () => ctx.reports || {};
   const DATA_FILE = path.join(baseDir, "material-data.json");
-  let db = { editRequests: [], savedAt: "" }; // cut + add requests live in Reports (v165 / v175); the edit requests live here
+  let db = { editRequests: [], confirmGroup: null, rights: {}, savedAt: "" }; // cut + add requests live in Reports (v165 / v175); the edit requests live here
 
   // ── storage (file + Supabase), same pattern as the other modules ────────────────────────────
   let chain = Promise.resolve();
@@ -32,7 +32,8 @@ function register(app, ctx) {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "material_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { editRequests: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { editRequests: [], confirmGroup: null, rights: {}, savedAt: "", ...d };
+    if (!db.rights || typeof db.rights !== "object" || Array.isArray(db.rights)) db.rights = {};
     if (!Array.isArray(db.editRequests)) db.editRequests = [];
   }
 
@@ -66,7 +67,9 @@ function register(app, ctx) {
     const r = reports(), q = allRequests(actor), owner = isOwnerA(actor);
     return {
       ok: true, me: { name: by(actor), owner }, materials: r.materials, groups: r.groups,
-      pending: q.pending, history: q.history, waitingCount: q.pending.length // main admin: everything waiting · other admins: their own requests
+      pending: q.pending, history: q.history, waitingCount: q.pending.length,
+      can: { cut: can(actor, "cut"), add: can(actor, "add") }, confirmGroup: cg(), confirmGroupName: cgName(),
+      admins: owner ? adminList().map(a => ({ telegramId: String(a.telegramId), name: clip(a.name, 60) || "Admin " + a.telegramId, cut: can({ telegramId: a.telegramId }, "cut"), add: can({ telegramId: a.telegramId }, "add") })) : [] // main admin: everything waiting · other admins: their own requests
     };
   }
 
@@ -90,20 +93,28 @@ function register(app, ctx) {
     }
     return L;
   }
-  const tgSend = async (chat, text, markup) => { try { await ctx.tgApi.call("sendMessage", { chat_id: String(chat), text: text.slice(0, 4000), parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}) }); return true; } catch (e) { return false; } };
-  // 🔔 a waiting request → every main admin gets a Telegram message with Approve / Reject buttons
+  // 🔔 a waiting request → posted in the Telegram group TOPIC the main admin selected (Material page → Confirmation group). Nothing is sent to private chats.
+  const cg = () => db.confirmGroup && db.confirmGroup.chat ? db.confirmGroup : null;
+  const cgName = () => { const g = cg(); return g ? (g.title || g.chat) + (g.topic ? " › " + (g.topicTitle || "topic " + g.topic) : "") : ""; };
+  const chatKey = g => /^-?\d+$/.test(String(g.chat)) ? String(g.chat) : "@" + String(g.chat).replace(/^@/, "");
+  const tgSend = async (text, markup) => {
+    const g = cg(); if (!g || !ctx.tgApi) return null;
+    try { return await ctx.tgApi.call("sendMessage", { chat_id: chatKey(g), ...(g.topic > 1 ? { message_thread_id: g.topic } : {}), text: text.slice(0, 4000), parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}) }); } catch (e) { console.warn("Material: could not post in the confirmation topic:", e.message); return null; }
+  };
   function alertOwners(q) {
-    if (!ctx.tgApi || typeof ctx.tgApi.call !== "function") return;
-    const txt = ["🔔 <b>MATERIAL — needs your confirmation</b>", "", ...reqText(q).map(esc), "", "👤 " + esc(q.by) + (q.created ? " · " + esc(q.created) : ""), q.note ? "📝 " + esc(q.note) : "", "", "⏳ The stock does NOT change until you approve."].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i !== a.length - 1)).join("\n");
-    const markup = { inline_keyboard: [[{ text: "✅ Approve", callback_data: `mat:y:${q.kind}:${q.id}` }, { text: "❌ Reject", callback_data: `mat:n:${q.kind}:${q.id}` }]] };
-    for (const id of owners()) { if (id === String(q.telegramId)) continue; tgSend(id, txt, markup); }
+    const txt = ["🔔 <b>MATERIAL — needs main admin confirmation</b>", "", ...reqText(q).map(esc), "", "👤 " + esc(q.by) + (q.created ? " · " + esc(q.created) : ""), q.note ? "📝 " + esc(q.note) : "", "⏳ The stock does NOT change until the main admin approves."].filter(x => x !== "" || true).join("\n");
+    tgSend(txt, { inline_keyboard: [[{ text: "✅ Approve", callback_data: `mat:y:${q.kind}:${q.id}` }, { text: "❌ Reject", callback_data: `mat:n:${q.kind}:${q.id}` }]] });
   }
-  // the sender is told in Telegram when the main admin decides
+  // the decision is posted in the same topic
   function tellSender(q, approved, r, by) {
-    if (!q || !/^\d+$/.test(String(q.telegramId || ""))) return;
+    if (!q) return;
     const head = approved && r.ok ? "✅ <b>MATERIAL — approved</b>" : "❌ <b>MATERIAL — " + (approved ? "could not be applied" : "rejected") + "</b>";
-    tgSend(q.telegramId, [head, "", ...reqText(q).map(esc), "", (approved && r.ok ? "Approved" : "Decided") + " by " + esc(by), r.ok ? "" : esc(r.error || "")].filter(x => x !== undefined).join("\n").trim());
+    tgSend([head, "", ...reqText(q).map(esc), "", "👤 " + esc(q.by), (approved && r.ok ? "Approved" : "Decided") + " by " + esc(by), r.ok ? "" : esc(r.error || "")].join("\n").trim());
   }
+  // ── v179 who may Cut / Add (selected by the main admin). No selection yet = allowed (as before).
+  const adminList = () => ((typeof ctx.getAppAdmins === "function" ? ctx.getAppAdmins() : []) || []).filter(a => a && /^\d+$/.test(String(a.telegramId)) && !owners().includes(String(a.telegramId)) && (!Array.isArray(a.perms) || a.perms.includes("material") || a.perms.includes("workshop")));
+  const can = (a, what) => isOwnerA(a) || !db.rights[tid(a)] || db.rights[tid(a)][what] !== false;
+  const noRight = what => ({ ok: false, error: `The main admin has not given you ${what === "cut" ? "✂️ Cut" : "➕ Add / ✏️ Edit"} in Material.` });
   const alertView = () => ({ owners: owners().length });
 
   // ✅ / ❌ one decision, used by the page and by the Telegram buttons
@@ -168,6 +179,7 @@ function register(app, ctx) {
   // ✂️ CUT
   router.post("/cut", (req, res) => {
     const a = req.actor, b = req.body || {};
+    if (!can(a, "cut")) return res.json({ ...view(a), ...noRight("cut") });
     if (isOwnerA(a)) {
       const r = R().wsCutNow({ id: b.id, qty: b.qty }, { name: by(a), telegramId: tid(a) }, clip(b.note, 200) || "Cut");
       return res.json({ ...view(a), ok: !!r.ok, error: r.error, message: r.ok ? `✂️ Cut ${r.qty} ${r.unit} of ${r.material}. Left: ${r.after}.` : undefined });
@@ -180,6 +192,7 @@ function register(app, ctx) {
   // ➕ ADD (kind "new" = a new material, kind "add" = more stock on an existing material)
   router.post("/add", (req, res) => {
     const a = req.actor, b = req.body || {}, kind = b.kind === "new" ? "new" : "add";
+    if (!can(a, "add")) return res.json({ ...view(a), ...noRight("add") });
     if (isOwnerA(a)) {
       const r = R().wsMaterial(kind === "new" ? "add" : "move", kind === "new" ? { name: b.name, type: b.type, unit: b.unit, group: b.group, qty: b.qty, min: b.min, note: b.note } : { id: b.id, type: "add", qty: b.qty, note: b.note }, by(a));
       return res.json({ ...view(a), ok: r.ok, error: r.error, message: r.ok ? r.message : undefined });
@@ -215,7 +228,9 @@ function register(app, ctx) {
     return { ok: true };
   }
   router.post("/edit", async (req, res) => {
-    const a = req.actor, b = req.body || {}, e = cleanEdit(b);
+    const a = req.actor, b = req.body || {};
+    if (!can(a, "add")) return res.json({ ...view(a), ...noRight("add") });
+    const e = cleanEdit(b);
     if (e.error) return res.json({ ...view(a), ok: false, error: e.error });
     if (isOwnerA(a)) {
       const r = await applyEdit(e, { name: by(a), telegramId: tid(a), role: a.role }, b.note);
@@ -230,6 +245,31 @@ function register(app, ctx) {
   });
 
   // ✅ / ❌ the main admin decides
+  // main admin: the Telegram group + topic where confirmations are posted, and who may Cut / Add
+  const ownerOnly = (req, res) => isOwnerA(req.actor) ? true : (res.json({ ...view(req.actor), ok: false, error: "Only the main admin can change this." }), false);
+  router.post("/confirm-group", (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    const g = req.body?.group || {}, chat = String(g.chat || "").trim().replace(/^https?:\/\/t\.me\//i, "").replace(/^@+/, "");
+    if (!(/^-?\d{5,20}$/.test(chat) || /^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(chat))) return res.json({ ...view(req.actor), ok: false, error: "Choose a Telegram group first." });
+    const t = Number(g.topic);
+    db.confirmGroup = { chat, title: clip(g.title, 80), topic: Number.isInteger(t) && t > 1 ? t : 0, topicTitle: clip(g.topicTitle, 80) };
+    persist(); res.json({ ...view(req.actor), ok: true, message: "✅ Saved. Material confirmations are posted in " + cgName() + "." });
+  });
+  router.post("/confirm-group/clear", (req, res) => { if (!ownerOnly(req, res)) return; db.confirmGroup = null; persist(); res.json({ ...view(req.actor), ok: true, message: "Confirmation group removed." }); });
+  router.post("/confirm-group/test", async (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    if (!cg()) return res.json({ ...view(req.actor), ok: false, error: "Choose the confirmation group first." });
+    const r = await tgSend("<b>AMBAR MATERIAL TEST</b>\nMaterial confirmations are posted here. The bot must be in this group.");
+    res.json({ ...view(req.actor), ok: !!r, error: r ? undefined : "The AMBAR bot could not post there. Add the bot to the group (as admin) and check the topic.", message: r ? "✅ Test posted in " + cgName() + "." : undefined });
+  });
+  router.post("/rights", (req, res) => {
+    if (!ownerOnly(req, res)) return;
+    const id = String(req.body?.telegramId || "");
+    if (!adminList().some(a => String(a.telegramId) === id)) return res.json({ ...view(req.actor), ok: false, error: "Admin not found." });
+    const cur = db.rights[id] || {};
+    db.rights[id] = { cut: req.body?.cut === undefined ? cur.cut !== false : !!req.body.cut, add: req.body?.add === undefined ? cur.add !== false : !!req.body.add };
+    persist(); res.json({ ...view(req.actor), ok: true });
+  });
   router.post("/decide", async (req, res) => {
     const a = req.actor, b = req.body || {};
     if (!isOwnerA(a)) return res.json({ ...view(a), ok: false, error: "Only the main admin can approve or reject." });
@@ -237,7 +277,7 @@ function register(app, ctx) {
     res.json({ ...view(a), ok: !!r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
 
-  app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v178" }));
+  app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v179" }));
   app.use("/api/material", router);
   return { load, handleCallback, pending: () => allRequests({ role: "owner" }).pending.length };
 }
