@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f3d30">
+<title>Ambar Furniture — Material</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+</script>
+<style>
+:root{--bg:#f2f4f8;--card:#fff;--ink:#14231e;--muted:#6b7680;--line:#e8ebf0;--brand:#0f3d30;--brand2:#17604b;--gold:#e0b22e;--ok:#17824c;--okbg:#e2f5ea;--bad:#b3261e;--badbg:#fde8e6;--warn:#8a5a00;--warnbg:#fff1d4;--blue:#14598f;--bluebg:#e5f1fb;--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 26px rgba(16,24,40,.08)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+header{position:sticky;top:0;z-index:30;background:linear-gradient(135deg,#0a2a20,var(--brand) 55%,var(--brand2));color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 14px;box-shadow:0 6px 24px rgba(8,30,22,.25)}
+header .in{max-width:820px;margin:auto;display:flex;align-items:center;gap:12px}
+header a.back{color:#fff;text-decoration:none;font-size:13px;font-weight:700;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:7px 13px;white-space:nowrap}
+header h1{margin:0;font-size:18px;line-height:1.15}header .sub{font-size:11.5px;opacity:.7;margin-top:2px}
+main{max-width:820px;margin:auto;padding:14px 14px 90px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h2{margin:0 0 6px;font-size:15.5px}
+.hint{font-size:12.5px;color:var(--muted);line-height:1.55;margin:2px 0 8px}
+.msg{display:none;border-radius:13px;padding:11px 14px;font-size:13px;font-weight:600;margin-bottom:12px;line-height:1.5;border:1px solid transparent}
+.msg.ok{display:block;background:var(--okbg);color:var(--ok);border-color:#bfe6cf}.msg.bad{display:block;background:var(--badbg);color:var(--bad);border-color:#f4c4c0}.msg.warn{display:block;background:var(--warnbg);color:var(--warn);border-color:#ecd49a}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:12px;padding:11px 15px;font-weight:700;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;font-family:inherit}
+.btn.sec{background:#edf0f4;color:var(--brand)}.btn.gold{background:linear-gradient(135deg,#f0cd6a,var(--gold));color:#2f2100}.btn.red{background:var(--badbg);color:var(--bad)}.btn.sm{padding:8px 11px;font-size:12.5px;border-radius:10px}.btn.block{width:100%}.btn:disabled{opacity:.5}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+input[type=text],input[type=number],select,textarea{width:100%;border:1.5px solid #e1e5eb;border-radius:12px;padding:11px 12px;font-size:15px;background:#fbfcfd;color:var(--ink);font-family:inherit;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--brand2);box-shadow:0 0 0 4px rgba(23,96,75,.12)}
+textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
+.seg{display:flex;gap:6px;margin-bottom:14px}.seg button{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:13px;padding:11px 4px;font-weight:700;font-size:13px;color:var(--brand);cursor:pointer;font-family:inherit}.seg button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.pill{display:inline-block;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;background:#eef0f3;color:#56606a}.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.wait{background:var(--warnbg);color:var(--warn)}.pill.blue{background:var(--bluebg);color:var(--blue)}
+.it{display:flex;gap:11px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}.it:last-child{border-bottom:0}
+.it .th{width:56px;height:56px;border-radius:12px;object-fit:cover;background:#eef0f3;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px}
+.it .mid{flex:1;min-width:0}.it .t{font-weight:800;font-size:14.5px;word-break:break-word}.it .m{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5}
+.it .rt{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:13.5px;line-height:1.6}
+.grp{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}.grp b{font-size:15px}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:80;display:none;align-items:flex-end;justify-content:center}.ov.on{display:flex}
+.sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 16px calc(22px + env(safe-area-inset-bottom,0px))}
+.sheet .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.sheet .hd b{font-size:17px}.sheet .x{border:0;background:#eef0f3;border-radius:50%;width:34px;height:34px;font-size:17px;font-weight:800;cursor:pointer}
+.opt{display:flex;align-items:center;gap:10px;padding:12px;border:1.5px solid var(--line);border-radius:13px;margin-top:8px;cursor:pointer;font-weight:700;font-size:14px}.opt.on{border-color:var(--brand2);background:#eef8f3}.opt small{display:block;color:var(--muted);font-weight:500;font-size:12px}
+.pv{display:flex;gap:12px;align-items:center}.pv img,.pv .ph0{width:84px;height:84px;border-radius:14px;object-fit:cover;background:#eef0f3;display:flex;align-items:center;justify-content:center;font-size:30px;flex:none}
+.chk{width:22px;height:22px;flex:none;accent-color:var(--brand2)}
+.bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));display:none;gap:8px;align-items:center;justify-content:space-between;z-index:20;box-shadow:0 -8px 24px rgba(16,24,40,.08)}.bar.on{display:flex}
+#gate{display:none;position:fixed;inset:0;z-index:99;background:#0b1511;color:#fff;align-items:center;justify-content:center;padding:24px;text-align:center}
+
+.grpt{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.mr{display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}.mr:last-child{border-bottom:0}
+.mr .nm{flex:1;min-width:150px}.mr .nm b{font-size:14.5px;word-break:break-word}.mr .nm .m{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5}
+.mr .qt{font-weight:800;font-size:16px;min-width:64px;text-align:right}.mr .qt small{display:block;font-size:11px;font-weight:600;color:var(--muted)}
+.mr .qt.low{color:var(--bad)}
+.mr .ac{display:flex;gap:6px;flex-wrap:wrap}
+.cf{border:1.5px solid var(--line);border-radius:14px;padding:12px;margin-top:10px;background:#fbfcfd}.cf.wait{border-color:#f0d9a3;background:#fffaf0}
+.cf .t{font-weight:800;font-size:14px;line-height:1.4}.cf .m{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
+.diff{font-size:12.5px;margin-top:6px;line-height:1.6}.diff i{font-style:normal;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+</style>
+</head>
+<body>
+<div id="gate"><div><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your access…</p><a class="btn" href="/home.html" style="text-decoration:none">← Home</a></div></div>
+<header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🧱 Material</h1><div class="sub" id="sub">Cut · Add · Edit materials</div></div></div></header>
+<main>
+  <div class="msg" id="msg"></div>
+
+  <div class="card" id="cfCard">
+    <h2>✅ Confirmation <span class="pill wait" id="cfCount" style="display:none"></span></h2>
+    <div class="hint" id="cfHint"></div>
+    <div id="cfList"></div>
+  </div>
+
+  <div class="card">
+    <div class="btns" style="margin-top:0"><button class="btn gold" id="newM">➕ New material</button></div>
+    <label>🔎 Search material</label><input type="text" id="q" placeholder="Name or type…" autocomplete="off">
+  </div>
+  <div id="out"></div>
+</main>
+
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S=null,Q="",BUSY=false;
+
+async function api(path,body){
+  try{const r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    let d={};try{d=await r.json();}catch{}
+    if(r.status===401||r.status===403){gate(d.error||"No access.");}
+    return d;}catch(e){return{ok:false,error:"Could not reach the server. Try again."};}
+}
+function gate(t){$("gate").style.display="flex";$("gateMsg").textContent=t;}
+function say(text,kind){const m=$("msg");m.className="msg "+(kind||"ok");m.textContent=text;m.scrollIntoView({block:"nearest"});if(kind!=="bad"&&kind!=="warn")setTimeout(()=>{if(m.textContent===text)m.className="msg";},7000);}
+function take(d){
+  if(d&&d.materials)S=d;
+  if(d&&d.ok===false)say(d.error||"Something went wrong.","bad");
+  else if(d&&d.message)say(d.message,d.pendingConfirmation?"warn":"ok");
+  render();
+}
+function open(h){$("sheet").innerHTML=h;$("ov").classList.add("on");}
+function close(){$("ov").classList.remove("on");}
+$("ov").addEventListener("click",e=>{if(e.target===$("ov")||e.target.closest(".x"))close();});
+function fm(t,k){const m=$("fMsg");if(m){m.className="msg "+k;m.textContent=t;}}
+function confirmBox(text,okLabel){return new Promise(res=>{open('<div class="hd"><b>Please confirm</b></div><p style="font-size:14.5px;line-height:1.6;white-space:pre-wrap">'+esc(text)+'</p><div class="btns"><button class="btn" id="cOk">'+esc(okLabel||"Yes")+'</button><button class="btn sec" id="cNo">Cancel</button></div>');$("cOk").onclick=()=>{close();res(true);};$("cNo").onclick=()=>{close();res(false);};});}
+
+async function refresh(){const d=await api("/api/material/state");if(d&&d.ok){S=d;render();}else if(!S)$("out").innerHTML='<div class="empty">'+esc((d&&d.error)||"Could not load.")+'</div>';}
+const nm=m=>m.name+(m.type?" "+m.type:"");
+const fmt=n=>{n=Number(n);return Number.isFinite(n)?String(Math.round(n*1000)/1000):"—";};
+const KIND={cut:"✂️ Cut",add:"➕ Add",edit:"✏️ Edit"};
+
+function render(){
+  if(!S)return;
+  const owner=S.me.owner;
+  $("sub").textContent=owner?"Cut · Add · Edit — your changes apply at once":"Cut · Add · Edit — changes wait for the main admin's confirmation";
+  drawConfirm();drawList();
+}
+
+// ── CONFIRMATION ────────────────────────────────────────────────────────────
+function reqTitle(r){
+  const n=esc(r.material+(r.mtype?" "+r.mtype:""));
+  if(r.kind==="cut")return KIND.cut+" "+esc(fmt(r.qty))+" "+esc(r.unit)+" · "+n;
+  if(r.kind==="add")return (r.addKind==="new"?"🆕 New material":KIND.add+" +"+esc(fmt(r.qty))+" "+esc(r.unit))+" · "+n+(r.addKind==="new"?" ("+esc(fmt(r.qty))+" "+esc(r.unit)+")":"");
+  return KIND.edit+" · "+n;
+}
+function reqDiff(r){
+  if(r.kind==="edit"&&r.changes){const c=r.changes,L=[];
+    const cur=S.materials.find(m=>m.id===(r.materialId))||null;
+    if(c.name!==r.material)L.push("Name: <i>"+esc(r.material)+"</i> → <b>"+esc(c.name)+"</b>");
+    if((c.type||"")!==(r.mtype||""))L.push("Type: <i>"+esc(r.mtype||"—")+"</i> → <b>"+esc(c.type||"—")+"</b>");
+    if(c.unit!==r.unit)L.push("Unit: <i>"+esc(r.unit||"—")+"</i> → <b>"+esc(c.unit)+"</b>");
+    if(c.min)L.push("Low-stock alert: <b>"+esc(fmt(c.min))+"</b>");
+    if(c.qty!==null&&c.qty!==undefined)L.push("Stock: <i>"+esc(fmt(r.before))+"</i> → <b>"+esc(fmt(c.qty))+"</b>");
+    return L.join("<br>");}
+  if(r.kind==="cut"||r.kind==="add")return "Stock: <i>"+esc(fmt(r.before))+"</i> → <b>"+esc(fmt(r.after))+"</b> "+esc(r.unit);
+  return "";
+}
+function drawConfirm(){
+  const owner=S.me.owner,P=S.pending,H=S.history;
+  $("cfCount").style.display=P.length?"":"none";$("cfCount").textContent=P.length+" waiting";
+  $("cfHint").textContent=owner?"Changes made by other admins wait here. Nothing reaches the stock until you approve it.":"Your cut, add and edit requests wait here for the main admin. The stock changes only after approval.";
+  let h="";
+  if(P.length)h+=P.map(r=>'<div class="cf wait"><div class="t">'+reqTitle(r)+'</div><div class="diff">'+reqDiff(r)+'</div><div class="m">👤 '+esc(r.by)+' · '+esc(r.created)+(r.note?'<br>📝 '+esc(r.note):'')+'</div>'+
+    (owner?'<div class="btns"><button class="btn sm" data-ok="'+esc(r.kind+"|"+r.id)+'">✅ Approve</button><button class="btn sm red" data-no="'+esc(r.kind+"|"+r.id)+'">❌ Reject</button></div>':'<div class="m" style="margin-top:6px"><span class="pill wait">⏳ Pending Admin Confirmation</span></div>')+'</div>').join("");
+  else h+='<div class="empty" style="padding:14px 8px">Nothing is waiting for confirmation.</div>';
+  if(H.length)h+='<div class="hint" style="margin-top:14px;font-weight:700">Recently decided</div>'+H.map(r=>'<div class="cf"><div class="t">'+reqTitle(r)+' <span class="pill '+(r.status==="approved"?"ok":"bad")+'">'+(r.status==="approved"?"✅ Approved":"❌ Rejected")+'</span></div><div class="m">👤 '+esc(r.by)+(r.decidedBy?' · by '+esc(r.decidedBy):'')+' · '+esc(r.decidedAt||r.created)+(r.decisionNote?'<br>'+esc(r.decisionNote):'')+'</div></div>').join("");
+  $("cfList").innerHTML=h;
+}
+$("cfList").addEventListener("click",async e=>{
+  const t=e.target.closest("button");if(!t||BUSY)return;
+  const raw=t.dataset.ok||t.dataset.no;if(!raw)return;const [kind,id]=raw.split("|"),approve=!!t.dataset.ok;
+  if(!approve&&!await confirmBox("Reject this request? The stock stays unchanged.","Yes, reject"))return;
+  BUSY=true;const d=await api("/api/material/decide",{kind,id,approve});BUSY=false;take(d);
+});
+
+// ── MATERIAL LIST ───────────────────────────────────────────────────────────
+$("q").addEventListener("input",()=>{Q=$("q").value;drawList();});
+function waiting(m){return S.pending.filter(r=>r.kind==="edit"?r.materialId===m.id:(r.material===m.name&&(r.mtype||"")===(m.type||"")));}
+function drawList(){
+  const q=Q.toLowerCase().trim(),L=S.materials.filter(m=>!q||(m.name+" "+m.type).toLowerCase().includes(q));
+  const groups=(S.groups||[]).slice();for(const m of L)if(!groups.includes(m.group))groups.push(m.group);
+  let h="";
+  for(const g of groups){
+    const items=L.filter(m=>m.group===g);if(!items.length)continue;
+    h+='<div class="grpt">'+esc(g)+'<span class="pill">'+items.length+'</span></div><div class="card" style="padding:4px 15px">'+items.map(m=>{
+      const low=m.min>0&&m.qty<=m.min,w=waiting(m);
+      return '<div class="mr"><div class="nm"><b>'+esc(nm(m))+'</b><div class="m">'+(m.min>0?'Low-stock alert at '+esc(fmt(m.min))+' ':'')+(w.length?'<span class="pill wait">⏳ '+w.length+' waiting</span>':'')+'</div></div>'+
+        '<div class="qt'+(low?' low':'')+'">'+esc(fmt(m.qty))+'<small>'+esc(m.unit||"pcs")+(low?' · LOW':'')+'</small></div>'+
+        '<div class="ac"><button class="btn sm" data-cut="'+esc(m.id)+'">✂️ Cut</button><button class="btn sm sec" data-add="'+esc(m.id)+'">➕ Add</button><button class="btn sm sec" data-edit="'+esc(m.id)+'">✏️ Edit</button></div></div>';}).join("")+'</div>';
+  }
+  $("out").innerHTML=h||'<div class="card"><div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No materials yet.</b><br>Press <b>➕ New material</b> to add the first one.")+'</div></div>';
+}
+$("out").addEventListener("click",e=>{
+  const t=e.target.closest("button");if(!t)return;const d=t.dataset;
+  if(d.cut)return cutSheet(d.cut);if(d.add)return addSheet(d.add);if(d.edit)return editSheet(d.edit);
+});
+$("newM").onclick=()=>newSheet();
+const find=id=>S.materials.find(m=>m.id===id);
+const noteBox='<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><input type="text" id="fNote" autocomplete="off">';
+const approvalHint=()=>S.me.owner?"":'<div class="hint" style="margin-top:10px">⏳ This goes to the main admin for confirmation. The stock changes only after approval.</div>';
+function guard(btn,label,fn){btn.onclick=async()=>{if(BUSY)return;BUSY=true;btn.disabled=true;btn.textContent="Please wait…";let d;try{d=await fn();}catch(e){d={ok:false,error:"Something went wrong."};}BUSY=false;
+  if(d&&d.ok!==false){close();take(d);}else{btn.disabled=false;btn.textContent=label;fm((d&&d.error)||"Could not save.","bad");}};}
+
+function cutSheet(id){
+  const m=find(id);if(!m)return;
+  open('<div class="hd"><b>✂️ Cut · '+esc(nm(m))+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<div class="hint">Available now: <b>'+esc(fmt(m.qty))+' '+esc(m.unit||"pcs")+'</b></div>'+
+   '<label>Quantity to cut *</label><input type="number" id="fQty" inputmode="decimal" step="any" min="0" placeholder="0">'+noteBox+approvalHint()+
+   '<div class="btns"><button class="btn block" id="fGo" type="button">'+(S.me.owner?"✂️ Cut now":"Send for confirmation")+'</button></div>');
+  guard($("fGo"),S.me.owner?"✂️ Cut now":"Send for confirmation",()=>api("/api/material/cut",{id:m.id,qty:$("fQty").value,note:$("fNote").value}));
+}
+function addSheet(id){
+  const m=find(id);if(!m)return;
+  open('<div class="hd"><b>➕ Add · '+esc(nm(m))+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<div class="hint">Now: <b>'+esc(fmt(m.qty))+' '+esc(m.unit||"pcs")+'</b></div>'+
+   '<label>Quantity to add *</label><input type="number" id="fQty" inputmode="decimal" step="any" min="0" placeholder="0">'+noteBox+approvalHint()+
+   '<div class="btns"><button class="btn block" id="fGo" type="button">'+(S.me.owner?"➕ Add now":"Send for confirmation")+'</button></div>');
+  guard($("fGo"),S.me.owner?"➕ Add now":"Send for confirmation",()=>api("/api/material/add",{kind:"add",id:m.id,qty:$("fQty").value,note:$("fNote").value}));
+}
+function newSheet(){
+  const gs=(S.groups||[]);
+  open('<div class="hd"><b>🆕 New material</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<label>Material name *</label><input type="text" id="fName" placeholder="e.g. MDF" autocomplete="off">'+
+   '<div class="grid2"><div><label>Type</label><input type="text" id="fType" placeholder="e.g. 18mm" autocomplete="off"></div><div><label>Unit</label><input type="text" id="fUnit" placeholder="pcs" autocomplete="off"></div></div>'+
+   (gs.length?'<label>Table</label><select id="fGroup">'+gs.map((g,i)=>'<option value="'+esc(g)+'"'+(i===1||gs.length===1?' selected':'')+'>'+esc(g)+'</option>').join("")+'</select>':"")+
+   '<div class="grid2"><div><label>Opening stock</label><input type="number" id="fQty" inputmode="decimal" step="any" min="0" value="0"></div><div><label>Low-stock alert</label><input type="number" id="fMin" inputmode="decimal" step="any" min="0" value="0"></div></div>'+noteBox+approvalHint()+
+   '<div class="btns"><button class="btn block" id="fGo" type="button">'+(S.me.owner?"Save material":"Send for confirmation")+'</button></div>');
+  guard($("fGo"),S.me.owner?"Save material":"Send for confirmation",()=>api("/api/material/add",{kind:"new",name:$("fName").value,type:$("fType").value,unit:$("fUnit").value,group:$("fGroup")?$("fGroup").value:"",qty:$("fQty").value,min:$("fMin").value,note:$("fNote").value}));
+}
+function editSheet(id){
+  const m=find(id);if(!m)return;
+  open('<div class="hd"><b>✏️ Edit · '+esc(nm(m))+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<label>Material name *</label><input type="text" id="fName" value="'+esc(m.name)+'" autocomplete="off">'+
+   '<div class="grid2"><div><label>Type</label><input type="text" id="fType" value="'+esc(m.type||"")+'" autocomplete="off"></div><div><label>Unit</label><input type="text" id="fUnit" value="'+esc(m.unit||"")+'" autocomplete="off"></div></div>'+
+   '<div class="grid2"><div><label>Stock (correct if wrong)</label><input type="number" id="fQty" inputmode="decimal" step="any" min="0" value="'+esc(fmt(m.qty))+'"></div><div><label>Low-stock alert</label><input type="number" id="fMin" inputmode="decimal" step="any" min="0" value="'+esc(fmt(m.min||0))+'"></div></div>'+
+   '<div class="hint">Changing the stock records a “fix” movement in Reports → Material.</div>'+noteBox+approvalHint()+
+   '<div class="btns"><button class="btn block" id="fGo" type="button">'+(S.me.owner?"Save changes":"Send for confirmation")+'</button></div>');
+  guard($("fGo"),S.me.owner?"Save changes":"Send for confirmation",()=>api("/api/material/edit",{id:m.id,name:$("fName").value,type:$("fType").value,unit:$("fUnit").value,qty:$("fQty").value,min:$("fMin").value,note:$("fNote").value}));
+}
+
+setInterval(()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();},15000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
+refresh();
+</script>
+</body>
+</html>
