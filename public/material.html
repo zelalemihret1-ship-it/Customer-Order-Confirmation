@@ -73,17 +73,17 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 
   <div class="alert" id="alert"></div>
 
-  <div class="card" id="cfCard">
-    <h2>✅ Confirmation <span class="pill wait" id="cfCount" style="display:none"></span></h2>
-    <div class="hint" id="cfHint"></div>
-    <div id="cfList"></div>
+  <div class="card" id="cfCard" style="padding:10px 15px">
+    <button type="button" id="cfTog" style="all:unset;cursor:pointer;display:flex;align-items:center;justify-content:space-between;width:100%;font-weight:800;font-size:14px;padding:4px 0"><span>✅ Confirmation <span class="pill wait" id="cfCount" style="display:none"></span></span><span id="cfArrow" style="color:var(--muted)">▾</span></button>
+    <div id="cfBody" style="display:none;margin-top:8px"><div class="hint" id="cfHint"></div><div id="cfList"></div></div>
   </div>
 
-  <div class="card" id="setCard" style="display:none">
-    <h2>⚙️ Settings <span class="hint" style="font-weight:500">(main admin)</span></h2>
-    <div class="grp"><div><b id="cgName">—</b><div class="hint" style="margin:2px 0 0">Telegram group topic where confirmation requests are posted (Approve / Reject). Nothing is sent to private chats.</div></div><div class="btns" style="margin:0"><button class="btn sm" id="cgPick">Choose group</button><button class="btn sm sec" id="cgTest">Send test</button></div></div>
-    <div class="hint" style="margin-top:14px;font-weight:700">Who can Cut / Add (Edit follows Add)</div>
+  <div class="card" id="setCard" style="display:none;padding:10px 15px">
+    <button type="button" id="setTog" style="all:unset;cursor:pointer;display:flex;align-items:center;justify-content:space-between;width:100%;font-weight:800;font-size:14px;padding:4px 0"><span>⚙️ Settings <span style="font-weight:500;color:var(--muted);font-size:12px">(main admin)</span></span><span id="setArrow" style="color:var(--muted)">▾</span></button>
+    <div id="setBody" style="display:none;margin-top:10px"><div class="grp"><div><b id="cgName">—</b><div class="hint" style="margin:2px 0 0">Telegram group topic where confirmation requests are posted (Approve / Reject). Nothing is sent to private chats.</div></div><div class="btns" style="margin:0"><button class="btn sm" id="cgPick">Choose group</button><button class="btn sm sec" id="cgTest">Send test</button></div></div>
+    <div class="hint" style="margin-top:14px;font-weight:700">Who can Cut / Add / Edit</div>
     <div id="rights"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -135,8 +135,9 @@ function render(){
 function drawSettings(){
   $("setCard").style.display=S.me.owner?"":"none";if(!S.me.owner)return;
   $("cgName").textContent=S.confirmGroup?S.confirmGroupName:"No confirmation group chosen yet";$("cgTest").style.display=S.confirmGroup?"":"none";
-  $("rights").innerHTML=(S.admins||[]).length?S.admins.map(a=>'<div class="it" style="padding:8px 0"><div class="mid"><div class="t" style="font-size:14px">'+esc(a.name)+'</div></div><label class="opt'+(a.cut?" on":"")+'" style="margin:0;padding:8px 10px"><input class="chk" type="checkbox" data-r="cut|'+esc(a.telegramId)+'" '+(a.cut?"checked":"")+'>✂️ Cut</label><label class="opt'+(a.add?" on":"")+'" style="margin:0 0 0 6px;padding:8px 10px"><input class="chk" type="checkbox" data-r="add|'+esc(a.telegramId)+'" '+(a.add?"checked":"")+'>➕ Add</label></div>').join(""):'<div class="hint">No other admin has the Material section yet (Manage Admins → Material).</div>';
+  $("rights").innerHTML=(S.admins||[]).length?S.admins.map(a=>'<div class="it" style="padding:8px 0;flex-wrap:wrap"><div class="mid"><div class="t" style="font-size:14px">'+esc(a.name)+'</div></div><label class="opt'+(a.cut?" on":"")+'" style="margin:0;padding:8px 10px"><input class="chk" type="checkbox" data-r="cut|'+esc(a.telegramId)+'" '+(a.cut?"checked":"")+'>✂️ Cut</label><label class="opt'+(a.add?" on":"")+'" style="margin:0 0 0 6px;padding:8px 10px"><input class="chk" type="checkbox" data-r="add|'+esc(a.telegramId)+'" '+(a.add?"checked":"")+'>➕ Add</label><label class="opt'+(a.edit?" on":"")+'" style="margin:0 0 0 6px;padding:8px 10px"><input class="chk" type="checkbox" data-r="edit|'+esc(a.telegramId)+'" '+(a.edit?"checked":"")+'>✏️ Edit</label></div>').join(""):'<div class="hint">No other admin has the Material section yet (Manage Admins → Material).</div>';
 }
+$("setTog").onclick=()=>{const b=$("setBody"),o=b.style.display==="none";b.style.display=o?"block":"none";$("setArrow").textContent=o?"▴":"▾";}; // closed until touched
 $("rights").addEventListener("change",async e=>{const c=e.target.closest("[data-r]");if(!c)return;const [w,id]=c.dataset.r.split("|");const d=await api("/api/material/rights",{telegramId:id,[w]:c.checked});take(d);});
 
 // ── ALERT (main admin: red, rings, vibrates when a new request arrives · sender: ⏳ Waiting confirmation sign) ──
@@ -154,7 +155,9 @@ function drawAlert(){
   }
   LASTN=n;
 }
-document.addEventListener("click",e=>{if(e.target.closest("#alGo"))$("cfCard").scrollIntoView({behavior:"smooth",block:"start"});});
+function cfOpen(o){$("cfBody").style.display=o?"block":"none";$("cfArrow").textContent=o?"▴":"▾";}
+$("cfTog").onclick=()=>cfOpen($("cfBody").style.display==="none"); // closed until touched
+document.addEventListener("click",e=>{if(e.target.closest("#alGo")){cfOpen(true);$("cfCard").scrollIntoView({behavior:"smooth",block:"start"});}});
 
 // ── CONFIRMATION ────────────────────────────────────────────────────────────
 function reqTitle(r){
@@ -206,7 +209,7 @@ function drawList(){
       const low=m.min>0&&m.qty<=m.min,w=waiting(m);
       return '<div class="mr"><div class="nm"><b>'+esc(nm(m))+'</b><div class="m">'+(m.min>0?'Low-stock alert at '+esc(fmt(m.min))+' ':'')+(w.length?'<span class="pill wait">⏳ Waiting confirmation'+(w.length>1?' ('+w.length+')':'')+'</span>':'')+'</div></div>'+
         '<div class="qt'+(low?' low':'')+'">'+esc(fmt(m.qty))+'<small>'+esc(m.unit||"pcs")+(low?' · LOW':'')+'</small></div>'+
-        '<div class="ac">'+(S.can.cut?'<button class="btn sm" data-cut="'+esc(m.id)+'">✂️ Cut</button>':'')+(S.can.add?'<button class="btn sm sec" data-add="'+esc(m.id)+'">➕ Add</button><button class="btn sm sec" data-edit="'+esc(m.id)+'">✏️ Edit</button>':'')+(!S.can.cut&&!S.can.add?'<span class="pill">View only</span>':'')+'</div></div>';}).join("")+'</div>';
+        '<div class="ac">'+(S.can.cut?'<button class="btn sm" data-cut="'+esc(m.id)+'">✂️ Cut</button>':'')+(S.can.add?'<button class="btn sm sec" data-add="'+esc(m.id)+'">➕ Add</button>':'')+(S.can.edit?'<button class="btn sm sec" data-edit="'+esc(m.id)+'">✏️ Edit</button>':'')+(!S.can.cut&&!S.can.add&&!S.can.edit?'<span class="pill">View only</span>':'')+'</div></div>';}).join("")+'</div>';
   }
   $("out").innerHTML=h||'<div class="card"><div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No materials yet.</b><br>Press <b>➕ New material</b> to add the first one.")+'</div></div>';
 }
