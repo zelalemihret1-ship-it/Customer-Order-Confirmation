@@ -1,3 +1,4 @@
+// v177: Order products shows only the NEWEST unsent orders (sent ones move to the Sent tab) · Readymade has two types: Standard products and Custom products · no customer picker in Readymade.
 // ── WORKSHOP v176 — rebuilt from scratch (module + page: /workshop.html) ─────────────────────────────
 // One job only: send products to the workshop Telegram group.
 //   • ORDER products  — a customer's order (photo + measurement + details + the CUSTOMER'S info)
@@ -159,7 +160,7 @@ function register(app, ctx) {
     return capLines([...L, ...(d.length ? ["ADDITIONAL TEXTS:", ...d] : []), ...tail], 1000);
   }
   function readymadeCaption(p, cust, note) {
-    const L = ["<b>AMBAR FURNITURE</b>", "📦 <b>READYMADE PRODUCT</b>", "", "<b>" + esc((p.code || "—") + (p.model ? "-" + p.model : "")) + "</b>", p.ptype ? "Type: " + esc(clip(p.ptype, 40)) : "", "Measurement: " + esc(fmtSize(p.desc) || "—"), p.handle ? "🔧 Handle: " + esc(clip(p.handle, 60)) : "", p.capacity ? "Capacity: " + esc(clip(p.capacity, 40)) : "", p.note ? "📝 " + esc(clip(p.note, 200)) : "", ...custLines(cust, null)];
+    const L = ["<b>AMBAR FURNITURE</b>", p.custom ? "🎨 <b>CUSTOM PRODUCT</b>" : "📦 <b>READYMADE PRODUCT</b> · STANDARD", "", "<b>" + esc((p.code || "—") + (p.model ? "-" + p.model : "")) + "</b>", p.ptype ? "Type: " + esc(clip(p.ptype, 40)) : "", "Measurement: " + esc(fmtSize(p.desc) || "—"), p.color ? "🎨 Color: " + esc(clip(p.color, 40)) : "", p.handle ? "🔧 Handle: " + esc(clip(p.handle, 60)) : "", p.capacity ? "Capacity: " + esc(clip(p.capacity, 40)) : "", p.note ? "📝 " + esc(clip(p.note, 200)) : "", ...custLines(cust, null)];
     const tail = clip(note, 300) ? ["", "📝 " + esc(clip(note, 300))] : [];
     return capLines([...L, ...tail], 1000);
   }
@@ -212,7 +213,7 @@ function register(app, ctx) {
   // ── compact views ───────────────────────────────────────────────────────────────────────────
   const compactOrder = o => { const c = customerOfOrder(o); return { id: o.id, orderId: o.orderId || "", product: clip(o.product, 80), size: fmtSize(sizeOfOrder(o)), status: clip(o.status, 20), customerId: c?.id || clip(o.customerId, 20), customerName: clip(c?.name || o.customerName, 60), createdAt: o.createdAt || "", photo: o.photo || "", sent: o.workshopSent || null }; };
   const stockList = () => (typeof R().wsStockView === "function" ? R().wsStockView() : []);
-  const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, note: p.note });
+  const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, note: p.note, custom: !!p.custom, color: p.color || "" });
   const senderInfo = actor => { const acc = accountOf(actor); return { ready: !!acc?.ready, label: clip(acc?.label, 60) }; };
   const orderList = actor => (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   function view(actor) {
@@ -222,7 +223,6 @@ function register(app, ctx) {
       orders: orderList(actor).slice(0, 200).map(compactOrder),
       stock: stockList().filter(p => p.status === "stock").map(compactProduct),
       workflow: (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !/CUS|ORD/i.test(String(p.orderType || ""))).map(p => ({ id: p.id, code: p.code, model: p.model, desc: p.desc, ptype: p.ptype, photo: p.photo })),
-      customers: customers().slice().sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 600).map(c => ({ id: c.id, name: clip(c.name, 60), phone: clip(c.phone, 30) })),
       ptypes: ["Shoe Shelf", "Console Table", "TV Stand", "Wardrobe", "Bed", "Sofa", "Dining Table", "Coffee Table", "Cabinet", "Others"],
       sent: db.sent.filter(x => owner || x.key === keyOf(actor)).slice(-80).reverse()
     };
@@ -303,25 +303,25 @@ function register(app, ctx) {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 30) : [];
     const list = stockList().filter(p => ids.includes(p.id) && p.status === "stock");
     if (!list.length) return res.json({ ...view(req.actor), ok: false, error: "Choose at least one product that is in stock." });
-    const r = await sendProducts(list, req.actor, { customerId: String(req.body?.customerId || ""), note: req.body?.note });
+    const r = await sendProducts(list, req.actor, { customerId: String(req.body?.customerId || ""), note: req.body?.note }); // v177: the Workshop page sends no customer; Customer ID → Send to workshop still does
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} sent to the workshop group.` + (r.error ? " Not sent: " + r.error : "") : undefined });
   });
-  // a NEW readymade product: saved to Stock (Reports) and, if asked, sent to the workshop group
+  // a NEW readymade product — STANDARD (a regular model) or CUSTOM (a one-off custom design, with a color): saved to Stock (Reports) and, if asked, sent to the workshop group
   router.post("/add-product", async (req, res) => {
-    const b = req.body || {}, model = clip(b.model, 40), qty = Math.max(1, Math.min(parseInt(b.qty, 10) || 1, 20));
-    if (!model) return res.json({ ok: false, error: "Type the product model / name." });
+    const b = req.body || {}, custom = b.custom === true || b.custom === "true", model = clip(b.model, 40), qty = Math.max(1, Math.min(parseInt(b.qty, 10) || 1, 20));
+    if (!model) return res.json({ ok: false, error: custom ? "Type the custom product name." : "Type the product model / name." });
     if (typeof R().wsAddProduct !== "function") return res.json({ ok: false, error: "Reports is not ready." });
     let buf = null; try { buf = photoFromDataUrl(b.photo); } catch (e) { return res.json({ ok: false, error: e.message }); }
     const by = clip(req.actor?.name || "Admin", 60), made = [];
     try {
       for (let i = 0; i < qty; i++) {
-        const p = await R().wsAddProduct({ ptype: clip(b.ptype, 40), model, desc: clip(b.size, 160), seqId: true, orderType: "READYMADE", priority: "MEDIUM", handle: clip(b.handle, 60), note: clip(b.note, 300), photoBuf: buf, salesName: by }, by);
+        const p = await R().wsAddProduct({ ptype: clip(b.ptype, 40), model, desc: clip(b.size, 160), seqId: true, orderType: "READYMADE", priority: "MEDIUM", handle: clip(b.handle, 60), note: clip(b.note, 300), photoBuf: buf, salesName: by, custom, color: custom ? clip(b.color, 40) : "" }, by);
         R().wsFinish(p.id, by); made.push(p.id);
       }
     } catch (e) { return res.json({ ok: false, error: "Could not save the product: " + e.message }); }
-    const list = stockList().filter(p => made.includes(p.id));
-    if (!b.send) return res.json({ ...view(req.actor), ok: true, message: `✅ ${list.length} product${list.length === 1 ? "" : "s"} added to Stock (${list.map(p => p.code).join(", ")}).` });
-    const r = await sendProducts(list, req.actor, { customerId: String(b.customerId || ""), note: "" });
+    const list = stockList().filter(p => made.includes(p.id)), word = custom ? "custom product" : "product";
+    if (!b.send) return res.json({ ...view(req.actor), ok: true, message: `✅ ${list.length} ${word}${list.length === 1 ? "" : "s"} added to Stock (${list.map(p => p.code).join(", ")}).` });
+    const r = await sendProducts(list, req.actor, { note: "" });
     res.json({ ...view(req.actor), ok: true, message: `✅ Added to Stock (${list.map(p => p.code).join(", ")})` + (r.sent ? ` and ${r.sent} sent to the workshop group.` : "."), warning: r.error ? "Saved in Stock, but NOT sent: " + r.error + " — use Send on the product to try again." : "" });
   });
   router.post("/product/finish", (req, res) => { const r = typeof R().wsFinish === "function" ? R().wsFinish(String(req.body?.id || ""), clip(req.actor?.name, 60)) : { ok: false, error: "Reports is not ready." }; res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? `✅ ${r.code} is now in Stock.` : undefined }); });
@@ -331,7 +331,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v176" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v177" }));
 
   // Home → Stock view: every in-stock product with all its info (any assigned admin may look)
   app.get("/api/stock", requireAccess, (req, res) => {
