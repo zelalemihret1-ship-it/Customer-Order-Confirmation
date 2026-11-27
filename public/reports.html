@@ -337,7 +337,7 @@ button[data-a]:not([data-a="hist"]):not([data-a="mhist"]){display:none!important
 <body>
 <header>
   <div class="row1"><a class="back" href="/home.html">‹ Home</a><h1>Reports</h1><button class="gear" id="gearBtn" type="button" aria-label="Settings">⚙</button></div>
-  <div class="sub">Workflow · Stock · Material · Dispatch <span class="vo">👁 View only — products &amp; materials are managed in Workshop</span></div>
+  <div class="sub">Workflow · Stock · Material <span class="vo">👁 View only — add products in the Workshop section</span></div>
 </header>
 <main>
   <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg">Reports are only for admins the main admin gave this section.</p></div>
@@ -435,7 +435,7 @@ const lowOf=m=>m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");
 const RED5=m=>Number(m.qty)<5,redSt=m=>RED5(m)?' style="color:#cc0000;font-weight:800"':"";   // quantity below 5 → red text
 function render(){
   const wf=by("workflow"),st=by("stock"),sd=by("sold");
-  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"],["sv","🖼 Stock view",st.length+" in stock"],["dp","🚚 Dispatch",((S.workshop&&S.workshop.dispatches)||[]).filter(d=>d.status==="sent").length+" on the way"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
+  $("seg").innerHTML=[["wf","🛠 Workflow",wf.length+" in progress"],["st","📦 Stock",st.length+" in stock"],["mt","🧱 Material",S.materials.length+" kinds"],["sv","🖼 Stock view",st.length+" in stock"]].map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'">'+t[1]+'<small>'+t[2]+'</small></button>').join("");
   document.querySelector(".tools").style.display=tab==="dp"?"none":"";
   if(tab==="dp"){ // v174: Workshop (Product + Dispatch) → Reports, live and read-only
     const D=(S.workshop&&S.workshop.dispatches)||[],J=(S.workshop&&S.workshop.jobs)||[],way=D.filter(d=>d.status==="sent"),dn=D.filter(d=>d.status!=="sent");
@@ -546,7 +546,7 @@ function render(){
     }).join("");
     if(h&&canDrag)h='<div class="hint" style="margin:0 2px 10px">✋ Hold a material for a moment, then drag it to a new place — also into the other table. The order is saved by itself.</div>'+h;
     $("out").className="";
-    if(!S.materials.length||!h)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Materials are added and cut in the <b>Workshop</b> section. Open <b>🕘 Recent movements</b> to see every add and cut.")+'</div>';
+    if(!S.materials.length||!h)h='<div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No material yet.</b><br>Material is view-only here. Open <b>🕘 Recent movements</b> to see earlier adds and cuts.")+'</div>';
   }
   $("out").innerHTML=h;$("extra").innerHTML=extra;
   const ob=$("oldBtn");if(ob)ob.onclick=()=>{showOld=!showOld;render();};
