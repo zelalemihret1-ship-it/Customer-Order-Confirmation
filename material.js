@@ -68,8 +68,8 @@ function register(app, ctx) {
     return {
       ok: true, me: { name: by(actor), owner }, materials: r.materials, groups: r.groups,
       pending: q.pending, history: q.history, waitingCount: q.pending.length,
-      can: { cut: can(actor, "cut"), add: can(actor, "add") }, confirmGroup: cg(), confirmGroupName: cgName(),
-      admins: owner ? adminList().map(a => ({ telegramId: String(a.telegramId), name: clip(a.name, 60) || "Admin " + a.telegramId, cut: can({ telegramId: a.telegramId }, "cut"), add: can({ telegramId: a.telegramId }, "add") })) : [] // main admin: everything waiting · other admins: their own requests
+      can: { cut: can(actor, "cut"), add: can(actor, "add"), edit: can(actor, "edit") }, confirmGroup: cg(), confirmGroupName: cgName(),
+      admins: owner ? adminList().map(a => ({ telegramId: String(a.telegramId), name: clip(a.name, 60) || "Admin " + a.telegramId, cut: can({ telegramId: a.telegramId }, "cut"), add: can({ telegramId: a.telegramId }, "add"), edit: can({ telegramId: a.telegramId }, "edit") })) : [] // main admin: everything waiting · other admins: their own requests
     };
   }
 
@@ -113,8 +113,8 @@ function register(app, ctx) {
   }
   // ── v179 who may Cut / Add (selected by the main admin). No selection yet = allowed (as before).
   const adminList = () => ((typeof ctx.getAppAdmins === "function" ? ctx.getAppAdmins() : []) || []).filter(a => a && /^\d+$/.test(String(a.telegramId)) && !owners().includes(String(a.telegramId)) && (!Array.isArray(a.perms) || a.perms.includes("material") || a.perms.includes("workshop")));
-  const can = (a, what) => isOwnerA(a) || !db.rights[tid(a)] || db.rights[tid(a)][what] !== false;
-  const noRight = what => ({ ok: false, error: `The main admin has not given you ${what === "cut" ? "✂️ Cut" : "➕ Add / ✏️ Edit"} in Material.` });
+  const can = (a, what) => { if (isOwnerA(a)) return true; const r = db.rights[tid(a)]; if (!r) return true; if (what === "edit" && r.edit === undefined) return r.add !== false; /* older selections: Edit followed Add */ return r[what] !== false; };
+  const noRight = what => ({ ok: false, error: `The main admin has not given you ${what === "cut" ? "✂️ Cut" : what === "edit" ? "✏️ Edit" : "➕ Add"} in Material.` });
   const alertView = () => ({ owners: owners().length });
 
   // ✅ / ❌ one decision, used by the page and by the Telegram buttons
@@ -229,7 +229,7 @@ function register(app, ctx) {
   }
   router.post("/edit", async (req, res) => {
     const a = req.actor, b = req.body || {};
-    if (!can(a, "add")) return res.json({ ...view(a), ...noRight("add") });
+    if (!can(a, "edit")) return res.json({ ...view(a), ...noRight("edit") });
     const e = cleanEdit(b);
     if (e.error) return res.json({ ...view(a), ok: false, error: e.error });
     if (isOwnerA(a)) {
@@ -267,7 +267,8 @@ function register(app, ctx) {
     const id = String(req.body?.telegramId || "");
     if (!adminList().some(a => String(a.telegramId) === id)) return res.json({ ...view(req.actor), ok: false, error: "Admin not found." });
     const cur = db.rights[id] || {};
-    db.rights[id] = { cut: req.body?.cut === undefined ? cur.cut !== false : !!req.body.cut, add: req.body?.add === undefined ? cur.add !== false : !!req.body.add };
+    const was = k => can({ telegramId: id }, k), pick = k => req.body?.[k] === undefined ? was(k) : !!req.body[k];
+    db.rights[id] = { cut: pick("cut"), add: pick("add"), edit: pick("edit") };
     persist(); res.json({ ...view(req.actor), ok: true });
   });
   router.post("/decide", async (req, res) => {
@@ -277,7 +278,7 @@ function register(app, ctx) {
     res.json({ ...view(a), ok: !!r.ok, error: r.error, message: r.ok ? r.message : undefined });
   });
 
-  app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v179" }));
+  app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v181" }));
   app.use("/api/material", router);
   return { load, handleCallback, pending: () => allRequests({ role: "owner" }).pending.length };
 }
