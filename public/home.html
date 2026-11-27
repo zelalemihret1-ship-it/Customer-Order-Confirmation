@@ -23,19 +23,7 @@ header{background:radial-gradient(120% 140% at 85% -20%,#2a8a6c 0%,transparent 5
 .top{max-width:760px;margin:auto;display:flex;align-items:center;gap:14px}
 .logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(150deg,#ffe58f,#e0a21a);color:#5a3a00;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;box-shadow:0 8px 14px rgba(0,0,0,.3),inset 0 2px 2px rgba(255,255,255,.7),inset 0 -4px 6px rgba(120,70,0,.3)}
 .top .ttl{min-width:0}
-.conf{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:none}
-.conf.hide{display:none}
-.conf .cb{position:relative;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(8px);border-radius:10px;padding:0;width:30px;height:30px;justify-content:center;font-size:11.5px;font-weight:700;line-height:1.15;color:#fff;box-shadow:0 3px 8px rgba(0,0,0,.18);transition:transform .12s}.conf .cb svg{width:16px;height:16px}.conf .cb .lb{display:none}
-.conf:active .cb{transform:scale(.96)}
-.conf .badge{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#e53935;color:#fff;font-weight:800;font-size:10px;line-height:16px;font-style:normal;text-align:center;border:2px solid #14604a;box-shadow:0 2px 6px rgba(0,0,0,.35)}
-.conf .badge[hidden]{display:none}
-.conf .cs{display:flex;align-items:center;gap:4px;font-size:9px;font-weight:600;color:#dff0e9}
-.conf .cs u{width:6px;height:6px;border-radius:50%;background:#46d68b;box-shadow:0 0 0 3px rgba(70,214,139,.25)}
-.conf .cs em{font-style:normal}
-.conf .cs.wait{color:#ffe9a8}.conf .cs.wait u{background:#ffb300;box-shadow:0 0 0 3px rgba(255,179,0,.3);animation:cpulse 1.4s infinite}
-.conf .cs.off u{background:#9aa7a1;box-shadow:none}
 @keyframes cpulse{50%{box-shadow:0 0 0 7px rgba(255,179,0,0)}}
-@media(max-width:380px){.conf .lb{display:none}.conf .cb{padding:9px}}
 .top h1{margin:0;font-size:20px;font-weight:700}.top .sub{font-size:13px;opacity:.78;margin-top:2px}
 main{max-width:760px;margin:-46px auto 0;padding:0 14px 24px}
 .hello{margin:0 4px 14px;font-size:15px;font-weight:600;color:#fff;min-height:20px}
@@ -87,6 +75,37 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 #gate .panel{max-width:380px;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:28px;background:#14231e}
 #gate h2{margin:0 0 10px;font-size:20px;color:var(--gold)}#gate p{margin:0;color:#c7d3ce;line-height:1.5}
 @media(min-width:620px){.admin .grid{grid-template-columns:repeat(4,1fr)}}
+
+/* v176 Stock view */
+.stq{width:100%;border:1.5px solid var(--line);border-radius:14px;padding:11px 14px;font-size:15px;background:#fff;color:var(--ink);font-family:inherit;outline:none;margin-bottom:12px}
+.stq:focus{border-color:var(--brand2);box-shadow:0 0 0 4px rgba(23,96,75,.12)}
+.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:620px){.sgrid{grid-template-columns:repeat(3,1fr)}}
+.sc{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:var(--shadow);cursor:pointer;display:flex;flex-direction:column}
+.sc:active{transform:scale(.985)}
+.sc .ph{aspect-ratio:4/3;background:#eef1f5;display:flex;align-items:center;justify-content:center;font-size:34px;color:#9aa4ae;overflow:hidden}
+.sc .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.sc .bd{padding:10px 12px 12px}
+.sc .nm{font-weight:800;font-size:14.5px;line-height:1.25;word-break:break-word}
+.sc .mt{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.45}
+.sc .tg{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.tgp{font-size:10.5px;font-weight:800;border-radius:999px;padding:2px 8px;background:#e1f0ea;color:var(--brand)}.tgp.o{background:#fff1d4;color:#8a5a00}.tgp.h{background:#fde8e6;color:#b3261e}
+.stempty{grid-column:1/-1;text-align:center;color:var(--muted);padding:28px 10px;font-size:13.5px;line-height:1.6;background:var(--card);border:1px dashed var(--line);border-radius:18px}
+.stov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:90;display:none;align-items:flex-end;justify-content:center}.stov.on{display:flex}
+.stsh{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:0 0 calc(20px + env(safe-area-inset-bottom,0px))}
+.stsh .big{width:100%;max-height:46vh;object-fit:contain;background:#eef1f5;display:block}
+.stsh .noimg{height:160px;background:#eef1f5;display:flex;align-items:center;justify-content:center;font-size:44px;color:#9aa4ae}
+.stsh .in{padding:14px 18px 0}.stsh h3{margin:0 0 2px;font-size:20px}
+.stsh .x{position:absolute;right:12px;top:12px;border:0;background:rgba(255,255,255,.92);border-radius:50%;width:36px;height:36px;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.stsh .dl{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.stsh .dl div{display:flex;gap:10px;padding:9px 12px;font-size:13.5px;border-bottom:1px solid var(--line);line-height:1.4}.stsh .dl div:last-child{border-bottom:0}
+.stsh .dl span{flex:0 0 108px;color:var(--muted);font-weight:700}.stsh .dl b{flex:1;font-weight:600;word-break:break-word;white-space:pre-wrap}
+.stfull{position:fixed;inset:0;z-index:88;background:var(--bg);display:none;flex-direction:column}.stfull.on{display:flex}
+.stbar{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 12px;background:linear-gradient(160deg,var(--brand),var(--brand2));color:#fff}
+.stbar b{flex:1;font-size:18px}.stbar button{border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.14);color:#fff;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13px;cursor:pointer}
+.stbar .badge{background:#e1f0ea;color:var(--brand);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700}
+.stbody{flex:1;overflow:auto;padding:14px 14px 40px;-webkit-overflow-scrolling:touch}
+.stov{z-index:95!important}
 </style>
 <link rel="stylesheet" href="/app.css?v=118">
 <meta name="theme-color" content="#0f3d30">
@@ -135,14 +154,12 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
 <rect x="8" y="14" width="48" height="9" rx="4.5" fill="url(#red-f)"/><rect x="8" y="14" width="48" height="9" rx="4.5" fill="none" stroke="#8c1515" stroke-opacity=".3"/>
 <rect x="25" y="30" width="4" height="22" rx="2" fill="#fff" opacity=".55"/><rect x="35" y="30" width="4" height="22" rx="2" fill="#fff" opacity=".55"/>
 <path d="M12 18 H34" stroke="#fff" stroke-opacity=".65" stroke-width="2.5" stroke-linecap="round"/></symbol><symbol id="i-chev" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol></svg>
+<div class="stfull" id="stFull"><div class="stbar"><button type="button" id="stBack">← Back</button><b>Stock view</b><span class="badge" id="stCount">…</span></div><div class="stbody"><input class="stq" id="stQ" type="text" placeholder="🔎 Search stock — code, model, type…" autocomplete="off"><div class="sgrid" id="stGrid"><div class="stempty">Loading stock…</div></div></div></div>
+<div class="stov" id="stOv"><div class="stsh" id="stSh" style="position:relative"></div></div>
 <div id="gate"><div class="panel"><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your administrator access…</p></div></div>
 
 <header><div class="top"><div class="logo">A</div><div class="ttl"><h1>Ambar Furniture</h1><div class="sub">Admin Home</div></div>
-  <!-- v174: Admin Confirmation (main admin only) — red number = pending inventory movements, dot = cutter actions awaiting approval -->
-  <a class="conf hide" id="confBtn" href="/workshop.html?open=confirm" aria-label="Admin Confirmation">
-    <span class="cb"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span class="lb">Admin<br>Confirmation</span><i class="badge" id="confN" hidden>0</i></span>
-    <span class="cs clear" id="confS"><u></u><em id="confT">Cutter clear</em></span>
-  </a></div></header>
+  </div></header>
 
 <main>
   <p class="hello" id="hello"></p>
@@ -152,6 +169,11 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
   <div class="duo">
     <a class="big first" data-perm="orders" href="/orders.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Customer Order Confirmation</b><span class="d">Create an order card and send it</span></div></a>
     <a class="big" data-perm="customers,orders" href="/callers.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-users"/></svg><div><b>Customer ID</b><span class="d">Add, edit and find customers</span></div></a>
+  </div>
+
+  <div class="sec">Stock</div>
+  <div class="list">
+    <button type="button" class="row" id="stBtn" style="width:100%;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Stock view</b><span class="d" id="stSub">Products in stock with photos and all info</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></button>
   </div>
 
   <div class="sec">Customers &amp; Marketing</div>
@@ -164,14 +186,14 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
   <div class="hide" data-perm="reports">
     <div class="sec">Reports</div>
     <div class="list">
-      <a class="row" href="/reports.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Reports</b><span class="d">Workflow · Stock · Material · Dispatch — view only, fed by Workshop</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+      <a class="row" href="/reports.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Reports</b><span class="d">Workflow · Stock · Material — view only</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
     </div>
   </div>
 
   <div class="hide" data-perm="workshop">
-    <div class="sec">Production &amp; Dispatch</div>
+    <div class="sec">Workshop</div>
     <div class="list">
-      <a class="row" href="/workshop.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Production &amp; Dispatch</b><span class="d">Manage production, materials, driver dispatch and workshop orders</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+      <a class="row" href="/workshop.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-order"/></svg><div><b>Workshop</b><span class="d">Send order &amp; readymade products to the workshop group</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
     </div>
   </div>
 
@@ -210,20 +232,34 @@ $("btnSh").addEventListener("click",async()=>{
   }catch(e){(window.AppToast||alert)("Could not reach the server. Try again.");}
   b.disabled=false;lab.textContent=old;
 });
-// v174: Admin Confirmation badge + cutter status (main admin only; the server refuses everybody else)
-let confTimer=0;
-async function pullConfirm(){
-  if(document.visibilityState==="hidden")return;
-  try{
-    const r=await fetch("/api/workshop/confirmations"),d=await r.json();
-    if(!d||!d.ok){$("confS").className="cs off";$("confT").textContent="Status unavailable";return;}
-    const n=Number(d.pending)||0,c=Number(d.cutters)||0,b=$("confN");
-    b.hidden=!n;b.textContent=n>99?"99+":String(n);
-    $("confS").className="cs "+(c?"wait":"clear");
-    $("confT").textContent=c?(c+" cutter action"+(c===1?"":"s")+" awaiting approval"):"Cutter clear";
-  }catch(e){$("confS").className="cs off";$("confT").textContent="Status unavailable";}
+// v176 Stock view: every in-stock product with its photo and all its info
+let STOCK=[];
+const eh=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const stPh=p=>p.photo?'/api/reports-photo/'+eh(p.photo)+'.jpg':"";
+const isOrd=p=>/CUS|ORD/i.test(p.orderType||"");
+function drawStock(){
+  const q=($("stQ").value||"").toLowerCase().trim(),L=STOCK.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.category,p.location,p.note,p.salesName].join(" ").toLowerCase().includes(q));
+  $("stCount").textContent=STOCK.length+" in stock";$("stSub").textContent=STOCK.length+" in stock · tap to see photos and info";
+  $("stGrid").innerHTML=L.length?L.map(p=>'<div class="sc" data-id="'+eh(p.id)+'"><div class="ph">'+(p.photo?'<img loading="lazy" src="'+stPh(p)+'" alt="" onerror="this.parentNode.textContent=\'🛋\'">':'🛋')+'</div><div class="bd"><div class="nm">'+eh(p.code+(p.model?"-"+p.model:""))+'</div><div class="mt">'+eh([p.ptype,p.desc].filter(Boolean).join(" · ")||"—")+'</div><div class="tg">'+(p.handle?'<span class="tgp">🔧 '+eh(p.handle)+'</span>':'')+(isOrd(p)?'<span class="tgp o">ORDER</span>':'<span class="tgp">READYMADE</span>')+(p.priority==="HIGH"?'<span class="tgp h">HIGH</span>':'')+'</div></div></div>').join(""):'<div class="stempty">'+(STOCK.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>Products you add in Workshop appear here with their photo.")+'</div>';
 }
-function startConfirm(){$("confBtn").classList.remove("hide");pullConfirm();if(!confTimer)confTimer=setInterval(pullConfirm,20000);document.addEventListener("visibilitychange",pullConfirm);}
+function openStock(id){
+  const p=STOCK.find(x=>x.id===id);if(!p)return;
+  const r=(l,v)=>v?'<div><span>'+l+'</span><b>'+eh(v)+'</b></div>':"";
+  $("stSh").innerHTML=(p.photo?'<img class="big" src="'+stPh(p)+'" alt="">':'<div class="noimg">🛋</div>')+'<button class="x" type="button" aria-label="Close">✕</button><div class="in"><h3>'+eh(p.code+(p.model?"-"+p.model:""))+'</h3><div class="dl">'+
+   r("Product ID",p.code)+r("Model",p.model)+r("Type",p.ptype)+r("Measurement",p.desc)+r("🔧 Handle",p.handle)+r("Category",p.category)+r("Capacity",p.capacity)+r("📍 Location",p.location)+r("Kind",isOrd(p)?"ORDER product":"READYMADE product")+r("Order",p.orderRef)+r("Priority",p.priority)+r("👤 Sales",p.salesName)+r("Delivery date",p.deliveryDate)+r("Started",p.added)+r("Finished",p.finished)+r("📝 Note",p.note)+'</div></div>';
+  $("stOv").classList.add("on");
+}
+$("stGrid").addEventListener("click",e=>{const c=e.target.closest(".sc");if(c)openStock(c.dataset.id);});
+$("stOv").addEventListener("click",e=>{if(e.target===$("stOv")||e.target.closest(".x"))$("stOv").classList.remove("on");});
+$("stQ").addEventListener("input",drawStock);
+async function pullStock(){
+  if(document.visibilityState==="hidden")return;
+  try{const d=await (await fetch("/api/stock")).json();if(d&&d.ok){STOCK=d.items||[];drawStock();}else if(!STOCK.length){$("stCount").textContent="—";$("stGrid").innerHTML='<div class="stempty">'+eh((d&&d.error)||"Stock is not available.")+'</div>';}}
+  catch(e){if(!STOCK.length)$("stGrid").innerHTML='<div class="stempty">Could not load the stock. Try again.</div>';}
+}
+$("stBtn").addEventListener("click",()=>{$("stFull").classList.add("on");pullStock();});
+$("stBack").addEventListener("click",()=>$("stFull").classList.remove("on"));
+pullStock();setInterval(pullStock,30000);document.addEventListener("visibilitychange",pullStock);
 (async()=>{
   // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
   try{
@@ -231,7 +267,7 @@ function startConfirm(){$("confBtn").classList.remove("hide");pullConfirm();if(!
     const allowed=m.role==="owner"||m.role==="admin"||m.enforced===false;
     if(allowed){
       $("hello").textContent="Hello"+(m.name?", "+m.name:"")+" 👋";
-      if(m.role==="owner"||m.enforced===false){document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});startConfirm();}
+      if(m.role==="owner"||m.enforced===false){document.querySelectorAll(".own").forEach(function(e){e.classList.remove("hide");});}
       // Section access: the main admin decides which sections each assigned admin sees (e.g. turn on Reports → it appears here).
       const full=m.role==="owner"||m.enforced===false,have=m.perms||[];
       document.querySelectorAll("[data-perm]").forEach(function(e){const ok=full||e.dataset.perm.split(",").some(function(k){return have.indexOf(k)>-1;});e.classList.toggle("hide",!ok);});
