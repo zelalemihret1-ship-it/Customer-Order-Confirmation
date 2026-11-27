@@ -752,7 +752,7 @@ function register(app, ctx) {
     const requestedCode = clip(f.code, 30);
     const p = { id: uid(), ptype: clip(f.ptype, 40), code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode(f.ptype) : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
       category: /^shoe shelf$/i.test(String(f.ptype || "").trim()) ? "SHOE SHELF" : "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
-      photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40), custom: !!f.custom, color: clip(f.color, 40) }; // v177: custom = a one-off custom product (Workshop → Readymade → Custom products)
+      photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40), custom: !!f.custom, color: clip(f.color, 40), wsSaved: !!f.wsSaved }; // v177: custom = a one-off custom product (Workshop → Readymade → Custom products)
     hist(p, "Added to Workflow (sent to the workshop)", req);
     bumpCounter(p.code); db.products.unshift(p); persist(); scheduleBackup();
     audit("Report: product added", `${p.code} ${lab(p)} (workshop)`, req.actor);
@@ -771,13 +771,13 @@ function register(app, ctx) {
     if (!gone.length) return; db.products = db.products.filter(p => !gone.includes(p)); persist(); scheduleBackup();
     for (const g of gone) dropPhoto(g.photo).catch(() => {});
   }
-  function wsSoldOut(id, byName) { // Workshop stock-group button: In Stock → Sold Out
+  function wsSoldOut(id, byName, customer) { // Workshop stock-group button: In Stock → Sold Out
     const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
     if (p.status === "sold") return { ok: true, already: true, code: p.code };
     if (p.status !== "stock") return { ok: false, error: "Only an IN STOCK product can be marked Sold Out." };
     const req = wsReq(byName), n = nowEth(), seller = clip(byName, 80) || "Workshop";
-    p.status = "sold"; p.sold = { d: n.d, t: n.t, salesName: seller, salesInfo: seller, note: "Marked Sold Out from the Telegram stock group" };
-    hist(p, "Sold Out (Telegram stock button)", req); persist(); scheduleBackup();
+    p.status = "sold"; p.sold = { d: n.d, t: n.t, salesName: seller, salesInfo: customer ? clip(customer, 120) : seller, note: customer ? "Sold to " + clip(customer, 120) + " (sent from Customer ID → Send to workshop)" : "Marked Sold Out from the Telegram stock group" };
+    hist(p, customer ? "Sold Out → " + clip(customer, 120) : "Sold Out (Telegram stock button)", req); persist(); scheduleBackup();
     audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
     return { ok: true, code: p.code };
   }
@@ -937,7 +937,7 @@ function register(app, ctx) {
   // v176: every readymade / order product that is In Stock (or Sold Out) with ALL its info — used by Home → Stock view and the Workshop page
   const wsStockView = () => db.products
     .filter(p => p.status === "stock" || p.status === "sold")
-    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", category: p.category || "", capacity: p.capacity || "", location: p.location || "", note: p.note || "", priority: p.priority || "", custom: !!p.custom, color: p.color || "", orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", salesName: p.salesName || "", deliveryDate: p.deliveryDate || "", photo: p.photo || "", status: p.status, added: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", finished: p.finished ? [p.finished.d, p.finished.t].filter(Boolean).join(" ") : "" }))
+    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", category: p.category || "", capacity: p.capacity || "", location: p.location || "", note: p.note || "", priority: p.priority || "", custom: !!p.custom, color: p.color || "", wsSaved: !!p.wsSaved || !!p.custom || JSON.stringify(p.history || []).includes("sent to the workshop"), orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", salesName: p.salesName || "", deliveryDate: p.deliveryDate || "", photo: p.photo || "", status: p.status, added: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", finished: p.finished ? [p.finished.d, p.finished.t].filter(Boolean).join(" ") : "" }))
     .slice(0, 1000);
   const wsMaterials = () => ({ materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })), groups: groupsOrdered() });
   function wsMaterial(kind, body, byName) {
