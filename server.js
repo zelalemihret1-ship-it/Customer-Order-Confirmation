@@ -3486,7 +3486,7 @@ const reportsModule = require("./reports").register(app, { requireAccess, hasPer
 // ── Workshop v176 (rebuilt): order + readymade products → the workshop Telegram group, with the customer info (module + page: /workshop.html) ──
 const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
 // ── Material v178: alert + Telegram Approve/Reject buttons to the main admin; cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
-const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule, tgApi, ownerIds: OWNER_IDS });
+const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule, tgApi, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
