@@ -79,6 +79,13 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
     <div id="cfList"></div>
   </div>
 
+  <div class="card" id="setCard" style="display:none">
+    <h2>⚙️ Settings <span class="hint" style="font-weight:500">(main admin)</span></h2>
+    <div class="grp"><div><b id="cgName">—</b><div class="hint" style="margin:2px 0 0">Telegram group topic where confirmation requests are posted (Approve / Reject). Nothing is sent to private chats.</div></div><div class="btns" style="margin:0"><button class="btn sm" id="cgPick">Choose group</button><button class="btn sm sec" id="cgTest">Send test</button></div></div>
+    <div class="hint" style="margin-top:14px;font-weight:700">Who can Cut / Add (Edit follows Add)</div>
+    <div id="rights"></div>
+  </div>
+
   <div class="card">
     <div class="btns" style="margin-top:0"><button class="btn gold" id="newM">➕ New material</button></div>
     <label>🔎 Search material</label><input type="text" id="q" placeholder="Name or type…" autocomplete="off">
@@ -122,8 +129,15 @@ function render(){
   if(!S)return;
   const owner=S.me.owner;
   $("sub").textContent=owner?"Cut · Add · Edit — your changes apply at once":"Cut · Add · Edit — changes wait for the main admin's confirmation";
-  drawAlert();drawConfirm();drawList();
+  drawAlert();drawConfirm();drawSettings();drawList();
+  $("newM").style.display=S.can.add?"":"none";
 }
+function drawSettings(){
+  $("setCard").style.display=S.me.owner?"":"none";if(!S.me.owner)return;
+  $("cgName").textContent=S.confirmGroup?S.confirmGroupName:"No confirmation group chosen yet";$("cgTest").style.display=S.confirmGroup?"":"none";
+  $("rights").innerHTML=(S.admins||[]).length?S.admins.map(a=>'<div class="it" style="padding:8px 0"><div class="mid"><div class="t" style="font-size:14px">'+esc(a.name)+'</div></div><label class="opt'+(a.cut?" on":"")+'" style="margin:0;padding:8px 10px"><input class="chk" type="checkbox" data-r="cut|'+esc(a.telegramId)+'" '+(a.cut?"checked":"")+'>✂️ Cut</label><label class="opt'+(a.add?" on":"")+'" style="margin:0 0 0 6px;padding:8px 10px"><input class="chk" type="checkbox" data-r="add|'+esc(a.telegramId)+'" '+(a.add?"checked":"")+'>➕ Add</label></div>').join(""):'<div class="hint">No other admin has the Material section yet (Manage Admins → Material).</div>';
+}
+$("rights").addEventListener("change",async e=>{const c=e.target.closest("[data-r]");if(!c)return;const [w,id]=c.dataset.r.split("|");const d=await api("/api/material/rights",{telegramId:id,[w]:c.checked});take(d);});
 
 // ── ALERT (main admin: red, rings, vibrates when a new request arrives · sender: ⏳ Waiting confirmation sign) ──
 let LASTN=null;
@@ -136,7 +150,7 @@ function drawAlert(){
     if(LASTN!==null&&n>LASTN){try{navigator.vibrate&&navigator.vibrate([200,100,200]);}catch{}try{Telegram.WebApp.HapticFeedback.notificationOccurred("warning");}catch{}say("🔔 New material request waiting for your confirmation.","warn");}
   }else{
     a.className="alert snd";
-    a.innerHTML='⏳ Waiting confirmation — '+n+' of your request'+(n===1?'':'s')+'<small>The stock changes only after the main admin approves. You will also get a Telegram message when it is decided.</small>';
+    a.innerHTML='⏳ Waiting confirmation — '+n+' of your request'+(n===1?'':'s')+'<small>The stock changes only after the main admin approves. The decision is also posted in the confirmation topic.</small>';
   }
   LASTN=n;
 }
@@ -192,7 +206,7 @@ function drawList(){
       const low=m.min>0&&m.qty<=m.min,w=waiting(m);
       return '<div class="mr"><div class="nm"><b>'+esc(nm(m))+'</b><div class="m">'+(m.min>0?'Low-stock alert at '+esc(fmt(m.min))+' ':'')+(w.length?'<span class="pill wait">⏳ Waiting confirmation'+(w.length>1?' ('+w.length+')':'')+'</span>':'')+'</div></div>'+
         '<div class="qt'+(low?' low':'')+'">'+esc(fmt(m.qty))+'<small>'+esc(m.unit||"pcs")+(low?' · LOW':'')+'</small></div>'+
-        '<div class="ac"><button class="btn sm" data-cut="'+esc(m.id)+'">✂️ Cut</button><button class="btn sm sec" data-add="'+esc(m.id)+'">➕ Add</button><button class="btn sm sec" data-edit="'+esc(m.id)+'">✏️ Edit</button></div></div>';}).join("")+'</div>';
+        '<div class="ac">'+(S.can.cut?'<button class="btn sm" data-cut="'+esc(m.id)+'">✂️ Cut</button>':'')+(S.can.add?'<button class="btn sm sec" data-add="'+esc(m.id)+'">➕ Add</button><button class="btn sm sec" data-edit="'+esc(m.id)+'">✏️ Edit</button>':'')+(!S.can.cut&&!S.can.add?'<span class="pill">View only</span>':'')+'</div></div>';}).join("")+'</div>';
   }
   $("out").innerHTML=h||'<div class="card"><div class="empty">'+(S.materials.length?"No material matches your search.":"<b>No materials yet.</b><br>Press <b>➕ New material</b> to add the first one.")+'</div></div>';
 }
@@ -243,6 +257,35 @@ function editSheet(id){
    '<div class="btns"><button class="btn block" id="fGo" type="button">'+(S.me.owner?"Save changes":"Send for confirmation")+'</button></div>');
   guard($("fGo"),S.me.owner?"Save changes":"Send for confirmation",()=>api("/api/material/edit",{id:m.id,name:$("fName").value,type:$("fType").value,unit:$("fUnit").value,qty:$("fQty").value,min:$("fMin").value,note:$("fNote").value}));
 }
+
+// ── confirmation group picker (same list / topic / link tools as Workshop) ──
+let PICK=null;
+$("cgPick").onclick=()=>{PICK=S.confirmGroup?{...S.confirmGroup}:null;open('<div class="hd"><b>📨 Confirmation group</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');gDraw();};
+const topicsHtml=T=>'<div class="hint" style="margin-top:10px">Choose the topic:</div>'+T.filter(t=>!t.closed).map(t=>'<div class="opt" data-tp="'+t.id+'" data-tt="'+esc(t.title)+'">🧵 <span>'+esc(t.title)+'</span></div>').join("");
+function gDraw(extra){
+  $("gBody").innerHTML='<div class="hint">Current choice: <b>'+esc(PICK?((PICK.title||PICK.chat)+(PICK.topic?" › "+(PICK.topicTitle||"topic "+PICK.topic):"")):"none")+'</b></div>'+
+   '<div class="btns"><button class="btn sm" id="gList">📂 Choose from my groups</button></div>'+
+   '<label>…or paste a group / topic link, @username or id</label><input type="text" id="gLink" placeholder="https://t.me/c/123456789/2" autocomplete="off"><div class="btns"><button class="btn sm sec" id="gCheck">Check link</button></div>'+
+   '<div id="gExtra">'+(extra||"")+'</div>'+
+   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save confirmation group</button>'+(S.confirmGroup?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
+   '<p class="hint">The AMBAR bot must be in this group (as admin) so it can post the Approve / Reject buttons.</p>';
+  $("gList").onclick=async()=>{$("gList").disabled=true;$("gList").textContent="Loading…";const d=await api("/api/workshop/dialogs",{});$("gList").disabled=false;$("gList").textContent="📂 Choose from my groups";
+    if(!d.ok){fm(d.error,"bad");return;}
+    $("gExtra").innerHTML=d.groups.length?d.groups.map(g=>'<div class="opt" data-g="'+esc(g.chat)+'" data-t="'+esc(g.title)+'" data-f="'+(g.forum?1:0)+'">'+(g.forum?"🗂":"👥")+'<span>'+esc(g.title)+(g.forum?"<small>has topics</small>":"")+'</span></div>').join(""):'<div class="empty">No groups found.</div>';};
+  $("gCheck").onclick=async()=>{const v=$("gLink").value.trim();if(!v)return;const d=await api("/api/workshop/resolve",{link:v});if(!d.ok){fm(d.error,"bad");return;}
+    PICK={chat:d.chat,title:d.title||"",topic:d.topic||0,topicTitle:d.topicTitle||""};
+    if(d.forum&&!d.topic&&d.topics&&d.topics.length)return gDraw(topicsHtml(d.topics));gDraw();};
+  $("gSave").onclick=async()=>{const d=await api("/api/material/confirm-group",{group:PICK});if(d&&d.ok!==false){close();take(d);}else fm((d&&d.error)||"Could not save.","bad");};
+  if($("gClear"))$("gClear").onclick=async()=>{close();take(await api("/api/material/confirm-group/clear",{}));};
+}
+$("sheet").addEventListener("click",async e=>{
+  const g=e.target.closest("[data-g]"),tp=e.target.closest("[data-tp]");if(!$("gBody"))return;
+  if(g){PICK={chat:g.dataset.g,title:g.dataset.t,topic:0,topicTitle:""};
+    if(g.dataset.f==="1"){const d=await api("/api/workshop/topics",{chat:g.dataset.g});if(d.ok&&d.forum){gDraw(topicsHtml(d.topics));return;}if(!d.ok)fm(d.error,"bad");}
+    gDraw();}
+  if(tp){PICK.topic=Number(tp.dataset.tp)>1?Number(tp.dataset.tp):0;PICK.topicTitle=tp.dataset.tt;gDraw();}
+});
+$("cgTest").onclick=async()=>{$("cgTest").disabled=true;take(await api("/api/material/confirm-group/test",{}));$("cgTest").disabled=false;};
 
 setInterval(()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();},8000);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
