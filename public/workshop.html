@@ -37,6 +37,7 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 .it .mid{flex:1;min-width:0}.it .t{font-weight:800;font-size:14.5px;word-break:break-word}.it .m{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5}
 .it .rt{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:13.5px;line-height:1.6}
+.pill.wait2{background:var(--warnbg);color:var(--warn)}
 .grp{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}.grp b{font-size:15px}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:80;display:none;align-items:flex-end;justify-content:center}.ov.on{display:flex}
 .sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 16px calc(22px + env(safe-area-inset-bottom,0px))}
@@ -57,6 +58,10 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
   <div class="card">
     <h2>📨 Workshop group</h2>
     <div class="grp"><div><b id="gName">—</b><div class="hint" id="gHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="gPick">Choose group</button><button class="btn sm sec" id="gTest">Send test</button></div></div>
+  </div>
+  <div class="card">
+    <h2>🔴 Sold Out group</h2>
+    <div class="grp"><div><b id="sName">—</b><div class="hint" id="sHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="sPick">Choose group</button><button class="btn sm sec" id="sTest">Send test</button></div></div>
   </div>
 
   <div class="seg" id="seg"><button data-t="orders" class="on">📋 Order products</button><button data-t="ready">🛋 Readymade</button><button data-t="sent">📤 Sent products</button></div>
@@ -102,6 +107,9 @@ function render(){
   $("gName").textContent=S.group?S.groupName:"No group chosen yet";
   $("gHint").textContent=S.group?("Posted by "+(S.sender.ready?"your Telegram account":"the AMBAR bot")+(S.sender.ready?"":" (connect your Telegram account on Home to post as yourself)")):"Choose the Telegram group (and topic) of the workshop first.";
   $("gTest").style.display=S.group?"":"none";
+  $("sName").textContent=S.soldGroup?S.soldGroupName:"No Sold Out group chosen yet";
+  $("sHint").textContent=S.soldGroup?"A product that is in stock and sold to a customer (Customer ID → Send to workshop) is posted here with the customer's info.":"Choose the Telegram group (and topic) where sold stock products are posted.";
+  $("sTest").style.display=S.soldGroup?"":"none";
   document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.t===TAB));
   $("bar").classList.remove("on");
   if(TAB==="orders")drawOrders();else if(TAB==="ready")drawReady();else drawSent();
@@ -109,12 +117,12 @@ function render(){
 $("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TAB=b.dataset.t;SEL.clear();Q="";try{localStorage.setItem("wsTab",TAB);}catch{}render();});
 
 // ── ORDER PRODUCTS ──────────────────────────────────────────────────────────
-const orderRow=(o,again)=>'<div class="it">'+thumb(o.photo)+'<div class="mid"><div class="t">'+esc(o.product||"Order")+'</div><div class="m">'+esc(o.orderId)+' · 👤 '+esc(o.customerName||"—")+(o.customerId?' ('+esc(o.customerId)+')':'')+'<br>'+esc(when(o.createdAt))+' <span class="pill '+(o.status==="Confirmed"?"ok":"wait")+'">'+esc(o.status||"Pending")+'</span> '+(o.sent?'<span class="pill blue">Sent '+esc(o.sent.at||"")+'</span>':'')+'</div></div><div class="rt"><button class="btn sm '+(again?"sec":"")+'" data-send="'+esc(o.id)+'">'+(again?"Send again":"🛠 Send")+'</button></div></div>';
+const orderRow=(o,again)=>'<div class="it">'+thumb(o.photo)+'<div class="mid"><div class="t">'+esc(o.product||"Order")+'</div><div class="m">'+esc(o.orderId)+' · 👤 '+esc(o.customerName||"—")+(o.customerId?' ('+esc(o.customerId)+')':'')+'<br>'+esc(when(o.createdAt))+' <span class="pill '+(o.status==="Confirmed"?"ok":"wait")+'">'+esc(o.status||"Pending")+'</span> '+(o.sent?'<span class="pill blue">Sent '+esc(o.sent.at||"")+'</span>':'')+'</div></div><div class="rt">'+(o.confirmed?'<button class="btn sm '+(again?"sec":"")+'" data-send="'+esc(o.id)+'">'+(again?"Send again":"🛠 Send")+'</button>':'<span class="pill wait2">⏳ Waiting customer confirmation</span>')+'</div></div>';
 // v177: only the NEWEST orders that are not sent yet (newest first). Sent orders are in the "Sent products" tab; rejected orders cannot be sent.
 const newOrders=()=>S.orders.filter(o=>!o.sent&&o.status!=="Rejected").slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
 function drawOrders(){
   const q=Q.toLowerCase(),all=newOrders(),L=all.filter(o=>!q||[o.orderId,o.product,o.customerName,o.customerId].join(" ").toLowerCase().includes(q)),done=S.orders.filter(o=>o.sent).length;
-  $("out").innerHTML='<div class="card"><h2>📋 Order products <span class="pill wait">'+all.length+' new</span></h2><div class="hint">The newest orders that are <b>not sent yet</b>, newest first. Tap <b>Send</b> to post the product photo, measurement, details <b>and the customer info</b> to the workshop group. Sent orders move to <b>Sent products</b>'+(done?' ('+done+')':'')+'.</div><input type="text" id="q" placeholder="Search order, product or customer…" value="'+esc(Q)+'" autocomplete="off">'+
+  $("out").innerHTML='<div class="card"><h2>📋 Order products <span class="pill wait">'+all.length+' new</span></h2><div class="hint">The newest orders that are <b>not sent yet</b>, newest first. A product that is <b>not in stock</b> is sent to the workshop only <b>after the customer confirms</b> the order (⏳ until then). Tap <b>Send</b> to post the product photo, measurement, details <b>and the customer info</b> to the workshop group. Sent orders move to <b>Sent products</b>'+(done?' ('+done+')':'')+'.</div><input type="text" id="q" placeholder="Search order, product or customer…" value="'+esc(Q)+'" autocomplete="off">'+
    (L.length?L.map((o,i)=>(i===0&&!q?'<div style="margin:10px 0 -4px"><span class="pill ok">🆕 Newest order</span></div>':'')+orderRow(o,false)).join(""):'<div class="empty">'+(all.length?"No order matches your search.":(done?"<b>All orders are sent.</b><br>Look in <b>Sent products</b> to see them.":"<b>No orders yet.</b><br>Orders you create in <b>Customer Order Confirmation</b> appear here."))+'</div>')+'</div>';
   const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawOrders();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
 }
@@ -130,11 +138,11 @@ const prodRow=p=>'<div class="it"><input class="chk" type="checkbox" data-sel="'
 function drawReady(){
   const custom=RTAB==="custom",q=Q.toLowerCase(),base=S.stock.filter(p=>!!p.custom===custom),L=base.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color].join(" ").toLowerCase().includes(q)),nStd=S.stock.filter(p=>!p.custom).length,nCus=S.stock.filter(p=>p.custom).length;
   $("out").innerHTML='<div class="seg" id="rseg" style="margin-bottom:12px"><button data-r="standard" class="'+(custom?"":"on")+'">📦 Standard products <span class="pill">'+nStd+'</span></button><button data-r="custom" class="'+(custom?"on":"")+'">🎨 Custom products <span class="pill">'+nCus+'</span></button></div>'+
-   '<div class="card"><h2>'+(custom?"🎨 Custom products":"📦 Standard products")+'</h2><div class="hint">'+(custom?'One-off products made to a custom design (photo, name, measurement, color). A new custom product goes into <b>Stock</b> and can be sent to the workshop group at once.':'Your regular readymade models. A new standard product goes into <b>Stock</b> (and shows on Home → Stock view) and can be sent to the workshop group at once.')+'</div>'+
+   '<div class="card"><h2>'+(custom?"🎨 Custom products":"📦 Standard products")+'</h2><div class="hint">'+(custom?'One-off products made to a custom design (photo, name, measurement, color). A new custom product is saved and can be sent to the workshop group at once.':'Your <b>saved standard products</b> (regular models). Only products saved here are listed — the general stock is <b>not</b> sent from this page (stock products are sold to a customer from <b>Customer ID → Send to workshop</b>). A new standard product is saved and can be sent to the workshop group at once.')+'</div>'+
    '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">'+(custom?"➕ New custom product":"➕ New standard product")+'</button></div>'+
    '<label>🔎 Search</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
-   '<div class="card"><h2>'+(custom?"🎨 Custom in stock":"📦 In stock")+' <span class="pill ok">'+base.length+'</span></h2>'+
-   (L.length?L.map(prodRow).join(""):'<div class="empty">'+(base.length?"No product matches your search.":"<b>"+(custom?"No custom products yet.":"Nothing in stock yet.")+"</b><br>Press <b>"+(custom?"➕ New custom product":"➕ New standard product")+"</b> to add one.")+'</div>')+'</div>'+
+   '<div class="card"><h2>'+(custom?"🎨 Saved custom products":"📦 Saved standard products")+' <span class="pill ok">'+base.length+'</span></h2>'+
+   (L.length?L.map(prodRow).join(""):'<div class="empty">'+(base.length?"No product matches your search.":"<b>"+(custom?"No custom products yet.":"No saved standard products yet.")+"</b><br>Press <b>"+(custom?"➕ New custom product":"➕ New standard product")+"</b> to add one.")+'</div>')+'</div>'+
    (!custom&&S.workflow.length?'<div class="card"><h2>⏳ Not in stock yet <span class="pill wait">'+S.workflow.length+'</span></h2><div class="hint">Older products still in Workflow. Move them to Stock when they are ready.</div>'+S.workflow.map(p=>'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc].filter(Boolean).join(" · "))+'</div></div><div class="rt"><button class="btn sm" data-fin="'+esc(p.id)+'">→ Stock</button></div></div>').join("")+'</div>':"");
   const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawReady();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
   bar();
@@ -191,15 +199,15 @@ function drawSent(){
   const so=S.orders.filter(o=>o.sent).slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
   $("out").innerHTML='<div class="card"><h2>✅ Sent order products <span class="pill ok">'+so.length+'</span></h2><div class="hint">Orders already sent to the workshop group. You can send one again if needed.</div>'+
    (so.length?so.map(o=>orderRow(o,true)).join(""):'<div class="empty">No order has been sent yet.</div>')+'</div>'+
-   '<div class="card"><h2>🕘 Sending log</h2><div class="hint">Everything posted to the workshop group (orders and readymade products), including failed tries.</div>'+(S.sent.length?S.sent.map(x=>'<div class="it"><div class="th">'+(x.ok?(x.kind==="order"?"🛠":"📦"):"⚠️")+'</div><div class="mid"><div class="t">'+esc(x.title||"—")+' <span class="pill '+(x.ok?"ok":"bad")+'">'+(x.ok?"Sent":"Failed")+'</span></div><div class="m">'+esc(x.ref)+(x.customer?" · 👤 "+esc(x.customer):"")+'<br>'+esc(x.at)+" · "+esc(x.by)+(x.error?'<br><span style="color:var(--bad)">'+esc(x.error)+'</span>':'')+'</div></div></div>').join(""):'<div class="empty">Nothing sent yet.</div>')+'</div>';
+   '<div class="card"><h2>🕘 Sending log</h2><div class="hint">Everything posted to the workshop group (orders and readymade products) and to the Sold Out group (🔴 sold from stock), including failed tries.</div>'+(S.sent.length?S.sent.map(x=>'<div class="it"><div class="th">'+(x.ok?(x.kind==="order"?"🛠":x.kind==="sold"?"🔴":"📦"):"⚠️")+'</div><div class="mid"><div class="t">'+esc(x.title||"—")+' <span class="pill '+(x.ok?"ok":"bad")+'">'+(x.ok?"Sent":"Failed")+'</span></div><div class="m">'+esc(x.ref)+(x.customer?" · 👤 "+esc(x.customer):"")+'<br>'+esc(x.at)+" · "+esc(x.by)+(x.error?'<br><span style="color:var(--bad)">'+esc(x.error)+'</span>':'')+'</div></div></div>').join(""):'<div class="empty">Nothing sent yet.</div>')+'</div>';
 }
 
 // ── GROUP PICKER ────────────────────────────────────────────────────────────
-let PICK=null;
-$("gPick").onclick=()=>groupSheet();
-function groupSheet(){
-  PICK=S.group?{...S.group}:null;
-  open('<div class="hd"><b>📨 Workshop group</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
+let PICK=null,GK="work";
+$("gPick").onclick=()=>groupSheet("work");$("sPick").onclick=()=>groupSheet("sold");
+function groupSheet(k){
+  GK=k||"work";const cur=GK==="sold"?S.soldGroup:S.group;PICK=cur?{...cur}:null;
+  open('<div class="hd"><b>'+(GK==="sold"?"🔴 Sold Out group":"📨 Workshop group")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
   gDraw();
 }
 function gDraw(extra){
@@ -207,7 +215,7 @@ function gDraw(extra){
    '<div class="btns"><button class="btn sm" id="gList">📂 Choose from my groups</button></div>'+
    '<label>…or paste a group / topic link, @username or id</label><input type="text" id="gLink" placeholder="https://t.me/c/123456789/2" autocomplete="off"><div class="btns"><button class="btn sm sec" id="gCheck">Check link</button></div>'+
    '<div id="gExtra">'+(extra||"")+'</div>'+
-   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save workshop group</button>'+(S.group?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
+   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save '+(GK==="sold"?"Sold Out":"workshop")+' group</button>'+((GK==="sold"?S.soldGroup:S.group)?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
    '<p class="hint">The group must contain your Telegram account (or the AMBAR bot as admin) so it can post.</p>';
   $("gList").onclick=async()=>{$("gList").disabled=true;$("gList").textContent="Loading…";const d=await api("/api/workshop/dialogs",{});$("gList").disabled=false;$("gList").textContent="📂 Choose from my groups";
     if(!d.ok){fm(d.error,"bad");return;}
@@ -215,8 +223,8 @@ function gDraw(extra){
   $("gCheck").onclick=async()=>{const v=$("gLink").value.trim();if(!v)return;const d=await api("/api/workshop/resolve",{link:v});if(!d.ok){fm(d.error,"bad");return;}
     PICK={chat:d.chat,title:d.title||"",topic:d.topic||0,topicTitle:d.topicTitle||""};
     if(d.forum&&!d.topic&&d.topics&&d.topics.length)return gDraw(topicsHtml(d.topics));gDraw();};
-  $("gSave").onclick=async()=>{const d=await api("/api/workshop/settings",{group:PICK});if(d&&d.ok!==false){close();take(d);}else fm((d&&d.error)||"Could not save.","bad");};
-  if($("gClear"))$("gClear").onclick=async()=>{close();take(await api("/api/workshop/settings/clear",{}));};
+  $("gSave").onclick=async()=>{const d=await api("/api/workshop/settings",{group:PICK,kind:GK});if(d&&d.ok!==false){close();take(d);}else fm((d&&d.error)||"Could not save.","bad");};
+  if($("gClear"))$("gClear").onclick=async()=>{close();take(await api("/api/workshop/settings/clear",{kind:GK}));};
 }
 const topicsHtml=T=>'<div class="hint" style="margin-top:10px">Choose the topic:</div>'+T.filter(t=>!t.closed).map(t=>'<div class="opt" data-tp="'+t.id+'" data-tt="'+esc(t.title)+'">🧵 <span>'+esc(t.title)+'</span></div>').join("");
 $("sheet").addEventListener("click",async e=>{
@@ -226,7 +234,8 @@ $("sheet").addEventListener("click",async e=>{
     gDraw();}
   if(tp){PICK.topic=Number(tp.dataset.tp)>1?Number(tp.dataset.tp):0;PICK.topicTitle=tp.dataset.tt;gDraw();}
 });
-$("gTest").onclick=async()=>{$("gTest").disabled=true;const d=await api("/api/workshop/test",{});$("gTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
+$("gTest").onclick=async()=>{$("gTest").disabled=true;const d=await api("/api/workshop/test",{kind:"work"});$("gTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
+$("sTest").onclick=async()=>{$("sTest").disabled=true;const d=await api("/api/workshop/test",{kind:"sold"});$("sTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
 
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
 refresh();
