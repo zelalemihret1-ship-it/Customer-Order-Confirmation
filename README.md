@@ -1,6 +1,12 @@
+## v181 — Material → Confirmation is a small closed bar
+- ✅ Confirmation is now a small bar (with the "N waiting" count) that opens when tapped; the red alert's "Review below" button opens it. File: `public/material.html`.
+
+## v180 — Material Settings is a small closed bar · separate ✏️ Edit permission
+- Material → **⚙️ Settings** is now a small bar that stays **closed until you tap it**. Inside: the confirmation group topic and, for each admin, three ticks: **✂️ Cut · ➕ Add · ✏️ Edit** (Edit is now separate from Add; older selections keep their old Edit = Add value). Files: `material.js`, `public/material.html`. `/api/material-version` → v180.
+
 ## v179 — Material confirmation goes to the selected Telegram topic (not to private bot chats) · choose who can Cut / Add
 - **Confirmation group.** Material page → ⚙️ Settings (main admin): choose the Telegram **group + topic** (list, or pasted link) and Send test. Every waiting Cut / Add / New / Edit request is posted there with ✅ Approve / ❌ Reject (only a main admin's press counts); the decision is posted in the same topic. **No private messages are sent any more.** The AMBAR bot must be in the group (as admin). The red alert on Home / Material page stays.
-- **Who can Cut / Add.** In the same Settings card the main admin ticks **✂️ Cut** and **➕ Add** for each admin who has Material (Edit follows Add). Admins without a right do not see those buttons and the server refuses them. Admins not selected yet keep both, as before.
+- **Who can Cut / Add.** In the same Settings card the main admin ticks **✂️ Cut** and **➕ Add** for each admin who has Material (). Admins without a right do not see those buttons and the server refuses them. Admins not selected yet keep both, as before.
 - Files: `material.js`, `public/material.html`, `server.js`, `README.md`. Check: `/api/material-version` → v179.
 
 ## v178 — Material alerts + Telegram Approve/Reject · Sold Out group · non-stock orders go to the workshop only after the customer confirms
