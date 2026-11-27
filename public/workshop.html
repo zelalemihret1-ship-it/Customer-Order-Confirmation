@@ -3,1223 +3,226 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#0c3226">
-<title>Ambar Furniture — Production & Dispatch</title>
+<meta name="theme-color" content="#0f3d30">
+<title>Ambar Furniture — Workshop</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 try{Telegram.WebApp.ready();Telegram.WebApp.expand();}catch{}
-(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Owner-Key",k);o.headers=h;}return f.call(this,u,o);};})();
+(function(){const f=window.fetch;window.fetch=function(u,o){o=o||{};if(typeof u==="string"&&u.startsWith("/api/")){const h=new Headers(o.headers||{});let id="";try{id=Telegram.WebApp.initData||"";}catch{}if(id)h.set("X-Telegram-Init-Data",id);let k="";try{k=localStorage.getItem("ownerKey")||"";}catch{}if(k)h.set("X-Setup-Key",k);o.headers=h;}return f.call(this,u,o);};})();
 </script>
-<link rel="stylesheet" href="/app.css?v=159">
 <style>
-:root{
-  --ink:#0c2a21;--green:#0f3d30;--green2:#17604b;--gold:#c9a24d;--gold2:#e7c77a;
-  --bg:#f4f2ec;--card:#fff;--line:#e9e4d8;--line2:#f0ece2;--tx:#1d2924;--mute:#76756c;
-  --ok:#17824c;--okbg:#e2f5ea;--warn:#8a5a00;--warnbg:#fff1d4;--bad:#b3261e;--badbg:#fde8e6;--blue:#14598f;--bluebg:#e5f1fb;
-  --r:18px;--sh:0 1px 2px rgba(15,40,30,.05),0 8px 24px rgba(15,40,30,.06);
-}
-*{box-sizing:border-box}
-html{background:var(--bg)}
-body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,"Noto Sans Ethiopic",Nyala,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
-svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
-
-/* header */
-header{position:sticky;top:0;z-index:40;color:#fff;background:linear-gradient(135deg,#0a2a20 0%,#0f3d30 55%,#17604b 100%);padding:calc(12px + env(safe-area-inset-top,0px)) 16px 14px;box-shadow:0 6px 24px rgba(8,30,22,.25)}
-header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
-header .row1{display:flex;align-items:center;gap:12px;max-width:880px;margin:auto}
-header a.back{display:inline-flex;align-items:center;gap:4px;color:#fff;text-decoration:none;font-size:13px;font-weight:600;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:7px 12px 7px 8px;white-space:nowrap;backdrop-filter:blur(6px)}
-header .ttl{flex:1;min-width:0}
-header h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.2px;line-height:1.15}
-header .sub{margin-top:2px;font-size:11.5px;color:rgba(255,255,255,.68);letter-spacing:.3px}
-header .logo{width:36px;height:36px;border-radius:11px;background:linear-gradient(150deg,var(--gold2),var(--gold));color:#3a2800;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
-
-main{max-width:880px;margin:auto;padding:16px 14px calc(96px + env(safe-area-inset-bottom,0px))}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px;box-shadow:var(--sh)}
-.card h2{margin:0 0 4px;font-size:15.5px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px}
-.card h2 .i{color:var(--green2)}
-.hint{font-size:12.5px;color:var(--mute);line-height:1.55;margin:2px 0 8px}
-.msg{display:none;border-radius:14px;padding:11px 14px;font-size:13px;font-weight:600;margin:0 0 12px;line-height:1.5;border:1px solid transparent}
-.msg.ok{background:var(--okbg);color:var(--ok);border-color:#bfe6cf}.msg.bad{background:var(--badbg);color:var(--bad);border-color:#f4c4c0}.msg.info{background:var(--bluebg);color:var(--blue);border-color:#c5dff3}
-.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:700;white-space:nowrap}
-.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.wait{background:var(--warnbg);color:var(--warn)}.pill.blue{background:var(--bluebg);color:var(--blue)}.pill.gray{background:#eeebe2;color:#5f5d54}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.chip{display:inline-flex;align-items:center;gap:6px;background:var(--bluebg);color:var(--blue);border-radius:999px;padding:6px 6px 6px 12px;font-size:12.5px;font-weight:600}
-.chip button{border:0;background:rgba(20,89,143,.14);color:var(--blue);border-radius:50%;width:22px;height:22px;font-weight:700;cursor:pointer;line-height:1}
-input[type=text],input[type=number],textarea,select{width:100%;border:1.5px solid #e3ddcf;border-radius:13px;padding:12px 13px;font-size:15px;background:#fcfbf8;color:var(--tx);font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s;outline:none;-webkit-appearance:none;appearance:none}
-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2376756c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
-textarea{min-height:76px;resize:vertical}
-input:focus,textarea:focus,select:focus{border-color:var(--green2);background:#fff;box-shadow:0 0 0 4px rgba(23,96,75,.12)}
-.r2{display:grid;grid-template-columns:1fr 110px;gap:8px;margin:8px 0}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:13px;padding:12px 16px;font-weight:700;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;box-shadow:0 6px 16px rgba(15,61,48,.22);font-family:inherit}
-.btn.sec{background:#eeebe1;color:var(--green);box-shadow:none}
-.btn.gold{background:linear-gradient(135deg,var(--gold2),var(--gold));color:#2f2100;box-shadow:0 6px 16px rgba(201,162,77,.3)}
-.btn.sm{padding:9px 13px;font-size:13px;border-radius:12px}
-.btn.danger{background:var(--bad);box-shadow:none}
-.btn.block{width:100%;padding:14px}
-.btn:disabled{opacity:.5}
-.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-
-/* settings (collapsible) */
-details.set{padding:0;overflow:hidden}
-details.set>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer}
-details.set>summary::-webkit-details-marker{display:none}
-details.set .ico{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#e4f1ea,#d3e9de);color:var(--green2);display:flex;align-items:center;justify-content:center;flex:none}
-details.set .ico .i{width:20px;height:20px}
-details.set .st{flex:1;min-width:0}
-details.set .st b{display:block;font-size:14.5px;color:var(--ink)}
-details.set .st span{display:block;font-size:12px;color:var(--mute);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-details.set .chev{transition:transform .2s;color:var(--mute)}
-details.set[open] .chev{transform:rotate(180deg)}
-details.set .body{padding:2px 16px 16px;border-top:1px solid var(--line2)}
-.mode{display:flex;gap:11px;align-items:flex-start;border:1.5px solid var(--line);border-radius:15px;padding:12px;margin:9px 0;cursor:pointer;background:#fff;transition:border-color .15s,background .15s}
-.mode.on{border-color:var(--green2);background:#f0f8f4}
-.mode input{margin-top:3px;width:18px;height:18px;accent-color:var(--green2)}
-.mode b{display:block;font-size:14px;color:var(--ink)}.mode small{display:block;font-size:12px;color:var(--mute);line-height:1.5;margin-top:2px}
-
-/* places (workshop / finishing) */
-.slot{display:flex;gap:10px;align-items:center;border:1.5px solid var(--line);border-radius:15px;padding:11px 12px;margin:9px 0;background:#fff}
-.slot .si{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:#e4f1ea;color:var(--green2);font-size:18px}
-.slot.fin .si{background:#fdf0d5;color:#8a5a00}
-.slot .sm{flex:1;min-width:0}.slot .sm b{display:block;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:#4f6158}
-.slot .sm span{display:block;font-size:14px;font-weight:600;color:var(--ink);margin-top:2px;word-break:break-word}.slot .sm span.none{color:var(--bad);font-weight:600}
-.slot .sb{display:flex;flex-direction:column;gap:6px}
-.gi.tap{cursor:pointer}.gi small{display:block;color:var(--mute);font-weight:600;font-size:11.5px;margin-top:2px}
-.flow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--mute);margin:8px 0 2px}.flow b{color:var(--ink)}
-.item .act{display:flex;flex-direction:column;gap:6px;flex:none}
-/* tabs */
-.seg{display:flex;gap:4px;background:#e8e4d8;border-radius:16px;padding:4px;margin-bottom:14px}
-.seg button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:12px;padding:11px 4px;font-weight:700;font-size:13px;background:transparent;color:#4f5d56;cursor:pointer;font-family:inherit;transition:background .18s,color .18s,box-shadow .18s}
-.seg button .n{font-size:11px;font-weight:700;background:rgba(15,61,48,.1);border-radius:999px;padding:1px 7px}
-.seg button.on{background:#fff;color:var(--green);box-shadow:0 2px 10px rgba(15,40,30,.12)}
-.seg button.on .n{background:var(--green);color:#fff}
-.seg.sub{background:transparent;padding:0;gap:8px;margin-bottom:12px}
-.seg.sub button{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 6px}
-.seg.sub button.on{background:var(--green);color:#fff;border-color:var(--green);box-shadow:0 4px 12px rgba(15,61,48,.2)}
-
-.sec-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 2px 10px}
-.sec-h b{font-size:15px;color:var(--ink)}.sec-h span{font-size:12px;color:var(--mute)}
-
-/* list items */
-.item{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px;margin-bottom:10px;box-shadow:var(--sh)}
-.item img,.item .noimg{width:68px;height:68px;border-radius:14px;object-fit:cover;background:#ece7da;flex:none;display:flex;align-items:center;justify-content:center;color:#a79f8a}
-.item .noimg .i{width:26px;height:26px}
-.item .mid{flex:1;min-width:0}
-.item .nm{font-weight:700;font-size:14.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .meta{font-size:12.5px;color:var(--mute);margin-top:4px;line-height:1.55}
-.item .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
-.prog{height:5px;border-radius:99px;background:#ece8dc;margin-top:8px;overflow:hidden}.prog i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--gold),var(--green2))}
-.empty{text-align:center;color:var(--mute);padding:34px 14px;font-size:13px;line-height:1.65;background:#fff;border:1.5px dashed #ddd6c6;border-radius:var(--r)}
-.empty .em{width:54px;height:54px;border-radius:18px;background:#eef3ef;color:var(--green2);display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
-.empty .em .i{width:26px;height:26px}
-.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
-.log{font-size:12.5px;line-height:1.7;color:var(--mute)}.log b{color:var(--tx)}
-
-/* standard grid */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
-.pc{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;box-shadow:var(--sh);transition:transform .15s,box-shadow .15s}
-.pc:active{transform:scale(.98)}
-.pc img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#ece7da}
-.pc .pn{padding:10px 12px 12px;font-weight:700;font-size:13.5px;color:var(--ink);line-height:1.3}
-.pc .ed{position:absolute;top:8px;right:8px;border:0;border-radius:11px;background:rgba(255,255,255,.92);color:var(--green);padding:6px 7px;cursor:pointer;display:flex;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-
-/* forms */
-.lab{display:block;font-size:11.5px;font-weight:700;color:#4f6158;margin:14px 0 6px;letter-spacing:.6px;text-transform:uppercase}
-.szs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
-.sz{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:700;color:var(--green);cursor:pointer;font-family:inherit}
-.sz.on{border-color:var(--green2);background:#f0f8f4}
-.tog{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.tog button{display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid var(--line);background:#fff;border-radius:14px;padding:13px 6px;font-weight:700;font-size:14px;color:var(--green);cursor:pointer;font-family:inherit}
-.tog button.on{border-color:var(--green2);background:#f0f8f4;box-shadow:0 0 0 3px rgba(23,96,75,.1)}
-.qty{display:flex;align-items:center;gap:8px}.qty button{width:46px;height:46px;border:0;border-radius:13px;background:#eeebe1;font-size:22px;font-weight:700;color:var(--green);cursor:pointer;flex:none}.qty input{text-align:center;font-weight:700}
-.pv{width:100%;max-height:240px;object-fit:contain;border-radius:14px;background:#ece7da;display:none;margin:8px 0}
-.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed #d5cdb9;border-radius:16px;background:#fcfbf7;padding:20px 12px;text-align:center;color:var(--mute);font-size:13px;cursor:pointer}
-.drop .i{width:28px;height:28px;color:var(--green2)}
-.drop b{color:var(--ink);font-size:14px}
-
-/* overlays */
-.gearbtn{width:40px;height:40px;border-radius:13px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0}
-.confbtn{position:relative;display:inline-flex;align-items:center;gap:0;height:30px;width:30px;justify-content:center;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.14);color:#fff;font:700 11.5px/1.1 inherit;font-family:inherit;cursor:pointer;flex:none}
-.confbtn.hide{display:none}.confbtn .lb{display:none}
-.confbtn .bdg{position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#e53935;color:#fff;font-weight:800;font-size:10px;line-height:16px;text-align:center;border:2px solid #0f3d30;box-shadow:0 2px 6px rgba(0,0,0,.35)}
-.confbtn .bdg[hidden]{display:none}
-.confbtn .dot{width:8px;height:8px;border-radius:50%;background:#46d68b;box-shadow:0 0 0 3px rgba(70,214,139,.25)}
-.confbtn.wait .dot{background:#ffb300;box-shadow:0 0 0 3px rgba(255,179,0,.3);animation:cp 1.4s infinite}
-@keyframes cp{50%{box-shadow:0 0 0 7px rgba(255,179,0,0)}}
-@media(max-width:420px){.confbtn .lb{display:none}header .ttl .sub{display:none}}
-#matList .item{flex-wrap:wrap}#matList .item .mid{flex:1 1 60%;min-width:0}#matList .item .act{width:100%;justify-content:flex-start!important}
-.asgbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 10px;padding:9px 12px;background:#eef6fb;border:1px solid #d4e6f3;border-radius:0 0 14px 14px;font-size:12.5px;color:#14598f}
-.asgbar select{flex:1;min-width:140px;padding:7px 9px;border-radius:10px;border:1px solid #c4dbea;background:#fff;font:inherit;font-size:13px}
-.moves{border:2px solid #e8b94a;background:linear-gradient(180deg,#fffaf0,#fff)}.moves.clear{border-color:var(--line);background:var(--card)}.moves .mh{display:flex;align-items:center;gap:10px;margin-bottom:10px}.moves .mh b{font-size:16px;flex:1}.moves .mh .cnt{min-width:26px;height:26px;border-radius:13px;background:#d93025;color:#fff;font-weight:800;font-size:13px;display:inline-flex;align-items:center;justify-content:center;padding:0 7px}.moves.clear .mh .cnt{background:#17824c}.moves .sub2{font-size:12px;color:var(--mute);margin:10px 2px 4px;font-weight:700}
-.statusbar{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:#e2f5ea;color:#17824c;font-weight:700;margin-bottom:12px}
-.statusbar.wait{background:#fff1d4;color:#8a5a00}.statusbar .dot{width:11px;height:11px;border-radius:50%;background:currentColor;flex:none}
-.statusbar.wait .dot{animation:cp 1.4s infinite}
-.gearbtn:active{background:rgba(255,255,255,.25)}.gearbtn .i{width:21px;height:21px}
-.roleRow{border-top:1px solid var(--line,#e6e1d6);padding:10px 0}.roleRow b{font-size:13px}.roleRow label{display:inline-flex;align-items:center;gap:5px;margin:6px 12px 0 0;font-size:12.5px}.roleRow input{width:auto}
-.stcard{border:1px solid var(--line,#e6e1d6);border-radius:16px;padding:12px 14px;margin:12px 0;background:#fff}
-.stcard h3{margin:0 0 4px;font-size:14px}.stcard.danger{border-color:#f0c2be;background:#fff8f7}
-.stlist{margin:6px 0 0;padding-left:18px;font-size:12.5px;line-height:1.5}.stlist li{margin:1px 0}
-.sttog{display:flex;gap:10px;align-items:flex-start;margin:10px 0 0;font-size:13px}.sttog input{margin-top:3px;width:auto}
-.ov{position:fixed;inset:0;background:rgba(10,25,19,.55);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center;z-index:90}
-.ov.on{display:flex}
-.box{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:560px;max-height:88vh;overflow:auto;padding:12px 16px calc(18px + env(safe-area-inset-bottom,0px));animation:up .22s ease-out}
-.box::before{content:"";display:block;width:42px;height:4px;border-radius:9px;background:#d9d3c3;margin:0 auto 12px}
-@keyframes up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
-.gi{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:13px;padding:11px 12px;margin:7px 0;font-weight:600;font-size:14px}
-.busy{position:fixed;inset:0;background:rgba(244,242,236,.8);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:99;font-weight:700;color:var(--ink)}.busy.on{display:flex}
-.spin{width:34px;height:34px;border-radius:50%;border:3.5px solid #d7e5de;border-top-color:var(--green2);animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
-.log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.log-head h2{margin:0}.log-head select{max-width:190px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff;color:var(--ink);font:inherit;font-weight:650}.log>div{padding:10px 12px;margin:7px 0;border:1px solid var(--line);border-radius:12px;background:#fff;line-height:1.5}
-
-/* ===== v159 modern polish ===== */
-:root{--r:22px;--sh:0 1px 2px rgba(15,40,30,.04),0 10px 30px -8px rgba(15,40,30,.10);--sh2:0 2px 4px rgba(15,40,30,.05),0 18px 40px -10px rgba(15,40,30,.18)}
-html{background:var(--bg)}
-body{background:radial-gradient(900px 380px at 50% -120px,#e3efe8 0,transparent 70%),var(--bg);letter-spacing:-.005em}
-header{padding:calc(14px + env(safe-area-inset-top,0px)) 16px 18px;background:radial-gradient(500px 200px at 90% -40%,rgba(231,199,122,.28),transparent 60%),linear-gradient(135deg,#07241b 0%,#0f3d30 55%,#17604b 100%)}
-header h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
-header .sub{font-size:12px;opacity:.9}
-header a.back{transition:background .15s}header a.back:active{background:rgba(255,255,255,.22)}
-header .logo{width:40px;height:40px;border-radius:13px;font-size:19px}
-main{padding-top:18px}
-.card{border-radius:var(--r);padding:18px;border-color:rgba(233,228,216,.9)}
-.btn{border-radius:14px;transition:transform .12s,box-shadow .15s,filter .15s}
-.btn:active{transform:scale(.97)}.btn:hover{filter:brightness(1.05)}
-.btn.sec:hover{filter:none;background:#e6e2d4}
-/* stat tiles */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 16px}
-.stat{appearance:none;border:1px solid var(--line);background:#fff;border-radius:18px;padding:12px 10px 11px;text-align:left;cursor:pointer;font-family:inherit;box-shadow:var(--sh);position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s,border-color .15s}
-.stat:active{transform:scale(.97)}
-.stat .sn{display:block;font-size:24px;font-weight:800;color:var(--ink);letter-spacing:-.03em;line-height:1}
-.stat .sl{display:block;font-size:11px;font-weight:700;color:var(--mute);margin-top:6px;letter-spacing:.2px;line-height:1.25}
-.stat .si2{position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:#e9f3ee;color:var(--green2)}
-.stat .si2 .i{width:15px;height:15px}
-.stat.on{border-color:var(--green2);box-shadow:0 0 0 3px rgba(23,96,75,.12),var(--sh)}
-.stat.hot .sn{color:var(--green2)}
-/* tabs */
-.seg{margin-top:2px;background:rgba(232,228,216,.75);backdrop-filter:blur(8px);border-radius:18px;padding:5px;position:sticky;top:calc(68px + env(safe-area-inset-top,0px));z-index:30;box-shadow:0 6px 18px -8px rgba(15,40,30,.18)}
-.seg button{flex-direction:column;gap:3px;padding:9px 2px 8px;font-size:11.5px;border-radius:14px;line-height:1.15;text-align:center}
-.seg button .i{width:19px;height:19px}
-.seg button .n{font-size:10.5px;padding:1px 7px;margin-top:1px}
-.seg button.on{box-shadow:0 3px 12px -2px rgba(15,40,30,.2)}
-.seg.sub{position:static;background:transparent;backdrop-filter:none;box-shadow:none;padding:0}
-.seg.sub button{flex-direction:row;font-size:13px;padding:10px 8px;gap:7px}
-/* list items */
-.item{border-radius:20px;padding:12px;transition:transform .15s,box-shadow .15s}
-.item:hover{box-shadow:var(--sh2)}
-.item img,.item .noimg{width:72px;height:72px;border-radius:16px}
-.item .nm{font-size:15px;letter-spacing:-.01em}
-.sec-h b{font-size:16px;letter-spacing:-.015em}
-.pill{padding:4px 10px;font-size:11px}
-.empty{border-radius:24px;padding:40px 18px;background:linear-gradient(180deg,#fff,#faf8f2);border-color:#d9d1bd}
-.empty .em{width:62px;height:62px;border-radius:20px;background:linear-gradient(135deg,#e4f1ea,#d3e9de)}
-.empty b{font-size:16px}
-.empty .btn{margin-top:14px}
-/* standard products */
-.toolbar{display:flex;gap:10px;align-items:center;margin:0 0 14px}
-.search{position:relative;flex:1;min-width:0}
-.search .i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--mute);width:17px;height:17px;pointer-events:none}
-.search input[type=text]{padding-left:42px;border-radius:15px;background:#fff;height:46px}
-.toolbar .btn{height:46px;white-space:nowrap;flex:none}
-.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
-.pc{border-radius:22px;border:1px solid var(--line);transition:transform .2s,box-shadow .2s}
-.pc:hover{transform:translateY(-3px);box-shadow:var(--sh2)}
-.pc .ph{overflow:hidden;background:#ece7da}
-.pc img{transition:transform .35s}.pc:hover img{transform:scale(1.05)}
-.pc .pn{padding:11px 13px 13px;font-size:13.5px;letter-spacing:-.01em}
-.pc .pn small{display:block;font-weight:600;font-size:11.5px;color:var(--mute);margin-top:3px}
-.pc .ed{top:10px;right:10px;border-radius:12px;padding:7px;backdrop-filter:blur(6px)}
-.pc .go{position:absolute;right:10px;bottom:62px;width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#2f2100;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(201,162,77,.4);opacity:0;transform:translateY(6px);transition:.2s}
-.pc:hover .go,.pc:focus-within .go{opacity:1;transform:none}
-@media(hover:none){.pc .go{opacity:1;transform:none;width:30px;height:30px;bottom:58px}}
-.pc.add{appearance:none;font-family:inherit;border:2px dashed #cfc7b0;background:linear-gradient(180deg,#fdfcf8,#f7f4ea);box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:190px;color:var(--green);font-weight:800;font-size:14px}
-.pc.add:hover{border-color:var(--green2);background:#f0f8f4}
-.pc.add .plus{width:46px;height:46px;border-radius:16px;background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(15,61,48,.25)}
-.pc.add small{font-weight:600;color:var(--mute);font-size:11.5px;padding:0 10px;text-align:center}
-.ptp{display:inline-block;background:#e4f1ea;color:var(--green2);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800;margin:0 6px 3px 0}
-.noRes{display:none;text-align:center;color:var(--mute);font-size:13px;padding:22px 0}
-/* forms + sheets */
-input[type=text],input[type=number],textarea,select{border-radius:14px;padding:13px 14px}
-.box{border-radius:28px 28px 0 0;box-shadow:0 -20px 50px rgba(0,0,0,.25)}
-.box h2{font-size:18px;letter-spacing:-.02em;color:var(--ink)}
-.drop{border-radius:18px;transition:border-color .15s,background .15s}.drop:hover{border-color:var(--green2);background:#f4faf6}
-.tog button,.sz,.qty button{transition:transform .12s,border-color .15s}
-.tog button:active,.sz:active,.qty button:active{transform:scale(.96)}
-details.set{border-radius:var(--r)}
-.slot,.mode{border-radius:16px}
-@media(min-width:700px){main{padding-top:24px}.stats{gap:14px}.stat .sn{font-size:28px}.seg{top:78px}.box{border-radius:28px;margin-bottom:5vh}.ov{align-items:center}}
-@media(max-width:380px){.stats{grid-template-columns:repeat(2,1fr)}.seg{top:64px}}
-.ids{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px}.ids:empty{display:none}
-.idl{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--mute);margin-right:2px}
-.idc{font-weight:800;font-size:12px;color:var(--green);background:#e4f1ea;border:1px solid #cfe3d8;border-radius:8px;padding:3px 8px;letter-spacing:.2px}
-.idbox{margin:12px 0 0;padding:11px 12px;border-radius:15px;background:#f0f8f4;border:1px solid #cfe3d8}
-.idbox .idh{font-size:11.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#4f6158}
-.idbox .ids{margin-top:8px}.idbox .ids:empty::before{content:"…";color:var(--mute)}.idbox .ids:empty{display:flex}
-/* v171 dispatch: two small buttons at the bottom + two sheets */
-.dock{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;justify-content:center;gap:8px;padding:8px 14px calc(8px + env(safe-area-inset-bottom,0px));background:rgba(244,242,236,.94);backdrop-filter:blur(10px);border-top:1px solid var(--line)}
-.dock button{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:#fff;color:var(--green);border-radius:999px;padding:8px 14px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(15,40,30,.08);transition:transform .12s}
-.dock button:active{transform:scale(.96)}
-.dock .bn{display:none;background:var(--green);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px}
-.dsec{margin-top:18px;border-top:1px solid var(--line2)}
-.dsec h3{margin:14px 0 4px;font-size:14px;color:var(--ink)}
-.dprev{display:none;margin:10px 0 0}
-.dscroll{max-height:210px;overflow:auto;border:1px solid var(--line);border-radius:14px;padding:2px 12px;background:#fcfbf8}
-.dscroll .r{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line2);font-size:13.5px}
-.dscroll .r:last-child{border-bottom:0}
-.r2e{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:420px){.r2e{grid-template-columns:1fr}}
-
-/* ===== WORKSHOP REBUILD — fresh visual system (logic/IDs retained) =====
-:root{--ink:#14251f;--green:#164b3a;--green2:#227358;--gold:#c9a24d;--bg:#f5f7f6;--card:#fff;--line:#e2e9e5;--line2:#edf1ee;--tx:#1c2924;--mute:#738078;--r:18px;--sh:0 4px 18px rgba(20,50,38,.055)}
-html,body{background:var(--bg)!important;color:var(--tx)}body{letter-spacing:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
-header{background:#132e25!important;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 14px!important;box-shadow:0 4px 14px rgba(10,30,22,.12)!important}header::after{opacity:.35}header .row1{max-width:1200px;gap:10px}header h1{font-size:18px!important;font-weight:750}header .sub{font-size:11px!important;opacity:.8}header .logo{background:#d5b46a;color:#17352a;box-shadow:none;border-radius:12px;width:36px;height:36px}header a.back{border-radius:12px;background:rgba(255,255,255,.08);padding:8px 10px}
-main{max-width:1200px!important;padding:18px 16px calc(110px + env(safe-area-inset-bottom,0px))!important}
-.card,.item,.pc,.stcard{box-shadow:var(--sh)!important;border:1px solid var(--line)!important;border-radius:18px!important;background:#fff!important}.card{padding:16px!important;margin-bottom:13px!important}.card h2{font-size:15px;color:#183b2e}.hint{color:#6f7d75;line-height:1.5}.msg{border-radius:12px}
-#movesTop{border-color:#e9cf8e!important;background:#fffaf0!important}.moves .mh b{color:#20392e}.moves .sub2{font-size:11px}
-#seg{position:sticky;top:64px;z-index:30;display:flex;gap:6px;overflow:auto;background:#eef2ef;border:1px solid #e2e9e5;border-radius:16px;padding:5px;margin:8px 0 14px;box-shadow:0 4px 12px rgba(20,50,38,.04)}.seg button{border-radius:12px!important;min-height:46px;flex-direction:row!important;gap:7px!important;padding:10px!important;font-size:12.5px!important;white-space:nowrap}.seg button.on{background:#173f30!important;color:#fff!important;box-shadow:none!important}.seg button .n{background:rgba(0,0,0,.07)}.seg button.on .n{background:rgba(255,255,255,.2)}.seg.sub{position:static;background:transparent;border:0;box-shadow:none;padding:0;overflow:auto}.seg.sub button{border-radius:999px!important;min-height:38px}
-.btn{background:#174c39!important;border-radius:12px!important;box-shadow:none!important;padding:11px 15px}.btn.sec{background:#edf2ef!important;color:#234738!important}.btn.gold{background:#d8b86f!important;color:#27372f!important}.btn.danger{background:#b9413b!important}.btn:hover{filter:brightness(1.04)}
-input[type=text],input[type=number],textarea,select{border-radius:12px!important;border-color:#dfe7e2!important;background:#f9fbfa!important;padding:11px 12px!important;font-size:14px!important}input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(34,115,88,.12)!important;border-color:#227358!important}
-.lab{color:#65766c;font-size:10.5px;letter-spacing:.5px}.slot,.mode,.gi{border-radius:14px!important;border-color:#e2e9e5!important}.slot{background:#fbfcfb}.mode.on{background:#f2f8f5}.drop{border-radius:14px;background:#f8fbf9;border-color:#cbdad2}
-.stats{gap:9px}.stat{border-radius:16px!important;box-shadow:none!important;border-color:#e2e9e5!important;padding:12px}.stat .sn{font-size:22px}.stat.on{box-shadow:0 0 0 2px rgba(34,115,88,.12)!important}
-.item{padding:12px!important;gap:10px}.item img,.item .noimg{border-radius:12px!important}.pc{border-radius:16px!important}.pc .pn{font-size:13px}.pill{border-radius:999px}
-#lastSends{background:#fff!important}#lastSends summary{padding:3px 0}.log>div{border-radius:12px;background:#fbfcfb;border-color:#e4ebe7}
-.dock{background:rgba(255,255,255,.96)!important;border:1px solid #e1e8e4!important;border-radius:18px!important;box-shadow:0 10px 30px rgba(18,45,34,.12)!important;backdrop-filter:blur(14px);padding:8px!important}.dock button{border-radius:12px!important;min-height:44px}
-.ov{align-items:center!important;padding:14px}.box{border-radius:20px!important;width:min(100%,620px)!important;max-height:90vh!important;padding:18px!important;box-shadow:0 20px 60px rgba(0,0,0,.18)}.box::before{display:none}
-@media(min-width:900px){main{padding-left:24px!important;padding-right:24px!important}#out{display:block} .card{padding:18px!important}#seg button{min-width:110px}}
-@media(max-width:700px){main{padding:12px 11px calc(112px + env(safe-area-inset-bottom,0px))!important}header .row1{gap:7px}header h1{font-size:16px!important}header .sub{display:none!important}header .logo{width:32px;height:32px}header a.back{font-size:12px;padding:7px 8px} .card{padding:14px!important}#seg{top:58px}.seg button{flex-direction:column!important;min-width:70px;white-space:normal;font-size:10.5px!important;line-height:1.2}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dock{left:10px!important;right:10px!important;bottom:calc(8px + env(safe-area-inset-bottom,0px))!important}.dock button{font-size:12px!important}.ov{align-items:flex-end!important;padding:0}.box{border-radius:22px 22px 0 0!important;max-height:92vh!important;padding:16px!important}}
+:root{--bg:#f2f4f8;--card:#fff;--ink:#14231e;--muted:#6b7680;--line:#e8ebf0;--brand:#0f3d30;--brand2:#17604b;--gold:#e0b22e;--ok:#17824c;--okbg:#e2f5ea;--bad:#b3261e;--badbg:#fde8e6;--warn:#8a5a00;--warnbg:#fff1d4;--blue:#14598f;--bluebg:#e5f1fb;--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 26px rgba(16,24,40,.08)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+header{position:sticky;top:0;z-index:30;background:linear-gradient(135deg,#0a2a20,var(--brand) 55%,var(--brand2));color:#fff;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 14px;box-shadow:0 6px 24px rgba(8,30,22,.25)}
+header .in{max-width:820px;margin:auto;display:flex;align-items:center;gap:12px}
+header a.back{color:#fff;text-decoration:none;font-size:13px;font-weight:700;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:7px 13px;white-space:nowrap}
+header h1{margin:0;font-size:18px;line-height:1.15}header .sub{font-size:11.5px;opacity:.7;margin-top:2px}
+main{max-width:820px;margin:auto;padding:14px 14px 90px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h2{margin:0 0 6px;font-size:15.5px}
+.hint{font-size:12.5px;color:var(--muted);line-height:1.55;margin:2px 0 8px}
+.msg{display:none;border-radius:13px;padding:11px 14px;font-size:13px;font-weight:600;margin-bottom:12px;line-height:1.5;border:1px solid transparent}
+.msg.ok{display:block;background:var(--okbg);color:var(--ok);border-color:#bfe6cf}.msg.bad{display:block;background:var(--badbg);color:var(--bad);border-color:#f4c4c0}.msg.warn{display:block;background:var(--warnbg);color:var(--warn);border-color:#ecd49a}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:12px;padding:11px 15px;font-weight:700;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;font-family:inherit}
+.btn.sec{background:#edf0f4;color:var(--brand)}.btn.gold{background:linear-gradient(135deg,#f0cd6a,var(--gold));color:#2f2100}.btn.red{background:var(--badbg);color:var(--bad)}.btn.sm{padding:8px 11px;font-size:12.5px;border-radius:10px}.btn.block{width:100%}.btn:disabled{opacity:.5}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+input[type=text],input[type=number],select,textarea{width:100%;border:1.5px solid #e1e5eb;border-radius:12px;padding:11px 12px;font-size:15px;background:#fbfcfd;color:var(--ink);font-family:inherit;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--brand2);box-shadow:0 0 0 4px rgba(23,96,75,.12)}
+textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
+.seg{display:flex;gap:6px;margin-bottom:14px}.seg button{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:13px;padding:11px 4px;font-weight:700;font-size:13px;color:var(--brand);cursor:pointer;font-family:inherit}.seg button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.pill{display:inline-block;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;background:#eef0f3;color:#56606a}.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}.pill.wait{background:var(--warnbg);color:var(--warn)}.pill.blue{background:var(--bluebg);color:var(--blue)}
+.it{display:flex;gap:11px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}.it:last-child{border-bottom:0}
+.it .th{width:56px;height:56px;border-radius:12px;object-fit:cover;background:#eef0f3;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px}
+.it .mid{flex:1;min-width:0}.it .t{font-weight:800;font-size:14.5px;word-break:break-word}.it .m{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5}
+.it .rt{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:13.5px;line-height:1.6}
+.grp{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}.grp b{font-size:15px}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:80;display:none;align-items:flex-end;justify-content:center}.ov.on{display:flex}
+.sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 16px calc(22px + env(safe-area-inset-bottom,0px))}
+.sheet .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.sheet .hd b{font-size:17px}.sheet .x{border:0;background:#eef0f3;border-radius:50%;width:34px;height:34px;font-size:17px;font-weight:800;cursor:pointer}
+.opt{display:flex;align-items:center;gap:10px;padding:12px;border:1.5px solid var(--line);border-radius:13px;margin-top:8px;cursor:pointer;font-weight:700;font-size:14px}.opt.on{border-color:var(--brand2);background:#eef8f3}.opt small{display:block;color:var(--muted);font-weight:500;font-size:12px}
+.pv{display:flex;gap:12px;align-items:center}.pv img,.pv .ph0{width:84px;height:84px;border-radius:14px;object-fit:cover;background:#eef0f3;display:flex;align-items:center;justify-content:center;font-size:30px;flex:none}
+.chk{width:22px;height:22px;flex:none;accent-color:var(--brand2)}
+.bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));display:none;gap:8px;align-items:center;justify-content:space-between;z-index:20;box-shadow:0 -8px 24px rgba(16,24,40,.08)}.bar.on{display:flex}
+#gate{display:none;position:fixed;inset:0;z-index:99;background:#0b1511;color:#fff;align-items:center;justify-content:center;padding:24px;text-align:center}
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></symbol>
-    <symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a3 3 0 013-3h8a3 3 0 013 3v3"/><path d="M3 13a2 2 0 014 0v2h10v-2a2 2 0 014 0v5H3z"/><path d="M5 18v2M19 18v2"/></symbol>
-    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></symbol>
-    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
-    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></symbol>
-    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
-    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
-    <symbol id="i-cam" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></symbol>
-    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></symbol>
-    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.6 7.6"/><circle cx="11" cy="11" r="2"/></symbol>
-    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
-    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
-    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
-  </defs>
-</svg>
-<header>
-  <div class="row1">
-    <a class="back" href="/home.html"><svg class="i" style="width:16px;height:16px"><use href="#i-left"/></svg>Home</a>
-    <div class="ttl"><h1>Production &amp; Dispatch</h1><div class="sub">Workshop production, materials and driver coordination</div></div>
-    <button class="confbtn hide" id="confBtn" type="button" aria-label="Admin Confirmation" title="Admin Confirmation"><span class="dot"></span><span class="lb">Admin<br>Confirmation</span><i class="bdg" id="confN" hidden>0</i></button>
-    <button class="gearbtn" id="openSt" type="button" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
-    <div class="logo">A</div>
-  </div>
-</header>
+<div id="gate"><div><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your access…</p><a class="btn" href="/home.html" style="text-decoration:none">← Home</a></div></div>
+<header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🛠 Workshop</h1><div class="sub">Send order & readymade products to the workshop group</div></div></div></header>
 <main>
-  <div id="gate" class="card" style="display:none"><h2>🔒 No access</h2><p id="gateMsg" class="hint">The Production &amp; Dispatch section is only for admins the main admin gave it to.</p></div>
-  <div id="view" style="display:none">
-    <!-- v175: CONFIRMATION MOVEMENTS — always the first thing on the page -->
-    <section id="movesTop" class="card moves" aria-live="polite" style="display:none"></section>
-    <div id="msg" class="msg"></div>
+  <div class="msg" id="msg"></div>
 
-    <details class="card set" id="setBox">
-      <summary>
-        <div class="ico"><svg class="i"><use href="#i-gear"/></svg></div>
-        <div class="st"><b>Workshop, finishing, stock &amp; driver places</b><span id="setSum">Loading…</span></div>
-        <svg class="i chev"><use href="#i-chev"/></svg>
-      </summary>
-      <div class="body">
-        <div class="hint" style="margin-top:12px">These settings are <b>only yours</b>. Choose <b>three places</b> in your Telegram groups (a group, or one topic of a group). A job goes first to the <b>Workshop</b>; when the workshop presses <b>🛠 Finished workshop</b> it moves to <b>Finishing</b>; there <b>✅ Finished</b> posts the product in your selected <b>Stock group</b>, where you can mark it Sold Out or Restock. The optional <b>🚚 Driver</b> place (a group + its Driver topic) receives a <b>finished order</b> — or a <b>sold readymade product</b> — when you press <b>🚚 Send to driver</b>.</div>
-        <div class="hint"><b>All production and material messages are sent from YOUR connected Telegram account — never by the bot.</b> The selected group/topic is only the destination.</div>
-        <div id="senderLine" class="hint"></div>
-        <div id="slots"></div>
-        <div id="botLine" class="hint"></div>
-
-        <h2 style="margin-top:20px"><svg class="i"><use href="#i-send"/></svg>How do orders go to the workshop?</h2>
-        <label class="mode" data-m="manual"><input type="radio" name="mode" value="manual"><div><b>I send them myself</b><small>Nothing is sent by itself. In the <b>Orders</b> tab you press <b>Send to workshop</b>.</small></div></label>
-        <label class="mode" data-m="after_confirm"><input type="radio" name="mode" value="after_confirm"><div><b>After the customer confirms</b><small>The order goes to the workshop automatically the moment the customer presses <b>Confirm</b> (and the card was delivered).</small></div></label>
-        <div class="btns"><button class="btn" id="saveBtn" type="button">Save settings</button><button class="btn sec sm" id="checkBtn" type="button">Check topic access</button><button class="btn gold sm" id="testBtn" type="button"><svg class="i"><use href="#i-send"/></svg>Send a test message</button></div>
-      </div>
-    </details>
-
-    <div class="seg" id="seg"></div>
-    <div id="subWrap" style="display:none"><div class="seg sub" id="subSeg"></div></div>
-    <div id="out"></div>
-
-    <!-- CUSTOM PRODUCT (new design) — sent to the workshop through the list below -->
-    <div id="cusForm" class="card" style="display:none">
-      <h2><svg class="i"><use href="#i-pen"/></svg>New design — custom product</h2>
-      <div class="hint">For a product that is <b>not</b> in the standard list. Add its photo, name and measurement; it goes into the list below and is sent to the workshop with the rest.</div>
-      <label class="lab">Photo of the new design</label>
-      <img id="uImg" class="pv" alt="">
-      <input type="file" id="uFile" accept="image/*" style="display:none">
-      <div class="drop" id="uDrop"><svg class="i"><use href="#i-cam"/></svg><b id="uDropT">Tap to add the photo</b><span>Take a picture or choose one from your phone</span></div>
-      <label class="lab">Product type</label><div id="uTypeBox"></div>
-      <label class="lab">Design / product name</label>
-      <input type="text" id="uName" placeholder="e.g. TV stand with open shelf" autocomplete="off">
-      <label class="lab">Quantity</label>
-      <div class="qty"><button type="button" id="uMinus">−</button><input type="number" id="uQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="uPlus">+</button></div>
-      <div class="idbox" id="uIdBox"><div class="idh">🔖 Product IDs <span id="uIdN"></span></div><div class="ids" id="uIds"></div></div>
-      <label class="lab">Measurement</label>
-      <input type="text" id="uSize" placeholder="e.g. 120 × 40 × 90" autocomplete="off">
-      <label class="lab">Which order is it for? (optional — its Order ID goes to the workshop)</label>
-      <select id="uOrder"></select><input type="text" id="uOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"><label class="lab">Color (choose or type)</label><input type="text" id="uColor" list="colorList" placeholder="e.g. Walnut" autocomplete="off">
-      <label class="lab">Additional notes (optional)</label>
-      <textarea id="uNote" placeholder="Material, colour, handle, anything the workshop must know…"></textarea>
-      <div id="uMsg" class="msg" style="margin-top:12px"></div>
-      <div class="btns"><button class="btn block" id="uAdd" type="button"><svg class="i"><use href="#i-plus"/></svg>Add to list</button></div>
-    </div>
-
-    <div id="basket"></div>
-    <details class="card" style="margin-top:14px" id="lastSends"><summary style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px"><b><svg class="i"><use href="#i-list"/></svg> My last sends</b><span class="pill gray">Tap to view</span></summary><div style="padding-top:12px"><div class="log-head"><span class="hint">Send history</span><select id="logFilter" aria-label="Choose sends to view"><option value="all">All sends</option><option value="success">Successful</option><option value="failed">Failed</option></select></div><div id="log" class="log"></div></div></details>
-    <div class="dock" id="dock">
-      <button type="button" id="openDrv">🚚 Driver dispatch <span class="bn" id="drvN"></span></button>
-      <button type="button" id="openMat">🧱 Material dispatch</button>
-    </div>
+  <div class="card">
+    <h2>📨 Workshop group</h2>
+    <div class="grp"><div><b id="gName">—</b><div class="hint" id="gHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="gPick">Choose group</button><button class="btn sm sec" id="gTest">Send test</button></div></div>
   </div>
+
+  <div class="seg" id="seg"><button data-t="orders" class="on">📋 Order products</button><button data-t="ready">🛋 Readymade</button><button data-t="sent">🕘 Sent</button></div>
+  <div id="out"></div>
 </main>
+<div class="bar" id="bar"><b id="barTxt"></b><button class="btn" id="barGo">📤 Send selected</button></div>
 
-<div class="ov" id="pickOv"><div class="box">
-  <h2 id="pickTitle" style="margin:0 0 6px">Choose the group</h2>
-  <div id="pickStep1">
-    <div class="hint">Groups your own Telegram account is a member of. Tap one. Groups with topics let you choose the topic next.</div>
-    <input type="text" id="pickSearch" placeholder="Search my groups…" autocomplete="off">
-    <div id="pickList" style="margin-top:6px"></div>
-    <label class="lab">…or paste a link</label>
-    <div class="r2" style="grid-template-columns:1fr 92px"><input type="text" id="linkIn" placeholder="Group / topic link, @username or id" autocomplete="off"><button class="btn sec sm" id="linkGo" type="button">Use link</button></div>
-    <div class="hint">Open the group (or the topic) in Telegram, long-press a message → <b>Copy link</b>, paste it here.</div>
-  </div>
-  <div id="pickStep2" style="display:none">
-    <button class="btn sec sm" id="topicBack" type="button">← Groups</button>
-    <div class="hint" style="margin-top:10px">Choose the topic of <b id="topicGroup"></b>:</div>
-    <div id="topicList"></div>
-  </div>
-  <div class="btns"><button class="btn sec" id="pickClose" type="button">Close</button></div>
-</div></div>
-<div class="ov" id="addOv"><div class="box">
-  <div style="display:flex;gap:12px;align-items:center"><img id="aImg" alt="" style="width:76px;height:76px;border-radius:16px;object-fit:cover;background:#ece7da"><div><h2 id="aName" style="margin:0">Product</h2><div class="hint" style="margin:2px 0 0" id="aType">Choose quantity, measurement and type</div></div></div>
-  <label class="lab">Order or Readymade</label>
-  <div class="tog"><button type="button" id="kOrder" data-k="order"><svg class="i"><use href="#i-box"/></svg>Order</button><button type="button" id="kReady" data-k="readymade"><svg class="i"><use href="#i-sofa"/></svg>Readymade</button></div>
-  <div id="aOrderBox" style="display:none"><label class="lab">Which order? (the order ID goes to the workshop)</label><select id="aOrder"></select><input type="text" id="aOrderTyped" placeholder="Type the order ID (e.g. 1052)" autocomplete="off" style="display:none;margin-top:8px"><label class="lab">Color (choose or type)</label><input type="text" id="aColor" list="colorList" placeholder="e.g. Walnut" autocomplete="off"></div><datalist id="colorList"><option value="Black"><option value="White"><option value="Brown"><option value="Walnut"><option value="Oak"><option value="Grey"><option value="Beige"><option value="Cream"><option value="Natural wood"><option value="Gold"><option value="Silver"><option value="Blue"><option value="Green"><option value="Red"></datalist>
-  <label class="lab">Quantity</label>
-  <div class="qty"><button type="button" id="qMinus">−</button><input type="number" id="aQty" value="1" min="1" max="9999" inputmode="numeric"><button type="button" id="qPlus">+</button></div>
-  <div class="idbox" id="aIdBox"><div class="idh">🔖 Product IDs <span id="aIdN"></span></div><div class="ids" id="aIds"></div><div class="hint" style="margin:6px 0 0">Each unit gets its own ID automatically.</div></div>
-  <label class="lab">Measurement</label>
-  <div class="szs" id="aSizes"></div>
-  <input type="text" id="aSize" placeholder="Choose above or type the measurement (e.g. 120 × 40 × 90)" autocomplete="off">
-  <label class="lab">Additional notes (optional)</label>
-  <textarea id="aNote" placeholder="Anything the workshop must know…"></textarea>
-  <div id="aMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="aAdd" type="button"><svg class="i"><use href="#i-plus"/></svg>Add to list</button><button class="btn sec" id="aClose" type="button">Cancel</button></div>
-</div></div>
-<div class="ov" id="confOv"><div class="box">
-  <h2 style="margin:0 0 10px">🛡 Admin Confirmation</h2>
-  <div id="confBody"></div>
-  <div class="btns"><button class="btn sec" id="confClose" type="button">Close</button></div>
-</div></div>
-<div class="ov" id="prOv"><div class="box">
-  <h2 style="margin:0 0 4px">✏️ Edit product</h2><div class="hint" id="prInfo" style="margin:0"></div>
-  <label class="lab">Product ID</label><input type="text" id="prCode" autocomplete="off">
-  <label class="lab">Product type</label><input type="text" id="prType" list="prTypes" autocomplete="off"><datalist id="prTypes"></datalist>
-  <label class="lab">Model / name</label><input type="text" id="prModel" autocomplete="off">
-  <label class="lab">Measurement / description</label><input type="text" id="prDesc" autocomplete="off">
-  <label class="lab">Handle</label><input type="text" id="prHandle" autocomplete="off">
-  <label class="lab">Priority</label><select id="prPrio"><option value="LOW">Normal</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option></select>
-  <label class="lab">Note</label><input type="text" id="prNote" autocomplete="off">
-  <div id="prMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="prOk" type="button">Save changes</button><button class="btn sec" id="prNo" type="button">Cancel</button></div>
-</div></div>
-<div class="ov" id="matOv"><div class="box">
-  <h2 id="mTitle" style="margin:0 0 4px">Material</h2><div class="hint" id="mInfo" style="margin:0"></div>
-  <div id="mNew">
-    <label class="lab">Material</label><input type="text" id="mName" placeholder="e.g. NORMAL MDF" autocomplete="off">
-    <label class="lab">Type (optional)</label><input type="text" id="mType" placeholder="e.g. 18" autocomplete="off">
-    <label class="lab">Unit</label><input type="text" id="mUnit" value="244-122" autocomplete="off">
-    <label class="lab">Table (group)</label><input type="text" id="mGroup" list="mGroups" autocomplete="off"><datalist id="mGroups"></datalist>
-  </div>
-  <label class="lab" id="mQtyLab">Quantity</label><input type="number" id="mQty" inputmode="decimal" min="0" step="any" placeholder="0">
-  <div id="mNoteBox"><label class="lab">Note (optional)</label><input type="text" id="mNote" autocomplete="off"></div>
-  <div id="mMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="mOk" type="button">Save</button><button class="btn sec" id="mNo" type="button">Cancel</button></div>
-</div></div>
-<div class="ov" id="drvOv"><div class="box">
-  <h2 style="margin:0 0 2px">🚚 Driver dispatch</h2>
-  <div class="hint" style="margin:0">Posted in your Driver topic from your own Telegram account: product photo, customer info and the remaining balance.</div>
-  <div id="dWarn"></div>
-  <label class="lab">What are you sending?</label>
-  <div class="tog"><button type="button" id="dkReady" data-dm="ready">🛋 Readymade sale</button><button type="button" id="dkOrder" data-dm="order">📦 Finished order</button></div>
-  <label class="lab" id="dPickLab">Product</label>
-  <select id="dPick"></select>
-  <div class="hint" id="dEmpty" style="margin:6px 0 0"></div>
-  <div class="item dprev" id="dPrev"></div>
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 
-  <div id="dCusBox"></div>
-  <div id="dDir">
-  <label class="lab">Customer — pick from the directory, or type</label>
-  <input type="text" id="dCustQ" placeholder="Search customer name, phone or ID…" autocomplete="off">
-  <select id="dCust" style="margin-top:8px"></select>
-  </div>
-  <div id="dForm">
-  <div class="r2e">
-    <div><label class="lab">Name</label><input type="text" id="dName" autocomplete="off"></div>
-    <div><label class="lab">Phone</label><input type="text" id="dPhone" inputmode="tel" autocomplete="off"></div>
-  </div>
-  <label class="lab">Location</label>
-  <input type="text" id="dLoc" placeholder="Address, or a Google Maps link" autocomplete="off">
-  <label class="lab">Remaining balance (Birr)</label>
-  <input type="number" id="dBal" inputmode="decimal" min="0" step="any" placeholder="0">
-  <div class="hint" id="dBalHint" style="margin:6px 0 0"></div>
-  <label class="lab">Note for the driver (optional)</label>
-  <textarea id="dNote" placeholder="Delivery time, floor, handling…"></textarea>
-  <div id="dMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn block" id="dSend" type="button">🚚 Send to driver</button></div>
-  </div>
-
-  <div class="dsec">
-    <h3>🚛 On the way <span class="pill wait" id="dWayN">0</span></h3>
-    <div class="hint" style="margin:0 0 8px">The driver presses <b>✅ Delivered</b> in the Telegram driver topic. The product then moves to the Delivered list below by itself.</div>
-    <div id="dWay"></div>
-    <div id="dDoneBox"></div>
-  </div>
-  <div class="btns"><button class="btn sec" id="dClose" type="button">Close</button></div>
-</div></div>
-<div class="ov" id="stOv"><div class="box">
-  <h2 style="margin:0 0 2px">⚙️ Settings</h2>
-  <div class="hint" style="margin:0">Workshop places, the monthly report and Start from 0.</div>
-  <div id="stMsg" class="msg" style="display:none"></div>
-
-  <div class="stcard">
-    <h3>📍 Workshop, finishing, stock &amp; driver places</h3>
-    <div class="hint" style="margin:0">Choose the Telegram groups and topics that jobs are posted in.</div>
-    <div class="btns"><button class="btn sec sm" id="stPlaces" type="button">Open places</button></div>
-  </div>
-
-  <div class="stcard" id="roleCard" style="display:none">
-    <h3>🔐 Admin roles</h3>
-    <div class="hint" style="margin:0">Choose which Workshop details each admin can use. Tick only what that admin should see and work on. Admins you have not changed keep everything.</div>
-    <div id="roleList"></div>
-  </div>
-
-  <div class="stcard">
-    <h3>📄 Monthly report (PDF)</h3>
-    <div class="hint" style="margin:0">When an Ethiopian month is finished, the <b>bot</b> sends the full PDF report (sold, finished, stock, workflow, jobs, dispatches, materials and movements, with photos) to the main admins. The new month then starts and the next report counts only the new month.</div>
-    <div class="hint" id="stMonth" style="margin:8px 0 0"></div>
-    <div id="stOwnerBox">
-      <label class="sttog"><input type="checkbox" id="stAuto"><span><b>Send the report automatically</b> when the month is finished</span></label>
-      <label class="sttog"><input type="checkbox" id="stZeroAuto"><span>After it is sent, also <b>start from 0</b> automatically (only the movements of the finished month are cleared)</span></label>
-    </div>
-    <div class="btns"><button class="btn gold sm" id="stSendNow" type="button">📄 Send this month's report to me now</button></div>
-  </div>
-
-  <div class="stcard danger" id="stZeroCard">
-    <h3>🔄 Start from 0</h3>
-    <div class="hint" style="margin:0">First the bot sends you the full PDF report. Then only the <b>old movements</b> are cleared.</div>
-    <div class="hint" style="margin:8px 0 0"><b>Kept — never removed:</b></div>
-    <ul class="stlist"><li>Standard products</li><li>Progress (jobs in the workshop / finishing) and Workflow orders</li><li>Products in stock</li><li>All materials and their stock</li></ul>
-    <div class="hint" style="margin:8px 0 0"><b>Cleared:</b> sold products, the material movements list, delivered driver dispatches and finished jobs already delivered. Deliveries still on the way stay.</div>
-    <div id="stOwnerOnly" class="hint" style="display:none;margin-top:8px">Only a main admin can start from 0.</div>
-    <div id="stZeroBox">
-      <label class="lab">Type <b>ZERO</b> to confirm</label>
-      <input type="text" id="stConfirm" placeholder="ZERO" autocomplete="off" autocapitalize="characters">
-      <div class="btns"><button class="btn danger" id="stZero" type="button">Start from 0</button><button class="btn sec sm" id="stForce" type="button" style="display:none">Reset anyway (no PDF)</button></div>
-    </div>
-  </div>
-  <div class="btns"><button class="btn sec" id="stClose" type="button">Close</button></div>
-</div></div>
-
-<div class="ov" id="mdOv"><div class="box">
-  <h2 style="margin:0 0 2px">🧱 Material dispatch</h2>
-  <div class="hint" style="margin:0">Posted in your Material topic from your own Telegram account.</div>
-  <div id="mdWarn"></div>
-
-  <h3 style="margin:16px 0 4px;font-size:14px">✂️ Cut a material</h3>
-  <div class="hint" style="margin:0">Choose the material and the amount you cut. It is posted in the group <b>and</b> taken off the stock here at the same moment.</div>
-  <label class="lab">Material</label>
-  <select id="mdSel"></select>
-  <label class="lab">Amount cut</label>
-  <input type="number" id="mdQty" inputmode="decimal" min="0" step="any" placeholder="0">
-  <div class="hint" id="mdLeft" style="margin:6px 0 0"></div>
-  <label class="lab">Note (optional)</label>
-  <input type="text" id="mdNote" placeholder="e.g. for order 1052" autocomplete="off">
-  <div class="btns"><button class="btn block" id="mdCut" type="button">✂️ Cut &amp; send to group</button></div>
-
-  <div class="dsec">
-    <h3>📤 Send available materials <span class="pill gray" id="mdCount">0</span></h3>
-    <div class="hint" style="margin:0 0 8px">Sends every material that still has stock, with its quantity, to the Material topic.</div>
-    <div class="dscroll" id="mdList"></div>
-    <label class="lab">Note (optional)</label>
-    <input type="text" id="mdAllNote" placeholder="Pickup point, needed date…" autocomplete="off">
-    <div class="btns"><button class="btn gold block" id="mdAll" type="button">📤 Send all available to the group</button></div>
-  </div>
-  <div id="mdMsg" class="msg" style="margin-top:12px"></div>
-  <div class="btns"><button class="btn sec" id="mdClose" type="button">Close</button></div>
-</div></div>
-<div class="ov" id="catOv"><div class="box">
-  <h2 id="cTitle" style="margin:0 0 2px">Add standard product</h2><div class="hint" style="margin:0 0 4px">The workshop sees this photo, so make it clear. Measurements appear as one-tap choices.</div>
-  <label class="lab">Product name</label><input type="text" id="cName" placeholder="e.g. Shoe shelf 4 doors" autocomplete="off">
-  <label class="lab">Product type</label><div id="cTypeBox"></div>
-  <label class="lab">Photo</label><img id="cImg" class="pv" alt=""><input type="file" id="cFile" accept="image/*" style="display:none"><div class="drop" id="cPick"><svg class="i"><use href="#i-cam"/></svg><b id="cPickT">Tap to add the photo</b><span>Take a picture or choose one from your phone</span></div>
-  <label class="lab">Standard measurements (one per line)</label><textarea id="cSizes" placeholder="120 × 40 × 90&#10;100 × 35 × 80"></textarea>
-  <div id="cMsg" class="msg" style="margin-top:10px"></div>
-  <div class="btns"><button class="btn" id="cSave" type="button">Save</button><button class="btn sec" id="cClose" type="button">Cancel</button><button class="btn sm danger" id="cDel" type="button" style="display:none">Delete</button></div>
-</div></div>
-<div class="busy" id="busy"><div class="spin"></div><span id="busyTx">Please wait…</span></div>
 <script>
 const $=id=>document.getElementById(id);
-const PTYPES=["Shoe Shelf","Console Table","Chest Drawer","Center Table","TV Stand","Dining Table","Mirror"];
-const typeSel=(id,otherId)=>'<select id="'+id+'"><option value="">— Choose the product type —</option>'+PTYPES.map(t=>'<option>'+t+'</option>').join("")+'<option value="__other">Other…</option></select><input type="text" id="'+otherId+'" placeholder="Type the product type (e.g. Bookshelf)" autocomplete="off" style="display:none;margin-top:8px">';
-const typeVal=(id,otherId)=>{const v=$(id).value;return v==="__other"?$(otherId).value.trim():v;};
-const typeSet=(id,otherId,t)=>{t=t||"";const k=PTYPES.includes(t);$(id).value=t?(k?t:"__other"):"";$(otherId).value=t&&!k?t:"";$(otherId).style.display=t&&!k?"block":"none";};
-const typeWire=(id,otherId)=>$(id).addEventListener("change",()=>{const o=$(id).value==="__other";$(otherId).style.display=o?"block":"none";if(o)$(otherId).focus();});
-const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const ic=(n,st)=>'<svg class="i"'+(st?' style="'+st+'"':"")+'><use href="#i-'+n+'"/></svg>';
-let meRole="";let S={settings:{workshop:null,finishing:null,stock:null,driver:null,material:null,mode:"manual"},orders:[],readymade:[],jobs:[],doneJobs:[],catalog:[],log:[],sender:{}},tab="o",sub="std",ws=null,fin=null,stock=null,drv=null,matTopic=null,mode="manual",pickRole="workshop",pickGroups=[],basket=[],stdQ="",curP=null,editId="",newPhoto="",uPhoto="";
-const say=(t,kind)=>{const e=$("msg");e.className="msg "+(kind||"info");e.textContent=t||"";e.style.display=t?"block":"none";if(t)window.scrollTo({top:0,behavior:"smooth"});};
-const say2=(id,t,kind)=>{const e=$(id);e.className="msg "+(kind||"bad");e.textContent=t||"";e.style.display=t?"block":"none";};
-const busy=t=>{$("busyTx").textContent=t||"Please wait…";$("busy").classList.toggle("on",!!t);};
+const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S=null,TAB="orders",SEL=new Set(),Q="",BUSY=false;
+try{const t=localStorage.getItem("wsTab");if(["orders","ready","sent"].includes(t))TAB=t;}catch{}
+
 async function api(path,body){
-  const o=body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)};
-  let d;try{const r=await fetch(path,o);try{d=await r.json();}catch{d={ok:false,error:"Server answered with an error ("+r.status+")."};}if(r.status===401||r.status===403)d.ok=false;}catch(e){d={ok:false,error:"No connection to the server."};}
-  if(d&&d.settings){const ok=d.ok,er=d.error;S={...S,...d};delete S.ok;delete S.error;d.ok=ok;d.error=er;} // always refresh the lists, but keep the REAL result of the call
-  return d;
+  try{const r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    let d={};try{d=await r.json();}catch{}
+    if(r.status===401||r.status===403){gate(d.error||"No access.");}
+    return d;}catch(e){return{ok:false,error:"Could not reach the server. Try again."};}
 }
-const tName=g=>(g.title||(/^-/.test(g.chat)?"Group "+g.chat:"@"+g.chat))+(g.topic?" › "+(g.topicTitle||"topic "+g.topic):"");
-const emptyBox=(icon,t,s)=>'<div class="empty"><div class="em">'+ic(icon)+'</div><b>'+t+'</b>'+s+'</div>';
-const sameP=(a,b)=>JSON.stringify(a||null)===JSON.stringify(b||null);
-function renderSettings(){
-  const st=S.sender||{};
-  $("senderLine").innerHTML=st.ready?'<span class="pill ok">● Your Telegram account is connected'+(st.label?" · "+esc(st.label):"")+'</span> <span style="display:block;margin-top:4px">It is used to list your groups and topics.</span>':'<span class="pill wait">● Your Telegram account is not connected</span> <span style="display:block;margin-top:6px">You can still paste a group / topic link. To pick from your groups and topics, connect it: Settings → Connect my Telegram account.</span>';
-  const slot=(cls,icon,label,g,role)=>'<div class="slot '+cls+'"><div class="si">'+icon+'</div><div class="sm"><b>'+label+'</b>'+(g?'<span>'+esc(tName(g))+'</span>':'<span class="none">Not chosen yet</span>')+'</div><div class="sb"><button class="btn sec sm" type="button" data-pick="'+role+'">'+(g?"Change":"Choose")+'</button>'+(g?'<button class="btn sec sm" type="button" data-clear="'+role+'">Clear</button>':"")+'</div></div>';
-  $("slots").innerHTML=slot("","🛠","Workshop",ws,"workshop")+slot("fin","🪚","Finishing",fin,"finishing")+slot("stock","📦","Stock",stock,"stock")+slot("stock","🚚","Driver",drv,"driver")+slot("stock","🧱","Material topic",matTopic,"material");
-  document.querySelectorAll(".mode").forEach(l=>{const on=l.dataset.m===mode;l.classList.toggle("on",on);l.querySelector("input").checked=on;});
-  const sv=S.settings||{};
-  const dirty=!sameP(ws,sv.workshop)||!sameP(fin,sv.finishing)||!sameP(stock,sv.stock)||!sameP(drv,sv.driver)||!sameP(matTopic,sv.material)||mode!==sv.mode;
-  $("setSum").textContent=(sv.workshop?"🛠 "+tName(sv.workshop):"No workshop place yet")+(sv.finishing?" · 🪚 "+tName(sv.finishing):"")+(sv.stock?" · 📦 "+tName(sv.stock):"")+(sv.driver?" · 🚚 "+tName(sv.driver):"")+(sv.material?" · 🧱 "+tName(sv.material):"")+(dirty?" · not saved":"");
-}
-const stagePill=j=>!j?'<span class="pill blue">Ready to send</span>':j.stage==="workshop"?'<span class="pill wait">🛠 In workshop</span>':j.stage==="finishing"?'<span class="pill blue">🪚 In finishing</span>':'<span class="pill ok">✅ Finished · in stock</span>';
-const prioPill=p=>p==="HIGH"?'<span class="pill bad">High priority</span>':p==="MEDIUM"?'<span class="pill wait">Medium</span>':'<span class="pill gray">Normal</span>';
-// ── MATERIAL (v161): the same materials as Reports → Material ──
-const nfm=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:3});
-let matQ="";
-function matView(){
-  return '<div class="sec-h"><b>🧱 Material</b><span>'+(S.materials||[]).length+' kinds · linked to Reports</span></div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="mSearch" placeholder="Search material…" autocomplete="off" value="'+esc(matQ)+'"></div><button class="btn gold sm" type="button" data-mnew="1">'+ic("plus")+'New material</button></div><div id="matList">'+matList()+'</div>';
-}
-function matList(){
-  const q=matQ.trim().toLowerCase(),L=(S.materials||[]).filter(m=>!q||(m.name+" "+m.type+" "+m.unit+" "+m.group).toLowerCase().includes(q)),gs=(S.matGroups||[]).slice();L.forEach(m=>{if(!gs.includes(m.group))gs.push(m.group);});
-  const pendAdd=id=>((S.moves&&S.moves.pending)||[]).filter(x=>x.type==="add"&&x.kind==="add"&&x.materialId===id);
-  const row=m=>{const pa=pendAdd(m.id);const low=m.qty<=0?"out":(m.min>0&&m.qty<=m.min?"low":"ok");const pill=low==="ok"?'<span class="pill ok">OK</span>':'<span class="pill '+(low==="out"?"bad":"wait")+'">'+(low==="out"?"OUT":"LOW")+'</span>';
-    return '<div class="item"><div class="mid"><div class="nm">'+esc(m.name+(m.type?" "+m.type:""))+'</div><div class="meta"><b style="font-size:15px;color:'+(m.qty<5?"#cc0000":"var(--ink)")+'">'+nfm(m.qty)+'</b> '+esc(m.unit)+' · '+pill+'</div></div><div class="act" style="flex-direction:row;flex-wrap:wrap;justify-content:flex-end"><button class="btn sec sm" type="button" data-medit="'+esc(m.id)+'" title="Edit">✏️</button>'+(S.isOwner?'<button class="btn sec sm" type="button" data-mfix="'+esc(m.id)+'" title="Fix stock">🛠</button><button class="btn sec sm" type="button" data-mdel="'+esc(m.id)+'" title="Delete">🗑</button>':'')+'<button class="btn sm" type="button" data-madd="'+esc(m.id)+'">➕ Add</button><button class="btn sec sm" type="button" data-mcut="'+esc(m.id)+'">✂️ Cut</button></div></div>';};
-  let h=gs.map(g=>{const X=L.filter(m=>m.group===g);return X.length?'<div class="sec-h" style="margin-top:14px"><b style="font-size:13px;color:var(--mute)">'+esc(g)+'</b><span>'+X.length+'</span></div>'+X.map(row).join(""):"";}).join("");
-  if(!L.length)h+=q?emptyBox("search","No material found","Nothing matches “"+esc(matQ)+"”."):emptyBox("box","No material yet","Tap <b>New material</b>. Materials added here also appear in Reports → Material.");
-  return h;
-}
-document.addEventListener("input",e=>{if(e.target.id==="mSearch"){matQ=e.target.value;const l=$("matList");if(l)l.innerHTML=matList();}});
-let MAT=null;
-function openMat(kind,m){
-  MAT={kind,id:m?m.id:""};say2("mMsg","");
-  $("mNew").style.display=kind==="new"?"block":"none";
-  $("mTitle").textContent=kind==="new"?"New material":(kind==="add"?"➕ Add to ":"✂️ Cut from ")+(m?m.name+(m.type?" "+m.type:""):"");
-  $("mInfo").textContent=kind==="new"?"Write the material once. Then use Add when stock arrives and Cut when you use it.":(m?"Now available: "+nfm(m.qty)+" "+m.unit:"");
-  $("mQtyLab").textContent=kind==="new"?"Available now (optional)":"Quantity";
-  $("mName").value="";$("mType").value="";$("mUnit").value="244-122";$("mQty").value="";$("mNote").value="";
-  const gs=(S.matGroups||[]);$("mGroup").value=gs[1]||gs[0]||"MATERIAL";$("mGroups").innerHTML=gs.map(g=>'<option value="'+esc(g)+'">').join("");
-  $("mOk").textContent=S.isOwner?(kind==="new"?"Save material":(kind==="add"?"Add":"✂️ Cut now")):(kind==="new"?"Send for confirmation":(kind==="add"?"Send for confirmation":"✂️ Request cut"));
-  if(!S.isOwner&&(kind==="new"||kind==="add"))$("mInfo").textContent=($("mInfo").textContent||"")+" · ⏳ The Main Admin must approve this before it is added to the stock.";
-  if(kind==="edit"||kind==="fix"){ // v174: Material edit / stock fix live ONLY here (Reports is view-only)
-    $("mNew").style.display=kind==="edit"?"block":"none";
-    $("mTitle").textContent=(kind==="edit"?"✏️ Edit ":"🛠 Fix stock of ")+(m?m.name+(m.type?" "+m.type:""):"");
-    $("mInfo").textContent=kind==="edit"?"Change the name, type, unit or table. To change the quantity use Add / Cut.":"Wrong quantity typed? Write the REAL quantity now. It is saved as a correction in the movement log. Now: "+(m?nfm(m.qty)+" "+m.unit:"");
-    if(m){$("mName").value=m.name;$("mType").value=m.type||"";$("mUnit").value=m.unit||"";$("mGroup").value=m.group||"";}
-    $("mQtyLab").textContent=kind==="edit"?"Low-stock alert (optional)":"Correct quantity";$("mQty").value=kind==="edit"?(m&&m.min?m.min:""):(m?m.qty:"");
-    $("mOk").textContent=kind==="edit"?"Save changes":"Save correction";
-  }
-  $("matOv").classList.add("on");setTimeout(()=>$(kind==="new"?"mName":"mQty").focus(),50);
-}
-$("mNo").onclick=()=>$("matOv").classList.remove("on");
-$("mOk").onclick=async()=>{
-  if(!MAT)return;let path,body;
-  if(MAT.kind==="edit"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/edit";body={id:MAT.id,name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,min:$("mQty").value};}
-  else if(MAT.kind==="fix"){if($("mQty").value==="")return say2("mMsg","Write the correct quantity.");path="/api/workshop/material/correct";body={id:MAT.id,qty:$("mQty").value,note:$("mNote").value};}
-  else if(MAT.kind==="new"){const name=$("mName").value.trim();if(!name)return say2("mMsg","Write the material name.");path="/api/workshop/material/add";body={name,type:$("mType").value,unit:$("mUnit").value,group:$("mGroup").value,qty:$("mQty").value,note:$("mNote").value};}
-  else{if(!(Number($("mQty").value)>0))return say2("mMsg","Write a quantity bigger than 0.");path=MAT.kind==="cut"?"/api/workshop/material/cut":"/api/workshop/material/move";body={id:MAT.id,type:"add",qty:$("mQty").value,note:$("mNote").value};}
-  busy("Saving…");const d=await api(path,body);busy("");
-  if(d.ok){$("matOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("mMsg",d.error||"Could not save.");
-};
-document.addEventListener("click",e=>{
-  const n=e.target.closest("[data-mnew]");if(n)return openMat("new");
-  const ed=e.target.closest("[data-medit]"),fx=e.target.closest("[data-mfix]");
-  if(ed||fx){const id=(ed||fx).dataset.medit||(ed||fx).dataset.mfix,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(ed?"edit":"fix",m);return;}
-  const dl=e.target.closest("[data-mdel]");
-  if(dl){const id=dl.dataset.mdel,m=(S.materials||[]).find(x=>x.id===id);if(m&&confirm("Delete “"+m.name+(m.type?" "+m.type:"")+"”? Its movements stay in the log."))(async()=>{busy("Deleting…");const d=await api("/api/workshop/material/delete",{id});busy("");if(d.ok){render();say(d.message||"Deleted.","ok");}else say(d.error||"Could not delete.","bad");})();return;}
-  const a=e.target.closest("[data-madd]"),c=e.target.closest("[data-mcut]"),el=a||c;if(!el)return;
-  const id=el.dataset.madd||el.dataset.mcut,m=(S.materials||[]).find(x=>x.id===id);if(m)openMat(a?"add":"cut",m);
-});
-document.addEventListener("click",async e=>{ // v175: approve / reject a pending material ADD
-  const a=e.target.closest("[data-addapprove]"),r=e.target.closest("[data-addreject]"),el=a||r;if(!el)return;
-  const id=el.dataset.addapprove||el.dataset.addreject,approve=!!a;
-  if(!confirm(approve?"Approve this material request? It will be added to the Material Stock.":"Reject this material request? The stock stays unchanged."))return;
-  busy(approve?"Approving…":"Rejecting…");const d=await api("/api/workshop/material/add-decide",{id,approve});busy("");
-  if(d.ok){render();say(d.message||"Done.","ok");}else say(d.error||"Could not decide the request.","bad");
-});
-document.addEventListener("click",async e=>{
-  const a=e.target.closest("[data-cutapprove]"),r=e.target.closest("[data-cutreject]"),el=a||r;if(!el)return;
-  const id=el.dataset.cutapprove||el.dataset.cutreject,approve=!!a;
-  if(!confirm(approve?"Approve this material cut?":"Reject this material cut?"))return;
-  busy(approve?"Approving cut…":"Rejecting cut…");
-  const d=await api("/api/workshop/material/cut-decide",{id,approve});
-  busy("");
-  if(d.ok){render();say(d.message||"Done.","ok");}else say(d.error||"Could not decide the cut.","bad");
-});
-const orderOpts=first=>'<option value="">'+first+'</option><option value="__typed">✍ Type the order ID…</option>'+(S.allOrders||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.orderId||("#"+o.id))+' · '+esc(o.product||"")+(o.customerName?" · "+esc(o.customerName):"")+(o.status&&o.status!=="Confirmed"?" ["+esc(o.status)+"]":"")+'</option>').join("");
-// the order chosen in a "Which order?" box: a listed order (any status) or a TYPED order ID → {orderId,orderLabel} (null = nothing chosen)
-function pickedOrder(selId,typedId){const v=$(selId).value;if(v==="__typed"){const t=$(typedId).value.trim().slice(0,40);return t?{orderId:"",orderLabel:t,typed:true}:null;}if(!v)return null;const o=(S.allOrders||[]).find(x=>String(x.id)===v);return o?{orderId:o.id,orderLabel:o.orderId||("#"+o.id),size:o.size}:null;}
-const wireOrderBox=(selId,typedId,sizeId)=>{$(selId).onchange=()=>{const t=$(selId).value==="__typed";$(typedId).style.display=t?"block":"none";if(t)$(typedId).focus();const p=pickedOrder(selId,typedId);if(p&&p.size&&!$(sizeId).value.trim())$(sizeId).value=p.size;};};
-// ── v174: ASSIGN admins to production activities (managers = main admin + admins with the Workshop section) ──
-function asgBar(j,stage){
-  const a=(j.assign||{})[stage],mine=a&&String(a.id)===String(S.meId);
-  const label='<span>👤 <b>'+(stage==="workshop"?"Workshop":"Finishing")+'</b> assigned to: '+(a?'<b>'+esc(a.name)+'</b>'+(mine?' <span class="pill ok">You</span>':''):'<i>nobody</i>')+'</span>';
-  if(!S.canAssign)return '<div class="asgbar">'+label+'</div>';
-  return '<div class="asgbar">'+label+'<select data-assign="'+esc(j.id)+'" data-stage="'+stage+'"><option value="">— Nobody —</option>'+(S.assignable||[]).map(x=>'<option value="'+esc(x.id)+'"'+(a&&String(a.id)===String(x.id)?" selected":"")+'>'+esc(x.name)+(x.main?" (main admin)":"")+'</option>').join("")+'</select></div>';
-}
-document.addEventListener("change",async e=>{
-  const sel=e.target.closest&&e.target.closest("select[data-assign]");if(!sel)return;
-  busy("Assigning…");const d=await api("/api/workshop/job/assign",{id:sel.dataset.assign,stage:sel.dataset.stage,adminId:sel.value});busy("");
-  render();say(d.ok?d.message:(d.error||"Could not assign."),d.ok?"ok":"bad");
-});
-// ── v174: RECORDS = every Reports product; products are edited / deleted ONLY here ──
-let recQ="";
-const stPill=s=>s==="workflow"?'<span class="pill wait">🛠 Workflow</span>':s==="stock"?'<span class="pill ok">📦 In stock</span>':'<span class="pill gray">💰 Sold</span>';
-function recView(){
-  const q=recQ.trim().toLowerCase(),L=(S.records||[]).filter(r=>!q||[r.code,r.model,r.desc,r.ptype,r.handle,r.orderRef,r.status].join(" ").toLowerCase().includes(q));
-  return '<div class="sec-h"><b>📋 Product records</b><span>'+L.length+' of '+(S.records||[]).length+' · linked to Reports</span></div><div class="hint" style="margin:-4px 2px 10px">Reports only <b>shows</b> products. Edit or delete a product here.'+(S.isOwner?'':' Deleting is for the main admin.')+'</div><div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="rSearch" placeholder="Search ID, model, type…" autocomplete="off" value="'+esc(recQ)+'"></div></div><div id="recList">'+recList(L)+'</div>';
-}
-function recList(L){
-  if(!L.length)return emptyBox("list","No product records","Products sent to the workshop appear here and in Reports.");
-  return L.slice(0,200).map(r=>'<div class="item">'+(r.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(r.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(r.model||r.desc||r.code)+'</div><div class="meta"><b style="color:var(--ink)">'+esc(r.code)+'</b>'+(r.ptype?' · '+esc(r.ptype):'')+(r.desc&&r.model?'<br>'+esc(r.desc):'')+(r.orderRef?' · Order '+esc(r.orderRef):'')+'</div><div class="tags">'+stPill(r.status)+'</div></div><div class="act"><button class="btn sec sm" type="button" data-pedit="'+esc(r.id)+'">'+ic("edit","width:15px;height:15px")+'Edit</button>'+(S.isOwner?'<button class="btn sec sm" type="button" data-pdel="'+esc(r.id)+'">🗑</button>':'')+'</div></div>').join("");
-}
-document.addEventListener("input",e=>{if(e.target.id==="rSearch"){recQ=e.target.value;const l=$("recList");if(l){const q=recQ.trim().toLowerCase();l.innerHTML=recList((S.records||[]).filter(r=>!q||[r.code,r.model,r.desc,r.ptype,r.handle,r.orderRef,r.status].join(" ").toLowerCase().includes(q)));}}});
-let PR=null;
-document.addEventListener("click",async e=>{
-  const ed=e.target.closest("[data-pedit]"),dl=e.target.closest("[data-pdel]");
-  if(ed){PR=(S.records||[]).find(x=>x.id===ed.dataset.pedit);if(!PR)return;say2("prMsg","");$("prInfo").textContent=PR.code+" · "+(PR.status==="workflow"?"in Workflow":PR.status==="stock"?"in Stock":"sold");
-    $("prTypes").innerHTML=PTYPES.map(t=>'<option value="'+t+'">').join("");$("prCode").value=PR.code;$("prType").value=PR.ptype||"";$("prModel").value=PR.model||"";$("prDesc").value=PR.desc||"";$("prHandle").value=PR.handle||"";$("prPrio").value=PR.priority||"LOW";$("prNote").value=PR.note||"";$("prOv").classList.add("on");return;}
-  if(dl){const r=(S.records||[]).find(x=>x.id===dl.dataset.pdel);if(!r||!confirm("Delete “"+r.code+" · "+(r.model||r.desc)+"” for good?"))return;busy("Deleting…");const d=await api("/api/workshop/product/delete",{id:r.id});busy("");render();say(d.ok?d.message:(d.error||"Could not delete."),d.ok?"ok":"bad");}
-});
-$("prNo").onclick=()=>$("prOv").classList.remove("on");
-$("prOk").onclick=async()=>{
-  if(!PR)return;const code=$("prCode").value.trim();if(!code)return say2("prMsg","The Product ID is needed.");
-  if(!$("prModel").value.trim()&&!$("prDesc").value.trim()&&!$("prType").value.trim())return say2("prMsg","Write the model or the description.");
-  busy("Saving…");
-  const d=await api("/api/workshop/product/edit",{id:PR.id,code,ptype:$("prType").value,model:$("prModel").value,desc:$("prDesc").value,handle:$("prHandle").value,priority:$("prPrio").value,note:$("prNote").value,
-    orderType:PR.orderType,sno:PR.sno,category:PR.category,capacity:PR.capacity,salesName:PR.salesName,location:PR.location,deliveryDate:PR.deliveryDate,changes:PR.changes});
-  busy("");if(d.ok){$("prOv").classList.remove("on");render();say(d.message||"✅ Saved","ok");}else say2("prMsg",d.error||"Could not save.");
-};
-// ── v175: CONFIRMATION MOVEMENTS — pending material requests + inventory movements waiting for the main admin ──
-const mvName=r=>esc(r.material+(r.mtype?" "+r.mtype:""));
-function mvItem(r,canAct){
-  const add=r.type==="add",st=r.status||"pending";
-  const pill=st==="approved"?'<span class="pill ok">✅ Approved</span>':st==="rejected"?'<span class="pill bad">❌ Rejected</span>':'<span class="pill wait">⏳ Pending Admin Confirmation</span>';
-  const title=(add?(r.kind==="new"?"🆕 New material · ":"➕ Add · "):"✂️ Cut · ")+mvName(r)+' · '+esc(String(r.qty))+' '+esc(r.unit);
-  const stock=add?(r.kind==="new"?"Opening stock: "+esc(String(r.qty))+" "+esc(r.unit):"Stock "+esc(String(r.before))+" → "+esc(String(r.after))+(st==="pending"?" after approval":"")):"Available "+esc(String(r.before))+" → after "+esc(String(r.after));
-  const who=canAct?"Requested by "+esc(r.by)+" · ":"";
-  const when=r.created?esc([r.created.d,r.created.t].filter(Boolean).join(" ")):"";
-  const dec=st!=="pending"&&r.decidedBy?'<br>'+(st==="approved"?"Approved":"Rejected")+' by '+esc(r.decidedBy)+(r.decisionNote?' · '+esc(r.decisionNote):''):'';
-  const a=add?"addapprove":"cutapprove",x=add?"addreject":"cutreject";
-  const btns=canAct&&st==="pending"?'<div class="act" style="flex-direction:row"><button class="btn sm" type="button" data-'+a+'="'+esc(r.id)+'">✅ Approve</button><button class="btn sec sm" type="button" data-'+x+'="'+esc(r.id)+'">❌ Reject</button></div>':'';
-  return '<div class="item"><div class="mid"><div class="nm">'+title+'</div><div class="meta">'+who+stock+(r.note?'<br>'+esc(r.note):'')+(when?'<br>'+when:'')+dec+'</div><div class="tags">'+pill+'</div></div>'+btns+'</div>';
-}
-function updMoves(){
-  const el=$("movesTop");if(!el)return;
-  const m=S.moves||{pending:[],decided:[]},owner=!!S.isOwner,n=(m.pending||[]).length;
-  if(owner&&!n){el.style.display="none";return;} // main admin: the section appears only when something waits (he also has the Admin Confirmation button)
-  el.style.display="block";el.classList.toggle("clear",!n);
-  let h='<div class="mh"><b>🛡 Confirmation Movements</b><span class="cnt">'+n+'</span></div>';
-  if(owner)h+='<div class="hint" style="margin:0 2px 8px">Waiting for <b>your</b> approval. Nothing below is in the Material Stock until you approve it.</div>';
-  else h+='<div class="hint" style="margin:0 2px 8px">'+(n?'These requests are <b>waiting for the Main Admin</b>. They are not in the Material Stock yet.':'Nothing is waiting for the Main Admin. Materials you add are sent here first.')+'</div>';
-  h+=(m.pending||[]).map(r=>mvItem(r,owner)).join("");
-  if(!owner&&!n&&!(m.decided||[]).length)h+=emptyBox("box","No pending movements","New materials and stock additions you submit wait here until the Main Admin approves them.");
-  if(!owner&&(m.decided||[]).length)h+='<div class="sub2">Recently decided</div>'+m.decided.map(r=>mvItem(r,false)).join("");
-  el.innerHTML=h;
-}
-// ── v174: ADMIN CONFIRMATION (main admin only): red number = pending inventory movements; dot = cutter actions awaiting approval ──
-function updConf(){
-  const b=$("confBtn"),c=S.confirm;if(!b)return;
-  b.classList.toggle("hide",!S.isOwner);if(!S.isOwner||!c)return;
-  const n=c.pending||0;$("confN").hidden=!n;$("confN").textContent=n>99?"99+":n;b.classList.toggle("wait",!!c.pending);
-  if($("confOv").classList.contains("on"))confRender();
-}
-function confRender(){
-  const c=S.confirm||{pending:0,cutters:0,items:[]};
-  $("confBody").innerHTML='<div class="statusbar '+(c.cutters?"wait":"")+'"><span class="dot"></span><span>'+(c.pending?c.pending+" action"+(c.pending===1?"":"s")+" awaiting approval"+(c.adds?" ("+c.adds+" material add"+(c.adds===1?"":"s")+(c.cutters?", "+c.cutters+" cut"+(c.cutters===1?"":"s"):"")+")":""):"No actions waiting — all clear")+'</span></div>'
-    +'<div class="hint" style="margin:0 2px 10px">Pending inventory movements: <b>'+(c.pending||0)+'</b>'+(c.oldest?' · oldest since '+esc(c.oldest):'')+'. Only the main admin can approve or reject them.</div>'
-    +((c.items||[]).map(r=>mvItem(r,true)).join("")||emptyBox("box","Nothing to confirm","New cutter and material requests show up here with a red number on the Admin Confirmation button."));
-}
-$("confBtn").onclick=()=>{confRender();$("confOv").classList.add("on");};
-$("confClose").onclick=()=>$("confOv").classList.remove("on");
-setInterval(async()=>{if(document.visibilityState!=="visible"||!$("view")||$("view").style.display==="none"||$("matOv").classList.contains("on"))return;const d=await api("/api/workshop/state");if(d.ok){updMoves();updConf();}},15000); // v175: the top section stays fresh (status changes after the Main Admin decides)
-setInterval(async()=>{if(!$("confOv").classList.contains("on")||document.visibilityState!=="visible")return;const d=await api("/api/workshop/state");if(d.ok){updConf();}},6000);
-function render(){
-  updConf();updMoves();
-  {const dv=$("openDrv");if(dv)dv.style.display=myAreas().includes("driver")?"":"none";}
-  renderSettings();
-  updDock();
-  const tabs=[["m","box","Materials",(S.materials||[]).length],["o","box","Orders",S.orders.length],["r","sofa","Workflow",S.readymade.length],["p","list","Progress",S.jobs.length],["s","grid","Products",S.catalog.length],["x","list","Records",(S.records||[]).length]].filter(t=>myAreas().includes(AREA_TAB[t[0]]));
-  if(!tabs.some(t=>t[0]===tab)&&tabs.length)tab=tabs[0][0];
-  if(!tabs.length){$("seg").innerHTML="";$("out").innerHTML='<div class="msg bad" style="display:block">The main admin has not given you any part of the Workshop yet.</div>';return;}
-  $("seg").innerHTML=tabs.map(t=>'<button type="button" data-t="'+t[0]+'" class="'+(tab===t[0]?"on":"")+'">'+ic(t[1])+'<span>'+t[2]+'</span><span class="n">'+t[3]+'</span></button>').join("");
-  $("subWrap").style.display=tab==="s"?"block":"none";
-  if(tab==="x"){$("out").innerHTML=recView();$("cusForm").style.display="none";$("basket").innerHTML="";$("subWrap").style.display="none";return;}
-  if(tab==="m"){$("out").innerHTML=matView();$("cusForm").style.display="none";$("basket").innerHTML="";return;}
-  $("subSeg").innerHTML='<button type="button" data-s="std" class="'+(sub==="std"?"on":"")+'">'+ic("grid")+'Standard products</button><button type="button" data-s="cus" class="'+(sub==="cus"?"on":"")+'">'+ic("pen")+'Custom product</button>';
-  $("cusForm").style.display=tab==="s"&&sub==="cus"?"block":"none";
-  let h="";
-  const unsent=S.orders;
-  const jobCard=(j,btn)=>'<div class="item">'+(j.photo?'<img loading="lazy" src="/api/workshop-photo/'+esc(j.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(j.name)+(j.qty>1?' ×'+j.qty:'')+'</div><div class="meta">'+(j.orderLabel?'<b style="color:var(--ink)">'+esc(j.orderLabel)+'</b>':'<b style="color:var(--ink)">Readymade</b>')+(j.codes&&j.codes.length?' · '+esc(j.codes.join(", ")):'')+(j.size?'<br>'+esc(j.size):'')+(j.wsDone?'<br>Workshop done: '+esc(j.wsDone.by)+' · '+esc(j.wsDone.at):'')+(j.finDone?'<br>Finished: '+esc(j.finDone.by)+' · '+esc(j.finDone.at):'')+'</div><div class="tags">'+stagePill(j)+'</div></div>'+(btn||'')+'</div>';
-  if(tab==="o"){
-    // ORDERABLE orders only: the customer CONFIRMED it and the card was DELIVERED. Rejected / not delivered orders are not listed.
-    h='<div class="sec-h"><b>Orders for the workshop</b><span>'+unsent.length+' ready to send</span></div><div class="hint" style="margin:-4px 2px 10px">Only confirmed, delivered orders that have not yet been sent appear here. After sending, an order disappears from this list and remains in Progress.</div>'+(S.orders.map(o=>{
-      const dates=[o.completionDate?"Ready: "+esc(o.completionDate):"",o.deliveryDate?"Delivery: "+esc(o.deliveryDate):""].filter(Boolean).join(" · ");
-      const btn='<div class="act"><button class="btn sm" type="button" data-sendorder="'+esc(o.id)+'">'+ic("send")+'Send</button></div>';
-      return '<div class="item">'+(o.photo?'<img loading="lazy" src="'+esc(o.photo)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(o.product||"Product")+'</div><div class="meta">'+'<div class="ids" data-o="'+esc(o.id)+'"></div>'+'<b style="color:var(--ink)">ORDER ID: '+esc(o.orderId||("#"+o.id))+'</b>'+(o.customerName?" · "+esc(o.customerName):"")+(o.size?"<br>"+esc(o.size):"")+(dates?"<br>"+dates:"")+'</div><div class="tags"><span class="pill ok">Confirmed · delivered</span></div></div>'+btn+'</div>';
-    }).join("")||emptyBox("box","No orders to send","Orders appear here after the customer pressed <b>Confirm</b> and the order card was delivered. Rejected and undelivered orders are not shown."));
-  }else if(tab==="r"){
-    // Reports is the source of truth: show every product currently in Reports → Workflow.
-    const unsent=S.readymade.filter(g=>!g.job),sent=S.readymade.length-unsent.length;
-    h='<div class="sec-h"><b>🛠 Reports · Workflow Products</b><span>'+S.readymade.length+' total · '+unsent.length+' to send · '+sent+' in progress</span></div><div class="hint" style="margin:-4px 2px 10px">This list is linked directly to Reports. Products stay here while their Reports status is Workflow, and move to Reports Stock when finishing is completed.</div>'+(unsent.length>1?'<div class="btns" style="margin:0 0 12px"><button class="btn gold sm" type="button" id="sendAllReady">'+ic("send")+'Send all '+unsent.length+' to the workshop</button></div>':'')+(S.readymade.map(g=>
-      '<div class="item">'+(g.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(g.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(g.model||g.desc||g.code)+'</div><div class="meta">'+(g.desc&&g.model?esc(g.desc)+"<br>":"")+(g.handle?"Handle: "+esc(g.handle)+" · ":"")+'<b style="color:var(--ink)">'+esc(g.code)+'</b>'+(g.orderType&&/ORDER|CUS/i.test(g.orderType)?' · <b>ORDER</b>':' · <b>READYMADE</b>')+(g.orderRef?' · Order ID: '+esc(g.orderRef):'')+(g.started?"<br>Added "+esc(g.started):"")+'</div><div class="tags">'+prioPill(g.priority)+(g.ptype?'<span class="pill blue">'+esc(g.ptype)+'</span>':"")+(g.job?'<span class="pill wait">'+esc(g.job.stageName||g.job.stage||'In workshop')+'</span>':'<span class="pill gray">Reports Workflow · Not sent</span>')+'</div></div>'+(!g.job?'<div class="act"><button class="btn sm" type="button" data-sendprod="'+esc(g.id)+'">'+ic("send")+'Send</button></div>':'')+'</div>'
-    ).join("")||emptyBox("sofa","No Workflow products","Add or move products to Workflow in Reports. They will appear here automatically."));
-  }else if(tab==="p"){
-    // the chain: In workshop → In finishing → Finished (the same buttons as in Telegram)
-    const inW=S.jobs.filter(j=>j.stage==="workshop"),inF=S.jobs.filter(j=>j.stage==="finishing");
-    h='<div class="sec-h"><b>🛠 In workshop</b><span>'+inW.length+'</span></div>'+(inW.map(j=>jobCard(j,'<div class="act"><button class="btn sm" type="button" data-jws="'+esc(j.id)+'">Finished workshop</button></div>')+asgBar(j,"workshop")).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in the workshop.</div>')
-      +'<div class="sec-h" style="margin-top:14px"><b>🪚 In finishing</b><span>'+inF.length+'</span></div>'+(inF.map(j=>jobCard(j,'<div class="act"><button class="btn gold sm" type="button" data-jfin="'+esc(j.id)+'">✅ Finished</button></div>')+asgBar(j,"finishing")).join("")||'<div class="hint" style="margin:0 2px 10px">Nothing in finishing.</div>')
-      +(S.doneJobs.length?'<div class="sec-h" style="margin-top:14px"><b>✅ Finished lately</b><span>'+S.doneJobs.length+'</span></div>'+S.doneJobs.map(j=>jobCard(j,'<div class="act">'+(j.stockState==="sold"?'<button class="btn gold sm" type="button" data-restockjob="'+esc(j.id)+'">♻️ Restock</button>':'<button class="btn sec sm" type="button" data-soldjob="'+esc(j.id)+'">🔴 Sold Out</button>')+(j.driverAt?'<span class="pill ok">🚚 Sent to driver</span>':((j.ordered||j.stockState==="sold")?'<button class="btn sm" type="button" data-driverjob="'+esc(j.id)+'">🚚 Send to driver</button>':""))+'</div>')).join(""):"");
-  }else if(sub==="std"){
-    // v159: ANY admin with the Workshop section can add / change standard products (the input is always visible)
-    const addBtn=(txt)=>'<button class="btn gold" type="button" data-new="1">'+ic("plus")+txt+'</button>';
-    h=S.catalog.length
-      ?'<div class="toolbar"><div class="search">'+ic("search")+'<input type="text" id="stdSearch" placeholder="Search products…" autocomplete="off" value="'+esc(stdQ)+'"></div>'+addBtn("Add product")+'</div>'
-        +'<div class="hint" style="margin:0 2px 12px">Tap a product → choose quantity, measurement and Order / Readymade → it goes into your list below → send the whole list to the workshop.</div>'
-        +'<div class="grid">'+S.catalog.map(p=>'<div class="pc" data-pid="'+esc(p.id)+'" data-q="'+esc((p.name+" "+(p.ptype||"")+" "+(p.sizes||[]).join(" ")).toLowerCase())+'"><div class="ph"><img loading="lazy" src="/api/workshop-photo/'+esc(p.photo)+'.jpg" alt=""></div><button class="ed" type="button" data-edit="'+esc(p.id)+'" aria-label="Edit">'+ic("edit","width:15px;height:15px")+'</button><span class="go">'+ic("plus","width:17px;height:17px")+'</span><div class="pn">'+esc(p.name)+'<small>'+(p.ptype?'<span class="ptp">'+esc(p.ptype)+'</span>':'')+((p.sizes||[]).length?(p.sizes.length+(p.sizes.length>1?" measurements":" measurement")):"No measurement saved")+'</small></div></div>').join("")
-        +'<button class="pc add" type="button" data-new="1"><span class="plus">'+ic("plus","width:22px;height:22px")+'</span>Add product<small>Photo, name &amp; measurements</small></button></div><div class="noRes" id="noRes">No product matches your search.</div>'
-      :emptyBox("grid","No standard products yet","Add your first one: a photo, a name and its standard measurements. Everyone in the workshop can then pick it in one tap.<br>"+addBtn("Add standard product"));
-  }
-  $("out").innerHTML=h;applyStdFilter();
-  // custom form: keep the order list fresh without losing the choice
-  const uo=$("uOrder"),cur=uo.value;
-  const uoKeep=uo.value;uo.innerHTML=orderOpts("No order — new design only");if([...uo.options].some(x=>x.value===uoKeep))uo.value=uoKeep;
-  uo.value=[...uo.options].some(x=>x.value===cur)?cur:"";
-  $("basket").innerHTML=basket.length?'<div class="card" style="margin-top:14px;border-color:#cfe3d8"><h2>'+ic("list")+'List to send ('+basket.length+')</h2>'+basket.map((l,i)=>'<div class="item" style="box-shadow:none"><img src="'+(l.custom?esc(l.photoData):'/api/workshop-photo/'+esc(l.photo)+'.jpg')+'" alt=""><div class="mid"><div class="nm">'+esc(l.name)+' ×'+l.qty+'</div><div class="meta">'+(l.ptype?'<b style="color:var(--ink)">'+esc(l.ptype)+'</b> · ':"")+esc(l.size)+'</div><div class="ids" data-i="'+i+'"></div><div class="tags">'+(l.custom?'<span class="pill blue">New design'+(l.orderLabel?" · "+esc(l.orderLabel):"")+'</span>':l.kind==="order"?'<span class="pill ok">Order '+esc(l.orderLabel)+'</span>':'<span class="pill wait">Readymade</span>')+'</div>'+(l.color?'<div class="meta">🎨 '+esc(l.color)+'</div>':"")+(l.note?'<div class="meta">'+esc(l.note)+'</div>':"")+'</div><button class="btn sec sm" type="button" data-del="'+i+'" aria-label="Remove">✕</button></div>').join("")+'<div class="btns"><button class="btn" id="bSend" type="button">'+ic("send")+'Send list to workshop</button><button class="btn sec" id="bClear" type="button">Clear</button></div></div>':"";
-  loadBasketIds();loadOrderIds();if(tab==="s"&&sub==="cus")pvU();
-  const logMode=$("logFilter")?.value||"all", shown=(S.log||[]).filter(l=>logMode==="all"||(logMode==="success"&&l.ok)||(logMode==="failed"&&!l.ok));
-  $("log").innerHTML=shown.map(l=>'<div>'+(l.ok?"✅":"❌")+' <b>'+esc(l.what)+'</b><div class="meta">'+esc(l.at)+' · '+esc(l.by||"Admin")+(l.error?' — '+esc(l.error):"")+'</div></div>').join("")||'<div class="hint">No sends in this selection.</div>';
-}
-let oSeq=0;
-async function loadOrderIds(){
-  if(tab!=="o"||!S.orders.length)return;const my=++oSeq;
-  const d=await api("/api/workshop/preview-ids",{orders:S.orders.map(o=>o.id)});
-  if(my!==oSeq||!d||!d.ok)return;
-  document.querySelectorAll("#out .ids[data-o]").forEach(e=>{const c=(d.orderCodes||{})[e.dataset.o];e.innerHTML=c?'<span class="idl">Product ID</span><span class="idc">'+esc(c)+'</span>':"";});
-}
-let pvSeq=0,pvT=null;
-function previewFor(qtyId,idsId,nId,typeFn){ // IDs this line will get = continue after the lines already in the list
-  const q=Math.max(1,Math.min(100,Math.floor(Number($(qtyId).value))||1));
-  clearTimeout(pvT);pvT=setTimeout(async()=>{
-    const my=++pvSeq;const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty).concat(q),types:basket.map(l=>l.ptype||"").concat(typeFn?typeFn():"")});
-    if(my!==pvSeq||!d||!d.ok)return;const c=(d.codes||[])[basket.length]||[];
-    $(idsId).innerHTML=c.map(x=>'<span class="idc">'+esc(x)+'</span>').join("");$(nId).textContent=c.length?"("+c.length+")":"";
-  },180);
-}
-const pvA=()=>previewFor("aQty","aIds","aIdN",()=>curP?curP.ptype||"":""),pvU=()=>previewFor("uQty","uIds","uIdN",()=>typeVal("uType","uTypeO"));
-let idSeq=0;
-async function loadBasketIds(){
-  if(!basket.length)return;const my=++idSeq;
-  const d=await api("/api/workshop/preview-ids",{counts:basket.map(l=>l.qty),types:basket.map(l=>l.ptype||"")});
-  if(my!==idSeq||!d||!d.ok||!basket.length)return;
-  document.querySelectorAll("#basket .ids").forEach(e=>{const c=(d.codes||[])[Number(e.dataset.i)]||[];e.innerHTML=c.length?'<span class="idl">Product ID'+(c.length>1?"s":"")+'</span>'+c.map(x=>'<span class="idc">'+esc(x)+'</span>').join(""):"";});
-}
-function results(d){const bad=(d.results||[]).filter(x=>!x.ok);return bad.length?bad.map(x=>x.name+": "+x.error).join(" · "):"";}
-$("logFilter").addEventListener("change",render);
-function applyStdFilter(){const q=stdQ.trim().toLowerCase();let n=0;document.querySelectorAll("#out .pc[data-pid]").forEach(c=>{const ok=!q||c.dataset.q.includes(q);c.style.display=ok?"":"none";if(ok)n++;});const a=document.querySelector("#out .pc.add");if(a)a.style.display=q&&!n?"none":"";const nr=$("noRes");if(nr)nr.style.display=q&&!n?"block":"none";}
-$("out").addEventListener("input",e=>{if(e.target.id==="stdSearch"){stdQ=e.target.value;applyStdFilter();}});
-document.addEventListener("click",e=>{const b=e.target.closest("#seg button[data-t]");if(!b)return;tab=b.dataset.t;render();});
-$("subSeg").addEventListener("click",e=>{const b=e.target.closest("button[data-s]");if(!b)return;sub=b.dataset.s;render();});
-document.querySelectorAll(".mode").forEach(l=>l.addEventListener("click",()=>{mode=l.dataset.m;renderSettings();}));
-$("slots").addEventListener("click",e=>{
-  const c=e.target.closest("button[data-clear]");if(c){if(c.dataset.clear==="workshop")ws=null;else if(c.dataset.clear==="finishing")fin=null;else if(c.dataset.clear==="driver")drv=null;else if(c.dataset.clear==="material")matTopic=null;else stock=null;renderSettings();return;}
-  const p=e.target.closest("button[data-pick]");if(p)openPick(p.dataset.pick);
-});
-const tkey=g=>g&&g.chat?String(g.chat).replace(/^@/,"").toLowerCase()+"|"+(Number(g.topic)>1?Number(g.topic):0):"";
-// v172: topics already assigned (to other admins, or to another place of mine) are hidden — each topic can be assigned only once
-function takenKeys(){
-  const set={},own={workshop:ws,finishing:fin,stock:stock,driver:drv,material:matTopic};
-  (S.takenTopics||[]).forEach(t=>{set[t.k]=1;});
-  Object.keys(own).forEach(r=>{if(r!==pickRole&&own[r])set[tkey(own[r])]=1;});
-  return set;
-}
-function setPlace(g){
-  if(takenKeys()[tkey(g)]){say("This topic is already assigned to another place. Choose a different topic.","bad");return;}
-  if(pickRole==="workshop")ws=g;else if(pickRole==="finishing")fin=g;else if(pickRole==="driver")drv=g;else if(pickRole==="material")matTopic=g;else stock=g;
-  $("pickOv").classList.remove("on");renderSettings();say("Place chosen — press Save settings to keep it.","info");
-}
-async function openPick(role){
-  pickRole=role;$("pickTitle").textContent=role==="workshop"?"Choose the WORKSHOP place":role==="finishing"?"Choose the FINISHING place":role==="driver"?"Choose the DRIVER place (group + Driver topic)":role==="material"?"Choose the MATERIAL topic (group + topic)":"Choose the STOCK place";
-  $("pickStep1").style.display="block";$("pickStep2").style.display="none";$("pickSearch").value="";$("linkIn").value="";
-  $("pickList").innerHTML='<div class="hint">Reading your Telegram groups…</div>';$("pickOv").classList.add("on");
-  const d=await api("/api/workshop/dialogs",{});
-  if(!d.ok){pickGroups=[];$("pickList").innerHTML='<div class="empty" style="padding:16px">'+esc(d.error||"Could not read your groups.")+'</div>';return;}
-  pickGroups=d.groups||[];drawGroups();
-}
-function drawGroups(){
-  const tk=takenKeys(),q=$("pickSearch").value.trim().toLowerCase(),L=pickGroups.filter(g=>(!q||String(g.title).toLowerCase().includes(q))&&(g.forum||!tk[tkey({chat:g.chat,topic:0})]));
-  $("pickList").innerHTML=L.map(g=>'<div class="gi tap" data-g="'+esc(g.chat)+'"><span>'+esc(g.title||g.chat)+'<small>'+(g.forum?"Has topics — tap to choose one":g.channel?"Channel":"Group")+'</small></span><span class="pill '+(g.forum?"blue":"gray")+'">'+(g.forum?"Topics ›":"Use")+'</span></div>').join("")||'<div class="empty" style="padding:16px">'+(pickGroups.length?"No group matches.":"No groups found for your Telegram account.")+'</div>';
-}
-$("pickSearch").addEventListener("input",drawGroups);
-async function showTopics(chat,title,topics){
-  const tk=takenKeys(),all=topics.length;topics=topics.filter(t=>!tk[tkey({chat,topic:t.id})]);
-  if(!topics.length){say(all?"Every topic of this group is already assigned.":"This group has no topics.","bad");return;}
-  $("topicGroup").textContent=title||chat;
-  $("topicList").innerHTML=topics.map(t=>'<div class="gi tap" data-t="'+t.id+'" data-tt="'+esc(t.title)+'"><span>'+esc(t.title)+(t.closed?'<small>Closed topic</small>':"")+'</span><span class="pill blue">Use</span></div>').join("");
-  $("topicList").dataset.chat=chat;$("topicList").dataset.title=title||"";
-  $("pickStep1").style.display="none";$("pickStep2").style.display="block";
-}
-$("pickList").addEventListener("click",async e=>{
-  const r=e.target.closest(".gi[data-g]");if(!r)return;
-  const g=pickGroups.find(x=>x.chat===r.dataset.g);if(!g)return;
-  if(!g.forum)return setPlace({chat:g.chat,title:g.title,topic:0,topicTitle:""});
-  busy("Reading the topics…");const d=await api("/api/workshop/topics",{chat:g.chat});busy("");
-  if(!d.ok)return say(d.error||"Could not read the topics.","bad");
-  if(!d.forum)return setPlace({chat:g.chat,title:g.title,topic:0,topicTitle:""});
-  showTopics(g.chat,g.title,d.topics||[]);
-});
-$("topicList").addEventListener("click",e=>{
-  const r=e.target.closest(".gi[data-t]");if(!r)return;const id=Number(r.dataset.t);
-  setPlace({chat:$("topicList").dataset.chat,title:$("topicList").dataset.title,topic:id>1?id:0,topicTitle:r.dataset.tt});
-});
-$("topicBack").onclick=()=>{$("pickStep2").style.display="none";$("pickStep1").style.display="block";};
-$("linkGo").onclick=async()=>{
-  const v=$("linkIn").value.trim();if(!v)return say("Paste the group link, @username or id first.","bad");
-  busy("Checking the link…");const d=await api("/api/workshop/resolve",{link:v});busy("");
-  if(!d.ok)return say(d.error||"This link could not be used.","bad");
-  if(d.forum&&!d.topic&&(d.topics||[]).length>1)return showTopics(d.chat,d.title,d.topics);   // a group with topics but no topic in the link → choose it
-  setPlace({chat:d.chat,title:d.title||"",topic:d.topic||0,topicTitle:d.topicTitle||""});
-  if(d.unchecked)say("Place added (your Telegram account is not connected, so it could not be checked) — press Save settings.","info");
-};
-$("pickClose").onclick=()=>$("pickOv").classList.remove("on");
-const botReport=d=>(d.checks||[]).map(c=>(c.ok?"✅ ":"❌ ")+c.label+(c.ok?" — the bot can post":" — "+c.error)).join("  ·  ")||(d.error||"");
-async function checkBot(quiet){
-  const d=await api("/api/workshop/bot-check",{workshop:ws,finishing:fin,stock,driver:drv});
-  const t=botReport(d)||"";$("botLine").innerHTML=t?'<span class="pill '+(d.ok?"ok":"bad")+'" style="white-space:normal">'+esc(t)+'</span>'+(d.ok||!d.bot?"":'<span style="display:block;margin-top:6px">Open the group → Add members → <b>@'+esc(d.bot)+'</b>, then make it an admin.</span>'):"";
-  if(!quiet)say(d.ok?"✅ The bot can post in both places.":(t||"The bot check failed."),d.ok?"ok":"bad");
-  return d;
-}
-$("checkBtn").onclick=async()=>{if(!ws||!fin)return say("Choose the workshop, finishing and stock places first.","bad");busy("Checking the bot…");await checkBot(false);busy("");};
-$("saveBtn").onclick=async()=>{
-  busy("Saving…");const d=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,material:matTopic,mode});
-  if(d.ok){ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode;}
-  say(d.ok?d.message:(d.error||"Could not save."),d.ok?"ok":"bad");render();
-  if(d.ok&&ws&&fin){const c=await checkBot(true);if(!c.ok)say((d.message||"")+" ⚠ "+botReport(c),"bad");}
-  busy("");
-};
-$("testBtn").onclick=async()=>{
-  busy("Sending a test message…");
-  const sv=await api("/api/workshop/settings",{workshop:ws,finishing:fin,stock,driver:drv,material:matTopic,mode});
-  if(!sv.ok){busy("");return say(sv.error||"Could not save the places first.","bad");}
-  ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode;
-  const d=await api("/api/workshop/test",{});busy("");render();
-  say(d.ok?d.message:(d.error||"Could not send.")+(results(d)?" "+results(d):""),d.ok?"ok":"bad");
-};
-
-// ── standard products: choose → quantity + measurement + order/readymade → list → send ──
-let aKind="readymade";
-function setKind(k){aKind=k;$("kOrder").classList.toggle("on",k==="order");$("kReady").classList.toggle("on",k==="readymade");$("aOrderBox").style.display=k==="order"?"block":"none";}
-function openAdd(id){
-  const p=S.catalog.find(x=>x.id===id);if(!p)return;curP=p;
-  $("aImg").src="/api/workshop-photo/"+p.photo+".jpg";$("aName").textContent=p.name;$("aType").textContent=p.ptype?"Product type: "+p.ptype:"Choose quantity and measurement";$("aQty").value=1;$("aSize").value="";$("aNote").value="";$("aColor").value="";say2("aMsg","");
-  $("aSizes").innerHTML=(p.sizes||[]).map(z=>'<button type="button" class="sz" data-z="'+esc(z)+'">'+esc(z)+'</button>').join("")||'<div class="hint">No standard measurement saved — type it below.</div>';
-  $("aOrder").innerHTML=orderOpts("— choose the order —");$("aOrderTyped").value="";$("aOrderTyped").style.display="none";
-  setKind("readymade");$("addOv").classList.add("on");pvA();
-}
-$("kOrder").onclick=()=>setKind("order");$("kReady").onclick=()=>setKind("readymade");
-$("qMinus").onclick=()=>{$("aQty").value=Math.max(1,(Number($("aQty").value)||1)-1);pvA();};
-$("qPlus").onclick=()=>{$("aQty").value=Math.min(9999,(Number($("aQty").value)||0)+1);pvA();};
-$("aQty").addEventListener("input",pvA);$("uQty").addEventListener("input",pvU);["change","input"].forEach(ev=>document.addEventListener(ev,e=>{if(e.target&&(e.target.id==="uType"||e.target.id==="uTypeO"))pvU();}));
-$("aSizes").addEventListener("click",e=>{const b=e.target.closest("button[data-z]");if(!b)return;$("aSize").value=b.dataset.z;document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x===b));});
-$("aSize").addEventListener("input",()=>document.querySelectorAll("#aSizes .sz").forEach(x=>x.classList.toggle("on",x.dataset.z===$("aSize").value.trim())));
-wireOrderBox("aOrder","aOrderTyped","aSize");
-$("aClose").onclick=()=>$("addOv").classList.remove("on");
-$("aAdd").onclick=()=>{
-  const qty=Math.floor(Number($("aQty").value)),size=$("aSize").value.trim(),note=$("aNote").value.trim();
-  if(!(qty>=1))return say2("aMsg","Choose the quantity.");
-  if(!size)return say2("aMsg","Choose or type the measurement.");
-  let o=null;if(aKind==="order"){o=pickedOrder("aOrder","aOrderTyped");if(!o)return say2("aMsg","Choose which order this product belongs to, or type the order ID.");}
-  basket.push({pid:curP.id,ptype:curP.ptype||"",name:curP.name,photo:curP.photo,qty,size,note,kind:aKind,color:aKind==="order"?$("aColor").value.trim():"",orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
-  $("addOv").classList.remove("on");render();say("Added to your list — add more, or press Send list to workshop.","info");
-};
-$("out").addEventListener("click",async e=>{
-  const so=e.target.closest("button[data-sendorder],button[data-again]");
-  if(so){const again=!!so.dataset.again,id=so.dataset.sendorder||so.dataset.again;busy("Sending to the workshop…");const r=await api("/api/workshop/send-order",{id,again});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
-  const sp=e.target.closest("button[data-sendprod]");
-  if(sp){busy("Sending to the workshop…");const r=await api("/api/workshop/send-product",{ids:[sp.dataset.sendprod]});busy("");say(r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
-  if(e.target.closest("#sendAllReady")){busy("Sending to the workshop…");const r=await api("/api/workshop/send-product",{ids:S.readymade.filter(g=>!g.job).map(g=>g.id)});busy("");say(r.ok?r.message+(r.error?" ⚠ "+r.error:""):(r.error||"Could not send."),r.ok?"ok":"bad");render();return;}
-  const jw=e.target.closest("button[data-jws]");
-  if(jw){busy("Sending to finishing…");const r=await api("/api/workshop/job/finish-workshop",{id:jw.dataset.jws});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const jf=e.target.closest("button[data-jfin]");
-  if(jf){busy("Moving to stock…");const r=await api("/api/workshop/job/finish",{id:jf.dataset.jfin});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const sold=e.target.closest("button[data-soldjob]");if(sold){busy("Marking Sold Out…");const r=await api("/api/workshop/job/sold-out",{id:sold.dataset.soldjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const drvb=e.target.closest("button[data-driverjob]");if(drvb){busy("Sending to the driver…");const r=await api("/api/workshop/job/send-driver",{id:drvb.dataset.driverjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  const restock=e.target.closest("button[data-restockjob]");if(restock){busy("Restocking…");const r=await api("/api/workshop/job/restock",{id:restock.dataset.restockjob});busy("");say(r.ok?r.message:(r.error||"Could not do it."),r.ok?"ok":"bad");render();return;}
-  if(e.target.closest("[data-new]"))return openCat("");
-  const ed=e.target.closest("button[data-edit]");if(ed){e.stopPropagation();return openCat(ed.dataset.edit);}
-  const pc=e.target.closest(".pc[data-pid]");if(pc)openAdd(pc.dataset.pid);
-});
-
-// ── custom product (new design) ──
-$("uDrop").onclick=()=>$("uFile").click();
-$("uImg").onclick=()=>$("uFile").click();
-$("uFile").onchange=async()=>{const f=$("uFile").files&&$("uFile").files[0];if(!f)return;
-  try{uPhoto=await resizePhoto(f);$("uImg").src=uPhoto;$("uImg").style.display="block";$("uDropT").textContent="Change the photo";say2("uMsg","");}catch(e){say2("uMsg",e.message||"Could not read the photo.");}$("uFile").value="";};
-$("uMinus").onclick=()=>{$("uQty").value=Math.max(1,(Number($("uQty").value)||1)-1);pvU();};
-$("uPlus").onclick=()=>{$("uQty").value=Math.min(9999,(Number($("uQty").value)||0)+1);pvU();};
-wireOrderBox("uOrder","uOrderTyped","uSize");
-$("uAdd").onclick=()=>{
-  const name=$("uName").value.trim(),qty=Math.floor(Number($("uQty").value)),size=$("uSize").value.trim(),note=$("uNote").value.trim();
-  if(!uPhoto)return say2("uMsg","Add the photo of the new design.");
-  const ptype=typeVal("uType","uTypeO");if(!ptype)return say2("uMsg","Choose the product type.");
-  if(!name)return say2("uMsg","Type the design / product name.");
-  if(!(qty>=1))return say2("uMsg","Choose the quantity.");
-  if(!size)return say2("uMsg","Type the measurement.");
-  if(basket.length>=20)return say2("uMsg","The list is full (20 products). Send it first.");
-  if($("uOrder").value==="__typed"&&!$("uOrderTyped").value.trim())return say2("uMsg","Type the order ID, or choose “No order”.");
-  const o=pickedOrder("uOrder","uOrderTyped");
-  basket.push({custom:true,ptype,name,photoData:uPhoto,qty,size,note,kind:"order",color:$("uColor").value.trim(),orderId:o?o.orderId:"",orderLabel:o?o.orderLabel:""});
-  uPhoto="";$("uImg").style.display="none";$("uImg").removeAttribute("src");$("uDropT").textContent="Tap to add the photo";
-  typeSet("uType","uTypeO","");$("uName").value="";$("uQty").value=1;$("uSize").value="";$("uNote").value="";$("uColor").value="";$("uOrder").value="";$("uOrderTyped").value="";$("uOrderTyped").style.display="none";say2("uMsg","");
-  render();say("New design added to your list — add more, or press Send list to workshop.","info");
-};
-
-// ── the list → Telegram ──
-$("basket").addEventListener("click",async e=>{
-  const d=e.target.closest("button[data-del]");if(d){basket.splice(Number(d.dataset.del),1);render();return;}
-  if(e.target.closest("#bClear")){basket=[];render();return;}
-  if(e.target.closest("#bSend")){
-    busy("Sending to the workshop…");
-    const r=await api("/api/workshop/send-items",{items:basket.map(l=>l.custom?{custom:true,ptype:l.ptype,name:l.name,photoData:l.photoData,qty:l.qty,size:l.size,color:l.color,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note}:{pid:l.pid,qty:l.qty,size:l.size,kind:l.kind,color:l.color,orderId:l.orderId,orderLabel:l.orderLabel,note:l.note})});busy("");
-    say(r.ok?(r.message||"✅ Sent.")+(results(r)?" ⚠ "+results(r):""):(r.error||"Could not send.")+(results(r)?" "+results(r):""),r.ok?"ok":"bad");
-    if(r.ok)basket=[];render();
-  }
-});
-
-// ── main admin: make / change standard products ──
-function resizePhoto(file){
-  return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();
-    im.onload=()=>{try{const mx=1000,sc=Math.min(1,mx/Math.max(im.naturalWidth,im.naturalHeight)),w=Math.max(1,Math.round(im.naturalWidth*sc)),h=Math.max(1,Math.round(im.naturalHeight*sc)),cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");c.fillStyle="#fff";c.fillRect(0,0,w,h);c.drawImage(im,0,0,w,h);URL.revokeObjectURL(u);res(cv.toDataURL("image/jpeg",.82));}catch(e){rej(e);}};
-    im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});
-}
-$("cTypeBox").innerHTML=typeSel("cType","cTypeO");$("uTypeBox").innerHTML=typeSel("uType","uTypeO");typeWire("cType","cTypeO");typeWire("uType","uTypeO");
-function openCat(id){
-  editId=id||"";newPhoto="";const p=id?S.catalog.find(x=>x.id===id):null;
-  $("cTitle").textContent=p?"Change standard product":"Add standard product";$("cName").value=p?p.name:"";typeSet("cType","cTypeO",p?p.ptype:"");$("cSizes").value=p?(p.sizes||[]).join("\n"):"";
-  $("cImg").style.display=p?"block":"none";if(p)$("cImg").src="/api/workshop-photo/"+p.photo+".jpg";
-  $("cPickT").textContent=p?"Change the photo":"Tap to add the photo";$("cDel").style.display=p?"inline-flex":"none";say2("cMsg","");$("catOv").classList.add("on");
-}
-$("cPick").onclick=()=>$("cFile").click();
-$("cFile").onchange=async()=>{const f=$("cFile").files&&$("cFile").files[0];if(!f)return;try{newPhoto=await resizePhoto(f);$("cImg").src=newPhoto;$("cImg").style.display="block";$("cPickT").textContent="Change the photo";say2("cMsg","");}catch(e){say2("cMsg",e.message||"Could not read the photo.");}$("cFile").value="";};
-$("cClose").onclick=()=>$("catOv").classList.remove("on");
-$("cSave").onclick=async()=>{
-  const name=$("cName").value.trim();if(!name)return say2("cMsg","Type the product name.");const ptype=typeVal("cType","cTypeO");if(!ptype)return say2("cMsg","Choose the product type.");if(!newPhoto&&!(editId&&S.catalog.some(x=>x.id===editId&&x.photo)))return say2("cMsg","Add the product photo.");
-  busy("Saving…");const d=await api("/api/workshop/catalog/save",{id:editId||undefined,name,ptype,sizes:$("cSizes").value,photo:newPhoto||undefined});busy("");
-  if(!d.ok)return say2("cMsg",d.error||"Could not save.");
-  $("catOv").classList.remove("on");basket=basket.filter(l=>l.custom||S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
-};
-$("cDel").onclick=async()=>{
-  if(!editId||!confirm("Delete this standard product?"))return;
-  busy("Deleting…");const d=await api("/api/workshop/catalog/delete",{id:editId});busy("");
-  if(!d.ok)return say2("cMsg",d.error||"Could not delete.");
-  $("catOv").classList.remove("on");basket=basket.filter(l=>l.custom||S.catalog.some(p=>p.id===l.pid));say(d.message,"ok");render();
-};
-// ── v171 DISPATCH: two small buttons at the bottom open two sheets ──
-const money=n=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
-const onWay=()=>(S.dispatches||[]).filter(d=>d.status==="sent");
-function updDock(){const n=onWay().length,b=$("drvN");if(b){b.textContent=n;b.style.display=n?"inline-block":"none";}}
-const placeWarn=(id,place,label)=>{$(id).innerHTML=place?"":'<div class="msg bad" style="display:block;margin:12px 0 0">The <b>'+label+'</b> topic is not chosen yet. Open <b>Workshop, finishing, stock &amp; driver places</b> at the top, choose it and press Save.<div class="btns" style="margin-top:8px"><button class="btn sec sm" type="button" data-gosettings="1">Open settings</button></div></div>';};
-document.addEventListener("click",e=>{if(!e.target.closest("[data-gosettings]"))return;$("drvOv").classList.remove("on");$("mdOv").classList.remove("on");$("setBox").open=true;$("setBox").scrollIntoView({behavior:"smooth",block:"start"});});
-
-// DRIVER ─ readymade sale (product + customer + balance) or a finished order (customer + balance come from the order)
-let dMode="ready",dPick=null;
-const dItems=()=>dMode==="ready"?(S.stockProducts||[]):(S.dispatchOrders||[]);
-const dKey=x=>String(dMode==="ready"?x.id:x.jobId);
-let dCus="";
-const dCusKey=x=>((x.customerName||"")+"|"+(x.phone||"")).toLowerCase();
-function dCusRender(){
-  const ord=dMode==="order",box=$("dCusBox");
-  $("dDir").style.display=ord?"none":"";$("dPick").style.display=ord?"none":"";$("dPickLab").style.display=ord?"none":"";
-  if(!ord){box.innerHTML="";$("dForm").style.display="";return;}
-  const L=S.dispatchOrders||[],groups={};L.forEach(x=>{(groups[dCusKey(x)]=groups[dCusKey(x)]||[]).push(x);});
-  const keys=Object.keys(groups),picked=!!$("dPick").value;
-  $("dForm").style.display=picked?"":"none";
-  if(picked){const g=groups[dCus]||[];box.innerHTML='<div class="hint" style="margin:8px 0 0"><a href="#" data-dback="1">← Back to '+(g.length>1?"this customer's products":"customers")+'</a></div>';return;}
-  if(!keys.length){box.innerHTML='<div class="hint" style="margin:10px 0">No customer has a finished order waiting for the driver. An order appears here after the finishing team presses Finished.</div>';return;}
-  if(dCus&&groups[dCus]){const g=groups[dCus],c=g[0];
-    box.innerHTML='<div class="hint" style="margin:8px 0 6px"><a href="#" data-dallc="1">← All customers</a></div><label class="lab">'+esc(c.customerName||"Customer")+' · '+esc(c.phone||"")+' — choose the product</label>'+g.map(x=>'<div class="item" data-dprod="'+esc(x.jobId)+'" style="cursor:pointer">'+(x.photo?'<img loading="lazy" src="/api/workshop-photo/'+esc(x.photo)+'.jpg" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name)+'</div><div class="meta">'+(x.orderLabel?'<b style="color:var(--ink)">Order '+esc(x.orderLabel)+'</b>':"")+(x.size?" · "+esc(x.size):"")+(x.qty>1?" · ×"+x.qty:"")+'</div></div></div>').join("");return;}
-  box.innerHTML='<label class="lab">Customers with a finished order <span class="pill wait">'+keys.length+'</span></label>'+keys.map(k=>{const g=groups[k],c=g[0];return '<div class="item" data-dcus="'+esc(k)+'" style="cursor:pointer"><div class="mid"><div class="nm">'+esc(c.customerName||"Customer")+'</div><div class="meta">'+esc(c.phone||"")+(c.location?"<br>📍 "+esc(c.location):"")+'<br>'+g.length+' finished product'+(g.length>1?"s":"")+' ready for the driver</div></div></div>';}).join("");
-}
-function dFillPick(){
-  const L=dItems(),prev=$("dPick").value;
-  $("dkReady").classList.toggle("on",dMode==="ready");$("dkOrder").classList.toggle("on",dMode==="order");
-  $("dPickLab").textContent=dMode==="ready"?"Readymade product (Product ID — Model)":"Finished order";
-  $("dPick").innerHTML='<option value="">'+(dMode==="ready"?"— Choose the readymade product —":"— Choose the finished order —")+'</option>'+L.map(x=>dMode==="ready"
-    ?'<option value="'+esc(x.id)+'">'+esc((x.code||"—")+" — "+(x.model||x.desc||"Product")+(x.status==="sold"?"  · sold":""))+'</option>'
-    :'<option value="'+esc(x.jobId)+'">'+esc((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name+(x.orderLabel?" · "+x.orderLabel:"")+(x.customerName?" · "+x.customerName:""))+'</option>').join("");
-  if(L.some(x=>dKey(x)===prev))$("dPick").value=prev;
-  $("dEmpty").textContent=L.length?"":(dMode==="ready"?"No readymade product is in stock (Reports → Stock), or all of them are already on their way.":"No finished order is waiting. An order appears here after the finishing team presses Finished.");
-  dPreview(false);dCusRender();
-}
-function dPreview(fill){
-  const x=dItems().find(v=>dKey(v)===$("dPick").value);dPick=x||null;
-  const pv=$("dPrev");if(!x){pv.style.display="none";if(fill)$("dBalHint").textContent="";return;}
-  const src=x.photo?(dMode==="ready"?"/api/reports-photo/":"/api/workshop-photo/")+x.photo+".jpg":"";
-  const title=dMode==="ready"?(x.code?x.code+" — ":"")+(x.model||x.desc||"Product"):((x.codes&&x.codes.length?x.codes.join(", ")+" — ":"")+x.name);
-  const meta=dMode==="ready"?(x.desc&&x.model?esc(x.desc)+"<br>":"")+(x.status==="sold"?'<span class="pill bad">Sold out</span>':'<span class="pill ok">In stock</span>'):(x.orderLabel?'<b style="color:var(--ink)">Order '+esc(x.orderLabel)+'</b>':"")+(x.size?" · "+esc(x.size):"")+(x.qty>1?" · ×"+x.qty:"");
-  const cinfo=dMode==="order"?'<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line2)">👤 <b style="color:var(--ink)">'+esc(x.customerName||"—")+'</b><br>📞 '+esc(x.phone||"—")+(x.location?"<br>📍 "+esc(x.location):"")+"<br>💰 "+(x.paidFull?"Paid in full":"Total "+money(x.total)+" · advance "+money(x.advance)+" · <b style=\"color:var(--ink)\">balance "+money(x.balance)+" Birr</b>")+'</div>':"";
-  pv.innerHTML=(src?'<img src="'+esc(src)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc(title)+'</div><div class="meta">'+meta+cinfo+'</div></div>';pv.style.display="flex";
-  if(fill&&dMode==="order"){
-    $("dName").value=x.customerName||"";$("dPhone").value=x.phone||"";$("dLoc").value=x.location||"";
-    if(x.hasOrder){$("dBal").value=x.balance;$("dBalHint").textContent=x.paidFull?"This order is marked paid in full, so the balance is 0.":"Payment "+money(x.total)+" − advance "+money(x.advance)+" = "+money(x.balance)+" Birr. Change it if needed.";}
-    else{$("dBal").value="";$("dBalHint").textContent="This order ID was typed by hand, so there is no customer record. Pick the customer above and write the balance.";}
-  }
-}
-function dCustList(){
-  const q=$("dCustQ").value.trim().toLowerCase(),L=(S.customers||[]).filter(c=>!q||((c.name||"")+" "+(c.phone||"")+" "+(c.customerCode||"")+" "+(c.username||"")).toLowerCase().includes(q)).slice(0,60);
-  $("dCust").innerHTML='<option value="">'+(L.length?"— Choose a customer (optional) —":"No customer found")+'</option>'+L.map(c=>'<option value="'+esc(c.id)+'">'+esc((c.customerCode?c.customerCode+" · ":"")+(c.name||"Customer")+(c.phone?" · "+c.phone:""))+'</option>').join("");
-}
-function dWayList(){
-  const W=onWay(),D=(S.dispatches||[]).filter(d=>d.status==="delivered");
-  const row=(d,w)=>'<div class="item">'+(d.photoSrc?'<img loading="lazy" src="'+esc(d.photoSrc)+'" alt="">':'<div class="noimg">'+ic("sofa")+'</div>')+'<div class="mid"><div class="nm">'+esc((d.codes&&d.codes.length?d.codes.join(", ")+" — ":"")+d.name)+'</div><div class="meta"><b style="color:var(--ink)">'+esc((d.customer||{}).name||"")+'</b> · '+esc((d.customer||{}).phone||"")+((d.customer||{}).location?"<br>📍 "+esc(d.customer.location):"")+"<br>💰 "+money(d.balance)+" Birr · "+(w?"sent "+esc(d.sentAt):"✅ delivered "+esc(d.deliveredAt)+(d.deliveredBy?" · "+esc(d.deliveredBy):""))+'</div></div>'+(w?'<div class="act"><button class="btn sec sm" type="button" data-dcancel="'+esc(d.id)+'">Remove</button></div>':"")+'</div>';
-  $("dWayN").textContent=W.length;
-  $("dWay").innerHTML=W.map(d=>row(d,true)).join("")||'<div class="hint" style="margin:0 0 6px">Nothing on the way.</div>';
-  $("dDoneBox").innerHTML=D.length?'<h3 style="margin:14px 0 6px;font-size:13px;color:var(--mute)">✅ Delivered products <span class="pill ok">'+D.length+'</span></h3>'+D.map(d=>row(d,false)).join(""):"";
-  updDock();
-}
-function openDrv(){placeWarn("dWarn",S.settings&&S.settings.driver,"Driver");say2("dMsg","");dFillPick();dCustList();dWayList();$("drvOv").classList.add("on");}
-$("openDrv").onclick=openDrv;
-setInterval(async()=>{if(document.visibilityState!=="visible"||!$("drvOv").classList.contains("on"))return;const d=await api("/api/workshop/state");if(d.ok)dWayList();},6000); // the Delivered button is pressed in Telegram, so refresh while this sheet is open
-$("dClose").onclick=()=>$("drvOv").classList.remove("on");
-$("dkReady").onclick=()=>{dMode="ready";$("dPick").value="";dFillPick();$("dBalHint").textContent="Type what the customer still has to pay. Write 0 if everything is paid.";};
-$("dkOrder").onclick=()=>{dMode="order";dCus="";$("dPick").value="";dFillPick();$("dBalHint").textContent="";};
-$("dPick").onchange=()=>dPreview(true);
-$("dCusBox").addEventListener("click",e=>{
-  const cu=e.target.closest("[data-dcus]"),pr=e.target.closest("[data-dprod]"),bk=e.target.closest("[data-dback]"),al=e.target.closest("[data-dallc]");
-  if(cu){dCus=cu.dataset.dcus;const g=(S.dispatchOrders||[]).filter(x=>dCusKey(x)===dCus);if(g.length===1){$("dPick").value=String(g[0].jobId);dPreview(true);}dCusRender();}
-  else if(pr){$("dPick").value=pr.dataset.dprod;dPreview(true);dCusRender();}
-  else if(bk){e.preventDefault();$("dPick").value="";dPreview(false);const g=(S.dispatchOrders||[]).filter(x=>dCusKey(x)===dCus);if(g.length<2)dCus="";dCusRender();}
-  else if(al){e.preventDefault();dCus="";dCusRender();}
-});
-$("dCustQ").addEventListener("input",dCustList);
-$("dCust").onchange=()=>{const c=(S.customers||[]).find(x=>String(x.id)===$("dCust").value);if(c){$("dName").value=c.name||"";$("dPhone").value=c.phone||"";$("dLoc").value=c.location||"";}};
-$("dSend").onclick=async()=>{
-  if(!dPick)return say2("dMsg",dMode==="ready"?"Choose the readymade product.":"Choose the finished order.");
-  const name=$("dName").value.trim(),phone=$("dPhone").value.trim(),bal=$("dBal").value;
-  if(!name)return say2("dMsg","Write the customer name.");
-  if(!phone)return say2("dMsg","Write the customer phone number.");
-  if(bal===""||!(Number(bal)>=0))return say2("dMsg","Write the remaining balance (0 if the customer paid everything).");
-  say2("dMsg","");busy("Sending to the driver…");
-  const r=await api("/api/workshop/dispatch/driver/send",{mode:dMode,productId:dMode==="ready"?dPick.id:undefined,jobId:dMode==="order"?dPick.jobId:undefined,customer:{name,phone,location:$("dLoc").value.trim()},balance:bal,note:$("dNote").value.trim()});busy("");
-  if(!r.ok)return say2("dMsg",r.error||"Could not send.");
-  ["dName","dPhone","dLoc","dBal","dNote","dCustQ"].forEach(i=>$(i).value="");$("dBalHint").textContent="";
-  dFillPick();dCustList();dWayList();render();say2("dMsg",r.message||"Sent.","ok");
-};
-$("dWay").addEventListener("click",async e=>{
-  const cn=e.target.closest("[data-dcancel]");
-  if(cn){if(!confirm("Remove this from “On the way”? The message already posted in Telegram stays there."))return;const r=await api("/api/workshop/dispatch/driver/cancel",{id:cn.dataset.dcancel});dFillPick();dWayList();render();say2("dMsg",r.ok?r.message:(r.error||"Could not remove."),r.ok?"ok":"bad");}
-});
-
-// MATERIAL ─ cut (group + app at once) and send everything that is available
-const mdAvail=()=>(S.materials||[]).filter(m=>Number(m.qty)>0);
-function mdRender(){
-  const A=mdAvail(),prev=$("mdSel").value;
-  $("mdSel").innerHTML='<option value="">— Choose the material —</option>'+A.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name+(m.type?" "+m.type:""))+" · "+nfm(m.qty)+" "+esc(m.unit||"")+'</option>').join("");
-  if(A.some(m=>m.id===prev))$("mdSel").value=prev;
-  mdLeft();
-  $("mdCount").textContent=A.length+" kinds";
-  $("mdList").innerHTML=A.map(m=>'<div class="r"><span>'+esc(m.name+(m.type?" "+m.type:""))+'</span><b>'+nfm(m.qty)+" "+esc(m.unit||"")+'</b></div>').join("")||'<div class="hint" style="padding:10px 0">No material has stock right now.</div>';
-  $("mdAll").disabled=!A.length;
-}
-function mdLeft(){const m=mdAvail().find(x=>x.id===$("mdSel").value),q=Number($("mdQty").value);$("mdLeft").textContent=m?(q>0?(q>m.qty?"⚠ Only "+nfm(m.qty)+" "+m.unit+" available.":"Left after the cut: "+nfm(Math.round((m.qty-q)*1000)/1000)+" "+m.unit):"Available: "+nfm(m.qty)+" "+m.unit):"";}
-$("mdSel").onchange=mdLeft;$("mdQty").addEventListener("input",mdLeft);
-$("openMat").onclick=()=>{placeWarn("mdWarn",S.settings&&S.settings.material,"Material");say2("mdMsg","");mdRender();$("mdOv").classList.add("on");};
-$("mdClose").onclick=()=>$("mdOv").classList.remove("on");
-// ── v173 ⚙ Settings: monthly PDF report + Start from 0 ──
-// ── ROLE-BASED ACCESS: the main admin picks which Workshop details each admin can use ──
-const AREA_TAB={m:"materials",o:"orders",r:"workflow",p:"progress",s:"products",x:"records"};
-const myAreas=()=>Array.isArray(S.myAreas)?S.myAreas:Object.values(AREA_TAB).concat(["driver"]);
-function roleRender(){
-  const c=$("roleCard");if(!c)return;
-  c.style.display=S.isOwner?"block":"none";if(!S.isOwner)return;
-  const list=S.adminRoles||[];
-  $("roleList").innerHTML=list.length?list.map(a=>'<div class="roleRow" data-admin="'+esc(a.id)+'"><b>👤 '+esc(a.name)+'</b><div>'+(S.areaList||[]).map(x=>'<label title="'+esc(x.hint)+'"><input type="checkbox" data-area="'+esc(x.key)+'"'+((a.areas||[]).includes(x.key)?" checked":"")+'>'+esc(x.name)+'</label>').join("")+'</div></div>').join(""):'<div class="hint" style="margin-top:8px">No other admin has the Workshop section yet. Turn it on in Manage Admins first.</div>';
-}
-document.addEventListener("change",async e=>{
-  const cb=e.target.closest("#roleList [data-area]");if(!cb)return;
-  const row=cb.closest("[data-admin]"),areas=[...row.querySelectorAll("[data-area]:checked")].map(x=>x.dataset.area);
-  const d=await api("/api/workshop/access/set",{adminId:row.dataset.admin,areas});
-  say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");
-  if(d.ok){S=Object.assign(S,d);}roleRender();
-});
-function stRender(){
-  roleRender();
-  const r=S.report||{},own=!!r.canManage;
-  $("stMonth").innerHTML="Current month: <b>"+esc(r.monthLabel||"")+"</b>"+(r.lastSent?"<br>Last report sent: <b>"+esc(r.lastSent.label)+"</b> · "+esc(r.lastSent.at)+" · "+(r.lastSent.sent||0)+" chat"+((r.lastSent.sent||0)===1?"":"s"):"<br>No monthly report has been sent yet.")+(r.lastReset?"<br>Last start from 0: "+esc(r.lastReset.at)+" · "+esc(r.lastReset.by):"")+((r.pending||[]).length?'<br><span style="color:var(--bad)">Waiting to be sent: '+r.pending.map(p=>esc(p.month)+(p.error?" ("+esc(p.error)+")":"")).join(", ")+"</span>":"");
-  $("stAuto").checked=r.auto!==false;$("stZeroAuto").checked=!!r.autoZero;
-  $("stAuto").disabled=$("stZeroAuto").disabled=!own;
-  $("stZeroBox").style.display=own?"block":"none";$("stOwnerOnly").style.display=own?"none":"block";
-}
-$("openSt").onclick=()=>{say2("stMsg","");$("stForce").style.display="none";$("stConfirm").value="";stRender();$("stOv").classList.add("on");};
-$("stClose").onclick=()=>$("stOv").classList.remove("on");
-$("stPlaces").onclick=()=>{$("stOv").classList.remove("on");$("setBox").open=true;$("setBox").scrollIntoView({behavior:"smooth",block:"start"});};
-async function stCfg(){const d=await api("/api/workshop/report/config",{auto:$("stAuto").checked,autoZero:$("stZeroAuto").checked});say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");stRender();}
-$("stAuto").onchange=stCfg;$("stZeroAuto").onchange=stCfg;
-$("stSendNow").onclick=async()=>{busy("Building the PDF…");const d=await api("/api/workshop/report/send-now",{});busy("");say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");stRender();};
-async function stDoZero(force){
-  if($("stConfirm").value.trim().toUpperCase()!=="ZERO"){say2("stMsg","Type ZERO in the box to confirm.","bad");return;}
-  busy(force?"Starting from 0…":"Sending the PDF, then starting from 0…");
-  const d=await api("/api/workshop/reset",{confirm:"ZERO",force:!!force});busy("");
-  say2("stMsg",d.ok?d.message:d.error,d.ok?"ok":"bad");
-  $("stForce").style.display=(!d.ok&&d.canForce)?"inline-flex":"none";
-  if(d.ok){$("stConfirm").value="";render();}stRender();$("stOv").querySelector(".box").scrollTo({top:0,behavior:"smooth"});
-}
-$("stZero").onclick=()=>stDoZero(false);$("stForce").onclick=()=>stDoZero(true);
-$("mdCut").onclick=async()=>{
-  const m=mdAvail().find(x=>x.id===$("mdSel").value),q=Number($("mdQty").value);
-  if(!m)return say2("mdMsg","Choose the material you cut.");
-  if(!(q>0))return say2("mdMsg","Write the amount you cut (bigger than 0).");
-  if(q>m.qty)return say2("mdMsg","Only "+nfm(m.qty)+" "+m.unit+" is available.");
-  if(!confirm("Cut "+nfm(q)+" "+m.unit+" of "+m.name+(m.type?" "+m.type:"")+"?\nIt is posted in the group and taken off the stock now."))return;
-  say2("mdMsg","");busy("Cutting and sending…");
-  const r=await api("/api/workshop/dispatch/material/cut",{id:m.id,qty:q,note:$("mdNote").value.trim()});busy("");
-  if(r.ok){$("mdQty").value="";$("mdNote").value="";}
-  mdRender();render();say2("mdMsg",r.ok?r.message:(r.error||"Could not cut."),r.ok?"ok":"bad");
-};
-$("mdAll").onclick=async()=>{
-  if(!mdAvail().length)return say2("mdMsg","No material has stock to send.");
-  say2("mdMsg","");busy("Sending the available materials…");
-  const r=await api("/api/workshop/dispatch/material/send-all",{note:$("mdAllNote").value.trim()});busy("");
-  if(r.ok)$("mdAllNote").value="";
-  say2("mdMsg",r.ok?r.message:(r.error||"Could not send."),r.ok?"ok":"bad");
-};
-(async()=>{
-  let me;try{me=await (await fetch("/api/me")).json();}catch{me={};}
-  meRole=me.role||"";if(!(me.role==="owner"||me.role==="open"||(me.perms||[]).includes("workshop"))){
-    $("gate").style.display="block";$("gateMsg").textContent=me.role==="admin"?"The main admin has not given you the Workshop section. Ask them to tick Workshop for you in Manage Admins.":(me.error||"Access denied.");return;
-  }
-  $("view").style.display="block";
-  const d=await api("/api/workshop/state");
-  if(!d.ok)say(d.error||"Could not open the workshop page.","bad");
-  else{ws=S.settings.workshop;fin=S.settings.finishing;stock=S.settings.stock;drv=S.settings.driver;matTopic=S.settings.material;mode=S.settings.mode||"manual";if(!ws||!fin||!stock)$("setBox").open=true;}
+function gate(t){$("gate").style.display="flex";$("gateMsg").textContent=t;}
+function say(text,kind){const m=$("msg");m.className="msg "+(kind||"ok");m.textContent=text;m.scrollIntoView({block:"nearest"});if(kind!=="bad"&&kind!=="warn")setTimeout(()=>{if(m.textContent===text)m.className="msg";},6000);}
+function take(d,okMsg){ // apply a server answer (it carries a fresh state)
+  if(d&&d.orders)S=d;
+  if(d&&d.ok===false)say(d.error||"Something went wrong.","bad");
+  else{if(d&&d.warning)say(d.warning,"warn");else if(d&&(d.message||okMsg))say(d.message||okMsg,"ok");}
   render();
-  try{if(new URLSearchParams(location.search).get("open")==="confirm"&&S.isOwner){confRender();$("confOv").classList.add("on");}}catch{}
-})();
-document.addEventListener("visibilitychange",async()=>{if(document.visibilityState==="visible"&&$("view").style.display!=="none"&&!document.querySelector(".ov.on")){const d=await api("/api/workshop/state");if(d.ok)render();}});
-setInterval(async()=>{if(document.visibilityState!=="visible"||$("view").style.display==="none"||document.querySelector(".ov.on"))return;const d=await api("/api/workshop/state");if(d.ok)render();},10000);
+}
+function confirmBox(text,okLabel){return new Promise(res=>{open('<div class="hd"><b>Please confirm</b></div><p style="font-size:14.5px;line-height:1.6;white-space:pre-wrap">'+esc(text)+'</p><div class="btns"><button class="btn" id="cOk">'+esc(okLabel||"Yes, send")+'</button><button class="btn sec" id="cNo">Cancel</button></div>');$("cOk").onclick=()=>{close();res(true);};$("cNo").onclick=()=>{close();res(false);};});}
+function open(h){$("sheet").innerHTML=h;$("ov").classList.add("on");}
+function close(){$("ov").classList.remove("on");}
+$("ov").addEventListener("click",e=>{if(e.target===$("ov")||e.target.closest(".x"))close();});
+
+async function refresh(){const d=await api("/api/workshop/state");if(d&&d.ok){S=d;render();}else if(!S)$("out").innerHTML='<div class="empty">'+esc((d&&d.error)||"Could not load.")+'</div>';}
+const when=v=>{const t=Date.parse(v||"");return Number.isFinite(t)?new Date(t).toLocaleDateString(undefined,{day:"2-digit",month:"short"})+" "+new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"";};
+const thumb=u=>u?'<img class="th" loading="lazy" src="'+esc(u)+'" alt="" onerror="this.outerHTML=\'<div class=th>🛋</div>\'">':'<div class="th">🛋</div>';
+const pthumb=p=>p.photo?thumb("/api/reports-photo/"+p.photo+".jpg"):'<div class="th">🛋</div>';
+
+function render(){
+  if(!S)return;
+  $("gName").textContent=S.group?S.groupName:"No group chosen yet";
+  $("gHint").textContent=S.group?("Posted by "+(S.sender.ready?"your Telegram account":"the AMBAR bot")+(S.sender.ready?"":" (connect your Telegram account on Home to post as yourself)")):"Choose the Telegram group (and topic) of the workshop first.";
+  $("gTest").style.display=S.group?"":"none";
+  document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.t===TAB));
+  $("bar").classList.remove("on");
+  if(TAB==="orders")drawOrders();else if(TAB==="ready")drawReady();else drawSent();
+}
+$("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TAB=b.dataset.t;SEL.clear();Q="";try{localStorage.setItem("wsTab",TAB);}catch{}render();});
+
+// ── ORDER PRODUCTS ──────────────────────────────────────────────────────────
+function drawOrders(){
+  const q=Q.toLowerCase(),L=S.orders.filter(o=>!q||[o.orderId,o.product,o.customerName,o.customerId].join(" ").toLowerCase().includes(q));
+  $("out").innerHTML='<div class="card"><h2>📋 Order products</h2><div class="hint">Every order you made, with its customer. Tap <b>Send</b> to post the product photo, measurement, details <b>and the customer info</b> to the workshop group.</div><input type="text" id="q" placeholder="Search order, product or customer…" value="'+esc(Q)+'" autocomplete="off">'+
+   (L.length?L.map(o=>'<div class="it">'+thumb(o.photo)+'<div class="mid"><div class="t">'+esc(o.product||"Order")+'</div><div class="m">'+esc(o.orderId)+' · 👤 '+esc(o.customerName||"—")+(o.customerId?' ('+esc(o.customerId)+')':'')+'<br>'+esc(when(o.createdAt))+' <span class="pill '+(o.status==="Confirmed"?"ok":o.status==="Rejected"?"bad":"wait")+'">'+esc(o.status||"Pending")+'</span> '+(o.sent?'<span class="pill blue">Sent '+esc(o.sent.at||"")+'</span>':'')+'</div></div><div class="rt"><button class="btn sm '+(o.sent?"sec":"")+'" data-send="'+esc(o.id)+'" '+(o.status==="Rejected"?"disabled":"")+'>'+(o.sent?"Send again":"🛠 Send")+'</button></div></div>').join(""):'<div class="empty">'+(S.orders.length?"No order matches your search.":"<b>No orders yet.</b><br>Orders you create in <b>Customer Order Confirmation</b> appear here.")+'</div>')+'</div>';
+  const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawOrders();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
+}
+async function sendOrder(id,again){
+  const o=S.orders.find(x=>String(x.id)===String(id));if(!o||BUSY)return;
+  if(!S.group){say("First choose the workshop group.","bad");return;}
+  if(!await confirmBox((again?"Send AGAIN? ":"")+"Send “"+(o.product||"order")+"” ("+o.orderId+") with the info of "+(o.customerName||"the customer")+" to\n"+S.groupName+"?"))return;
+  BUSY=true;const d=await api("/api/workshop/send-order",{id:o.id,again:!!again});BUSY=false;take(d);
+}
+
+// ── READYMADE PRODUCTS ──────────────────────────────────────────────────────
+function custSelect(id){return '<select id="'+id+'"><option value="">— no customer —</option>'+S.customers.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" · "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("")+'</select>';}
+function drawReady(){
+  const q=Q.toLowerCase(),L=S.stock.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle].join(" ").toLowerCase().includes(q));
+  $("out").innerHTML='<div class="card"><h2>🛋 Readymade products</h2><div class="hint">Add a new readymade product (it goes into <b>Stock</b> and shows on Home → Stock view) or send products that are already in stock to the workshop group.</div>'+
+   '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">➕ New readymade product</button></div>'+
+   '<label>👤 Customer info for the message <em style="font-weight:500;color:var(--muted)">(optional)</em></label>'+custSelect("rc")+
+   '<label>🔎 Search stock</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
+   '<div class="card"><h2>📦 In stock <span class="pill ok">'+S.stock.length+'</span></h2>'+
+   (L.length?L.map(p=>'<div class="it"><input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc,p.handle&&("🔧 "+p.handle)].filter(Boolean).join(" · ")||"—")+'</div></div><div class="rt"><button class="btn sm" data-one="'+esc(p.id)+'">📤 Send</button><button class="btn sm sec" data-sold="'+esc(p.id)+'">Sold out</button>'+(S.me.owner?'<button class="btn sm red" data-del="'+esc(p.id)+'">🗑</button>':'')+'</div></div>').join(""):'<div class="empty">'+(S.stock.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>Press <b>➕ New readymade product</b> to add one.")+'</div>')+'</div>'+
+   (S.workflow.length?'<div class="card"><h2>⏳ Not in stock yet <span class="pill wait">'+S.workflow.length+'</span></h2><div class="hint">Older products still in Workflow. Move them to Stock when they are ready.</div>'+S.workflow.map(p=>'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc].filter(Boolean).join(" · "))+'</div></div><div class="rt"><button class="btn sm" data-fin="'+esc(p.id)+'">→ Stock</button></div></div>').join("")+'</div>':"");
+  const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart,c=$("rc").value;drawReady();$("rc").value=c;const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
+  bar();
+}
+function bar(){const n=SEL.size;$("bar").classList.toggle("on",TAB==="ready"&&n>0);$("barTxt").textContent=n+" selected";}
+async function sendProducts(ids){
+  if(BUSY||!ids.length)return;if(!S.group){say("First choose the workshop group.","bad");return;}
+  const cid=$("rc")?$("rc").value:"",c=S.customers.find(x=>x.id===cid);
+  if(!await confirmBox("Send "+ids.length+" product"+(ids.length===1?"":"s")+(c?" with the info of "+c.name+" ("+c.id+")":"")+" to\n"+S.groupName+"?"))return;
+  BUSY=true;const d=await api("/api/workshop/send-product",{ids,customerId:cid});BUSY=false;SEL.clear();take(d);
+}
+$("barGo").onclick=()=>sendProducts([...SEL]);
+$("out").addEventListener("click",async e=>{
+  const t=e.target.closest("button");if(!t)return;const d=t.dataset;
+  if(d.send)return sendOrder(d.send,!!(S.orders.find(o=>String(o.id)===d.send)||{}).sent);
+  if(d.one)return sendProducts([d.one]);
+  if(d.sold){if(await confirmBox("Mark this product Sold Out? It leaves the stock.","Yes, sold out"))take(await api("/api/workshop/product/sold",{id:d.sold}));return;}
+  if(d.del){if(await confirmBox("Delete this product for good?","Delete"))take(await api("/api/workshop/product/delete",{id:d.del}));return;}
+  if(d.fin){take(await api("/api/workshop/product/finish",{id:d.fin}));return;}
+  if(t.id==="addP")return addForm();
+});
+$("out").addEventListener("change",e=>{const c=e.target.closest("[data-sel]");if(!c)return;c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);bar();});
+
+// photo → small JPEG data URL
+function shrink(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);let q=.85,out=c.toDataURL("image/jpeg",q);while(out.length>1.9e6&&q>.4){q-=.1;out=c.toDataURL("image/jpeg",q);}res(out);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});}
+let PHOTO="";
+function addForm(){
+  PHOTO="";
+  open('<div class="hd"><b>➕ New readymade product</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<div class="pv"><div class="ph0" id="pvBox">📷</div><div><button class="btn sm sec" id="pvPick" type="button">📷 Choose photo</button><input type="file" id="pvFile" accept="image/*" style="display:none"></div></div>'+
+   '<label>Model / name *</label><input type="text" id="fModel" placeholder="e.g. LUNA" autocomplete="off">'+
+   '<label>Product type</label><input type="text" id="fType" list="ptl" placeholder="Shoe Shelf, Console Table…" autocomplete="off"><datalist id="ptl">'+S.ptypes.map(x=>'<option value="'+esc(x)+'">').join("")+'</datalist>'+
+   '<label>Measurement</label><input type="text" id="fSize" placeholder="120*35*120" autocomplete="off">'+
+   '<label>Quantity</label><input type="number" id="fQty" value="1" min="1" max="20" inputmode="numeric">'+
+   '<label>Handle <em style="font-weight:500;color:var(--muted)">(optional)</em></label><input type="text" id="fHandle" autocomplete="off">'+
+   '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="fNote"></textarea>'+
+   '<label>👤 Customer info for the message <em style="font-weight:500;color:var(--muted)">(optional)</em></label>'+custSelect("fCust")+
+   '<label class="opt on" style="margin-top:12px"><input class="chk" type="checkbox" id="fSend" checked><span>Send to the workshop group now<small>'+esc(S.group?S.groupName:"Choose the group first")+'</small></span></label>'+
+   '<div class="btns"><button class="btn block" id="fGo" type="button">Save product</button></div>');
+  $("pvPick").onclick=()=>$("pvFile").click();
+  $("pvFile").onchange=async()=>{const f=$("pvFile").files[0];if(!f)return;try{PHOTO=await shrink(f);$("pvBox").innerHTML='<img src="'+PHOTO+'" style="width:84px;height:84px;border-radius:14px;object-fit:cover" alt="">';}catch(e){fm(e.message,"bad");}};
+  $("fGo").onclick=async()=>{
+    const model=$("fModel").value.trim();if(!model){fm("Type the product model / name.","bad");return;}
+    const send=$("fSend").checked;if(send&&!S.group){fm("Choose the workshop group first, or untick “Send to the workshop group”.","bad");return;}
+    $("fGo").disabled=true;$("fGo").textContent="Saving…";
+    const d=await api("/api/workshop/add-product",{model,ptype:$("fType").value,size:$("fSize").value,qty:$("fQty").value,handle:$("fHandle").value,note:$("fNote").value,customerId:$("fCust").value,photo:PHOTO,send});
+    if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent="Save product";fm((d&&d.error)||"Could not save.","bad");}
+  };
+}
+function fm(t,k){const m=$("fMsg");if(m){m.className="msg "+k;m.textContent=t;}}
+
+// ── SENT LOG ────────────────────────────────────────────────────────────────
+function drawSent(){
+  $("out").innerHTML='<div class="card"><h2>🕘 Sent to the workshop</h2>'+(S.sent.length?S.sent.map(x=>'<div class="it"><div class="th">'+(x.ok?(x.kind==="order"?"🛠":"📦"):"⚠️")+'</div><div class="mid"><div class="t">'+esc(x.title||"—")+' <span class="pill '+(x.ok?"ok":"bad")+'">'+(x.ok?"Sent":"Failed")+'</span></div><div class="m">'+esc(x.ref)+(x.customer?" · 👤 "+esc(x.customer):"")+'<br>'+esc(x.at)+" · "+esc(x.by)+(x.error?'<br><span style="color:var(--bad)">'+esc(x.error)+'</span>':'')+'</div></div></div>').join(""):'<div class="empty">Nothing sent yet.</div>')+'</div>';
+}
+
+// ── GROUP PICKER ────────────────────────────────────────────────────────────
+let PICK=null;
+$("gPick").onclick=()=>groupSheet();
+function groupSheet(){
+  PICK=S.group?{...S.group}:null;
+  open('<div class="hd"><b>📨 Workshop group</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
+  gDraw();
+}
+function gDraw(extra){
+  $("gBody").innerHTML='<div class="hint">Current choice: <b>'+esc(PICK?((PICK.title||PICK.chat)+(PICK.topic?" › "+(PICK.topicTitle||"topic "+PICK.topic):"")):"none")+'</b></div>'+
+   '<div class="btns"><button class="btn sm" id="gList">📂 Choose from my groups</button></div>'+
+   '<label>…or paste a group / topic link, @username or id</label><input type="text" id="gLink" placeholder="https://t.me/c/123456789/2" autocomplete="off"><div class="btns"><button class="btn sm sec" id="gCheck">Check link</button></div>'+
+   '<div id="gExtra">'+(extra||"")+'</div>'+
+   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save workshop group</button>'+(S.group?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
+   '<p class="hint">The group must contain your Telegram account (or the AMBAR bot as admin) so it can post.</p>';
+  $("gList").onclick=async()=>{$("gList").disabled=true;$("gList").textContent="Loading…";const d=await api("/api/workshop/dialogs",{});$("gList").disabled=false;$("gList").textContent="📂 Choose from my groups";
+    if(!d.ok){fm(d.error,"bad");return;}
+    $("gExtra").innerHTML=d.groups.length?d.groups.map(g=>'<div class="opt" data-g="'+esc(g.chat)+'" data-t="'+esc(g.title)+'" data-f="'+(g.forum?1:0)+'">'+(g.forum?"🗂":"👥")+'<span>'+esc(g.title)+(g.forum?"<small>has topics</small>":"")+'</span></div>').join(""):'<div class="empty">No groups found.</div>';};
+  $("gCheck").onclick=async()=>{const v=$("gLink").value.trim();if(!v)return;const d=await api("/api/workshop/resolve",{link:v});if(!d.ok){fm(d.error,"bad");return;}
+    PICK={chat:d.chat,title:d.title||"",topic:d.topic||0,topicTitle:d.topicTitle||""};
+    if(d.forum&&!d.topic&&d.topics&&d.topics.length)return gDraw(topicsHtml(d.topics));gDraw();};
+  $("gSave").onclick=async()=>{const d=await api("/api/workshop/settings",{group:PICK});if(d&&d.ok!==false){close();take(d);}else fm((d&&d.error)||"Could not save.","bad");};
+  if($("gClear"))$("gClear").onclick=async()=>{close();take(await api("/api/workshop/settings/clear",{}));};
+}
+const topicsHtml=T=>'<div class="hint" style="margin-top:10px">Choose the topic:</div>'+T.filter(t=>!t.closed).map(t=>'<div class="opt" data-tp="'+t.id+'" data-tt="'+esc(t.title)+'">🧵 <span>'+esc(t.title)+'</span></div>').join("");
+$("sheet").addEventListener("click",async e=>{
+  const g=e.target.closest("[data-g]"),tp=e.target.closest("[data-tp]");
+  if(g){PICK={chat:g.dataset.g,title:g.dataset.t,topic:0,topicTitle:""};
+    if(g.dataset.f==="1"){const d=await api("/api/workshop/topics",{chat:g.dataset.g});if(d.ok&&d.forum){gDraw(topicsHtml(d.topics));return;}if(!d.ok)fm(d.error,"bad");}
+    gDraw();}
+  if(tp){PICK.topic=Number(tp.dataset.tp)>1?Number(tp.dataset.tp):0;PICK.topicTitle=tp.dataset.tt;gDraw();}
+});
+$("gTest").onclick=async()=>{$("gTest").disabled=true;const d=await api("/api/workshop/test",{});$("gTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
+
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
+refresh();
 </script>
 </body>
 </html>
