@@ -3153,7 +3153,9 @@ app.post("/api/telegram/webhook", async (req, res) => {
     }
 
     const callback = update.callback_query;
-    if (callback) {
+    if (callback && String(callback.data || "").startsWith("mat:")) { // v178: Material ✅ Approve / ❌ Reject buttons (sent to the main admin)
+      await safely("material callback", () => materialModule.handleCallback(callback));
+    } else if (callback) {
       const [action, id] = String(callback.data || "").split(":");
       await supabaseReady;
       if (supabase) await loadOrders();
@@ -3483,8 +3485,8 @@ const ratingModule = require("./ratings").register(app, {
 const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 // ── Workshop v176 (rebuilt): order + readymade products → the workshop Telegram group, with the customer info (module + page: /workshop.html) ──
 const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
-// ── Material v177: cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
-const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule });
+// ── Material v178: alert + Telegram Approve/Reject buttons to the main admin; cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
+const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule, tgApi, ownerIds: OWNER_IDS });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
