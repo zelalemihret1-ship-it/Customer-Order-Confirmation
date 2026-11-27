@@ -50,7 +50,7 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 </head>
 <body>
 <div id="gate"><div><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your access…</p><a class="btn" href="/home.html" style="text-decoration:none">← Home</a></div></div>
-<header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🛠 Workshop</h1><div class="sub">Send order & readymade products to the workshop group</div></div></div></header>
+<header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🛠 Workshop</h1><div class="sub">Send order &amp; readymade products to the workshop group</div></div></div></header>
 <main>
   <div class="msg" id="msg"></div>
 
@@ -59,7 +59,7 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
     <div class="grp"><div><b id="gName">—</b><div class="hint" id="gHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="gPick">Choose group</button><button class="btn sm sec" id="gTest">Send test</button></div></div>
   </div>
 
-  <div class="seg" id="seg"><button data-t="orders" class="on">📋 Order products</button><button data-t="ready">🛋 Readymade</button><button data-t="sent">🕘 Sent</button></div>
+  <div class="seg" id="seg"><button data-t="orders" class="on">📋 Order products</button><button data-t="ready">🛋 Readymade</button><button data-t="sent">📤 Sent products</button></div>
   <div id="out"></div>
 </main>
 <div class="bar" id="bar"><b id="barTxt"></b><button class="btn" id="barGo">📤 Send selected</button></div>
@@ -71,6 +71,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S=null,TAB="orders",SEL=new Set(),Q="",BUSY=false;
 try{const t=localStorage.getItem("wsTab");if(["orders","ready","sent"].includes(t))TAB=t;}catch{}
+let RTAB="standard";try{const t=localStorage.getItem("wsRTab");if(["standard","custom"].includes(t))RTAB=t;}catch{}
 
 async function api(path,body){
   try{const r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -108,10 +109,13 @@ function render(){
 $("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TAB=b.dataset.t;SEL.clear();Q="";try{localStorage.setItem("wsTab",TAB);}catch{}render();});
 
 // ── ORDER PRODUCTS ──────────────────────────────────────────────────────────
+const orderRow=(o,again)=>'<div class="it">'+thumb(o.photo)+'<div class="mid"><div class="t">'+esc(o.product||"Order")+'</div><div class="m">'+esc(o.orderId)+' · 👤 '+esc(o.customerName||"—")+(o.customerId?' ('+esc(o.customerId)+')':'')+'<br>'+esc(when(o.createdAt))+' <span class="pill '+(o.status==="Confirmed"?"ok":"wait")+'">'+esc(o.status||"Pending")+'</span> '+(o.sent?'<span class="pill blue">Sent '+esc(o.sent.at||"")+'</span>':'')+'</div></div><div class="rt"><button class="btn sm '+(again?"sec":"")+'" data-send="'+esc(o.id)+'">'+(again?"Send again":"🛠 Send")+'</button></div></div>';
+// v177: only the NEWEST orders that are not sent yet (newest first). Sent orders are in the "Sent products" tab; rejected orders cannot be sent.
+const newOrders=()=>S.orders.filter(o=>!o.sent&&o.status!=="Rejected").slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
 function drawOrders(){
-  const q=Q.toLowerCase(),L=S.orders.filter(o=>!q||[o.orderId,o.product,o.customerName,o.customerId].join(" ").toLowerCase().includes(q));
-  $("out").innerHTML='<div class="card"><h2>📋 Order products</h2><div class="hint">Every order you made, with its customer. Tap <b>Send</b> to post the product photo, measurement, details <b>and the customer info</b> to the workshop group.</div><input type="text" id="q" placeholder="Search order, product or customer…" value="'+esc(Q)+'" autocomplete="off">'+
-   (L.length?L.map(o=>'<div class="it">'+thumb(o.photo)+'<div class="mid"><div class="t">'+esc(o.product||"Order")+'</div><div class="m">'+esc(o.orderId)+' · 👤 '+esc(o.customerName||"—")+(o.customerId?' ('+esc(o.customerId)+')':'')+'<br>'+esc(when(o.createdAt))+' <span class="pill '+(o.status==="Confirmed"?"ok":o.status==="Rejected"?"bad":"wait")+'">'+esc(o.status||"Pending")+'</span> '+(o.sent?'<span class="pill blue">Sent '+esc(o.sent.at||"")+'</span>':'')+'</div></div><div class="rt"><button class="btn sm '+(o.sent?"sec":"")+'" data-send="'+esc(o.id)+'" '+(o.status==="Rejected"?"disabled":"")+'>'+(o.sent?"Send again":"🛠 Send")+'</button></div></div>').join(""):'<div class="empty">'+(S.orders.length?"No order matches your search.":"<b>No orders yet.</b><br>Orders you create in <b>Customer Order Confirmation</b> appear here.")+'</div>')+'</div>';
+  const q=Q.toLowerCase(),all=newOrders(),L=all.filter(o=>!q||[o.orderId,o.product,o.customerName,o.customerId].join(" ").toLowerCase().includes(q)),done=S.orders.filter(o=>o.sent).length;
+  $("out").innerHTML='<div class="card"><h2>📋 Order products <span class="pill wait">'+all.length+' new</span></h2><div class="hint">The newest orders that are <b>not sent yet</b>, newest first. Tap <b>Send</b> to post the product photo, measurement, details <b>and the customer info</b> to the workshop group. Sent orders move to <b>Sent products</b>'+(done?' ('+done+')':'')+'.</div><input type="text" id="q" placeholder="Search order, product or customer…" value="'+esc(Q)+'" autocomplete="off">'+
+   (L.length?L.map((o,i)=>(i===0&&!q?'<div style="margin:10px 0 -4px"><span class="pill ok">🆕 Newest order</span></div>':'')+orderRow(o,false)).join(""):'<div class="empty">'+(all.length?"No order matches your search.":(done?"<b>All orders are sent.</b><br>Look in <b>Sent products</b> to see them.":"<b>No orders yet.</b><br>Orders you create in <b>Customer Order Confirmation</b> appear here."))+'</div>')+'</div>';
   const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawOrders();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
 }
 async function sendOrder(id,again){
@@ -122,25 +126,24 @@ async function sendOrder(id,again){
 }
 
 // ── READYMADE PRODUCTS ──────────────────────────────────────────────────────
-function custSelect(id){return '<select id="'+id+'"><option value="">— no customer —</option>'+S.customers.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.id+" · "+c.name+(c.phone?" · "+c.phone:""))+'</option>').join("")+'</select>';}
+const prodRow=p=>'<div class="it"><input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc([p.ptype,p.desc,p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle)].filter(Boolean).join(" · ")||"—")+'</div></div><div class="rt"><button class="btn sm" data-one="'+esc(p.id)+'">📤 Send</button><button class="btn sm sec" data-sold="'+esc(p.id)+'">Sold out</button>'+(S.me.owner?'<button class="btn sm red" data-del="'+esc(p.id)+'">🗑</button>':'')+'</div></div>';
 function drawReady(){
-  const q=Q.toLowerCase(),L=S.stock.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle].join(" ").toLowerCase().includes(q));
-  $("out").innerHTML='<div class="card"><h2>🛋 Readymade products</h2><div class="hint">Add a new readymade product (it goes into <b>Stock</b> and shows on Home → Stock view) or send products that are already in stock to the workshop group.</div>'+
-   '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">➕ New readymade product</button></div>'+
-   '<label>👤 Customer info for the message <em style="font-weight:500;color:var(--muted)">(optional)</em></label>'+custSelect("rc")+
-   '<label>🔎 Search stock</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
-   '<div class="card"><h2>📦 In stock <span class="pill ok">'+S.stock.length+'</span></h2>'+
-   (L.length?L.map(p=>'<div class="it"><input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc,p.handle&&("🔧 "+p.handle)].filter(Boolean).join(" · ")||"—")+'</div></div><div class="rt"><button class="btn sm" data-one="'+esc(p.id)+'">📤 Send</button><button class="btn sm sec" data-sold="'+esc(p.id)+'">Sold out</button>'+(S.me.owner?'<button class="btn sm red" data-del="'+esc(p.id)+'">🗑</button>':'')+'</div></div>').join(""):'<div class="empty">'+(S.stock.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>Press <b>➕ New readymade product</b> to add one.")+'</div>')+'</div>'+
-   (S.workflow.length?'<div class="card"><h2>⏳ Not in stock yet <span class="pill wait">'+S.workflow.length+'</span></h2><div class="hint">Older products still in Workflow. Move them to Stock when they are ready.</div>'+S.workflow.map(p=>'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc].filter(Boolean).join(" · "))+'</div></div><div class="rt"><button class="btn sm" data-fin="'+esc(p.id)+'">→ Stock</button></div></div>').join("")+'</div>':"");
-  const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart,c=$("rc").value;drawReady();$("rc").value=c;const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
+  const custom=RTAB==="custom",q=Q.toLowerCase(),base=S.stock.filter(p=>!!p.custom===custom),L=base.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color].join(" ").toLowerCase().includes(q)),nStd=S.stock.filter(p=>!p.custom).length,nCus=S.stock.filter(p=>p.custom).length;
+  $("out").innerHTML='<div class="seg" id="rseg" style="margin-bottom:12px"><button data-r="standard" class="'+(custom?"":"on")+'">📦 Standard products <span class="pill">'+nStd+'</span></button><button data-r="custom" class="'+(custom?"on":"")+'">🎨 Custom products <span class="pill">'+nCus+'</span></button></div>'+
+   '<div class="card"><h2>'+(custom?"🎨 Custom products":"📦 Standard products")+'</h2><div class="hint">'+(custom?'One-off products made to a custom design (photo, name, measurement, color). A new custom product goes into <b>Stock</b> and can be sent to the workshop group at once.':'Your regular readymade models. A new standard product goes into <b>Stock</b> (and shows on Home → Stock view) and can be sent to the workshop group at once.')+'</div>'+
+   '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">'+(custom?"➕ New custom product":"➕ New standard product")+'</button></div>'+
+   '<label>🔎 Search</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
+   '<div class="card"><h2>'+(custom?"🎨 Custom in stock":"📦 In stock")+' <span class="pill ok">'+base.length+'</span></h2>'+
+   (L.length?L.map(prodRow).join(""):'<div class="empty">'+(base.length?"No product matches your search.":"<b>"+(custom?"No custom products yet.":"Nothing in stock yet.")+"</b><br>Press <b>"+(custom?"➕ New custom product":"➕ New standard product")+"</b> to add one.")+'</div>')+'</div>'+
+   (!custom&&S.workflow.length?'<div class="card"><h2>⏳ Not in stock yet <span class="pill wait">'+S.workflow.length+'</span></h2><div class="hint">Older products still in Workflow. Move them to Stock when they are ready.</div>'+S.workflow.map(p=>'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc].filter(Boolean).join(" · "))+'</div></div><div class="rt"><button class="btn sm" data-fin="'+esc(p.id)+'">→ Stock</button></div></div>').join("")+'</div>':"");
+  const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawReady();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
   bar();
 }
 function bar(){const n=SEL.size;$("bar").classList.toggle("on",TAB==="ready"&&n>0);$("barTxt").textContent=n+" selected";}
 async function sendProducts(ids){
   if(BUSY||!ids.length)return;if(!S.group){say("First choose the workshop group.","bad");return;}
-  const cid=$("rc")?$("rc").value:"",c=S.customers.find(x=>x.id===cid);
-  if(!await confirmBox("Send "+ids.length+" product"+(ids.length===1?"":"s")+(c?" with the info of "+c.name+" ("+c.id+")":"")+" to\n"+S.groupName+"?"))return;
-  BUSY=true;const d=await api("/api/workshop/send-product",{ids,customerId:cid});BUSY=false;SEL.clear();take(d);
+  if(!await confirmBox("Send "+ids.length+" product"+(ids.length===1?"":"s")+" to\n"+S.groupName+"?"))return;
+  BUSY=true;const d=await api("/api/workshop/send-product",{ids});BUSY=false;SEL.clear();take(d);
 }
 $("barGo").onclick=()=>sendProducts([...SEL]);
 $("out").addEventListener("click",async e=>{
@@ -150,33 +153,34 @@ $("out").addEventListener("click",async e=>{
   if(d.sold){if(await confirmBox("Mark this product Sold Out? It leaves the stock.","Yes, sold out"))take(await api("/api/workshop/product/sold",{id:d.sold}));return;}
   if(d.del){if(await confirmBox("Delete this product for good?","Delete"))take(await api("/api/workshop/product/delete",{id:d.del}));return;}
   if(d.fin){take(await api("/api/workshop/product/finish",{id:d.fin}));return;}
-  if(t.id==="addP")return addForm();
+  if(d.r){RTAB=d.r;SEL.clear();Q="";try{localStorage.setItem("wsRTab",RTAB);}catch{}return render();}
+  if(t.id==="addP")return addForm(RTAB==="custom");
 });
 $("out").addEventListener("change",e=>{const c=e.target.closest("[data-sel]");if(!c)return;c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);bar();});
 
 // photo → small JPEG data URL
 function shrink(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);let q=.85,out=c.toDataURL("image/jpeg",q);while(out.length>1.9e6&&q>.4){q-=.1;out=c.toDataURL("image/jpeg",q);}res(out);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});}
 let PHOTO="";
-function addForm(){
+function addForm(custom){
   PHOTO="";
-  open('<div class="hd"><b>➕ New readymade product</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+  open('<div class="hd"><b>'+(custom?"➕ New custom product":"➕ New standard product")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
    '<div class="pv"><div class="ph0" id="pvBox">📷</div><div><button class="btn sm sec" id="pvPick" type="button">📷 Choose photo</button><input type="file" id="pvFile" accept="image/*" style="display:none"></div></div>'+
-   '<label>Model / name *</label><input type="text" id="fModel" placeholder="e.g. LUNA" autocomplete="off">'+
+   '<label>'+(custom?"Custom product name *":"Model / name *")+'</label><input type="text" id="fModel" placeholder="'+(custom?"e.g. Client shoe shelf":"e.g. LUNA")+'" autocomplete="off">'+
    '<label>Product type</label><input type="text" id="fType" list="ptl" placeholder="Shoe Shelf, Console Table…" autocomplete="off"><datalist id="ptl">'+S.ptypes.map(x=>'<option value="'+esc(x)+'">').join("")+'</datalist>'+
    '<label>Measurement</label><input type="text" id="fSize" placeholder="120*35*120" autocomplete="off">'+
+   (custom?'<label>Color</label><input type="text" id="fColor" placeholder="e.g. Walnut" autocomplete="off">':'')+
    '<label>Quantity</label><input type="number" id="fQty" value="1" min="1" max="20" inputmode="numeric">'+
    '<label>Handle <em style="font-weight:500;color:var(--muted)">(optional)</em></label><input type="text" id="fHandle" autocomplete="off">'+
    '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="fNote"></textarea>'+
-   '<label>👤 Customer info for the message <em style="font-weight:500;color:var(--muted)">(optional)</em></label>'+custSelect("fCust")+
    '<label class="opt on" style="margin-top:12px"><input class="chk" type="checkbox" id="fSend" checked><span>Send to the workshop group now<small>'+esc(S.group?S.groupName:"Choose the group first")+'</small></span></label>'+
    '<div class="btns"><button class="btn block" id="fGo" type="button">Save product</button></div>');
   $("pvPick").onclick=()=>$("pvFile").click();
   $("pvFile").onchange=async()=>{const f=$("pvFile").files[0];if(!f)return;try{PHOTO=await shrink(f);$("pvBox").innerHTML='<img src="'+PHOTO+'" style="width:84px;height:84px;border-radius:14px;object-fit:cover" alt="">';}catch(e){fm(e.message,"bad");}};
   $("fGo").onclick=async()=>{
-    const model=$("fModel").value.trim();if(!model){fm("Type the product model / name.","bad");return;}
+    const model=$("fModel").value.trim();if(!model){fm(custom?"Type the custom product name.":"Type the product model / name.","bad");return;}
     const send=$("fSend").checked;if(send&&!S.group){fm("Choose the workshop group first, or untick “Send to the workshop group”.","bad");return;}
     $("fGo").disabled=true;$("fGo").textContent="Saving…";
-    const d=await api("/api/workshop/add-product",{model,ptype:$("fType").value,size:$("fSize").value,qty:$("fQty").value,handle:$("fHandle").value,note:$("fNote").value,customerId:$("fCust").value,photo:PHOTO,send});
+    const d=await api("/api/workshop/add-product",{custom:!!custom,model,ptype:$("fType").value,size:$("fSize").value,color:custom?$("fColor").value:"",qty:$("fQty").value,handle:$("fHandle").value,note:$("fNote").value,photo:PHOTO,send});
     if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent="Save product";fm((d&&d.error)||"Could not save.","bad");}
   };
 }
@@ -184,7 +188,10 @@ function fm(t,k){const m=$("fMsg");if(m){m.className="msg "+k;m.textContent=t;}}
 
 // ── SENT LOG ────────────────────────────────────────────────────────────────
 function drawSent(){
-  $("out").innerHTML='<div class="card"><h2>🕘 Sent to the workshop</h2>'+(S.sent.length?S.sent.map(x=>'<div class="it"><div class="th">'+(x.ok?(x.kind==="order"?"🛠":"📦"):"⚠️")+'</div><div class="mid"><div class="t">'+esc(x.title||"—")+' <span class="pill '+(x.ok?"ok":"bad")+'">'+(x.ok?"Sent":"Failed")+'</span></div><div class="m">'+esc(x.ref)+(x.customer?" · 👤 "+esc(x.customer):"")+'<br>'+esc(x.at)+" · "+esc(x.by)+(x.error?'<br><span style="color:var(--bad)">'+esc(x.error)+'</span>':'')+'</div></div></div>').join(""):'<div class="empty">Nothing sent yet.</div>')+'</div>';
+  const so=S.orders.filter(o=>o.sent).slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+  $("out").innerHTML='<div class="card"><h2>✅ Sent order products <span class="pill ok">'+so.length+'</span></h2><div class="hint">Orders already sent to the workshop group. You can send one again if needed.</div>'+
+   (so.length?so.map(o=>orderRow(o,true)).join(""):'<div class="empty">No order has been sent yet.</div>')+'</div>'+
+   '<div class="card"><h2>🕘 Sending log</h2><div class="hint">Everything posted to the workshop group (orders and readymade products), including failed tries.</div>'+(S.sent.length?S.sent.map(x=>'<div class="it"><div class="th">'+(x.ok?(x.kind==="order"?"🛠":"📦"):"⚠️")+'</div><div class="mid"><div class="t">'+esc(x.title||"—")+' <span class="pill '+(x.ok?"ok":"bad")+'">'+(x.ok?"Sent":"Failed")+'</span></div><div class="m">'+esc(x.ref)+(x.customer?" · 👤 "+esc(x.customer):"")+'<br>'+esc(x.at)+" · "+esc(x.by)+(x.error?'<br><span style="color:var(--bad)">'+esc(x.error)+'</span>':'')+'</div></div></div>').join(""):'<div class="empty">Nothing sent yet.</div>')+'</div>';
 }
 
 // ── GROUP PICKER ────────────────────────────────────────────────────────────
