@@ -814,6 +814,7 @@ app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/reports.html", sendPage("reports.html", "<!doctype html><meta charset=utf-8><p>public/reports.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/workshop.html", sendPage("workshop.html", "<!doctype html><meta charset=utf-8><p>public/workshop.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/material.html", sendPage("material.html", "<!doctype html><meta charset=utf-8><p>public/material.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/stories.html", sendPage("stories.html", "<!doctype html><meta charset=utf-8><p>public/stories.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charset=utf-8><p>public/greeting.html is missing. Keep the public folder in the deploy.</p>"));
 app.get(["/home", "/home.html"], sendHome);
@@ -1638,7 +1639,7 @@ function identify(req) {
 }
 // ── v120 SECTION ACCESS: the main admin chooses which sections each assigned admin may open ──
 // Existing admins (no list saved yet) keep what they had before: everything except Reports.
-const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop"];
+const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop", "material"];
 const DEFAULT_PERMS = ["orders", "customers", "greeting", "rating", "stories"];
 function permsOf(rec) { return Array.isArray(rec?.perms) ? ALL_PERMS.filter(p => rec.perms.includes(p)) : DEFAULT_PERMS.slice(); }
 function cleanPerms(v) { const arr = Array.isArray(v) ? v : String(v || "").split(","); return ALL_PERMS.filter(p => arr.map(x => String(x).trim()).includes(p)); }
@@ -1647,6 +1648,7 @@ function permNeeded(url) {
   const p = String(url || "").split("?")[0];
   if (p.startsWith("/api/reports")) return ["reports"];
   if (p.startsWith("/api/workshop")) return ["workshop"];
+  if (p.startsWith("/api/material")) return ["material", "workshop"]; // v177: the Material section (admins who already had Workshop keep access)
   if (p.startsWith("/api/ratings")) return ["rating"];
   if (p.startsWith("/api/greetings")) return ["greeting"];
   if (p.startsWith("/api/stories")) return ["stories"];
@@ -3481,6 +3483,8 @@ const ratingModule = require("./ratings").register(app, {
 const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 // ── Workshop v176 (rebuilt): order + readymade products → the workshop Telegram group, with the customer info (module + page: /workshop.html) ──
 const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
+// ── Material v177: cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
+const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
@@ -3502,6 +3506,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await greetingModule.load(); // first-greeting log
     await reportsModule.load(); // the reports Google Sheet link comes back by itself
     await workshopModule.load(); // each admin's workshop group
+    await materialModule.load(); // pending material edit requests
     await ratingModule.load(); ratingModule.start(); // customer rating links (sent after delivery)
     await storyPlanner.start(); // weekly story scheduler (one photo per day, never repeated)
     await tgApi.configureWebhook();
