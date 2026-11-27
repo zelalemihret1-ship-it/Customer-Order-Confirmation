@@ -1654,8 +1654,6 @@ function permNeeded(url) {
   if (p.startsWith("/api/orders")) return ["orders"];
   return null;
 }
-// v150: tell the Workshop module about an order (created / confirmed). Never allowed to break an order.
-function workshopHook(ev, order) { try { const m = workshopModule; (ev === "created" ? m.onOrderCreated(order) : m.onOrderConfirmed(order)).catch(e => console.warn("Workshop send failed:", e.message)); } catch (e) { console.warn("Workshop hook:", e.message); } }
 function hasPerm(actor, key) { return actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key); }
 function requireAccess(req, res, next) {
   if (!accessEnforced()) { req.actor = { role: "open", name: "", telegramId: "", accountId: "" }; return next(); }
@@ -1744,7 +1742,6 @@ app.post("/respond/:token", express.json(), async (req, res) => {
       if (order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: `Order already ${order.status}.` });
       order.status = action === "confirm" ? "Confirmed" : "Rejected";
       await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
-      if (order.status === "Confirmed") workshopHook("confirmed", order); // v150: workshop mode "after confirmation"
       await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
       return res.json({ ok: true, message: order.status === "Confirmed" ? "✅ Order confirmed. Thank you for choosing Ambar Furniture!" : "❌ Order rejected." });
     }
@@ -1756,7 +1753,6 @@ app.post("/respond/:token", express.json(), async (req, res) => {
       if (action === "confirm_comment" || action === "reject_comment") order.closed = true;
       order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web", decision: action === "confirm_comment" ? "Confirmed" : action === "reject_comment" ? "Rejected" : "Comment" });
       await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
-      if (action === "confirm_comment") workshopHook("confirmed", order);
       const decision = action === "confirm_comment" ? "✅ CONFIRMED" : action === "reject_comment" ? "❌ REJECTED" : "💬 COMMENT";
       await notifyAdminsText(order, `${decision} + comment on <b>${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
       if (action === "confirm_comment") return res.json({ ok: true, message: "✅ Order confirmed and your comment was sent. Thank you!" });
@@ -2849,7 +2845,6 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
     const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
     await saveOrderRecord(order);
-    workshopHook("created", order); // v153: no-op (only confirmed + delivered orders go to the workshop)
     if (order.sent) {
       const toAdmin = allAdminChatIds(order).includes(String(order.telegramChatId || ""));
       const who = `${order.customerName || "the customer"} (${order.telegramUsername || "chat id " + order.telegramChatId})`;
@@ -3156,10 +3151,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
     }
 
     const callback = update.callback_query;
-    if (callback && /^(wsf|wfin|wsold|wrestock|wdrv|wdel):/.test(String(callback.data || ""))) { // v153: workshop and stock buttons (production / Sold Out / Restock) posted by the bot in the workshop group
-      try { await workshopModule.onButton(callback); } catch (e) { console.warn("Workshop button failed:", e.message); await safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text: "Something went wrong. Try again." })); }
-      return;
-    }
     if (callback) {
       const [action, id] = String(callback.data || "").split(":");
       await supabaseReady;
@@ -3210,7 +3201,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
             order.closed = true;
             await saveOrderRecord(order);
             await updateAuditCopies(order);
-            if (order.status === "Confirmed") workshopHook("confirmed", order);
             await answer(`Order ${order.status}.`);
             const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : "❌ REJECTED";
             // 1) buttons stay visible but locked, and the card shows the final status
@@ -3489,10 +3479,8 @@ const ratingModule = require("./ratings").register(app, {
 });
 // ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
 const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
-// ── Workshop: orders + readymade products to the private workshop Telegram group, per admin (module + page: /workshop.html) ──
-const workshopModule = require("./workshop").register(app, { ownerIds: OWNER_IDS, requireAccess, hasPerm, getOrders: () => orders, getCustomers: () => [...customers.values()], getCustomerRecords: () => callersDb.list, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore, getAppAdmins: () => appAdmins });
-reportsModule.setWorkshopDeleteProducts?.(ids => workshopModule.deleteReportProducts?.(ids));
-reportsModule.setWorkshopSource?.(() => workshopModule.reportFeed?.()); // v174: Workshop (products + dispatch) → Reports, live
+// ── Workshop v176 (rebuilt): order + readymade products → the workshop Telegram group, with the customer info (module + page: /workshop.html) ──
+const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
@@ -3513,7 +3501,7 @@ if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
     await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
     await greetingModule.load(); // first-greeting log
     await reportsModule.load(); // the reports Google Sheet link comes back by itself
-    await workshopModule.load(); // each admin's workshop group + sending mode
+    await workshopModule.load(); // each admin's workshop group
     await ratingModule.load(); ratingModule.start(); // customer rating links (sent after delivery)
     await storyPlanner.start(); // weekly story scheduler (one photo per day, never repeated)
     await tgApi.configureWebhook();
