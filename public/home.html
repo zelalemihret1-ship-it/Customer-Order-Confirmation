@@ -197,6 +197,13 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
     </div>
   </div>
 
+  <div class="hide" data-perm="material,workshop">
+    <div class="sec">Material</div>
+    <div class="list">
+      <a class="row" href="/material.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Material</b><span class="d" id="matSub">Cut · Add · Edit materials — with confirmation</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
+    </div>
+  </div>
+
   <div class="own hide">
     <div class="sec">Administration<span class="badge">Main admin only</span></div>
     <div class="admin"><div class="grid">
@@ -238,15 +245,15 @@ const eh=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",
 const stPh=p=>p.photo?'/api/reports-photo/'+eh(p.photo)+'.jpg':"";
 const isOrd=p=>/CUS|ORD/i.test(p.orderType||"");
 function drawStock(){
-  const q=($("stQ").value||"").toLowerCase().trim(),L=STOCK.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.category,p.location,p.note,p.salesName].join(" ").toLowerCase().includes(q));
+  const q=($("stQ").value||"").toLowerCase().trim(),L=STOCK.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color,p.category,p.location,p.note,p.salesName,p.custom?"custom":""].join(" ").toLowerCase().includes(q));
   $("stCount").textContent=STOCK.length+" in stock";$("stSub").textContent=STOCK.length+" in stock · tap to see photos and info";
-  $("stGrid").innerHTML=L.length?L.map(p=>'<div class="sc" data-id="'+eh(p.id)+'"><div class="ph">'+(p.photo?'<img loading="lazy" src="'+stPh(p)+'" alt="" onerror="this.parentNode.textContent=\'🛋\'">':'🛋')+'</div><div class="bd"><div class="nm">'+eh(p.code+(p.model?"-"+p.model:""))+'</div><div class="mt">'+eh([p.ptype,p.desc].filter(Boolean).join(" · ")||"—")+'</div><div class="tg">'+(p.handle?'<span class="tgp">🔧 '+eh(p.handle)+'</span>':'')+(isOrd(p)?'<span class="tgp o">ORDER</span>':'<span class="tgp">READYMADE</span>')+(p.priority==="HIGH"?'<span class="tgp h">HIGH</span>':'')+'</div></div></div>').join(""):'<div class="stempty">'+(STOCK.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>Products you add in Workshop appear here with their photo.")+'</div>';
+  $("stGrid").innerHTML=L.length?L.map(p=>'<div class="sc" data-id="'+eh(p.id)+'"><div class="ph">'+(p.photo?'<img loading="lazy" src="'+stPh(p)+'" alt="" onerror="this.parentNode.textContent=\'🛋\'">':'🛋')+'</div><div class="bd"><div class="nm">'+eh(p.code+(p.model?"-"+p.model:""))+'</div><div class="mt">'+eh([p.ptype,p.desc].filter(Boolean).join(" · ")||"—")+'</div><div class="tg">'+(p.handle?'<span class="tgp">🔧 '+eh(p.handle)+'</span>':'')+(isOrd(p)?'<span class="tgp o">ORDER</span>':p.custom?'<span class="tgp o">🎨 CUSTOM</span>':'<span class="tgp">STANDARD</span>')+(p.priority==="HIGH"?'<span class="tgp h">HIGH</span>':'')+'</div></div></div>').join(""):'<div class="stempty">'+(STOCK.length?"No product matches your search.":"<b>Nothing in stock yet.</b><br>Products you add in Workshop appear here with their photo.")+'</div>';
 }
 function openStock(id){
   const p=STOCK.find(x=>x.id===id);if(!p)return;
   const r=(l,v)=>v?'<div><span>'+l+'</span><b>'+eh(v)+'</b></div>':"";
   $("stSh").innerHTML=(p.photo?'<img class="big" src="'+stPh(p)+'" alt="">':'<div class="noimg">🛋</div>')+'<button class="x" type="button" aria-label="Close">✕</button><div class="in"><h3>'+eh(p.code+(p.model?"-"+p.model:""))+'</h3><div class="dl">'+
-   r("Product ID",p.code)+r("Model",p.model)+r("Type",p.ptype)+r("Measurement",p.desc)+r("🔧 Handle",p.handle)+r("Category",p.category)+r("Capacity",p.capacity)+r("📍 Location",p.location)+r("Kind",isOrd(p)?"ORDER product":"READYMADE product")+r("Order",p.orderRef)+r("Priority",p.priority)+r("👤 Sales",p.salesName)+r("Delivery date",p.deliveryDate)+r("Started",p.added)+r("Finished",p.finished)+r("📝 Note",p.note)+'</div></div>';
+   r("Product ID",p.code)+r("Model",p.model)+r("Type",p.ptype)+r("Measurement",p.desc)+r("🔧 Handle",p.handle)+r("Category",p.category)+r("Capacity",p.capacity)+r("📍 Location",p.location)+r("Kind",isOrd(p)?"ORDER product":p.custom?"READYMADE · CUSTOM product":"READYMADE · STANDARD product")+r("🎨 Color",p.color)+r("Order",p.orderRef)+r("Priority",p.priority)+r("👤 Sales",p.salesName)+r("Delivery date",p.deliveryDate)+r("Started",p.added)+r("Finished",p.finished)+r("📝 Note",p.note)+'</div></div>';
   $("stOv").classList.add("on");
 }
 $("stGrid").addEventListener("click",e=>{const c=e.target.closest(".sc");if(c)openStock(c.dataset.id);});
@@ -259,6 +266,13 @@ async function pullStock(){
 }
 $("stBtn").addEventListener("click",()=>{$("stFull").classList.add("on");pullStock();});
 $("stBack").addEventListener("click",()=>$("stFull").classList.remove("on"));
+async function pullMat(){
+  if(document.visibilityState==="hidden"||!$("matSub"))return;
+  const box=$("matSub").closest("[data-perm]");if(box&&box.classList.contains("hide"))return; // no Material access
+  try{const d=await (await fetch("/api/material/state")).json();
+    if(d&&d.ok){const n=(d.pending||[]).length;$("matSub").textContent=n?(d.me.owner?n+" waiting for your confirmation":n+" of your requests waiting for confirmation"):"Cut · Add · Edit materials — with confirmation";}}catch(e){}
+}
+pullMat();setInterval(pullMat,30000);
 pullStock();setInterval(pullStock,30000);document.addEventListener("visibilitychange",pullStock);
 (async()=>{
   // The tiles are always visible; each area checks access itself. The lock screen shows only when the server clearly says "not allowed".
