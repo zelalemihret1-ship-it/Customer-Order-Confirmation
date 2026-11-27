@@ -1,6 +1,6 @@
 {
   "name": "ambar-furniture-telegram-mini-app",
-  "version": "1.5.9",
+  "version": "1.7.6",
   "private": true,
   "scripts": {
     "start": "node server.js"
