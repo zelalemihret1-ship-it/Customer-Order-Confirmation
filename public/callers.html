@@ -338,22 +338,22 @@ async function openWs(c){
   if(!WS)return;
   if(!d.ok){$("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1">✕</button></div><div class="notice bad" style="display:block;margin-top:10px">'+esc(d.error||"Could not open the workshop.")+'</div>';return;}
   WS.data=d;
-  const first=(d.orders||[]).find(o=>!o.sent&&o.status!=="Rejected")||(d.orders||[])[0];if(first)WSPICK.add("o:"+first.id);
+  const first=(d.orders||[]).find(o=>!o.sent&&o.confirmed);if(first)WSPICK.add("o:"+first.id);
   wsDraw();
 }
 function wsDraw(msg,kind){
-  const d=WS.data,c=d.customer,T=WSTAB;
+  const d=WS.data,c=d.customer,T=WSTAB,gOk=T==="order"?!!d.group:!!d.soldGroup;
   const th=u=>u?'<img loading="lazy" src="'+esc(u)+'" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>';
-  const orders=(d.orders||[]).map(o=>'<div class="wsIt '+(WSPICK.has("o:"+o.id)?"on":"")+'" data-wo="'+esc(o.id)+'">'+th(o.photo)+'<div><b>'+esc(o.product||"Order")+'</b><small>'+esc(o.orderId)+' · '+esc(o.status||"Pending")+(o.sent?' · ✅ already sent '+esc(o.sent.at||""):"")+'</small></div></div>').join("");
+  const orders=(d.orders||[]).map(o=>{const can=!!o.confirmed&&o.status!=="Rejected";return '<div class="wsIt '+(WSPICK.has("o:"+o.id)?"on":"")+'"'+(can?' data-wo="'+esc(o.id)+'"':' style="opacity:.6"')+'>'+th(o.photo)+'<div><b>'+esc(o.product||"Order")+'</b><small>'+esc(o.orderId)+' · '+(can?"✅ Confirmed":o.status==="Rejected"?"❌ Rejected":"⏳ Waiting customer confirmation")+(o.sent?' · ✅ already sent '+esc(o.sent.at||""):"")+'</small></div></div>';}).join("");
   const stock=(d.stock||[]).map(p=>'<div class="wsIt '+(WSPICK.has("p:"+p.id)?"on":"")+'" data-wp="'+esc(p.id)+'">'+(p.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="">':'<div class="ph">🛋</div>')+'<div><b>'+esc(p.code+(p.model?"-"+p.model:""))+'</b><small>'+esc([p.ptype,p.desc,p.handle].filter(Boolean).join(" · ")||"—")+'</small></div></div>').join("");
   $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div>'+
    '<div class="nm2">🛠 Send to workshop</div><div style="font-size:13px;color:#6d675d;line-height:1.5">👤 <b>'+esc(c.name)+'</b>'+(c.phone?' · 📞 '+esc(c.phone):'')+(c.location?'<br>📍 '+esc(c.location):'')+'</div>'+
-   '<div class="notice '+(d.group?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(d.group?'Group: <b>'+esc(d.group)+'</b>':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.')+'</div>'+
-   '<div class="wsTabs"><button type="button" data-wt="order" class="'+(T==="order"?"on":"")+'">📋 Order products</button><button type="button" data-wt="ready" class="'+(T==="ready"?"on":"")+'">🛋 Readymade</button></div>'+
+   '<div class="notice '+(gOk?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(T==="order"?(d.group?'Not-in-stock product → workshop group: <b>'+esc(d.group)+'</b><br>Sent only <b>after the customer confirms</b> the order.':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'):(d.soldGroup?'Product in stock → linked with this customer and posted in the Sold Out group: <b>'+esc(d.soldGroup)+'</b><br>The product is then marked <b>Sold Out</b>.':'No Sold Out group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'))+'</div>'+
+   '<div class="wsTabs"><button type="button" data-wt="order" class="'+(T==="order"?"on":"")+'">📋 Not in stock (order)</button><button type="button" data-wt="ready" class="'+(T==="ready"?"on":"")+'">🛋 In stock</button></div>'+
    (msg?'<div class="notice '+kind+'" style="display:block">'+esc(msg)+'</div>':'')+
-   (T==="order"?(orders||'<div class="empty">No order for this customer yet.<br>Make an order first, then come back here.</div>'):(stock||'<div class="empty">No readymade product in stock.</div>'))+
-   '<textarea id="wsNote" placeholder="Extra note for the workshop (optional)" style="min-height:56px;margin-top:10px"></textarea>'+
-   '<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(d.group?"":"disabled")+'>📤 Send to workshop</button></div>';
+   (T==="order"?(orders||'<div class="empty">No order for this customer yet.<br>Make an order first, then come back here.</div>'):(stock||'<div class="empty">No product in stock.</div>'))+
+   '<textarea id="wsNote" placeholder="Extra note (optional)" style="min-height:56px;margin-top:10px"></textarea>'+
+   '<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(gOk?"":"disabled")+'>'+(T==="order"?"📤 Send to workshop":"🔴 Sold → Sold Out group")+'</button></div>';
 }
 $("wsOv").addEventListener("click",async e=>{
   if(e.target===$("wsOv")||e.target.closest("[data-wx]")){wsClose();return;}
@@ -369,7 +369,7 @@ $("wsOv").addEventListener("click",async e=>{
     if(WSTAB==="order"){const ord=WS.data.orders.find(x=>String(x.id)===pick[0]);
       r=await api("/api/workshop/send-order","POST",{id:pick[0],note,again:!!(ord&&ord.sent)});
       if(r.ok&&ord){ord.sent={at:"just now"};}}
-    else{r=await api("/api/workshop/send-product","POST",{ids:pick,customerId:WS.c.id,note});}
+    else{r=await api("/api/workshop/send-sold","POST",{ids:pick,customerId:WS.c.id,note});if(r.ok){WS.data.stock=(WS.data.stock||[]).filter(x=>!pick.includes(String(x.id)));}}
     if(r.ok){WSPICK=new Set();wsDraw("✅ "+(r.message||"Sent to the workshop group."),"ok");}
     else wsDraw(r.error||"Could not send.","bad");
   }
