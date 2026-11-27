@@ -934,6 +934,11 @@ function register(app, ctx) {
     .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", photo: p.photo || "", status: p.status }))
     .sort((a, b) => (a.status === b.status ? 0 : a.status === "stock" ? -1 : 1))
     .slice(0, 400);
+  // v176: every readymade / order product that is In Stock (or Sold Out) with ALL its info — used by Home → Stock view and the Workshop page
+  const wsStockView = () => db.products
+    .filter(p => p.status === "stock" || p.status === "sold")
+    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", category: p.category || "", capacity: p.capacity || "", location: p.location || "", note: p.note || "", priority: p.priority || "", orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", salesName: p.salesName || "", deliveryDate: p.deliveryDate || "", photo: p.photo || "", status: p.status, added: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", finished: p.finished ? [p.finished.d, p.finished.t].filter(Boolean).join(" ") : "" }))
+    .slice(0, 1000);
   const wsMaterials = () => ({ materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })), groups: groupsOrdered() });
   function wsMaterial(kind, body, byName) {
     let out = { ok: false, error: "Unknown material action." };
@@ -974,6 +979,6 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, wsStockView, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
