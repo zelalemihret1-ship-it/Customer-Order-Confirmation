@@ -814,6 +814,7 @@ app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
 app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/reports.html", sendPage("reports.html", "<!doctype html><meta charset=utf-8><p>public/reports.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/workshop.html", sendPage("workshop.html", "<!doctype html><meta charset=utf-8><p>public/workshop.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/products.html", sendPage("products.html", "<!doctype html><meta charset=utf-8><p>public/products.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/material.html", sendPage("material.html", "<!doctype html><meta charset=utf-8><p>public/material.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/stories.html", sendPage("stories.html", "<!doctype html><meta charset=utf-8><p>public/stories.html is missing. Keep the public folder in the deploy.</p>"));
 app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charset=utf-8><p>public/greeting.html is missing. Keep the public folder in the deploy.</p>"));
@@ -1652,6 +1653,7 @@ function permNeeded(url) {
   const p = String(url || "").split("?")[0];
   if (p.startsWith("/api/reports")) return ["reports"];
   if (p === "/api/stock") return ["stockview", "reports", "workshop"]; // v184 Stock view
+  if (p.startsWith("/api/products")) return ["stockview", "reports", "workshop"]; // v187 Products page (advancing needs Workshop / Reports — checked in the route)
   if (p.startsWith("/api/workshop")) return ["workshop"];
   if (p.startsWith("/api/material")) return ["material", "workshop"]; // v177: the Material section (admins who already had Workshop keep access)
   if (p.startsWith("/api/ratings")) return ["rating"];
