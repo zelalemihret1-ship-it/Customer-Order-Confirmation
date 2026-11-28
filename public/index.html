@@ -132,7 +132,7 @@ body>main{width:min(100%,1040px);margin-inline:auto}body>main .card{min-width:0}
 <label>Partition<input name="partition"></label>
 <label>Drawer<input name="drawer"></label>
 <label class="full">Additional features<textarea name="additionalFeatures" id="additionalFeatures" maxlength="1000" rows="3" placeholder="Type any additional features of this product (optional)…"></textarea></label>
-<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📷 Choose Product Photo</label><input id="productPhoto" name="productPhoto" type="file" accept="image/*" required hidden><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Choose one photo from your phone or PC. All image formats supported by your browser. You can also drag and drop on PC.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
+<div class="full photo-picker"><label>Product Photo</label><div class="photo-box" id="photoDropZone"><div class="photo-actions"><label class="photo-button" for="productPhoto">📷 Choose Product Photos</label><input id="productPhoto" name="productPhoto" type="file" accept="image/*" multiple required hidden><span id="photoName" class="photo-name">No photo selected</span></div><div id="photoStatus" class="small" aria-live="polite">Choose one or several photos from your phone or PC. All image formats supported by your browser. You can also drag and drop on PC.</div><img id="selectedPhotoPreview" class="photo-preview" alt="Selected product preview" hidden></div></div>
 </div></div>
 
 <div class="card"><h2>Customer Information</h2><div class="grid">
@@ -320,11 +320,11 @@ function setPhoto(file){
  photoStatus.textContent=`Selected: ${file.name} (${(file.size/1048576).toFixed(2)} MB)`;
  previewCard();
 }
-photoInput.addEventListener("change",()=>setPhoto(photoInput.files?.[0]||null));
+photoInput.addEventListener("change",()=>{const fs=[...(photoInput.files||[])];if(fs.length>8){try{const dt=new DataTransfer();fs.slice(0,8).forEach(f=>dt.items.add(f));photoInput.files=dt.files;}catch(_){}}const n=Math.min(fs.length,8);setPhoto(photoInput.files?.[0]||null);if(n>1){photoName.textContent=n+" photos selected";photoStatus.textContent="Selected "+n+" photos — the first one is the main photo shown on the order card.";}});
 const photoDropZone=document.getElementById("photoDropZone"), photoName=document.getElementById("photoName");
 ["dragenter","dragover"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="#b89552";}));
 ["dragleave","drop"].forEach(ev=>photoDropZone.addEventListener(ev,e=>{e.preventDefault();photoDropZone.style.borderColor="";}));
-photoDropZone.addEventListener("drop",e=>{const f=e.dataTransfer.files?.[0];if(!f)return;try{const dt=new DataTransfer();dt.items.add(f);photoInput.files=dt.files;}catch(_){}setPhoto(f);});
+photoDropZone.addEventListener("drop",e=>{const fs=[...(e.dataTransfer.files||[])].filter(f=>(f.type||"").startsWith("image/")).slice(0,8);if(!fs.length)return;try{const dt=new DataTransfer();fs.forEach(f=>dt.items.add(f));photoInput.files=dt.files;}catch(_){}photoInput.dispatchEvent(new Event("change"));});
 function previewCard(){
  const v=vals(),f=photoInput.files?.[0],size=(v.length||v.width||v.height)?`L ${v.length||"—"}cm × W ${v.width||"—"}cm × H ${v.height||"—"}cm`:"";
  const product=[field("Product",v.product),field("Size",size),...(["material","color","style","design","handle","door","partition","drawer"].map(k=>field(k[0].toUpperCase()+k.slice(1),v[k]))),field("Additional features",v.additionalFeatures)].filter(Boolean).join("");
