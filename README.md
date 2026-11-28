@@ -2,7 +2,7 @@
 
 A Telegram Mini App (Node.js + Express) that runs the daily work of a furniture business from inside Telegram: customer orders and confirmations, customer records, workshop and stock, materials, ratings, greetings, weekly stories and Google Sheet reports.
 
-- **Version:** 1.8.6 (see [CHANGELOG.md](CHANGELOG.md) for the full history, v77 → v184)
+- **Version:** 1.9.1 (see [CHANGELOG.md](CHANGELOG.md) for the full history, v77 → v191)
 - **Runtime:** Node.js 20 or newer · `npm start` (`node server.js`)
 - **Time zone / dates:** Africa/Addis_Ababa, Ethiopian calendar dates (`2019/03/25`) and 24-hour clock in the stock and material records. Change the zone with `SHEET_TIMEZONE`.
 
@@ -32,7 +32,7 @@ A Telegram Mini App (Node.js + Express) that runs the daily work of a furniture 
 - **Assigned admin** — added by the main admin in Manage Admins; sees only the sections switched on for them.
 - **View-only admin** — can look but every write request is refused by the server (`VIEW_ONLY`).
 
-**Section switches (Manage Admins → access).** Ten keys:
+**Section switches (Manage Admins → access).** Eleven keys:
 
 | Key | Section |
 |---|---|
@@ -43,7 +43,8 @@ A Telegram Mini App (Node.js + Express) that runs the daily work of a furniture 
 | `stories` | Weekly Story |
 | `reports` | Reports |
 | `workshop` | Workshop |
-| `material` | Material (admins who already had Workshop keep access) |
+| `material` | Material (its own switch since v191; admins who had Workshop before were given it) |
+| `products` | Home → Products (Workshop · Stock · Sold list) |
 | `stockview` | Home → Stock view (also allowed for `reports` / `workshop`) |
 | `sheet` | The **Open Google Sheet** button on Home |
 
@@ -52,6 +53,18 @@ Admins created before `stockview` / `sheet` existed keep both until the main adm
 **Telegram account connection.** An admin can connect their own Telegram account (QR login, via the `telegram` MTProto library; needs `TG_API_ID` / `TG_API_HASH`). Posts to groups then come from that admin's own account; without it the **AMBAR bot** posts (the bot must be a member/admin of the group).
 
 ---
+
+**Action rights (v191).** For every part except the five customer-side ones (Order Confirmation, Customer ID, First Greeting, Customer Rating, Weekly Story) the main admin can also switch single actions on or off per admin: Manage Admins → 🔑 Section access → "What this admin may DO" (saved when tapped; nothing chosen = allowed, the main admin can always do everything).
+
+| Part | Actions |
+|---|---|
+| Workshop | `catalog` save · edit · delete Standard / Custom models · `order` order to the workshop, send orders, finish · `groups` choose / test the Telegram groups · `sold` Sold Out group: send, mark sold, restock |
+| Products | `advance` move Workshop → Stock · `sold` mark Sold (attach a customer) and Restock |
+| Material | Cut · Add · Edit — chosen on the Material page (unchanged) |
+
+Reports, Stock view and Open Google Sheet are view-only switches.
+
+**Start from ZERO + backup (v191, main admin).** Settings → 🗑 Start from ZERO (also Home → Administration). A full backup is saved first (`data/backups/zero-….json` and Supabase `zero_backup_…`); if the backup or the Google-Sheet archive fails nothing is erased. It then erases only the workshop side: products (workshop · stock · sold), materials and movements, saved Workshop models, the sent list and material edit requests. **Never erased:** Customer Order Confirmation, Customer ID, First Greeting, Customer Rating, Weekly Story, admins, Telegram groups, the Google-Sheet link. Settings → 💾 Backups & restore lists the backups; Restore first saves the current data as a new backup. API: `POST /api/zero/run`, `GET /api/zero/backups`, `POST /api/zero/restore`.
 
 ## 3. Material (`/material.html`)
 
@@ -74,7 +87,7 @@ Each admin chooses, once:
 1. **Workshop group (+ topic)** — where products and orders for production are posted.
 2. **Sold Out group (+ topic)** — where products sold from stock are posted.
 
-The two groups sit in one small **📨 Telegram groups** bar (closed until tapped). Pick from your groups, or paste a group / topic link, `@username` or id. **Send test** checks each. Posts go from the admin's own account if connected, otherwise from the bot.
+The three groups (Workshop · Finishing · Sold Out) sit in one small **📨 Telegram groups** bar (closed until tapped). Pick from your groups, or paste a group / topic link, `@username` or id. **Send test** checks each. Posts go from the admin's own account if connected, otherwise from the bot.
 
 ### Workshop tabs
 - **📦 Standard** — shows only the products you prepared. **☰ List / ▦ Large** view. Make standard products (saved as **Stock**; IDs `CH1…` shoe shelf, `CON1…` console, `1A…` others), tick what you want, **send** to the workshop group.
