@@ -2,7 +2,7 @@
 
 A Telegram Mini App (Node.js + Express) that runs the daily work of a furniture business from inside Telegram: customer orders and confirmations, customer records, workshop and stock, materials, ratings, greetings, weekly stories and Google Sheet reports.
 
-- **Version:** 1.8.5 (see [CHANGELOG.md](CHANGELOG.md) for the full history, v77 → v184)
+- **Version:** 1.8.6 (see [CHANGELOG.md](CHANGELOG.md) for the full history, v77 → v184)
 - **Runtime:** Node.js 20 or newer · `npm start` (`node server.js`)
 - **Time zone / dates:** Africa/Addis_Ababa, Ethiopian calendar dates (`2019/03/25`) and 24-hour clock in the stock and material records. Change the zone with `SHEET_TIMEZONE`.
 
@@ -74,13 +74,13 @@ Each admin chooses, once:
 1. **Workshop group (+ topic)** — where products and orders for production are posted.
 2. **Sold Out group (+ topic)** — where products sold from stock are posted.
 
-Pick from your groups, or paste a group / topic link, `@username` or id. **Send test** checks each. Posts go from the admin's own account if connected, otherwise from the bot.
+The two groups sit in one small **📨 Telegram groups** bar (closed until tapped). Pick from your groups, or paste a group / topic link, `@username` or id. **Send test** checks each. Posts go from the admin's own account if connected, otherwise from the bot.
 
 ### Workshop tabs
-- **📦 Standard** — make standard products (saved as **Stock**; IDs `CH1…` shoe shelf, `CON1…` console, `1A…` others), tick what you want, **send** to the workshop group.
-- **🎨 Custom** — prepare all the info of a one-off product (photo, name, type, measurement, colour, quantity, handle, note) and send it to the group.
+- **📦 Standard** — shows only the products you prepared. **☰ List / ▦ Large** view. Make standard products (saved as **Stock**; IDs `CH1…` shoe shelf, `CON1…` console, `1A…` others), tick what you want, **send** to the workshop group.
+- **🎨 Custom** — same List / Large view; each product has **⬆️ Move to standard**. Prepare all the info of a one-off product (photo, name, type, measurement, colour, quantity, handle, note) and send it to the group.
 - **📋 Orders ↗** — opens the customer data page; orders are sent from **Move ➜** there.
-- **📤 Sent** — the log of everything posted (ok / failed with the reason).
+- **📤 Sent** — the log of everything posted (ok / failed with the reason), showing only what was sent **from now**; **🔄 Start from now** resets the starting point (nothing is deleted).
 - **🔴 Sold out** list under Standard / Custom with **♻️ Restock** (Sold Out → In Stock) on every sold product.
 - Only products made in Workshop (Standard saved + Custom) are listed and sendable here; the general stock is sold through Move.
 
