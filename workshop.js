@@ -197,7 +197,6 @@ function register(app, ctx) {
   async function sendOrder(o, actor, { note = "", again = false } = {}) {
     const g = groupOf(actor); if (!g) return { ok: false, error: noGroup };
     if (o.status === "Rejected") return { ok: false, error: "The customer REJECTED this order." };
-    if (o.status !== "Confirmed") return { ok: false, code: "UNCONFIRMED", error: "⏳ Waiting for the customer's confirmation. A product that is not in stock goes to the workshop only AFTER the customer confirms the order." };
     if (o.workshopSent && !again) return { ok: false, code: "ALREADY", error: `This order was already sent to the workshop (${o.workshopSent.at || ""}).` };
     const cust = customerOfOrder(o), buf = await orderPhotoBuf(o);
     try { await post(actor, g, buf, orderCaption(o, cust, note)); }
@@ -247,6 +246,7 @@ function register(app, ctx) {
     return {
       ok: true, me: { name: clip(actor?.name, 60), owner }, group: g, groupName: groupName(g), soldGroup: soldGroupOf(actor), soldGroupName: groupName(soldGroupOf(actor)), sender: senderInfo(actor),
       orders: orderList(actor).slice(0, 200).map(compactOrder),
+      sold: stockList().filter(p => p.status === "sold").slice(-80).reverse().map(compactProduct), // v184: Sold Out products (each has a ♻️ Restock button)
       stock: stockList().filter(p => p.status === "stock" && p.wsSaved).map(compactProduct), // v178: only the Standard saved + Custom products (not the general stock)
       workflow: (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !/CUS|ORD/i.test(String(p.orderType || ""))).map(p => ({ id: p.id, code: p.code, model: p.model, desc: p.desc, ptype: p.ptype, photo: p.photo })),
       ptypes: ["Shoe Shelf", "Console Table", "TV Stand", "Wardrobe", "Bed", "Sofa", "Dining Table", "Coffee Table", "Cabinet", "Others"],
@@ -339,6 +339,11 @@ function register(app, ctx) {
     const r = await sendProducts(list, req.actor, { customerId: String(req.body?.customerId || ""), note: req.body?.note }); // v177: the Workshop page sends no customer; Customer ID → Send to workshop still does
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} sent to the workshop group.` + (r.error ? " Not sent: " + r.error : "") : undefined });
   });
+  // ♻️ Restock: a Sold Out product returns to In Stock
+  router.post("/restock", (req, res) => {
+    const r = typeof R().wsRestock === "function" ? R().wsRestock(String(req.body?.id || ""), clip(req.actor?.name || "Admin", 60)) : { ok: false, error: "Reports is not ready." };
+    res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? "♻️ Restocked — the product is back In Stock." : undefined });
+  });
   // Customer ID → Send to workshop, product IN STOCK: product info + customer info → the Sold Out group (and the product becomes Sold Out)
   router.post("/send-sold", async (req, res) => {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 30) : [];
@@ -372,7 +377,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v183" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v184" }));
 
   // Home → Stock view: every in-stock product with all its info (any assigned admin may look)
   app.get("/api/stock", requireAccess, (req, res) => {
