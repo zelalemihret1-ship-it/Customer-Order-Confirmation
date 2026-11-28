@@ -506,8 +506,12 @@ async function render(keepMsg){stopQr();
   const a=await api("/api/setup/app-admins");
   if(!a.ok){box.innerHTML='<p class="bad">'+esc(a.error)+'</p><button class="grey" data-a="close">Close</button>';return;}
 
-  const PERMS=[["orders","📦","Orders","Create and send order cards"],["customers","👥","Customers","Customer ID list"],["greeting","💬","First Greeting","Welcome message"],["rating","⭐","Ratings","Delivered orders and reviews"],["stories","📸","Weekly Story","Story planner"],["reports","📊","Reports","Workflow · Stock · Material"],["workshop","🛠","Workshop","Send order + readymade products to the workshop group"],["material","🧱","Material","Cut · Add · Edit materials (changes need main-admin confirmation)"],["stockview","🖼","Stock view","Home → Stock view: products in stock with photos"],["sheet","📄","Open Google Sheet","The Open Google Sheet button on Home"]];
+  const PERMS=[["orders","📦","Orders","Create and send order cards"],["customers","👥","Customers","Customer ID list"],["greeting","💬","First Greeting","Welcome message"],["rating","⭐","Ratings","Delivered orders and reviews"],["stories","📸","Weekly Story","Story planner"],["reports","📊","Reports","Workflow · Stock · Material"],["workshop","🛠","Workshop","Send order + readymade products to the workshop group"],["material","🧱","Material","Cut · Add · Edit materials (changes need main-admin confirmation)"],["products","📋","Products","Workshop · Stock · Sold list: move, sell, restock"],["stockview","🖼","Stock view","Home → Stock view: products in stock with photos"],["sheet","📄","Open Google Sheet","The Open Google Sheet button on Home"]];
   const tiles=(prefix,sel)=>'<div class="tiles">'+PERMS.map(p=>'<label class="tile"><input type="checkbox" id="'+prefix+p[0]+'"'+(sel.includes(p[0])?' checked':'')+'><span class="ic">'+p[1]+'</span><span><b>'+p[2]+'</b><small>'+p[3]+'</small></span></label>').join("")+'</div>';
+  // v191: per-admin ACTION rights for every part except the five customer-side ones (saved on tap; nothing chosen = allowed)
+  const PR=a.partRights||{},PTITLE={workshop:"🛠 Workshop",products:"📋 Products"};
+  const rightsBlock=p=>Object.keys(PR).length?'<div class="sb" style="margin:12px 0 4px;font-weight:700">What this admin may DO (saved when you tap)</div>'+Object.keys(PR).map(part=>'<div class="sb" style="margin:8px 0 2px"><b>'+(PTITLE[part]||esc(part))+'</b></div>'+PR[part].map(x=>'<label class="ck"><input type="checkbox" data-rt="'+esc(part)+'|'+esc(x[0])+'|'+esc(String(p.telegramId))+'"'+(((p.rights||{})[part]||{})[x[0]]!==false?' checked':'')+'> '+esc(x[1])+'</label>').join("")).join("")+'<div class="sb" style="margin-top:6px">🧱 Material: the Cut / Add / Edit choice for each admin is on the Material page.</div>':"";
+  if(!box.__rt){box.__rt=1;box.addEventListener("change",async e=>{const c=e.target.closest("[data-rt]");if(!c)return;const [part,act,id]=c.dataset.rt.split("|");c.disabled=true;let d;try{d=await api("/api/setup/app-admins/set-right",{telegramId:id,part,act,value:c.checked});}catch(x){d={ok:false,error:x.message};}c.disabled=false;if(!d.ok){c.checked=!c.checked;say(d);}});}
   const getPerms=prefix=>PERMS.map(p=>p[0]).filter(k=>(document.getElementById(prefix+k)||{}).checked);
   window.__acPerms=getPerms;
   const initial=n=>esc((String(n||"?").trim().charAt(0)||"?").toUpperCase());
@@ -524,7 +528,7 @@ async function render(keepMsg){stopQr();
       +'<div class="sb" style="color:#a35b18">If you change the Telegram ID, the old personal connection is removed and the new person must connect again.</div>'
       +'<div class="acts"><button style="flex:1" data-a="saveedit" data-id="'+esc(id)+'">Save</button><button class="ghost" style="flex:1" data-a="canceledit">Cancel</button></div></div></div>';
     if(permId===id)return '<div class="pc"><div class="pt"><div class="av">'+initial(p.name)+'</div><div><div class="nm">'+esc(p.name||"(no name)")+'</div><div class="sb">Choose what '+esc(p.name||"this admin")+' can open</div></div></div>'
-      +tiles("pp_",pm)+'<div class="acts"><button class="sm ghost" data-a="permall">Select all</button><button class="sm ghost" data-a="permnone">Clear</button></div>'
+      +tiles("pp_",pm)+'<div class="acts"><button class="sm ghost" data-a="permall">Select all</button><button class="sm ghost" data-a="permnone">Clear</button></div>'+rightsBlock(p)
       +'<div class="acts"><button style="flex:1" data-a="saveperms" data-id="'+esc(id)+'">Save access</button><button class="ghost" style="flex:1" data-a="cancelperm">Cancel</button></div></div>';
     const chips=p.main?'<span class="cp on">All sections (main admin)</span>':PERMS.map(x=>'<span class="cp '+(pm.includes(x[0])?'on':'off')+'">'+x[1]+' '+x[2]+'</span>').join("");
     return '<div class="pc"><div class="pt"><div class="av">'+initial(p.name)+'</div><div style="min-width:0"><div class="nm">'+esc(p.name||"(no name)")+(p.main?'<span class="bd m">👑 MAIN ADMIN</span>':'')+(p.viewer&&!p.main?'<span class="bd v">👁 VIEW ONLY</span>':'')+'</div>'
@@ -711,7 +715,8 @@ const items=()=>{
   L.push('<button class="main" data-c="sheet">📊 Open Google Sheet</button>');
   if(role==="owner"){
     L.push('<button data-c="cfg">⚡ Connect Google Sheet (one click · all data)</button>');
-    L.push('<button class="warn" data-c="zero">🗑 Start from ZERO (backup + clear all)</button>');
+    L.push('<button class="warn" data-c="zero">🗑 Start from ZERO (backup first · keeps orders &amp; customers)</button>');
+    L.push('<button data-c="zerobk">💾 Backups &amp; restore</button>');
     L.push('<h4>Admins</h4>');
     L.push('<button data-c="admins">👥 Manage Assigned Admins</button>');
   }
@@ -737,13 +742,26 @@ ov.addEventListener("click",e=>{
   if(c==="zero"){
     const w=window.Telegram?.WebApp,say=m=>{if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);};
     const ask=(m,cb)=>{if(w&&w.showConfirm){w.showConfirm(m,ok=>{if(ok)cb();});}else if(confirm(m))cb();};
-    ask("START FROM ZERO?\n\n1) Every order is saved in the Google Sheet as a BACKUP.\n2) ALL orders are then DELETED from the app and the Google Sheet starts new.\n\nThis cannot be undone in the app.",()=>{
-      ask("Are you really sure? All orders will be removed and numbering starts again from the beginning.",async()=>{
+    ask("START FROM ZERO?\n\n1) A full BACKUP is saved first (you can restore it).\n2) Then the workshop side is erased: products, stock, sold, materials, material movements, saved Workshop models and the sent list.\n\nNOT erased: Customer Order Confirmation, Customer ID, First Greeting, Customer Rating, Weekly Story.",()=>{
+      ask("Are you really sure? The backup is saved first, then the workshop data is erased and numbering starts again.",async()=>{
         b.disabled=true;b.textContent="Working…";
         try{const d=await (await fetch("/api/sheets/reset-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:"ZERO"})})).json();say(d.message||d.error||"Done");if(d.ok){ov.style.display="none";setTimeout(()=>location.reload(),600);}}catch(e){say("❌ "+e.message);}
-        b.disabled=false;b.textContent="🗑 Start from ZERO (backup + clear all)";
+        b.disabled=false;b.textContent="🗑 Start from ZERO (backup first · keeps orders & customers)";
       });
     });
+    return;
+  }
+  if(c==="zeroback"){show();return;}
+  if(c==="zerobk"||c==="zerorestore"){
+    const w=window.Telegram?.WebApp,say=m=>{if(w&&w.showAlert){try{w.showAlert(m);return;}catch{}}alert(m);};
+    const ask=(m,cb)=>{if(w&&w.showConfirm){w.showConfirm(m,ok=>{if(ok)cb();});}else if(confirm(m))cb();};
+    const E=v=>String(v==null?"":v).replace(/[&<>"]/g,k=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[k]));
+    if(c==="zerorestore"){const id=b.dataset.id;ask("Restore this backup?\n\n"+id+"\n\nThe workshop data now in the app is saved as a new backup first, so you can undo this.",async()=>{b.disabled=true;b.textContent="Working…";try{const d=await (await fetch("/api/zero/restore",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,confirm:"RESTORE"})})).json();say(d.message||d.error||"Done");if(d.ok)setTimeout(()=>location.reload(),600);}catch(e){say("❌ "+e.message);}b.disabled=false;b.textContent="Restore";});return;}
+    box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">💾 Backups</h2><button data-c="zeroback" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Back</button></div><p style="font:13px system-ui;color:#666">Loading…</p>';
+    (async()=>{try{const d=await (await fetch("/api/zero/backups")).json();const L=d.backups||[];
+      box.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font:700 17px system-ui">💾 Backups</h2><button data-c="zeroback" style="width:auto;margin:0;padding:8px 14px;background:#666;color:#fff">Back</button></div><p style="font:13px system-ui;color:#666">A backup is saved automatically every time you press Start from ZERO (and before every restore).</p>'+
+      (L.length?L.map(x=>{const c=x.counts||{};return '<div style="border:1px solid #ddd;border-radius:10px;padding:10px;margin:8px 0;font:13px system-ui"><b>'+E(String(x.at||"").replace("T"," ").slice(0,16))+'</b>'+(x.why?' · '+E(x.why):'')+(x.by?'<br>by '+E(x.by):'')+(x.counts&&x.counts.products!==undefined?'<br>'+E(c.products)+' product(s) · '+E(c.materials)+' material(s) · '+E(c.models)+' model(s)':'')+'<button data-c="zerorestore" data-id="'+E(x.id)+'" style="margin-top:8px">Restore</button></div>';}).join(""):'<p style="font:13px system-ui">No backups yet.</p>');
+    }catch(e){box.innerHTML='<p>'+E(e.message)+'</p><button data-c="zeroback">Back</button>';}})();
     return;
   }
   if(c==="admins"){go("acOpen");return;}
