@@ -1,984 +1,3532 @@
-// ── REPORTS (module + page: /reports.html) — MAIN ADMINS ONLY ─────────────────────────────────
-// v119: the MINI APP is the main source. Workflow · Stock · Material are kept inside the app
-// (file data/reports-data.json + Supabase app_settings.reports_data). The Google Sheet is only a BACKUP:
-// after every change the app sends a full snapshot to the sheet (tabs "Backup …"). Nothing is ever read back from the sheet.
-//
-//  • Workflow: add a product with a PRODUCT CODE → "Finished" sends it to IN STOCK → "Sold" records the sale
-//    with the ETHIOPIAN date + time (Addis Ababa clock).
-//  • Material: add a new material, ➕ add more, ✂️ cut (use) — every movement is logged with Ethiopian date + time.
-//  • Backup: one tab per section per ETHIOPIAN MONTH (Workflow · Stock · Material); a new month creates its tabs by itself. reports-sheet-script.gs (script version reports-5) is pasted in the reports Google Sheet; the /exec link is saved
-//    (file + Supabase) or set in Render as REPORTS_SCRIPT_URL. The old order sheet is never touched.
-// v121: products have a HANDLE TYPE and an uploaded PHOTO (stored as small JPEG files + Supabase app_settings rows "rphoto_<id>"); the app's Stock view groups in-stock products by model + handle.
-// Access: main admins, plus any assigned admin the main admin gave the "Reports" section (Manage Admins). View-only admins are refused on writes by requireAccess.
-// Connecting the backup sheet and disconnecting it stay main-admin only.
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const os = require("os");
 const express = require("express");
-
-const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
-const num = v => { const n = Number(String(v == null ? "" : v).replace(/,/g, "").trim()); return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : NaN; };
-const uid = () => crypto.randomBytes(6).toString("hex");
-
-function register(app, ctx) {
-  const { requireAccess, supabase, baseDir, tgApi, helpers, log } = ctx;
-  let workshopDeleteProducts = null;
-  // safe even when an older server.js does not pass hasPerm: main admin / open mode = yes, otherwise the admin must have the section in his list
-  const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
-  const ownerIdsLive = () => (ctx.ownerIds || []).map(String);
-  const appAdminsLive = () => (ctx.getAppAdmins ? ctx.getAppAdmins() : []) || [];
-  const audit = (event, detail, actor) => { try { log && log(event, detail, actor?.name || "Main admin"); } catch {} };
-  const CFG_FILE = path.join(baseDir, "reports-sheet.json");   // backup link (same file as v118, so the link survives the update)
-  const DATA_FILE = path.join(baseDir, "reports-data.json");   // the real data
-  let cfg = { scriptUrl: String(process.env.REPORTS_SCRIPT_URL || "").trim(), scriptKey: String(process.env.REPORTS_SCRIPT_KEY || "").trim(), sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-  const TG0 = { on: false, time: "08:00", sendAs: "", to: null, dm: true, targets: [], senders: [], channels: [], lastBy: "", lastDate: "", lastAt: "", ok: null, error: "", results: [] };
-  let db = { products: [], materials: [], log: [], matGroups: [], matLayout: 0, materialCutRequests: [], materialAddRequests: [], idCounters: {}, savedAt: "", tg: { ...TG0 } };
-  let workshopSource = null; // v174: Workshop → Reports live feed (dispatches, production jobs, assignments); read-only here
-  const feed = () => { try { return workshopSource ? workshopSource() : { dispatches: [], jobs: [] }; } catch { return { dispatches: [], jobs: [] }; } };
-
-  // ── Ethiopian date + time (Addis Ababa clock) ───────────────────────────────────────────────
-  const nowEth = () => {
-    const g = new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }); // 2026-11-22 14:05:09
-    return { d: helpers.ethDate(g.slice(0, 10)), t: g.slice(11, 16) };
-  };
-  // Ethiopian clock: the day starts at sunrise (06:00 Addis = 12:00 ቀን). 13:15 → 7:15 ቀን · 21:00 → 3:00 ሌሊት
-  const ethClock = t => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || "")); if (!m) return String(t || ""); const h = +m[1]; return (((h + 6) % 12) || 12) + ":" + m[2] + " " + (h >= 6 && h < 18 ? "ቀን" : "ሌሊት"); };
-  const who = req => clip(req.actor?.name || "Main admin", 60);
-
-  // ── storage (file + Supabase, restored on every start) ──────────────────────────────────────
-  let chain = Promise.resolve();
-  const persist = () => (chain = chain.then(async () => {
-    db.savedAt = new Date().toISOString();
-    try { fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true }); fs.writeFileSync(DATA_FILE, JSON.stringify(db)); } catch {}
-    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "reports_data", value: db, updated_at: new Date().toISOString() }); } catch {} }
-  }).catch(() => {}));
-  async function saveCfg() {
-    try { fs.mkdirSync(path.dirname(CFG_FILE), { recursive: true }); fs.writeFileSync(CFG_FILE, JSON.stringify(cfg)); } catch {}
-    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "reports_sheet", value: cfg, updated_at: new Date().toISOString() }); } catch {} }
-  }
-  async function load() {
-    let d = null, c = null;
-    if (supabase) {
-      try { const { data } = await supabase.from("app_settings").select("value").eq("key", "reports_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {}
-      try { const { data } = await supabase.from("app_settings").select("value").eq("key", "reports_sheet").maybeSingle(); if (data?.value && typeof data.value === "object") c = data.value; } catch {}
-    }
-    if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (!c) { try { c = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { products: [], materials: [], log: [], materialCutRequests: [], materialAddRequests: [], savedAt: "", ...d };
-    db.tg = { ...TG0, ...(db.tg || {}) };
-    if (!Array.isArray(db.tg.targets)) db.tg.targets = [];
-    if (Array.isArray(db.tg.channels) && db.tg.channels.length) { for (const u of db.tg.channels) if (!db.tg.targets.some(x => x.chat === u)) db.tg.targets.push({ chat: u, title: "@" + u, topic: 0, topicTitle: "" }); db.tg.channels = []; }
-    db.tg.dm = db.tg.dm !== false;
-    if (!Array.isArray(db.tg.senders)) db.tg.senders = [];
-    if (!db.tg.senders.length && db.tg.sendAs) db.tg.senders = [{ id: String(db.tg.sendAs), time: db.tg.time || "08:00", lastDate: db.tg.lastDate || "" }];
-    for (const p of db.products) { if (!p.desc && !p.model && p.name) p.desc = p.name; p.orderType = p.orderType || "READYMADE"; p.priority = p.priority || "LOW"; p.category = p.category || "OTHERS"; p.handle = p.handle || ""; p.photo = p.photo || ""; p.capacity = p.capacity || ""; if (p.orderType === "CUSTOM") p.orderType = "ORDER"; }
-    for (const m of db.materials) { m.type = m.type || ""; m.group = m.group || "MATERIAL"; }
-    if (!Array.isArray(db.materialCutRequests)) db.materialCutRequests = [];
-    if (!Array.isArray(db.materialAddRequests)) db.materialAddRequests = []; // v175
-    if (!db.idCounters || typeof db.idCounters !== "object") db.idCounters = {};
-    for (const p of db.products) bumpCounter(p.code);
-    layoutMaterials();
-    if (c && typeof c === "object") cfg = { ...cfg, scriptUrl: c.scriptUrl || cfg.scriptUrl, scriptKey: c.scriptKey || cfg.scriptKey, sheetName: c.sheetName || "", sheetUrl: c.sheetUrl || "", backup: { ...cfg.backup, ...(c.backup || {}) } };
-    if (process.env.REPORTS_SCRIPT_URL) { cfg.scriptUrl = String(process.env.REPORTS_SCRIPT_URL).trim(); if (process.env.REPORTS_SCRIPT_KEY) cfg.scriptKey = String(process.env.REPORTS_SCRIPT_KEY).trim(); }
-    if (cfg.scriptUrl) scheduleBackup(8000);
-    try { console.log("[reports] module build v149 loaded"); } catch {}
-    const tg = setInterval(() => { tgTick().catch(() => {}); }, 60 * 1000); if (tg.unref) tg.unref();
-    setTimeout(() => { tgTick().catch(() => {}); }, 20000); // a restart / redeploy refreshes the backup once
-    // New Ethiopian month → the backup runs by itself so the next month's Workflow / Stock / Material tabs appear (checked every 20 minutes)
-    // New Ethiopian day → S.TODAY turns into SOLD in the sheet (checked every 5 minutes); a new month also creates its tabs.
-    // v174: the same check also catches a change that was not backed up yet (db.savedAt newer than the last backup) or a failed backup, so the sheet always catches up by itself.
-    const t = setInterval(() => { if (cfg.scriptUrl && (cfg.backup.d !== nowEth().d || cfg.backup.ok === false || (db.savedAt && cfg.backup.at && db.savedAt > cfg.backup.at))) backupNow().catch(() => {}); }, 2 * 60 * 1000);
-    if (t.unref) t.unref();
-  }
-
-  // ── Google Sheet BACKUP (one-way: app → sheet) ──────────────────────────────────────────────
-  function scriptUrl(raw = cfg.scriptUrl) {
-    let url = String(raw || "").replace(/["'`\s]/g, "");
-    const found = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i);
-    if (found) url = found[0];
-    else if (/^[A-Za-z0-9_-]{20,}$/.test(url)) url = `https://script.google.com/macros/s/${url}/exec`;
-    if (!/^https:\/\/script\.google(usercontent)?\.com\//i.test(url)) throw new Error("That is not a Google Web app link. In Apps Script press Deploy → Manage deployments and copy the Web app URL (it ends with /exec).");
-    if (/\/dev(\?|$)/.test(url)) throw new Error("That link ends with /dev (test link). Use the Web app URL that ends with /exec.");
-    return url;
-  }
-  async function callScript(payload, { url, key } = {}) {
-    const start = scriptUrl(url);
-    let at = start;
-    let r = await fetch(at, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: key != null ? key : (cfg.scriptKey || "") }), redirect: "manual", signal: AbortSignal.timeout(120000) });
-    for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual", signal: AbortSignal.timeout(120000) }); }
-    const t = await r.text();
-    let d;
-    try { d = JSON.parse(t); } catch {
-      const low = t.toLowerCase();
-      if (low.includes("accounts.google.com") || low.includes("sign in") || r.status === 401 || r.status === 403) throw new Error("Google is asking visitors to sign in. Deploy the script again: Deploy → New deployment → Web app → Who has access: Anyone.");
-      if (r.status === 404 || low.includes("page not found")) throw new Error("The Web app link was not found. Copy it again from Deploy → Manage deployments (it must end with /exec).");
-      throw new Error(`The Google script did not answer correctly (HTTP ${r.status}). Paste the newest reports-sheet-script.gs, save, and deploy a New version.`);
-    }
-    if (!d.ok) throw new Error(/Unknown action/i.test(String(d.error || "")) ? "The Google script is the OLD version. Paste the new reports-sheet-script.gs in the reports sheet and deploy a New version." : String(d.error || "The Google script refused the request."));
-    return d;
-  }
-  const snapshot = () => ({ products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 3000), app: "AMBAR Furniture mini app", now: nowEth() });
-  let backing = false, again = false, timer = null;
-  async function backupNow() {
-    if (!cfg.scriptUrl) return { ok: false, error: "The backup sheet is not connected yet." };
-    if (backing) { again = true; return { ok: true, queued: true }; }
-    backing = true;
-    try {
-      const d = await callScript({ action: "backup", data: snapshot() });
-      const n = nowEth();
-      cfg.backup = { at: new Date().toISOString(), d: n.d, t: n.t, ok: true, error: "", count: d.rows || 0, month: n.d.slice(0, 7) };
-      if (d.url) cfg.sheetUrl = d.url;
-      if (d.name) cfg.sheetName = d.name;
-      await saveCfg();
-      return { ok: true };
-    } catch (e) {
-      cfg.backup = { ...cfg.backup, ok: false, error: e.message };
-      await saveCfg();
-      return { ok: false, error: e.message };
-    } finally { backing = false; if (again) { again = false; scheduleBackup(2000); } }
-  }
-  function scheduleBackup(ms = 4000) {
-    if (!cfg.scriptUrl) return;
-    clearTimeout(timer); timer = setTimeout(() => { backupNow().catch(() => {}); }, ms);
-  }
-
-  // ── helpers on the data ─────────────────────────────────────────────────────────────────────
-  const stamp = req => ({ ...nowEth(), by: who(req) });
-  const hist = (p, ev, req, extra = {}) => { p.history = (p.history || []).concat({ ev, ...stamp(req), ...extra }).slice(-60); };
-  const findP = id => db.products.find(p => p.id === String(id || ""));
-  const findM = id => db.materials.find(m => m.id === String(id || ""));
-  const codeTaken = (code, exceptId) => db.products.some(p => p.id !== exceptId && p.code.toLowerCase() === code.toLowerCase());
-  const nextCode = () => {
-    let max = 0; for (const p of db.products) { const m = /^P-(\d+)$/i.exec(p.code); if (m) max = Math.max(max, +m[1]); }
-    return "P-" + String(max + 1).padStart(4, "0");
-  };
-  // v159: Product IDs of SHOE SHELF products (see v160 below for the other types): Z1..Z40, Y1..Y40 … A1..A40 (letter E is skipped), then OZ1..OZ40, OY1.. (one more "O" each full round). One ID per product.
-  const SEQ_LETTERS = "ZYXWVUTSRQPONMLKJIHGFDCBA".split(""), SEQ_PER = 40, SEQ_BLOCK = SEQ_LETTERS.length * SEQ_PER;
-  const seqCode = i => "O".repeat(Math.floor(i / SEQ_BLOCK)) + SEQ_LETTERS[Math.floor((i % SEQ_BLOCK) / SEQ_PER)] + ((i % SEQ_PER) + 1);
-  const seqIndexOf = code => { const m = /^(O*)([A-DF-Z])(\d{1,2})$/i.exec(String(code || "").trim()); if (!m) return -1; const n = +m[3], L = SEQ_LETTERS.indexOf(m[2].toUpperCase()); if (n < 1 || n > SEQ_PER || L < 0) return -1; return m[1].length * SEQ_BLOCK + L * SEQ_PER + (n - 1); };
-  // v159: preview the next n IDs without using them (shown in the Workshop list before it is sent)
-  let reservedFn = null; const reservedSet = () => { try { return reservedFn ? reservedFn() : new Set(); } catch { return new Set(); } };
-  // v159: always start from the FIRST free ID (Z1, Z2 …). Used / reserved IDs are skipped, so the list is never blocked by older codes like N6.
-  // v160: Shoe Shelf products keep the old Z1, Z2 … sequence. EVERY OTHER product type uses 1A, 1B … 1Z, 2A … 2Z, 3A … (number first, then the letter).
-  const isShoeType = pt => /shoe\s*shelf/i.test(String(pt || ""));
-  const otherCode = i => (Math.floor(i / 26) + 1) + "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[i % 26];
-  // v174: SEQUENTIAL Product IDs by type — footwear (Shoe Shelf) → CH1, CH2, CH3 …; Console products → CON1, CON2, CON3 … Numbers only go up (a deleted ID is never handed out again).
-  // Every other product type keeps 1A, 1B … 1Z, 2A …
-  const isConType = pt => /\b(console|consult)/i.test(String(pt || ""));
-  const prefixOf = pt => isShoeType(pt) ? "CH" : isConType(pt) ? "CON" : "";
-  const numOf = (prefix, code) => { const m = new RegExp("^" + prefix + "(\\d+)$", "i").exec(String(code || "").trim()); return m ? +m[1] : 0; };
-  const counterOf = prefix => { let max = Math.max(0, Number((db.idCounters || {})[prefix]) || 0); for (const p of db.products) max = Math.max(max, numOf(prefix, p.code)); for (const c of reservedSet()) max = Math.max(max, numOf(prefix, c)); return max; };
-  const peekSeqCodes = (n, ptype) => {
-    const prefix = prefixOf(ptype), out = [];
-    if (prefix) { const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase())); let i = counterOf(prefix); while (out.length < n && i < 1000000) { i++; const c = prefix + i; if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); } return out; }
-    const rs = reservedSet(), used = new Set(db.products.map(p => String(p.code || "").toLowerCase()));
-    for (let i = 0; out.length < n && i < 100000; i++) { const c = otherCode(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
-    return out;
-  };
-  const bumpCounter = code => { for (const prefix of ["CH", "CON"]) { const k = numOf(prefix, code); if (k) { db.idCounters = db.idCounters || {}; if (k > (db.idCounters[prefix] || 0)) db.idCounters[prefix] = k; } } };
-  const nextSeqCode = ptype => peekSeqCodes(1, ptype)[0];
-  const addLog = (req, m, type, qty, balance, note) => {
-    db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
-    if (db.log.length > 6000) db.log.length = 6000;
-  };
-  const fail = (res, error) => res.json({ ok: false, error });
-  const backupInfo = () => ({ configured: !!cfg.scriptUrl, sheetName: cfg.sheetName || "", sheetUrl: cfg.sheetUrl || "", at: cfg.backup.at || "", d: cfg.backup.d || "", t: cfg.backup.t || "", ok: cfg.backup.ok, error: cfg.backup.error || "", count: cfg.backup.count || 0 });
-  const salesNames = () => [...new Set([...appAdminsLive().map(a => a.name), ...db.products.map(p => p.salesName), ...db.products.map(p => p.sold && p.sold.by)].map(x => clip(x, 80)).filter(Boolean))].sort();
-  const view = () => ({ appBuild: "v174", viewOnly: true, workshop: feed(), tg: tgInfo(), sales: salesNames(), handles: [...new Set(db.products.map(p => p.handle).filter(Boolean))].sort(), cats: ["SHOE SHELF", "OTHERS", "GADGETS"], products: db.products, materials: orderedMaterials(), matGroups: groupsOrdered(), log: db.log.slice(0, 400), backup: backupInfo(), now: nowEth(), nextCode: nextCode() });
-  const done = (res, message) => { persist(); scheduleBackup(); res.json({ ok: true, message, ...view() }); };
-
-  // ── product photos (small JPEGs made in the phone; file + Supabase copy, served at /api/reports-photo/<id>.jpg) ──
-  const PHOTO_DIR = path.join(baseDir, "report-photos");
-  const photoFile = id => path.join(PHOTO_DIR, id + ".jpg");
-  async function savePhoto(dataUrl) {
-    const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
-    if (!m) throw new Error("The photo could not be read. Choose it again.");
-    const buf = Buffer.from(m[1], "base64");
-    if (buf.length < 200) throw new Error("The photo is empty. Choose it again.");
-    if (buf.length > 1.5 * 1024 * 1024) throw new Error("The photo is too big (max 1.5 MB after shrinking).");
-    const id = crypto.randomBytes(12).toString("hex");
-    try { fs.mkdirSync(PHOTO_DIR, { recursive: true }); fs.writeFileSync(photoFile(id), buf); } catch {}
-    if (supabase) { try { await supabase.from("app_settings").upsert({ key: "rphoto_" + id, value: { b64: m[1] }, updated_at: new Date().toISOString() }); } catch {} }
-    return id;
-  }
-  async function dropPhoto(id) {
-    if (!id || db.products.some(p => p.photo === id)) return;
-    try { fs.unlinkSync(photoFile(id)); } catch {}
-    if (supabase) { try { await supabase.from("app_settings").delete().eq("key", "rphoto_" + id); } catch {} }
-  }
-  app.get("/api/reports-photo/:id.jpg", async (req, res) => {
-    const id = String(req.params.id || "");
-    if (!/^[a-f0-9]{24}$/.test(id)) return res.status(404).end();
-    const buf = await photoBuf(id);
-    if (!buf) return res.status(404).end();
-    res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=31536000, immutable" });
-    res.end(buf);
-  });
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+let createClient = null;
+try { ({ createClient } = require("@supabase/supabase-js")); } catch (e) { console.error("Supabase library unavailable, continuing without it:", e.message); }
+const crypto = require("crypto");
+const zlib = require("zlib");
 
 
-  // ── DAILY STOCK → TELEGRAM (every day, to every admin, sent FROM the main admin's own Telegram account — not the bot, not the mini app) ──
-  async function photoBuf(id) {
-    if (!/^[a-f0-9]{24}$/.test(String(id || ""))) return null;
-    try { return fs.readFileSync(photoFile(id)); } catch {}
-    if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "rphoto_" + id).maybeSingle(); if (data?.value?.b64) return Buffer.from(data.value.b64, "base64"); } catch {} }
-    return null;
-  }
-  const normK = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
-  function stockGroups(L) {
-    const m = new Map();
-    for (const p of L) { const k = String(p.id) /* v160: every product is listed separately (own Product ID + model) */; let g = m.get(k); if (!g) { g = { key: k, model: p.model || p.desc || p.code, handle: p.handle || "", desc: p.desc || "", items: [] }; m.set(k, g); } g.items.push(p); }
-    return [...m.values()].map(g => { g.photo = (g.items.find(p => p.photo) || {}).photo || ""; return g; }).sort((a, b) => a.model.localeCompare(b.model, undefined, { numeric: true }) || a.handle.localeCompare(b.handle) || a.desc.localeCompare(b.desc, undefined, { numeric: true }) || String(a.items[0].code).localeCompare(String(b.items[0].code), undefined, { numeric: true }));
-  }
-  const uniq = a => [...new Set(a.map(x => clip(x, 80)).filter(Boolean))];
-  function groupCaption(g) {
-    const sizes = uniq(g.items.map(p => p.desc)), caps = uniq(g.items.map(p => p.capacity));
-    const pt = uniq(g.items.map(p => p.ptype)).join(" / ");
-    const L = [g.items.length === 1 ? `🛋 ${g.items[0].code}-${g.model}${pt ? " · " + pt : ""}` : `🛋 ${pt ? pt + " · " : ""}${g.model}  ×${g.items.length}`];
-    if (sizes.length) L.push("📏 Size: " + sizes.join(" / "));
-    if (caps.length) L.push("👟 Shoe capacity: " + caps.join(" / "));
-    L.push("🔧 Handle: " + (g.handle || "—"));
-    L.push("🏷 " + g.items.map(p => p.code).join(", "));
-    return L.join("\n").slice(0, 1000);
-  }
-  const todayAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(0, 10);
-  const timeAddis = () => new Date().toLocaleString("sv-SE", { timeZone: helpers.TZ || "Africa/Addis_Ababa" }).slice(11, 16);
-  const isOwnerId = id => ownerIdsLive().includes(String(id));
-  // the Telegram account that belongs to this person (a main admin, an assigned main admin or an assigned admin) — never someone else's
-  const accFor = id => id && typeof ctx.accountFor === "function" ? ctx.accountFor({ role: isOwnerId(id) ? "owner" : "admin", telegramId: String(id) }) : null;
-  const senderAcc = () => accFor(db.tg.sendAs);
-  const nameOfAdmin = id => { const a = appAdminsLive().find(x => String(x.telegramId) === String(id)); return clip(a?.name, 60) || (ownerIdsLive().includes(String(id)) ? "Main admin" : "Admin " + id); };
-  function recipients() {
-    const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
-    const sel = Array.isArray(db.tg.to) && db.tg.to.length ? db.tg.to.map(String) : null; // null = every admin; otherwise only the admins the main admin picked
-    return ids.filter(id => id !== String(db.tg.sendAs) && (!sel || sel.includes(id))).map(id => ({ id, name: nameOfAdmin(id) }));
-  }
-  function candidates() {
-    const ids = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
-    return ids.map(id => ({ id, name: nameOfAdmin(id) }));
-  }
-  // main admins whose OWN Telegram account is connected: the stock can be sent from any of them
-  const senders = () => [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(String(x))))].map(id => ({ id: String(id), name: nameOfAdmin(id), ready: !!accFor(id)?.ready }));
-  const setSender = (req, wanted) => { // returns an error text or ""
-    const id = String(wanted || "");
-    if (!id) return "";
-    if (!senders().some(x => x.id === id)) return "That sender is not an admin of this app.";
-    if (!accFor(id)?.ready) return nameOfAdmin(id) + "'s Telegram account is not connected. Connect it first (Settings → Connect my Telegram account).";
-    db.tg.sendAs = id; return "";
-  };
-  // group / channel targets: a public @username, a private group id (-100…), or a link — plus an optional forum TOPIC inside it
-  function parseTgLink(x) {
-    let t = String(x || "").trim(); if (!t) return null;
-    t = t.replace(/^(https?:\/\/)?(www\.)?(t|telegram)\.me\//i, "");
-    const parts = t.split(/[/?#]/).filter(Boolean); if (!parts.length) return null;
-    if (parts[0] === "c" && /^\d+$/.test(parts[1] || "")) return { chat: "-100" + parts[1], topic: /^\d+$/.test(parts[2] || "") ? Number(parts[2]) : 0 };
-    const u = parts[0].replace(/^@+/, "");
-    if (/^-100\d{5,15}$/.test(u)) return { chat: u, topic: /^\d+$/.test(parts[1] || "") ? Number(parts[1]) : 0 };
-    if (/^-\d{5,20}$/.test(u)) return { chat: u, topic: 0 };
-    if (/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(u)) return { chat: u, topic: /^\d+$/.test(parts[1] || "") ? Number(parts[1]) : 0 };
-    return null;
-  }
-  const cleanTargets = v => {
-    const arr = Array.isArray(v) ? v : String(v || "").split(/[\s,;\n]+/), out = [];
-    for (const x of arr) {
-      let o = null;
-      if (x && typeof x === "object") { const pl = parseTgLink(x.chat); if (pl) o = { chat: pl.chat, title: clip(x.title, 80), topic: Number.isInteger(Number(x.topic)) && Number(x.topic) > 0 ? Number(x.topic) : pl.topic, topicTitle: clip(x.topicTitle, 80) }; }
-      else { const pl = parseTgLink(x); if (pl) o = { chat: pl.chat, title: /^\d/.test(pl.chat) || pl.chat[0] === "-" ? "" : "@" + pl.chat, topic: pl.topic, topicTitle: "" }; }
-      if (o && !out.some(y => y.chat.toLowerCase() === o.chat.toLowerCase() && y.topic === o.topic)) out.push(o);
-    }
-    return out.slice(0, 20);
-  };
-  const targetName = g => (g.title || (/^-/.test(g.chat) ? "Group " + g.chat : "@" + g.chat)) + (g.topic ? " › " + (g.topicTitle || "topic " + g.topic) : "");
-  async function resolveTarget(acc, g) {
-    const key = /^-?\d+$/.test(g.chat) ? BigInt(g.chat) : "@" + g.chat;
-    try { return await acc.client.getEntity(key); }
-    catch (e) { if (typeof key === "bigint") { await acc.client.getDialogs({ limit: 500 }); return await acc.client.getEntity(key); } throw e; }
-  }
-  const cleanTo = v => Array.isArray(v) ? [...new Set(v.map(String).filter(x => /^\d+$/.test(x)))].slice(0, 100) : null;
-  function tgInfo() {
-    const t = db.tg, acc = senderAcc();
-    return { on: !!t.on, time: t.time, sendAs: t.sendAs || "", sendAsName: t.sendAs ? nameOfAdmin(t.sendAs) : "", senderReady: !!acc?.ready, lastDate: t.lastDate || "", lastAt: t.lastAt || "", ok: t.ok, error: t.error || "", results: t.results || [], recipients: t.dm === false ? [] : recipients().map(r => r.name), candidates: candidates(), senders: senders(), to: Array.isArray(t.to) ? t.to : [], assigned: (t.senders || []).map(e => ({ id: e.id, name: nameOfAdmin(e.id), time: e.time, ready: !!accFor(e.id)?.ready, lastDate: e.lastDate || "", lastAt: e.lastAt || "", ok: e.ok === undefined ? null : e.ok, error: e.error || "" })), dm: t.dm !== false, targets: (t.targets || []).map(g => ({ ...g, name: targetName(g) })), lastBy: t.lastBy || "" };
-  }
-  const tgFriendly = e => { const m = String(e?.errorMessage || e?.message || e || ""); if (/FLOOD_WAIT|PEER_FLOOD/i.test(m)) return "Telegram asked to slow down. Try again in a few minutes."; if (/USERNAME_NOT_OCCUPIED|USERNAME_INVALID/i.test(m)) return "No Telegram group or channel with this username exists. Check the spelling."; if (/CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED|USER_BANNED_IN_CHANNEL|CHANNEL_PRIVATE|CHAT_SEND_PHOTOS_FORBIDDEN|CHAT_SEND_MEDIA_FORBIDDEN/i.test(m)) return "This Telegram account is not allowed to post there. Join the group/channel with this account (as admin for a channel) and try again."; if (/PEER_ID_INVALID|Cannot find any entity|not found/i.test(m)) return "The sender's Telegram account has no chat with this admin yet. Open a chat with them once from that account, then press Send now."; if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/i.test(m)) return "The sender's Telegram login expired. Connect it again."; return m.slice(0, 200) || "Could not send."; };
-  let tgBusy = false;
-  async function sendDaily(opt = {}) { // opt.by = { id, name, acc } → sent from THAT person's own Telegram account; opt.to / opt.targets / opt.dm override the saved choice for this send only
-    if (tgBusy) return { ok: false, error: "A send is already running." };
-    tgBusy = true;
-    const t = db.tg;
-    try {
-      let acc, senderId, senderName;
-      if (opt.by) { acc = opt.by.acc; senderId = String(opt.by.id || ""); senderName = opt.by.name || nameOfAdmin(senderId); if (!acc?.ready) throw new Error("Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then press Send now again."); }
-      else {
-        acc = senderAcc();
-        if (!t.sendAs || !acc?.ready) { // the chosen sender is not connected: use any admin whose own Telegram account is connected
-          const alt = senders().find(x => x.ready);
-          if (alt) { t.sendAs = alt.id; acc = senderAcc(); persist(); }
-        }
-        if (!t.sendAs || !acc?.ready) throw new Error("The sender's Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then switch Daily Telegram on again.");
-        senderId = String(t.sendAs); senderName = nameOfAdmin(senderId);
+const ALLOWED_UPDATES = ["message", "callback_query", "inline_query", "chosen_inline_result"];
+
+// Tokens pasted into hosting dashboards often carry quotes, spaces or a stray "bot" prefix.
+function cleanToken(raw = "") {
+  return String(raw).trim().replace(/^["']|["']$/g, "").trim().replace(/^bot(?=\d+:)/i, "");
+}
+
+// Telegram only accepts secret tokens made of A-Z a-z 0-9 _ - (1..256 chars). A secret with any
+// other character makes setWebhook fail, which silently leaves the OLD webhook in place and
+// breaks every Business update. Anything invalid is hashed into a valid token; the same
+// function is used for registering and for verifying, so the two always agree.
+function normalizeSecret(raw = "") {
+  const s = String(raw).trim();
+  if (!s) return "";
+  if (/^[A-Za-z0-9_-]{1,256}$/.test(s)) return s;
+  return crypto.createHash("sha256").update(s).digest("hex");
+}
+
+// Bot API 7.2 – 8.x exposed BusinessConnection.can_reply; newer versions use rights.can_reply.
+function canReply(connection) {
+  if (!connection) return false;
+  if (connection.rights && typeof connection.rights.can_reply === "boolean") return connection.rights.can_reply;
+  if (typeof connection.can_reply === "boolean") return connection.can_reply;
+  return connection.rights ? false : true; // unknown shape: let Telegram decide at send time
+}
+function isUsable(connection) {
+  return !!connection && connection.is_enabled !== false && canReply(connection);
+}
+
+function friendlyError(message = "") {
+  const m = String(message);
+  if (/chat not found|PEER_ID_INVALID|bot can't initiate conversation|user is deactivated/i.test(m))
+    return "Telegram could not deliver to that private chat. The customer must open the AMBAR bot and press Start first; then use the customer's numeric chat ID.";
+  if (/not enough rights|CHAT_WRITE_FORBIDDEN|BOT_ACCESS_FORBIDDEN/i.test(m))
+    return "The bot cannot post in that chat. Add the AMBAR bot to the group/channel and give it permission to send messages.";
+  if (/bot was blocked/i.test(m)) return "The customer has blocked the bot.";
+  if (/Unauthorized/i.test(m)) return "BOT_TOKEN is invalid or revoked. Copy the current token from @BotFather into the BOT_TOKEN environment variable.";
+  return m;
+}
+
+function createTelegram({ token, publicBaseUrl, secret, apiBase, log = console }) {
+  const TOKEN = cleanToken(token);
+  const BASE = String(apiBase || process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/$/, "");
+  const SECRET = normalizeSecret(secret);
+  const PUBLIC = String(publicBaseUrl || "").trim().replace(/\/+$/, "");
+  const WEBHOOK_URL = PUBLIC ? `${PUBLIC}/api/telegram/webhook` : "";
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function request(method, makeInit, { retry = true, timeoutMs = 25000 } = {}) {
+    if (!TOKEN) throw new Error("BOT_TOKEN is not configured on the server.");
+    let lastError;
+    const attempts = retry ? 3 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        const response = await fetch(`${BASE}/bot${TOKEN}/${method}`, { ...makeInit(), signal: AbortSignal.timeout(timeoutMs) });
+        let data;
+        try { data = await response.json(); } catch { throw Object.assign(new Error(`Telegram ${method} returned a non-JSON response (HTTP ${response.status}).`), { transient: response.status >= 500 }); }
+        if (data.ok) return data.result;
+        const err = new Error(data.description || `Telegram ${method} failed.`);
+        err.code = data.error_code;
+        err.retryAfter = data.parameters?.retry_after;
+        if (data.error_code === 429 && attempt < attempts) { await sleep(Math.min((err.retryAfter || 1) * 1000, 10000)); lastError = err; continue; }
+        if (data.error_code >= 500 && attempt < attempts) { await sleep(500 * attempt); lastError = err; continue; }
+        throw err;
+      } catch (error) {
+        if (error.code) throw error; // a real Telegram API answer: do not retry
+        lastError = error;
+        if (attempt < attempts && (retry || false)) { await sleep(500 * attempt); continue; }
+        if (error.name === "TimeoutError" || error.name === "AbortError") throw new Error(`Telegram ${method} timed out.`);
+        throw error;
       }
-      const selTo = Array.isArray(opt.to) ? (opt.to.length ? opt.to.map(String) : null) : (Array.isArray(t.to) && t.to.length ? t.to.map(String) : null);
-      const allIds = [...new Set([...ownerIdsLive(), ...appAdminsLive().map(a => String(a.telegramId))].filter(x => /^\d+$/.test(x)))];
-      const dm = opt.dm !== undefined ? !!opt.dm : t.dm !== false;
-      const to = dm ? allIds.filter(id => id !== senderId && (!selTo || selTo.includes(id))).map(id => ({ id, name: nameOfAdmin(id) })) : [];
-      const chans = (Array.isArray(opt.targets) ? cleanTargets(opt.targets) : (t.targets || [])).map(g => ({ id: null, tg: g, name: targetName(g) }));
-      if (!to.length && !chans.length) throw new Error(dm ? "There is no other admin to send to. Add a Telegram group (and topic) below, or add admins." : "Add a Telegram group (and topic) to send to, or switch on sending to admins.");
-      const stock = db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || ""))), groups = stockGroups(stock).slice(0, 60), n = nowEth();
-      const head = `📦 AMBAR STOCK — ${n.d}\n${stock.length} readymade product${stock.length === 1 ? "" : "s"} in stock · ${groups.length} model${groups.length === 1 ? "" : "s"}` + (stock.length ? "" : "\nNothing is in stock today.");
-      const photos = new Map();
-      for (const g of groups) if (g.photo) { const b = await photoBuf(g.photo); if (b) photos.set(g.key, b); }
-      const results = [];
-      for (const r of [...to, ...chans]) {
-        try {
-          let entity;
-          const reply = r.tg && r.tg.topic ? { replyTo: r.tg.topic } : {};
-          if (r.tg) entity = await resolveTarget(acc, r.tg);
-          else { try { entity = await acc.client.getEntity(BigInt(r.id)); } catch { entity = await acc.client.getInputEntity(BigInt(r.id)); } }
-          await acc.client.sendMessage(entity, { message: head, ...reply });
-          for (const g of groups) {
-            await new Promise(x => setTimeout(x, 800));
-            const buf = photos.get(g.key);
-            if (buf) {
-              const f = path.join(os.tmpdir(), "stk-" + uid() + ".jpg");
-              fs.writeFileSync(f, buf);
-              try { await acc.client.sendFile(entity, { file: f, caption: groupCaption(g), forceDocument: false, ...reply }); } finally { try { fs.unlinkSync(f); } catch {} }
-            } else await acc.client.sendMessage(entity, { message: groupCaption(g), ...reply });
+    }
+    throw lastError;
+  }
+
+  const call = (method, body = {}, opts) => request(method, () => ({
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  }), opts);
+
+  // Sending is not retried on network errors: a lost response could otherwise deliver the card twice.
+  const sendForm = (method, buildForm) => request(method, () => ({ method: "POST", body: buildForm() }), { retry: false, timeoutMs: 60000 });
+
+  async function configureWebhook() {
+    if (!TOKEN || !PUBLIC) {
+      log.log("Telegram webhook auto-configuration skipped: set BOT_TOKEN and PUBLIC_BASE_URL (or use RENDER_EXTERNAL_URL).");
+      return { ok: false, reason: "missing BOT_TOKEN or PUBLIC_BASE_URL" };
+    }
+    if (!/^https:\/\//i.test(PUBLIC)) {
+      const reason = `PUBLIC_BASE_URL must start with https:// (got "${PUBLIC}"). Telegram only delivers webhooks to HTTPS URLs.`;
+      log.error("Telegram webhook configuration failed:", reason);
+      return { ok: false, reason };
+    }
+    const payload = { url: WEBHOOK_URL, allowed_updates: ALLOWED_UPDATES, drop_pending_updates: false };
+    if (SECRET) payload.secret_token = SECRET;
+    let lastError;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        // setWebhook atomically replaces any previous webhook (no deleteWebhook gap where updates are lost).
+        await call("setWebhook", payload, { retry: false });
+        log.log("Telegram webhook configured:", WEBHOOK_URL);
+        return { ok: true, url: WEBHOOK_URL };
+      } catch (error) {
+        lastError = error;
+        log.error(`Telegram webhook configuration attempt ${attempt} failed:`, error.message);
+        if (error.code && error.code < 429 && error.code !== 408) break; // 4xx (bad token/url): retrying cannot help
+        await sleep(2000 * attempt);
+      }
+    }
+    return { ok: false, reason: lastError?.message || "unknown error" };
+  }
+
+  let lastHeal = 0;
+  // Called from the status endpoint: if Telegram points anywhere else than this server, repair it.
+  async function healWebhookIfNeeded(info) {
+    const wrongUrl = !info || info.url !== WEBHOOK_URL;
+    const missing = !info || !ALLOWED_UPDATES.every(x => (info.allowed_updates || []).includes(x));
+    const erroring = info?.last_error_message && /401|unauthorized|wrong response|forbidden/i.test(info.last_error_message);
+    if (!(wrongUrl || missing || erroring) || !WEBHOOK_URL) return false;
+    if (Date.now() - lastHeal < 60000) return false;
+    lastHeal = Date.now();
+    return (await configureWebhook()).ok;
+  }
+
+  return { call, sendForm, configureWebhook, healWebhookIfNeeded, webhookUrl: WEBHOOK_URL, secret: SECRET, hasToken: !!TOKEN };
+}
+
+
+
+const app = express();
+// Speed: gzip every text / JSON response (the order page is ~84 KB -> ~20 KB on the wire).
+app.use((req, res, next) => {
+  const send = res.send;
+  res.send = function (body) {
+    try {
+      if (this.headersSent || req.method === "HEAD" || this.get("Content-Encoding") || !/\bgzip\b/.test(req.headers["accept-encoding"] || "")) return send.call(this, body);
+      const buf = typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.isBuffer(body) ? body : null;
+      let ct = String(this.get("Content-Type") || "");
+      if (!ct && typeof body === "string") ct = "text/html; charset=utf-8";
+      if (!buf || buf.length < 1024 || !/text\/|json|javascript|xml|svg/i.test(ct)) return send.call(this, body);
+      if (/^text\/|json|javascript|xml/i.test(ct) && !/charset=/i.test(ct)) ct += "; charset=utf-8";
+      zlib.gzip(buf, { level: 5 }, (err, out) => {
+        if (err || this.headersSent) return send.call(this, body);
+        this.set("Content-Type", ct); this.set("Content-Encoding", "gzip"); this.vary("Accept-Encoding");
+        send.call(this, out);
+      });
+      return this;
+    } catch { return send.call(this, body); }
+  };
+  next();
+});
+const PORT = process.env.PORT || 3000;
+const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim().replace(/^["']|["']$/g, "").trim();
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || "";
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").trim().replace(/\/+$/, "");
+const BUSINESS_CONNECTION_ID = (process.env.ADMIN_BUSINESS_CONNECTION_ID || "").trim();
+const BUSINESS_STORE_DIR = process.env.BUSINESS_STORE_DIR || path.join(__dirname, "data");
+const BUSINESS_STORE = path.join(BUSINESS_STORE_DIR, "business-connections.json");
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "order-images";
+const tgApi = createTelegram({ token: BOT_TOKEN, publicBaseUrl: PUBLIC_BASE_URL, secret: WEBHOOK_SECRET });
+const supabase = createClient && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+// ── Built-in pages (this single file contains the full app; no public/index.html needed) ──
+const PAGE_INDEX = Buffer.from(`
+PCFkb2N0eXBlIGh0bWw+CjxodG1sPgo8aGVhZD4KPHNjcmlwdCBzcmM9Imh0dHBzOi8vdGVsZWdyYW0ub3JnL2pzL3RlbGVncmFtLXdlYi1hcHAuanMiPjwv
+c2NyaXB0Pgo8c2NyaXB0PnRyeXtUZWxlZ3JhbS5XZWJBcHAucmVhZHkoKTtUZWxlZ3JhbS5XZWJBcHAuZXhwYW5kKCk7fWNhdGNoe30KKGZ1bmN0aW9uKCl7
+Y29uc3QgZj13aW5kb3cuZmV0Y2g7d2luZG93LmZldGNoPWZ1bmN0aW9uKHUsbyl7bz1vfHx7fTtpZih0eXBlb2YgdT09PSJzdHJpbmciJiZ1LnN0YXJ0c1dp
+dGgoIi9hcGkvIikpe2NvbnN0IGg9bmV3IEhlYWRlcnMoby5oZWFkZXJzfHx7fSk7bGV0IGlkPSIiO3RyeXtpZD1UZWxlZ3JhbS5XZWJBcHAuaW5pdERhdGF8
+fCIiO31jYXRjaHt9aWYoaWQpaC5zZXQoIlgtVGVsZWdyYW0tSW5pdC1EYXRhIixpZCk7bGV0IGs9IiI7dHJ5e2s9bG9jYWxTdG9yYWdlLmdldEl0ZW0oIm93
+bmVyS2V5Iil8fCIiO31jYXRjaHt9aWYoayloLnNldCgiWC1TZXR1cC1LZXkiLGspO28uaGVhZGVycz1oO31yZXR1cm4gZi5jYWxsKHRoaXMsdSxvKTt9O30p
+KCk7PC9zY3JpcHQ+CjxtZXRhIGNoYXJzZXQ9InV0Zi04Ij4KPG1ldGEgbmFtZT0idmlld3BvcnQiIGNvbnRlbnQ9IndpZHRoPWRldmljZS13aWR0aCxpbml0
+aWFsLXNjYWxlPTEiPgo8dGl0bGU+QW1iYXIgRnVybml0dXJlIOKAlCBUZWxlZ3JhbSBNaW5pIEFwcDwvdGl0bGU+CjxzY3JpcHQgc3JjPSJodHRwczovL3Rl
+bGVncmFtLm9yZy9qcy90ZWxlZ3JhbS13ZWItYXBwLmpzIj48L3NjcmlwdD4KPHN0eWxlPgoqe2JveC1zaXppbmc6Ym9yZGVyLWJveH1ib2R5e21hcmdpbjow
+O2ZvbnQtZmFtaWx5OkFyaWFsLEhlbHZldGljYSxzYW5zLXNlcmlmO2JhY2tncm91bmQ6I2YzZWZlNjtjb2xvcjojMTgzODJlfQpoZWFkZXJ7YmFja2dyb3Vu
+ZDojMTUzYTJlO2NvbG9yOiNmNGVmZTM7cGFkZGluZzoyNHB4IDE4cHg7dGV4dC1hbGlnbjpjZW50ZXI7Ym9yZGVyLWJvdHRvbTo0cHggc29saWQgI2I4OTU1
+Mn0KaDF7bWFyZ2luOjA7Zm9udC1zaXplOjI2cHg7bGV0dGVyLXNwYWNpbmc6LjVweH0uc3Vie29wYWNpdHk6LjgyO21hcmdpbi10b3A6NnB4O2ZvbnQtc2l6
+ZToxM3B4O2xldHRlci1zcGFjaW5nOjEuNXB4O3RleHQtdHJhbnNmb3JtOnVwcGVyY2FzZX0KbWFpbnttYXgtd2lkdGg6OTIwcHg7bWFyZ2luOmF1dG87cGFk
+ZGluZzoyMHB4fS5jYXJke2JhY2tncm91bmQ6d2hpdGU7Ym9yZGVyLXJhZGl1czoxOHB4O3BhZGRpbmc6MjBweDttYXJnaW4tYm90dG9tOjE4cHg7Ym94LXNo
+YWRvdzowIDZweCAyMnB4ICMwMDAwMDAxMjtib3JkZXI6MXB4IHNvbGlkICNlNGRlZDJ9Cmgye21hcmdpbi10b3A6MDtjb2xvcjojMTUzYTJlfS5ncmlke2Rp
+c3BsYXk6Z3JpZDtncmlkLXRlbXBsYXRlLWNvbHVtbnM6cmVwZWF0KDIsMWZyKTtnYXA6MTJweH0KbGFiZWx7Zm9udC13ZWlnaHQ6NzAwO2ZvbnQtc2l6ZTox
+M3B4fWlucHV0LHNlbGVjdCx0ZXh0YXJlYXt3aWR0aDoxMDAlO3BhZGRpbmc6MTFweDtib3JkZXI6MXB4IHNvbGlkICNkNmQxYzc7Ym9yZGVyLXJhZGl1czox
+MHB4O21hcmdpbi10b3A6NXB4O2ZvbnQtc2l6ZToxNXB4fQp0ZXh0YXJlYXttaW4taGVpZ2h0OjgwcHh9LmZ1bGx7Z3JpZC1jb2x1bW46MS8tMX0KYnV0dG9u
+e2JvcmRlcjowO2JvcmRlci1yYWRpdXM6MTFweDtwYWRkaW5nOjEzcHggMTdweDtmb250LXdlaWdodDo3MDA7Y3Vyc29yOnBvaW50ZXJ9Ci5wcmltYXJ5e2Jh
+Y2tncm91bmQ6IzE1M2EyZTtjb2xvcjp3aGl0ZX0uZ29sZHtiYWNrZ3JvdW5kOiNiODk1NTI7Y29sb3I6d2hpdGV9LmRhbmdlcntiYWNrZ3JvdW5kOiM0YTE5
+MjY7Y29sb3I6d2hpdGV9Ci5kZXNrdG9wLXBob3RvLWJ1dHRvbntkaXNwbGF5Om5vbmV9LnBob3RvLXBpY2tlcntwYWRkaW5nOjEycHg7Ym9yZGVyOjFweCBk
+YXNoZWQgI2M4Yjk4Zjtib3JkZXItcmFkaXVzOjEycHg7YmFja2dyb3VuZDojZmNmYWY2fS5waG90by1waWNrZXIgaW5wdXR7YmFja2dyb3VuZDojZmZmfS5w
+cmV2aWV3e2JvcmRlcjowO2JvcmRlci1yYWRpdXM6MThweDtwYWRkaW5nOjA7YmFja2dyb3VuZDojZjZmMmVhfS5yb3d7ZGlzcGxheTpmbGV4O2dhcDoxMHB4
+O2ZsZXgtd3JhcDp3cmFwfS5zbWFsbHtmb250LXNpemU6MTJweDtjb2xvcjojNjY2fQoub3JkZXItY2FyZHtiYWNrZ3JvdW5kOiNmZmY7Ym9yZGVyOjFweCBz
+b2xpZCAjZTZlMWQ2O2JvcmRlci1yYWRpdXM6MjJweDtvdmVyZmxvdzpoaWRkZW47Ym94LXNoYWRvdzowIDE4cHggNDhweCAjMGYyYTIxMzMsMCAycHggNnB4
+ICMwMDAwMDAwZDttYXgtd2lkdGg6NjUwcHg7bWFyZ2luOmF1dG99Ci5vcmRlci1oZWFke2JhY2tncm91bmQ6bGluZWFyLWdyYWRpZW50KDEzNWRlZywjMGYy
+ZjI1IDAlLCMxYjRkM2QgMTAwJSk7Y29sb3I6I2Y0ZWZlMztwYWRkaW5nOjI0cHggMjZweDtkaXNwbGF5OmZsZXg7anVzdGlmeS1jb250ZW50OnNwYWNlLWJl
+dHdlZW47YWxpZ24taXRlbXM6Y2VudGVyO2dhcDoxNXB4O2JvcmRlci1ib3R0b206NHB4IHNvbGlkICNmZmE5Mzl9Ci5icmFuZHtmb250LXNpemU6MjRweDtm
+b250LXdlaWdodDo4MDA7bGV0dGVyLXNwYWNpbmc6MS4ycHg7Y29sb3I6I2ZmYTkzOTtsaW5lLWhlaWdodDoxLjE1fS50YWd7Zm9udC1zaXplOjExcHg7bGV0
+dGVyLXNwYWNpbmc6MS42cHg7b3BhY2l0eTouODt0ZXh0LXRyYW5zZm9ybTp1cHBlcmNhc2U7bWFyZ2luLXRvcDo2cHh9Ci5vcmRlci1pZHtiYWNrZ3JvdW5k
+OiNmZmZmZmYxZjtjb2xvcjojZmZmO2JvcmRlcjoxcHggc29saWQgI2ZmZmZmZjQwO2JvcmRlci1yYWRpdXM6OTk5cHg7cGFkZGluZzo4cHggMTRweDtmb250
+LXNpemU6MTNweDtmb250LXdlaWdodDo4MDA7d2hpdGUtc3BhY2U6bm93cmFwO2xldHRlci1zcGFjaW5nOi41cHh9Ci5zdGF0dXMtcGlsbHtkaXNwbGF5Omlu
+bGluZS1ibG9jazttYXJnaW4tdG9wOjhweDtiYWNrZ3JvdW5kOiNmZmE5MzkyMjtjb2xvcjojZmZkMDhhO2JvcmRlcjoxcHggc29saWQgI2ZmYTkzOTY2O2Jv
+cmRlci1yYWRpdXM6OTk5cHg7cGFkZGluZzozcHggMTBweDtmb250LXNpemU6MTBweDtmb250LXdlaWdodDo4MDA7bGV0dGVyLXNwYWNpbmc6MXB4O3RleHQt
+dHJhbnNmb3JtOnVwcGVyY2FzZX0KLnN0YXR1cy1waWxsLm9re2JhY2tncm91bmQ6IzJlY2M3MTIyO2NvbG9yOiM4ZmYwYjY7Ym9yZGVyLWNvbG9yOiMyZWNj
+NzE2Nn0uc3RhdHVzLXBpbGwubm97YmFja2dyb3VuZDojZTc0YzNjMjI7Y29sb3I6I2ZmYjNhYTtib3JkZXItY29sb3I6I2U3NGMzYzY2fQoucGhvdG8td3Jh
+cHtiYWNrZ3JvdW5kOiNmNGYxZWE7cGFkZGluZzoxOHB4O3RleHQtYWxpZ246Y2VudGVyO2NvbG9yOiM4YTg0Nzg7Zm9udC1zaXplOjEzcHh9Lm9yZGVyLXBo
+b3Rve3dpZHRoOjEwMCU7aGVpZ2h0OmF1dG87bWF4LWhlaWdodDpub25lO29iamVjdC1maXQ6Y29udGFpbjtib3JkZXItcmFkaXVzOjE0cHg7ZGlzcGxheTpi
+bG9jaztiYWNrZ3JvdW5kOiNmZmY7Ym94LXNoYWRvdzowIDZweCAxOHB4ICMwMDAwMDAxYX0KLm9yZGVyLWJvZHl7cGFkZGluZzoyMnB4IDI2cHggOHB4fS5z
+ZWN0aW9uLXRpdGxle2Rpc3BsYXk6ZmxleDthbGlnbi1pdGVtczpjZW50ZXI7Z2FwOjEwcHg7Zm9udC1zaXplOjEycHg7dGV4dC10cmFuc2Zvcm06dXBwZXJj
+YXNlO2xldHRlci1zcGFjaW5nOjEuNnB4O2NvbG9yOiMxNTNhMmU7Zm9udC13ZWlnaHQ6ODAwO21hcmdpbjoyMHB4IDAgMTJweH0KLnNlY3Rpb24tdGl0bGU6
+YmVmb3Jle2NvbnRlbnQ6IiI7d2lkdGg6NXB4O2hlaWdodDoxOHB4O2JvcmRlci1yYWRpdXM6M3B4O2JhY2tncm91bmQ6I2ZmYTkzOX0KLmluZm8tZ3JpZHtk
+aXNwbGF5OmdyaWQ7Z3JpZC10ZW1wbGF0ZS1jb2x1bW5zOjFmciAxZnI7Z2FwOjEwcHh9LmluZm97Zm9udC1zaXplOjE0cHg7bGluZS1oZWlnaHQ6MS40O2Jh
+Y2tncm91bmQ6I2Y4ZjZmMTtib3JkZXI6MXB4IHNvbGlkICNlZWU5ZGU7Ym9yZGVyLXJhZGl1czoxMnB4O3BhZGRpbmc6MTBweCAxMnB4O2NvbG9yOiMxYzJi
+MjU7Zm9udC13ZWlnaHQ6NjAwfS5pbmZvIGJye2Rpc3BsYXk6bm9uZX0uaW5mbyBie2Rpc3BsYXk6YmxvY2s7Y29sb3I6IzhhN2Y2OTtmb250LXNpemU6MTBw
+eDt0ZXh0LXRyYW5zZm9ybTp1cHBlcmNhc2U7bGV0dGVyLXNwYWNpbmc6MS4xcHg7Zm9udC13ZWlnaHQ6ODAwO21hcmdpbi1ib3R0b206M3B4fS5kaXZpZGVy
+e2hlaWdodDoxcHg7YmFja2dyb3VuZDojZWJlNWRhO21hcmdpbjoyMHB4IDAgMH0KLnRoYW5rc3tiYWNrZ3JvdW5kOmxpbmVhci1ncmFkaWVudCgxMzVkZWcs
+IzBmMmYyNSwjMWI0ZDNkKTtwYWRkaW5nOjE0cHg7Ym9yZGVyLXJhZGl1czoxMnB4O3RleHQtYWxpZ246Y2VudGVyO2ZvbnQtc2l6ZToxMnB4O2xldHRlci1z
+cGFjaW5nOjFweDt0ZXh0LXRyYW5zZm9ybTp1cHBlcmNhc2U7Y29sb3I6I2Y0ZWZlMztmb250LXdlaWdodDo4MDA7bWFyZ2luOjIwcHggMCA2cHh9Ci5hY3Rp
+b24tcm93e2Rpc3BsYXk6ZmxleDtnYXA6MTBweDtwYWRkaW5nOjE2cHggMjJweCAyMnB4O2JhY2tncm91bmQ6I2ZmZn0KLmRlbGl2ZXJ5LW9wdGlvbnN7ZGlz
+cGxheTpncmlkO2dyaWQtdGVtcGxhdGUtY29sdW1uczoxZnIgMWZyO2dhcDoxMnB4O21hcmdpbi10b3A6OHB4fQouZGVsaXZlcnktb3B0aW9ue3Bvc2l0aW9u
+OnJlbGF0aXZlO2Rpc3BsYXk6YmxvY2t9Ci5kZWxpdmVyeS1vcHRpb24gaW5wdXR7cG9zaXRpb246YWJzb2x1dGU7b3BhY2l0eTowO3BvaW50ZXItZXZlbnRz
+Om5vbmV9Ci5kZWxpdmVyeS1vcHRpb24tY2FyZHtkaXNwbGF5OmJsb2NrO2JvcmRlcjoxLjVweCBzb2xpZCAjZGRkNGM0O2JvcmRlci1yYWRpdXM6MTJweDtw
+YWRkaW5nOjE2cHg7YmFja2dyb3VuZDojZmZmO2N1cnNvcjpwb2ludGVyO3RyYW5zaXRpb246LjE1c30KLmRlbGl2ZXJ5LW9wdGlvbiBpbnB1dDpjaGVja2Vk
+ICsgLmRlbGl2ZXJ5LW9wdGlvbi1jYXJke2JvcmRlci1jb2xvcjojYjg5NTUyO2JveC1zaGFkb3c6MCAwIDAgMnB4ICNiODk1NTIyNjtiYWNrZ3JvdW5kOiNm
+YmY3ZWZ9Ci5kZWxpdmVyeS10aXRsZXtmb250LXdlaWdodDo4MDA7Y29sb3I6IzE1M2EyZTtmb250LXNpemU6MTVweH0KLmRlbGl2ZXJ5LWRlc2N7ZGlzcGxh
+eTpibG9jazttYXJnaW4tdG9wOjVweDtmb250LXNpemU6MTJweDtjb2xvcjojNmQ2NzVkfQoucGhvdG8tYm94e2JvcmRlcjoxLjVweCBkYXNoZWQgI2I5YWY5
+ZDtib3JkZXItcmFkaXVzOjE0cHg7cGFkZGluZzoxNnB4O2JhY2tncm91bmQ6I2ZiZjlmNH0KLnBob3RvLWFjdGlvbnN7ZGlzcGxheTpmbGV4O2dhcDoxMHB4
+O2FsaWduLWl0ZW1zOmNlbnRlcjtmbGV4LXdyYXA6d3JhcH0KLnBob3RvLWJ1dHRvbntkaXNwbGF5OmlubGluZS1ibG9jaztiYWNrZ3JvdW5kOiMxNTNhMmU7
+Y29sb3I6I2ZmZjtwYWRkaW5nOjExcHggMTZweDtib3JkZXItcmFkaXVzOjlweDtmb250LXdlaWdodDo4MDA7Y3Vyc29yOnBvaW50ZXJ9Ci5waG90by1uYW1l
+e2ZvbnQtc2l6ZToxMnB4O2NvbG9yOiM2ZDY3NWR9Ci5waG90by1wcmV2aWV3e2Rpc3BsYXk6YmxvY2s7d2lkdGg6MTAwJTttYXgtaGVpZ2h0OjMzMHB4O29i
+amVjdC1maXQ6Y29udGFpbjttYXJnaW4tdG9wOjEycHg7Ym9yZGVyLXJhZGl1czoxMnB4O2JhY2tncm91bmQ6I2Y2ZjJlYTtwYWRkaW5nOjhweH0uYWN0aW9u
+e2ZsZXg6MTt0ZXh0LWFsaWduOmNlbnRlcjtwYWRkaW5nOjEzcHggMTBweDtib3JkZXItcmFkaXVzOjEycHg7Zm9udC1zaXplOjEycHg7Zm9udC13ZWlnaHQ6
+ODAwO2xldHRlci1zcGFjaW5nOi42cHg7Ym9yZGVyOjEuNXB4IHNvbGlkIHRyYW5zcGFyZW50O2N1cnNvcjpwb2ludGVyO3RyYW5zaXRpb246dHJhbnNmb3Jt
+IC4xMnMsYm94LXNoYWRvdyAuMTJzLGZpbHRlciAuMTJzfS5hY3Rpb246aG92ZXJ7dHJhbnNmb3JtOnRyYW5zbGF0ZVkoLTFweCk7Ym94LXNoYWRvdzowIDZw
+eCAxNHB4ICMwMDAwMDAyNn0uYWN0aW9uOmFjdGl2ZXt0cmFuc2Zvcm06dHJhbnNsYXRlWSgwKX0uYWN0aW9uOmRpc2FibGVke29wYWNpdHk6LjQ1O2N1cnNv
+cjpkZWZhdWx0O3RyYW5zZm9ybTpub25lO2JveC1zaGFkb3c6bm9uZX0uY29uZmlybXtiYWNrZ3JvdW5kOiMxZjhhNGM7Y29sb3I6I2ZmZn0ucmVqZWN0e2Jh
+Y2tncm91bmQ6I2ZmZjtjb2xvcjojYjMyNjFlO2JvcmRlci1jb2xvcjojZTNiNGIwfS5jb21tZW50e2JhY2tncm91bmQ6I2ZmZjtjb2xvcjojMTUzYTJlO2Jv
+cmRlci1jb2xvcjojY2ZkOGQzfS5kZW1vLW5vdGV7cGFkZGluZzowIDIycHggMThweDtmb250LXNpemU6MTFweDtjb2xvcjojOGE4NDc4O3RleHQtYWxpZ246
+Y2VudGVyfS5kZW1vLW1zZ3ttYXJnaW46MCAyMnB4IDE0cHg7cGFkZGluZzoxMHB4IDEycHg7Ym9yZGVyLXJhZGl1czoxMHB4O2JhY2tncm91bmQ6I2Y0ZjFl
+YTtmb250LXNpemU6MTNweDtjb2xvcjojMTUzYTJlO3RleHQtYWxpZ246Y2VudGVyfQpAbWVkaWEobWF4LXdpZHRoOjY1MHB4KXsuZ3JpZHtncmlkLXRlbXBs
+YXRlLWNvbHVtbnM6MWZyfS5mdWxse2dyaWQtY29sdW1uOmF1dG99LmluZm8tZ3JpZHtncmlkLXRlbXBsYXRlLWNvbHVtbnM6MWZyfS5vcmRlci1oZWFke2Fs
+aWduLWl0ZW1zOmZsZXgtc3RhcnR9LmFjdGlvbi1yb3d7ZmxleC1kaXJlY3Rpb246Y29sdW1ufX0KQG1lZGlhIChtYXgtd2lkdGg6NjQwcHgpe21haW57cGFk
+ZGluZzoxMnB4fS5jYXJke3BhZGRpbmc6MTRweDtib3JkZXItcmFkaXVzOjE0cHh9LnBob3RvLWFjdGlvbnN7ZGlzcGxheTpncmlkO2dyaWQtdGVtcGxhdGUt
+Y29sdW1uczoxZnI7Z2FwOjhweH0ucGhvdG8tYnV0dG9ue3dpZHRoOjEwMCU7dGV4dC1hbGlnbjpjZW50ZXI7Ym94LXNpemluZzpib3JkZXItYm94fS5kZXNr
+dG9wLXBob3RvLWJ1dHRvbntkaXNwbGF5Om5vbmV9Lm9yZGVyLWNhcmR7bWF4LXdpZHRoOjEwMCU7Ym9yZGVyLXJhZGl1czoxNHB4fS5vcmRlci1oZWFke3Bh
+ZGRpbmc6MTZweH0uYnJhbmR7Zm9udC1zaXplOjIwcHh9Lm9yZGVyLWlke2ZvbnQtc2l6ZToxMnB4fS5waG90by13cmFwe3BhZGRpbmc6MTBweH0ub3JkZXIt
+cGhvdG97bWF4LWhlaWdodDozMDBweH0ub3JkZXItYm9keXtwYWRkaW5nOjE0cHh9LmluZm8tZ3JpZHtncmlkLXRlbXBsYXRlLWNvbHVtbnM6MWZyIWltcG9y
+dGFudH0uYWN0aW9uLXJvd3tncmlkLXRlbXBsYXRlLWNvbHVtbnM6MWZyIWltcG9ydGFudH0uZGVsaXZlcnktb3B0aW9uc3tncmlkLXRlbXBsYXRlLWNvbHVt
+bnM6MWZyfS5ncmlke2dyaWQtdGVtcGxhdGUtY29sdW1uczoxZnIhaW1wb3J0YW50fS5waG90by1wcmV2aWV3e21heC1oZWlnaHQ6MjgwcHh9fUBtZWRpYSht
+aW4td2lkdGg6NjQxcHgpey5waG90by1hY3Rpb25ze2Rpc3BsYXk6ZmxleDthbGlnbi1pdGVtczpjZW50ZXI7Z2FwOjEwcHh9LmRlc2t0b3AtcGhvdG8tYnV0
+dG9ue2Rpc3BsYXk6bm9uZX19PC9zdHlsZT4KPHN0eWxlPmJvZHk6bm90KC5hbWJhci1hdXRob3JpemVkKT5oZWFkZXIsYm9keTpub3QoLmFtYmFyLWF1dGhv
+cml6ZWQpPm1haW4sYm9keTpub3QoLmFtYmFyLWF1dGhvcml6ZWQpPiNhY09wZW4sYm9keTpub3QoLmFtYmFyLWF1dGhvcml6ZWQpPiNzdE9wZW4sYm9keTpu
+b3QoLmFtYmFyLWF1dGhvcml6ZWQpPiNteU9wZW57dmlzaWJpbGl0eTpoaWRkZW59I2FtYmFyQWNjZXNzR2F0ZXtkaXNwbGF5Om5vbmU7cG9zaXRpb246Zml4
+ZWQ7aW5zZXQ6MDt6LWluZGV4OjEwMDAwMDtiYWNrZ3JvdW5kOiMwOTA5MDk7Y29sb3I6I2Y2ZjBlNTthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250
+ZW50OmNlbnRlcjtwYWRkaW5nOjI0cHg7Zm9udC1mYW1pbHk6c3lzdGVtLXVpfSNhbWJhckFjY2Vzc0dhdGUgLnBhbmVse21heC13aWR0aDo0NDBweDtib3Jk
+ZXI6MXB4IHNvbGlkICNiODk1NTI7Ym9yZGVyLXJhZGl1czoxOHB4O3BhZGRpbmc6MjZweDtiYWNrZ3JvdW5kOnJnYmEoMjQsMjAsMTUsLjk2KTt0ZXh0LWFs
+aWduOmNlbnRlcjtib3gtc2hhZG93OjAgMjBweCA3MHB4ICMwMDA4fSNhbWJhckFjY2Vzc0dhdGUgaDJ7Y29sb3I6I2Q3YjM2ZX08L3N0eWxlPgo8L2hlYWQ+
+Cjxib2R5Pgo8ZGl2IGlkPSJhbWJhckFjY2Vzc0dhdGUiPjxkaXYgY2xhc3M9InBhbmVsIj48aDI+QU1CQVIgRnVybml0dXJlPC9oMj48cCBpZD0iYW1iYXJB
+Y2Nlc3NNZXNzYWdlIj5DaGVja2luZyB5b3VyIGFkbWluaXN0cmF0b3IgYWNjZXNz4oCmPC9wPjxwIGNsYXNzPSJzbWFsbCIgc3R5bGU9ImNvbG9yOiNjOWJk
+YTgiPk9wZW4gdGhpcyBtaW5pIGFwcCBmcm9tIHRoZSBUZWxlZ3JhbSBhY2NvdW50IGFzc2lnbmVkIGJ5IHRoZSBtYWluIGFkbWluLjwvcD48L2Rpdj48L2Rp
+dj4KPHNjcmlwdD4KKGFzeW5jKCk9Pntjb25zdCBnYXRlPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJhbWJhckFjY2Vzc0dhdGUiKSxtc2c9ZG9jdW1lbnQu
+Z2V0RWxlbWVudEJ5SWQoImFtYmFyQWNjZXNzTWVzc2FnZSIpO2dhdGUuc3R5bGUuZGlzcGxheT0iZmxleCI7dHJ5e2NvbnN0IHI9YXdhaXQgZmV0Y2goIi9h
+cGkvbWUiKTtjb25zdCBtPWF3YWl0IHIuanNvbigpO2lmKHIub2smJihtLnJvbGU9PT0ib3duZXIifHxtLnJvbGU9PT0iYWRtaW4iKSl7ZG9jdW1lbnQuYm9k
+eS5jbGFzc0xpc3QuYWRkKCJhbWJhci1hdXRob3JpemVkIik7Z2F0ZS5zdHlsZS5kaXNwbGF5PSJub25lIjt3aW5kb3cuQU1CQVJfUk9MRT1tLnJvbGU7d2lu
+ZG93LkFNQkFSX1RFTEVHUkFNX0lEPW0udGVsZWdyYW1JZHx8IiI7fWVsc2V7bXNnLnRleHRDb250ZW50PW0uZXJyb3J8fCJBY2Nlc3MgZGVuaWVkLiBUaGlz
+IFRlbGVncmFtIGFjY291bnQgaGFzIG5vdCBiZWVuIGFzc2lnbmVkIGJ5IHRoZSBtYWluIGFkbWluLiI7fX1jYXRjaChlKXttc2cudGV4dENvbnRlbnQ9IlVu
+YWJsZSB0byB2ZXJpZnkgYWNjZXNzLiBPcGVuIEFNQkFSIEZ1cm5pdHVyZSBpbnNpZGUgVGVsZWdyYW0gYW5kIHRyeSBhZ2Fpbi4iO319KSgpOwo8L3Njcmlw
+dD4KPGhlYWRlcj48aDE+QW1iYXIgRnVybml0dXJlPC9oMT48ZGl2IGNsYXNzPSJzdWIiPlRlbGVncmFtIEN1c3RvbWVyIE9yZGVyIENhcmQ8L2Rpdj48L2hl
+YWRlcj4KPG1haW4+CjxkaXYgY2xhc3M9ImNhcmQiIGlkPSJidXNpbmVzc1N0YXR1cyIgcm9sZT0ic3RhdHVzIiBzdHlsZT0ibWFyZ2luLWJvdHRvbToxNnB4
+Ij48Yj5TZW5kaW5nIGFjY291bnQ6PC9iPiA8c3BhbiBpZD0ic2VuZGVyU3RhdGUiPmNoZWNraW5n4oCmPC9zcGFuPjxkaXYgY2xhc3M9InNtYWxsIj5DYXJk
+cyBhcmUgc2VudCBpbiB0aGUgbmFtZSBvZiB0aGUgYWRtaW4gd2hvIGNyZWF0ZXMgdGhlIG9yZGVyLiBGb3IgdGFwcGFibGUgQ29uZmlybSAvIFJlamVjdCAv
+IENvbW1lbnQgYnV0dG9ucywgY29ubmVjdCB0aGUgQU1CQVIgYm90IGluIHlvdXIgb3duIFRlbGVncmFtIOKGkiBTZXR0aW5ncyDihpIgQnVzaW5lc3Mg4oaS
+IENoYXRib3RzIChuZWVkcyBUZWxlZ3JhbSBQcmVtaXVtKSBhbmQgcGljayB0aGUgY3VzdG9tZXIgZnJvbSB0aGUgbGlzdDsgb3RoZXJ3aXNlIHRoZSBjdXN0
+b21lciBnZXRzIGEgdGFwcGFibGUgcG9sbCAoQ29uZmlybSAvIFJlamVjdCAvIENvbW1lbnQpLiBNYWluIGFkbWluOiBzZW50IGZyb20gdGhlIG1haW4gYWRt
+aW4gYWNjb3VudDsgYXNzaWduZWQgYWRtaW5zOiBmcm9tIHRoZWlyIG93biBUZWxlZ3JhbSBhY2NvdW50LiBUaGUgYm90IG5ldmVyIHNlbmRzIG9yZGVyIGNh
+cmRzLiBGaWxsIHRoZSBjdXN0b21lcidzIEB1c2VybmFtZSBvciBwaG9uZS48L2Rpdj48L2Rpdj4KPGZvcm0gaWQ9Im9yZGVyRm9ybSI+CjxkaXYgY2xhc3M9
+ImNhcmQiPjxoMj5Qcm9kdWN0IEluZm9ybWF0aW9uPC9oMj48ZGl2IGNsYXNzPSJncmlkIj4KPGxhYmVsPk9yZGVyIENvZGUgKHR5cGUgaXQgeW91cnNlbGYp
+PGlucHV0IG5hbWU9Im9yZGVySWQiIHBsYWNlaG9sZGVyPSJUeXBlIG9yZGVyIGNvZGUsIGUuZy4gWi0wMDEiIHJlcXVpcmVkIG1heGxlbmd0aD0iNDAiIGF1
+dG9jb21wbGV0ZT0ib2ZmIj48L2xhYmVsPgo8bGFiZWw+UHJvZHVjdDxzZWxlY3QgaWQ9InByb2R1Y3RTZWxlY3QiIHJlcXVpcmVkPjxvcHRpb24gdmFsdWU9
+IiI+4oCUIENob29zZSBhIHByb2R1Y3Qg4oCUPC9vcHRpb24+PG9wdGlvbiB2YWx1ZT0iU2hvZSBTaGVsZiI+U2hvZSBTaGVsZjwvb3B0aW9uPjxvcHRpb24g
+dmFsdWU9IkNvbnNvbGUgVGFibGUiPkNvbnNvbGUgVGFibGU8L29wdGlvbj48b3B0aW9uIHZhbHVlPSJDaGVzdCBEcmF3ZXIiPkNoZXN0IERyYXdlcjwvb3B0
+aW9uPjxvcHRpb24gdmFsdWU9IkNlbnRlciBUYWJsZSI+Q2VudGVyIFRhYmxlPC9vcHRpb24+PG9wdGlvbiB2YWx1ZT0iVFYgU3RhbmQiPlRWIFN0YW5kPC9v
+cHRpb24+PG9wdGlvbiB2YWx1ZT0iRGluaW5nIFRhYmxlIj5EaW5pbmcgVGFibGU8L29wdGlvbj48b3B0aW9uIHZhbHVlPSJNaXJyb3IiPk1pcnJvcjwvb3B0
+aW9uPjxvcHRpb24gdmFsdWU9Il9fb3RoZXIiPk90aGVyPC9vcHRpb24+PC9zZWxlY3Q+PGlucHV0IHR5cGU9ImhpZGRlbiIgbmFtZT0icHJvZHVjdCIgaWQ9
+InByb2R1Y3RWYWx1ZSI+PC9sYWJlbD48bGFiZWwgaWQ9InByb2R1Y3RPdGhlcldyYXAiIHN0eWxlPSJkaXNwbGF5Om5vbmUiPlR5cGUgdGhlIHByb2R1Y3Qg
+bmFtZTxpbnB1dCBpZD0icHJvZHVjdE90aGVyIiBwbGFjZWhvbGRlcj0iZS5nLiBCb29rc2hlbGYiIG1heGxlbmd0aD0iNjAiIGF1dG9jb21wbGV0ZT0ib2Zm
+Ij48L2xhYmVsPgo8bGFiZWwgY2xhc3M9ImZ1bGwiIGlkPSJzaXplV3JhcCIgc3R5bGU9ImRpc3BsYXk6bm9uZSI+U2hvZSBTaGVsZiBzaXplIChjaG9vc2Ug
+b25lLCBvciBPdGhlciB0byB0eXBlIGl0IHlvdXJzZWxmKTxzZWxlY3QgaWQ9InNpemVTZWxlY3QiPjxvcHRpb24gdmFsdWU9IiI+4oCUIENob29zZSBzaXpl
+IOKAlDwvb3B0aW9uPjxvcHRpb24gdmFsdWU9IjEyMHwzNXwxMjUiPkwgMTIwIGNtIMOXIFcgMzUgY20gw5cgSCAxMjUgY208L29wdGlvbj48b3B0aW9uIHZh
+bHVlPSIxNjB8MzV8MTI1Ij5MIDE2MCBjbSDDlyBXIDM1IGNtIMOXIEggMTI1IGNtPC9vcHRpb24+PG9wdGlvbiB2YWx1ZT0iOTB8MzV8MTI1Ij5MIDkwIGNt
+IMOXIFcgMzUgY20gw5cgSCAxMjUgY208L29wdGlvbj48b3B0aW9uIHZhbHVlPSI4MHwzNXwxMjUiPkwgODAgY20gw5cgVyAzNSBjbSDDlyBIIDEyNSBjbTwv
+b3B0aW9uPjxvcHRpb24gdmFsdWU9Il9fb3RoZXIiPk90aGVyICh0eXBlIHRoZSBzaXplKTwvb3B0aW9uPjwvc2VsZWN0PjwvbGFiZWw+CjxsYWJlbD5MZW5n
+dGggKGNtKTxpbnB1dCBuYW1lPSJsZW5ndGgiIHZhbHVlPSIxMjAiPjwvbGFiZWw+CjxsYWJlbD5XaWR0aCAoY20pPGlucHV0IG5hbWU9IndpZHRoIiB2YWx1
+ZT0iMzUiPjwvbGFiZWw+CjxsYWJlbD5IZWlnaHQgKGNtKTxpbnB1dCBuYW1lPSJoZWlnaHQiIHZhbHVlPSIxMjQiPjwvbGFiZWw+CjxsYWJlbD5NYXRlcmlh
+bDxpbnB1dCBuYW1lPSJtYXRlcmlhbCI+PC9sYWJlbD4KPGxhYmVsPkNvbG9yPGlucHV0IG5hbWU9ImNvbG9yIj48L2xhYmVsPgo8bGFiZWw+U3R5bGU8aW5w
+dXQgbmFtZT0ic3R5bGUiPjwvbGFiZWw+CjxsYWJlbD5EZXNpZ248aW5wdXQgbmFtZT0iZGVzaWduIj48L2xhYmVsPgo8bGFiZWw+SGFuZGxlPGlucHV0IG5h
+bWU9ImhhbmRsZSI+PC9sYWJlbD4KPGxhYmVsPkRvb3I8aW5wdXQgbmFtZT0iZG9vciI+PC9sYWJlbD4KPGxhYmVsPlBhcnRpdGlvbjxpbnB1dCBuYW1lPSJw
+YXJ0aXRpb24iPjwvbGFiZWw+CjxsYWJlbD5EcmF3ZXI8aW5wdXQgbmFtZT0iZHJhd2VyIj48L2xhYmVsPgo8ZGl2IGNsYXNzPSJmdWxsIHBob3RvLXBpY2tl
+ciI+PGxhYmVsPlByb2R1Y3QgUGhvdG88L2xhYmVsPjxkaXYgY2xhc3M9InBob3RvLWJveCIgaWQ9InBob3RvRHJvcFpvbmUiPjxkaXYgY2xhc3M9InBob3Rv
+LWFjdGlvbnMiPjxsYWJlbCBjbGFzcz0icGhvdG8tYnV0dG9uIiBmb3I9InByb2R1Y3RQaG90byI+8J+TtyBDaG9vc2UgUHJvZHVjdCBQaG90bzwvbGFiZWw+
+PGlucHV0IGlkPSJwcm9kdWN0UGhvdG8iIG5hbWU9InByb2R1Y3RQaG90byIgdHlwZT0iZmlsZSIgYWNjZXB0PSJpbWFnZS8qIiByZXF1aXJlZCBoaWRkZW4+
+PHNwYW4gaWQ9InBob3RvTmFtZSIgY2xhc3M9InBob3RvLW5hbWUiPk5vIHBob3RvIHNlbGVjdGVkPC9zcGFuPjwvZGl2PjxkaXYgaWQ9InBob3RvU3RhdHVz
+IiBjbGFzcz0ic21hbGwiIGFyaWEtbGl2ZT0icG9saXRlIj5DaG9vc2Ugb25lIHBob3RvIGZyb20geW91ciBwaG9uZSBvciBQQy4gQWxsIGltYWdlIGZvcm1h
+dHMgc3VwcG9ydGVkIGJ5IHlvdXIgYnJvd3Nlci4gWW91IGNhbiBhbHNvIGRyYWcgYW5kIGRyb3Agb24gUEMuPC9kaXY+PGltZyBpZD0ic2VsZWN0ZWRQaG90
+b1ByZXZpZXciIGNsYXNzPSJwaG90by1wcmV2aWV3IiBhbHQ9IlNlbGVjdGVkIHByb2R1Y3QgcHJldmlldyIgaGlkZGVuPjwvZGl2PjwvZGl2Pgo8L2Rpdj48
+L2Rpdj4KCjxkaXYgY2xhc3M9ImNhcmQiPjxoMj5DdXN0b21lciBJbmZvcm1hdGlvbjwvaDI+PGRpdiBjbGFzcz0iZ3JpZCI+CjxsYWJlbD5OYW1lPGlucHV0
+IG5hbWU9ImN1c3RvbWVyTmFtZSIgcmVxdWlyZWQ+PC9sYWJlbD4KPGxhYmVsPlBob25lPGlucHV0IG5hbWU9InBob25lIj48L2xhYmVsPgo8bGFiZWw+TG9j
+YXRpb248aW5wdXQgbmFtZT0ibG9jYXRpb24iPjwvbGFiZWw+Cgo8bGFiZWwgY2xhc3M9ImZ1bGwiIGlkPSJwaWNrV3JhcCIgc3R5bGU9ImRpc3BsYXk6bm9u
+ZSI+U2VsZWN0IGN1c3RvbWVyIChwZW9wbGUgd2hvIG1lc3NhZ2VkIHRoZSBtYWluIGFkbWluIGFjY291bnQpPHNlbGVjdCBpZD0iY3VzdG9tZXJQaWNrIj48
+b3B0aW9uIHZhbHVlPSIiPuKAlCBDaG9vc2UgYSBjdXN0b21lciDigJQ8L29wdGlvbj48L3NlbGVjdD48L2xhYmVsPgo8bGFiZWw+Q3VzdG9tZXIgVGVsZWdy
+YW0gVXNlcm5hbWU8aW5wdXQgbmFtZT0idGVsZWdyYW1Vc2VybmFtZSIgcGxhY2Vob2xkZXI9IkBjdXN0b21lcl91c2VybmFtZSI+PC9sYWJlbD4KPGxhYmVs
+PkN1c3RvbWVyIFRlbGVncmFtIFBob25lPGlucHV0IG5hbWU9InRlbGVncmFtUGhvbmUiIHBsYWNlaG9sZGVyPSIrMjUxLi4uIj48L2xhYmVsPgoKPGxhYmVs
+IGNsYXNzPSJmdWxsIj5DdXN0b21lciBUZWxlZ3JhbSBDaGF0IElEIChvcHRpb25hbCk8aW5wdXQgbmFtZT0idGVsZWdyYW1DaGF0SWQiIHBsYWNlaG9sZGVy
+PSJFbnRlciBudW1lcmljIGNoYXQgSUQgaWYgYXZhaWxhYmxlIj48ZGl2IGNsYXNzPSJzbWFsbCI+Rm9yIGRpcmVjdCBkZWxpdmVyeSwgdGhlIGN1c3RvbWVy
+IG11c3QgaGF2ZSBwcmVzc2VkIFN0YXJ0IGluIHRoZSBBTUJBUiBib3QuIEEgbnVtZXJpYyBjaGF0IElEIGlzIGJlc3Q7IGEga25vd24gdXNlcm5hbWUgY2Fu
+IGJlIG1hdGNoZWQgYWZ0ZXIgdGhlIGN1c3RvbWVyIHN0YXJ0cyB0aGUgYm90LiBBIHBob25lIG51bWJlciBhbG9uZSBjYW5ub3QgaWRlbnRpZnkgYSBUZWxl
+Z3JhbSBjaGF0LjwvZGl2PjwvbGFiZWw+CjwvZGl2PjwvZGl2PgoKPGRpdiBjbGFzcz0iY2FyZCI+PGgyPlNlcnZpY2UgSW5mb3JtYXRpb248L2gyPjxkaXYg
+Y2xhc3M9ImdyaWQiPgo8bGFiZWw+UGF5bWVudCAoQmlycik8aW5wdXQgbmFtZT0icGF5bWVudCIgdHlwZT0ibnVtYmVyIj48L2xhYmVsPgo8bGFiZWw+QWR2
+YW5jZSAoQmlycik8aW5wdXQgbmFtZT0iYWR2YW5jZSIgdHlwZT0ibnVtYmVyIj48L2xhYmVsPgo8bGFiZWwgY2xhc3M9ImZ1bGwiIHN0eWxlPSJmbGV4LWRp
+cmVjdGlvbjpyb3c7ZGlzcGxheTpmbGV4O2FsaWduLWl0ZW1zOmNlbnRlcjtnYXA6MTBweDtiYWNrZ3JvdW5kOiNlYWY2ZWU7Ym9yZGVyOjFweCBzb2xpZCAj
+MmU5ZTRmO2JvcmRlci1yYWRpdXM6MTBweDtwYWRkaW5nOjEwcHggMTJweDtmb250LXdlaWdodDo3MDA7Y29sb3I6IzE3NmIzYSI+PGlucHV0IHR5cGU9ImNo
+ZWNrYm94IiBuYW1lPSJwYWlkRnVsbCIgdmFsdWU9IlllcyIgc3R5bGU9IndpZHRoOjIycHg7aGVpZ2h0OjIycHg7bWFyZ2luOjAiPuKchSBDdXN0b21lciBw
+YWlkIGluIGZ1bGwgKFBhaWQpPC9sYWJlbD4KPGxhYmVsPk9yZGVyIERhdGU8aW5wdXQgbmFtZT0ib3JkZXJEYXRlIiB0eXBlPSJkYXRlIj48L2xhYmVsPgo8
+bGFiZWw+Q29tcGxldGlvbiBEYXRlPGlucHV0IG5hbWU9ImNvbXBsZXRpb25EYXRlIiB0eXBlPSJkYXRlIj48L2xhYmVsPgo8bGFiZWw+RGVsaXZlcnkgVHlw
+ZTxzZWxlY3QgbmFtZT0iZGVsaXZlcnlUeXBlIiBpZD0iZGVsaXZlcnlUeXBlIj4KPG9wdGlvbiB2YWx1ZT0iU2VsZiBQaWNrIFVwIiBzZWxlY3RlZD7wn4+g
+IFNlbGYgUGljayBVcDwvb3B0aW9uPgo8b3B0aW9uIHZhbHVlPSJCeSBBbWJhciBEZWxpdmVyeSI+8J+amiBCeSBBbWJhciBEZWxpdmVyeTwvb3B0aW9uPgo8
+L3NlbGVjdD48L2xhYmVsPgo8bGFiZWwgaWQ9ImRlbGl2ZXJ5U2VydmljZUZpZWxkIj5BbWJhciBEZWxpdmVyeSBTZXJ2aWNlPHNlbGVjdCBuYW1lPSJkZWxp
+dmVyeVNlcnZpY2UiIGlkPSJkZWxpdmVyeVNlcnZpY2UiPgo8b3B0aW9uIHZhbHVlPSJFY29ub215IiBzZWxlY3RlZD5FY29ub215PC9vcHRpb24+CjxvcHRp
+b24gdmFsdWU9IkV4cHJlc3MiPkV4cHJlc3M8L29wdGlvbj4KPC9zZWxlY3Q+PC9sYWJlbD4KPGxhYmVsIGlkPSJkZWxpdmVyeUZlZUZpZWxkIj5EZWxpdmVy
+eSBmZWUgKEJpcnIpPGlucHV0IG5hbWU9ImRlbGl2ZXJ5RmVlIiB0eXBlPSJudW1iZXIiIG1pbj0iMCIgc3RlcD0iMC4wMSIgcGxhY2Vob2xkZXI9IlR5cGUg
+ZGVsaXZlcnkgZmVlIj48L2xhYmVsPgo8bGFiZWw+RGVsaXZlcnkgRGF0ZTxpbnB1dCBuYW1lPSJkZWxpdmVyeURhdGUiIHR5cGU9ImRhdGUiPjwvbGFiZWw+
+CjwvZGl2PjwvZGl2PgoKPGRpdiBjbGFzcz0iY2FyZCI+PGgyPkNhcmQgUHJldmlldzwvaDI+PGRpdiBpZD0icHJldmlldyIgY2xhc3M9InByZXZpZXciPkZp
+bGwgdGhlIGZvcm0gdG8gcHJldmlldyB0aGUgY3VzdG9tZXIgY2FyZC48L2Rpdj48L2Rpdj4KPGRpdiBjbGFzcz0icm93Ij48YnV0dG9uIGNsYXNzPSJwcmlt
+YXJ5IiB0eXBlPSJzdWJtaXQiPvCfk6ggQ3JlYXRlICYgU2VuZCBPcmRlciBDYXJkPC9idXR0b24+PGJ1dHRvbiBjbGFzcz0iZ29sZCIgdHlwZT0iYnV0dG9u
+IiBvbmNsaWNrPSJwcmV2aWV3Q2FyZCgpIj5QcmV2aWV3PC9idXR0b24+PC9kaXY+CjxwIGlkPSJyZXN1bHQiPjwvcD4KPC9mb3JtPgo8L21haW4+CjxzY3Jp
+cHQ+CmNvbnN0IHRnPXdpbmRvdy5UZWxlZ3JhbT8uV2ViQXBwO2lmKHRnKXt0Zy5yZWFkeSgpO3RnLmV4cGFuZCgpO30KLy8gQXV0aGVudGljYXRlIGV2ZXJ5
+IEFQSSByZXF1ZXN0IHdpdGggVGVsZWdyYW0ncyBzaWduZWQgTWluaSBBcHAgaW5pdERhdGEuIEtlZXAgRm9ybURhdGEgaGVhZGVycyB1bnRvdWNoZWQuCigo
+KT0+e2NvbnN0IG5hdGl2ZUZldGNoPXdpbmRvdy5mZXRjaC5iaW5kKHdpbmRvdyk7d2luZG93LmZldGNoPShpbnB1dCxpbml0PXt9KT0+e2NvbnN0IGg9bmV3
+IEhlYWRlcnMoaW5pdC5oZWFkZXJzfHx7fSk7Y29uc3QgZGF0YT13aW5kb3cuVGVsZWdyYW0/LldlYkFwcD8uaW5pdERhdGF8fCIiO2lmKGRhdGEpaC5zZXQo
+IngtdGVsZWdyYW0taW5pdC1kYXRhIixkYXRhKTt0cnl7Y29uc3Qgaz1sb2NhbFN0b3JhZ2UuZ2V0SXRlbSgib3duZXJLZXkiKTtpZihrKWguc2V0KCJ4LXNl
+dHVwLWtleSIsayk7fWNhdGNoe31yZXR1cm4gbmF0aXZlRmV0Y2goaW5wdXQsey4uLmluaXQsaGVhZGVyczpofSk7fTt9KSgpOwovLyBCb3Qtb25seSBkZWxp
+dmVyeTogbm8gVGVsZWdyYW0gQnVzaW5lc3Mgc3RhdHVzIGNoZWNrIG9yIHBlcnNvbmFsLWFjY291bnQgY29ubmVjdGlvbiBpcyBuZWVkZWQuCmNvbnN0IGZv
+cm09ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoIm9yZGVyRm9ybSIpLHByZXZpZXc9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInByZXZpZXciKSxyZXN1bHQ9
+ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInJlc3VsdCIpOwpjb25zdCBwaG90b0lucHV0PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJwcm9kdWN0UGhvdG8i
+KSxwaG90b1N0YXR1cz1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgicGhvdG9TdGF0dXMiKSxwaG90b1ByZXZpZXc9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQo
+InNlbGVjdGVkUGhvdG9QcmV2aWV3Iik7CmxldCBwaG90b1VybD1udWxsOwpmdW5jdGlvbiB2YWxzKCl7CiBjb25zdCB2PU9iamVjdC5mcm9tRW50cmllcyhu
+ZXcgRm9ybURhdGEoZm9ybSkuZW50cmllcygpKTsKIGlmKHYuZGVsaXZlcnlUeXBlIT09IkJ5IEFtYmFyIERlbGl2ZXJ5Iil7di5kZWxpdmVyeUZlZT0iIjt2
+LmRlbGl2ZXJ5U2VydmljZT0iIjt9CiByZXR1cm4gdjsKfQpjb25zdCBwcm9kdWN0U2VsZWN0PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJwcm9kdWN0U2Vs
+ZWN0IikscHJvZHVjdE90aGVyPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJwcm9kdWN0T3RoZXIiKSxwcm9kdWN0T3RoZXJXcmFwPWRvY3VtZW50LmdldEVs
+ZW1lbnRCeUlkKCJwcm9kdWN0T3RoZXJXcmFwIikscHJvZHVjdFZhbHVlPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJwcm9kdWN0VmFsdWUiKTsKY29uc3Qg
+Q1VTVE9NX0tFWT0iY3VzdG9tUHJvZHVjdHMiOwpmdW5jdGlvbiBsb2FkQ3VzdG9tUHJvZHVjdHMoKXt0cnl7cmV0dXJuIEpTT04ucGFyc2UobG9jYWxTdG9y
+YWdlLmdldEl0ZW0oQ1VTVE9NX0tFWSl8fCJbXSIpO31jYXRjaHtyZXR1cm4gW107fX0KZnVuY3Rpb24gc2F2ZUN1c3RvbVByb2R1Y3QobmFtZSl7dHJ5e2Nv
+bnN0IGw9bG9hZEN1c3RvbVByb2R1Y3RzKCk7aWYoIWwuc29tZSh4PT54LnRvTG93ZXJDYXNlKCk9PT1uYW1lLnRvTG93ZXJDYXNlKCkpKXtsLnB1c2gobmFt
+ZSk7bG9jYWxTdG9yYWdlLnNldEl0ZW0oQ1VTVE9NX0tFWSxKU09OLnN0cmluZ2lmeShsKSk7fX1jYXRjaHt9fQpmdW5jdGlvbiBhZGRQcm9kdWN0T3B0aW9u
+KG5hbWUpe2lmKCFuYW1lKXJldHVybjtpZihbLi4ucHJvZHVjdFNlbGVjdC5vcHRpb25zXS5zb21lKG89Pm8udmFsdWUudG9Mb3dlckNhc2UoKT09PW5hbWUu
+dG9Mb3dlckNhc2UoKSkpcmV0dXJuO2NvbnN0IG89ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgib3B0aW9uIik7by52YWx1ZT1uYW1lO28udGV4dENvbnRlbnQ9
+bmFtZTtwcm9kdWN0U2VsZWN0Lmluc2VydEJlZm9yZShvLHByb2R1Y3RTZWxlY3QucXVlcnlTZWxlY3Rvcignb3B0aW9uW3ZhbHVlPSJfX290aGVyIl0nKSk7
+fQpsb2FkQ3VzdG9tUHJvZHVjdHMoKS5mb3JFYWNoKGFkZFByb2R1Y3RPcHRpb24pOwpjb25zdCBzaXplU2VsZWN0PWRvY3VtZW50LmdldEVsZW1lbnRCeUlk
+KCJzaXplU2VsZWN0Iiksc2l6ZVdyYXA9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNpemVXcmFwIik7CmNvbnN0IGRpbUlucHV0cz1bImxlbmd0aCIsIndp
+ZHRoIiwiaGVpZ2h0Il0ubWFwKG49PmZvcm0ucXVlcnlTZWxlY3RvcignW25hbWU9IicrbisnIl0nKSk7CmxldCBmaWxsaW5nU2l6ZT1mYWxzZTsKZnVuY3Rp
+b24gaXNTaG9lU2hlbGYoKXtyZXR1cm4gU3RyaW5nKHByb2R1Y3RWYWx1ZS52YWx1ZXx8IiIpLnRyaW0oKS50b0xvd2VyQ2FzZSgpPT09InNob2Ugc2hlbGYi
+O30KZnVuY3Rpb24gc3luY1NpemUoKXtjb25zdCBzaG93PWlzU2hvZVNoZWxmKCk7c2l6ZVdyYXAuc3R5bGUuZGlzcGxheT1zaG93PyIiOiJub25lIjtpZigh
+c2hvdylzaXplU2VsZWN0LnZhbHVlPSIiO30KZnVuY3Rpb24gYXBwbHlTaXplKCl7CiAgY29uc3Qgdj1zaXplU2VsZWN0LnZhbHVlOwogIGlmKCF2KXJldHVy
+bjsKICBpZih2PT09Il9fb3RoZXIiKXtkaW1JbnB1dHMuZm9yRWFjaChpPT57aS52YWx1ZT0iIjt9KTtkaW1JbnB1dHNbMF0uZm9jdXMoKTtwcmV2aWV3Q2Fy
+ZCgpO3JldHVybjt9IC8vIHR5cGUgdGhlIHNpemUgeW91cnNlbGYKICBjb25zdCBbbCx3LGhdPXYuc3BsaXQoInwiKTtmaWxsaW5nU2l6ZT10cnVlOwogIFts
+LHcsaF0uZm9yRWFjaCgoeCxpKT0+e2RpbUlucHV0c1tpXS52YWx1ZT14O30pOwogIGZpbGxpbmdTaXplPWZhbHNlO3ByZXZpZXdDYXJkKCk7Cn0Kc2l6ZVNl
+bGVjdC5hZGRFdmVudExpc3RlbmVyKCJjaGFuZ2UiLGFwcGx5U2l6ZSk7Ci8vIGlmIHRoZSBzaXplIGlzIHR5cGVkL2VkaXRlZCBieSBoYW5kIGFmdGVyIGNo
+b29zaW5nIGEgcHJlc2V0LCBzaG93IGl0IGFzICJPdGhlciIKZGltSW5wdXRzLmZvckVhY2goaT0+aS5hZGRFdmVudExpc3RlbmVyKCJpbnB1dCIsKCk9Pntp
+ZihmaWxsaW5nU2l6ZXx8IWlzU2hvZVNoZWxmKCkpcmV0dXJuO2NvbnN0IGN1cj1kaW1JbnB1dHMubWFwKHg9PngudmFsdWUudHJpbSgpKS5qb2luKCJ8Iik7
+Y29uc3QgbWF0Y2g9Wy4uLnNpemVTZWxlY3Qub3B0aW9uc10uZmluZChvPT5vLnZhbHVlJiZvLnZhbHVlIT09Il9fb3RoZXIiJiZvLnZhbHVlPT09Y3VyKTtz
+aXplU2VsZWN0LnZhbHVlPW1hdGNoP21hdGNoLnZhbHVlOiJfX290aGVyIjt9KSk7CmZ1bmN0aW9uIHN5bmNQcm9kdWN0KCl7Y29uc3Qgb3RoZXI9cHJvZHVj
+dFNlbGVjdC52YWx1ZT09PSJfX290aGVyIjtwcm9kdWN0T3RoZXJXcmFwLnN0eWxlLmRpc3BsYXk9b3RoZXI/IiI6Im5vbmUiO3Byb2R1Y3RPdGhlci5yZXF1
+aXJlZD1vdGhlcjtwcm9kdWN0VmFsdWUudmFsdWU9b3RoZXI/cHJvZHVjdE90aGVyLnZhbHVlLnRyaW0oKTpwcm9kdWN0U2VsZWN0LnZhbHVlO3N5bmNTaXpl
+KCk7fQpwcm9kdWN0U2VsZWN0LmFkZEV2ZW50TGlzdGVuZXIoImNoYW5nZSIsKCk9PntzeW5jUHJvZHVjdCgpO2lmKHByb2R1Y3RTZWxlY3QudmFsdWU9PT0i
+X19vdGhlciIpcHJvZHVjdE90aGVyLmZvY3VzKCk7fSk7CnByb2R1Y3RPdGhlci5hZGRFdmVudExpc3RlbmVyKCJpbnB1dCIsc3luY1Byb2R1Y3QpOwovLyB3
+aGVuIHRoZSB0eXBlZCBuYW1lIGlzIGZpbmlzaGVkLCBhZGQgaXQgdG8gdGhlIHNlbGVjdGlvbiBsaXN0IGFuZCBzZWxlY3QgaXQKcHJvZHVjdE90aGVyLmFk
+ZEV2ZW50TGlzdGVuZXIoImNoYW5nZSIsKCk9Pntjb25zdCBuPXByb2R1Y3RPdGhlci52YWx1ZS50cmltKCk7aWYoIW4pcmV0dXJuO2FkZFByb2R1Y3RPcHRp
+b24obik7c2F2ZUN1c3RvbVByb2R1Y3Qobik7Y29uc3QgbWF0Y2g9Wy4uLnByb2R1Y3RTZWxlY3Qub3B0aW9uc10uZmluZChvPT5vLnZhbHVlLnRvTG93ZXJD
+YXNlKCk9PT1uLnRvTG93ZXJDYXNlKCkpO2lmKG1hdGNoKXByb2R1Y3RTZWxlY3QudmFsdWU9bWF0Y2gudmFsdWU7c3luY1Byb2R1Y3QoKTtwcmV2aWV3Q2Fy
+ZCgpO30pOwpmb3JtLmFkZEV2ZW50TGlzdGVuZXIoInJlc2V0IiwoKT0+c2V0VGltZW91dCgoKT0+e3Byb2R1Y3RPdGhlci52YWx1ZT0iIjtzeW5jUHJvZHVj
+dCgpO30sMCkpOwpzeW5jUHJvZHVjdCgpOwpmdW5jdGlvbiBlc2Modil7cmV0dXJuIFN0cmluZyh2Pz8iIikucmVwbGFjZSgvWyY8PlwiJ10vZyxjPT4oeyIm
+IjoiJmFtcDsiLCI8IjoiJmx0OyIsIj4iOiImZ3Q7IiwnIic6IiZxdW90OyIsIiciOiImIzM5OyJ9W2NdKSk7fQpmdW5jdGlvbiBmaWVsZChrLHYpe3JldHVy
+biB2P2A8ZGl2IGNsYXNzPSJpbmZvIj48Yj4ke2VzYyhrKX08L2I+PGJyPiR7ZXNjKHYpfTwvZGl2PmA6IiI7fQpmdW5jdGlvbiBzZXRQaG90byhmaWxlKXsK
+IGlmKHBob3RvVXJsKXtVUkwucmV2b2tlT2JqZWN0VVJMKHBob3RvVXJsKTtwaG90b1VybD1udWxsO30KIHBob3RvUHJldmlldy5oaWRkZW49dHJ1ZTsgcGhv
+dG9QcmV2aWV3LnJlbW92ZUF0dHJpYnV0ZSgic3JjIik7IHBob3RvTmFtZS50ZXh0Q29udGVudD0iTm8gcGhvdG8gc2VsZWN0ZWQiOwogaWYoIWZpbGUpe3Bo
+b3RvU3RhdHVzLnRleHRDb250ZW50PSJDaG9vc2UgYW55IHBob3RvIGZvcm1hdCBzdXBwb3J0ZWQgYnkgeW91ciBicm93c2VyIChpbWFnZS8qKS4iO3ByZXZp
+ZXdDYXJkKCk7cmV0dXJuO30KIGNvbnN0IGlzSW1hZ2U9KGZpbGUudHlwZXx8IiIpLnRvTG93ZXJDYXNlKCkuc3RhcnRzV2l0aCgiaW1hZ2UvIik7CiBpZigh
+aXNJbWFnZSl7cGhvdG9JbnB1dC52YWx1ZT0iIjtwaG90b1N0YXR1cy50ZXh0Q29udGVudD0i4p2MIFBsZWFzZSBjaG9vc2UgYSBwaG90by9pbWFnZSBmaWxl
+IHN1cHBvcnRlZCBieSB5b3VyIGJyb3dzZXIuIjtyZXR1cm47fQogaWYoZmlsZS5zaXplPjE1KjEwMjQqMTAyNCl7cGhvdG9JbnB1dC52YWx1ZT0iIjtwaG90
+b1N0YXR1cy50ZXh0Q29udGVudD0i4p2MIEltYWdlIG11c3QgYmUgMTUgTUIgb3Igc21hbGxlci4iO3JldHVybjt9CiBwaG90b1VybD1VUkwuY3JlYXRlT2Jq
+ZWN0VVJMKGZpbGUpOwogcGhvdG9QcmV2aWV3LnNyYz1waG90b1VybDsgcGhvdG9QcmV2aWV3LmhpZGRlbj1mYWxzZTsKIHBob3RvTmFtZS50ZXh0Q29udGVu
+dD1maWxlLm5hbWU7CiBwaG90b1N0YXR1cy50ZXh0Q29udGVudD1gU2VsZWN0ZWQ6ICR7ZmlsZS5uYW1lfSAoJHsoZmlsZS5zaXplLzEwNDg1NzYpLnRvRml4
+ZWQoMil9IE1CKWA7CiBwcmV2aWV3Q2FyZCgpOwp9CnBob3RvSW5wdXQuYWRkRXZlbnRMaXN0ZW5lcigiY2hhbmdlIiwoKT0+c2V0UGhvdG8ocGhvdG9JbnB1
+dC5maWxlcz8uWzBdfHxudWxsKSk7CmNvbnN0IHBob3RvRHJvcFpvbmU9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInBob3RvRHJvcFpvbmUiKSwgcGhvdG9O
+YW1lPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJwaG90b05hbWUiKTsKWyJkcmFnZW50ZXIiLCJkcmFnb3ZlciJdLmZvckVhY2goZXY9PnBob3RvRHJvcFpv
+bmUuYWRkRXZlbnRMaXN0ZW5lcihldixlPT57ZS5wcmV2ZW50RGVmYXVsdCgpO3Bob3RvRHJvcFpvbmUuc3R5bGUuYm9yZGVyQ29sb3I9IiNiODk1NTIiO30p
+KTsKWyJkcmFnbGVhdmUiLCJkcm9wIl0uZm9yRWFjaChldj0+cGhvdG9Ecm9wWm9uZS5hZGRFdmVudExpc3RlbmVyKGV2LGU9PntlLnByZXZlbnREZWZhdWx0
+KCk7cGhvdG9Ecm9wWm9uZS5zdHlsZS5ib3JkZXJDb2xvcj0iIjt9KSk7CnBob3RvRHJvcFpvbmUuYWRkRXZlbnRMaXN0ZW5lcigiZHJvcCIsZT0+e2NvbnN0
+IGY9ZS5kYXRhVHJhbnNmZXIuZmlsZXM/LlswXTtpZighZilyZXR1cm47dHJ5e2NvbnN0IGR0PW5ldyBEYXRhVHJhbnNmZXIoKTtkdC5pdGVtcy5hZGQoZik7
+cGhvdG9JbnB1dC5maWxlcz1kdC5maWxlczt9Y2F0Y2goXyl7fXNldFBob3RvKGYpO30pOwpmdW5jdGlvbiBwcmV2aWV3Q2FyZCgpewogY29uc3Qgdj12YWxz
+KCksZj1waG90b0lucHV0LmZpbGVzPy5bMF0sc2l6ZT0odi5sZW5ndGh8fHYud2lkdGh8fHYuaGVpZ2h0KT9gTCAke3YubGVuZ3RofHwi4oCUIn1jbSDDlyBX
+ICR7di53aWR0aHx8IuKAlCJ9Y20gw5cgSCAke3YuaGVpZ2h0fHwi4oCUIn1jbWA6IiI7CiBjb25zdCBwcm9kdWN0PVtmaWVsZCgiUHJvZHVjdCIsdi5wcm9k
+dWN0KSxmaWVsZCgiU2l6ZSIsc2l6ZSksLi4uKFsibWF0ZXJpYWwiLCJjb2xvciIsInN0eWxlIiwiZGVzaWduIiwiaGFuZGxlIiwiZG9vciIsInBhcnRpdGlv
+biIsImRyYXdlciJdLm1hcChrPT5maWVsZChrWzBdLnRvVXBwZXJDYXNlKCkray5zbGljZSgxKSx2W2tdKSkpXS5maWx0ZXIoQm9vbGVhbikuam9pbigiIik7
+CiBjb25zdCBjdXN0b21lcj1bZmllbGQoIk5hbWUiLHYuY3VzdG9tZXJOYW1lKSxmaWVsZCgiUGhvbmUiLHYucGhvbmUpLGZpZWxkKCJMb2NhdGlvbiIsdi5s
+b2NhdGlvbiksZmllbGQoIlRlbGVncmFtIix2LnRlbGVncmFtVXNlcm5hbWUpXS5maWx0ZXIoQm9vbGVhbikuam9pbigiIik7CiBjb25zdCBzZXJ2aWNlPVtm
+aWVsZCgiUGF5bWVudCIsdi5wYXltZW50P2Ake3YucGF5bWVudH0gQmlycmA6IiIpLGZpZWxkKCJBZHZhbmNlIix2LmFkdmFuY2U/YCR7di5hZHZhbmNlfSBC
+aXJyYDoiIiksZmllbGQoIlBheW1lbnQgU3RhdHVzIix2LnBhaWRGdWxsPyJQQUlEIElOIEZVTEwiOiIiKSxmaWVsZCgiT3JkZXIgRGF0ZSIsdi5vcmRlckRh
+dGUpLGZpZWxkKCJDb21wbGV0aW9uIERhdGUiLHYuY29tcGxldGlvbkRhdGUpLGZpZWxkKCJEZWxpdmVyeSBUeXBlIix2LmRlbGl2ZXJ5VHlwZT09PSJCeSBB
+bWJhciBEZWxpdmVyeSImJnYuZGVsaXZlcnlTZXJ2aWNlP2Ake3YuZGVsaXZlcnlUeXBlfSDigJMgJHt2LmRlbGl2ZXJ5U2VydmljZX1gOnYuZGVsaXZlcnlU
+eXBlKSxmaWVsZCgiRGVsaXZlcnkgRmVlIix2LmRlbGl2ZXJ5RmVlP2Ake3YuZGVsaXZlcnlGZWV9IEJpcnJgOiIiKSxmaWVsZCgiRGVsaXZlcnkgRGF0ZSIs
+di5kZWxpdmVyeURhdGUpXS5maWx0ZXIoQm9vbGVhbikuam9pbigiIik7CiBwcmV2aWV3LmlubmVySFRNTD1gPGRpdiBjbGFzcz0ib3JkZXItY2FyZCI+PGRp
+diBjbGFzcz0ib3JkZXItaGVhZCI+PGRpdj48ZGl2IGNsYXNzPSJicmFuZCI+QU1CQVIgRlVSTklUVVJFPC9kaXY+PGRpdiBjbGFzcz0idGFnIj5DdXN0b21l
+ciDCtyBUZWxlZ3JhbSBPcmRlciBDYXJkPC9kaXY+PC9kaXY+PGRpdiBjbGFzcz0ib3JkZXItaWQiPiR7ZXNjKHYub3JkZXJJZHx8Ik9yZGVyIGNvZGUiKX08
+L2Rpdj48L2Rpdj4ke2YmJnBob3RvVXJsP2A8ZGl2IGNsYXNzPSJwaG90by13cmFwIj48aW1nIGNsYXNzPSJvcmRlci1waG90byIgc3JjPSIke3Bob3RvVXJs
+fSIgYWx0PSJQcm9kdWN0Ij48L2Rpdj5gOiI8ZGl2IGNsYXNzPSdwaG90by13cmFwJz5TZWxlY3QgYSBwcm9kdWN0IHBob3RvIHRvIGRpc3BsYXkgaXQgaGVy
+ZS48L2Rpdj4ifTxkaXYgY2xhc3M9Im9yZGVyLWJvZHkiPjxkaXYgY2xhc3M9InNlY3Rpb24tdGl0bGUiPlByb2R1Y3QgSW5mb3JtYXRpb248L2Rpdj48ZGl2
+IGNsYXNzPSJpbmZvLWdyaWQiPiR7cHJvZHVjdH08L2Rpdj48ZGl2IGNsYXNzPSJkaXZpZGVyIj48L2Rpdj48ZGl2IGNsYXNzPSJzZWN0aW9uLXRpdGxlIj5D
+dXN0b21lciBJbmZvcm1hdGlvbjwvZGl2PjxkaXYgY2xhc3M9ImluZm8tZ3JpZCI+JHtjdXN0b21lcn08L2Rpdj48ZGl2IGNsYXNzPSJzZWN0aW9uLXRpdGxl
+Ij5TZXJ2aWNlIEluZm9ybWF0aW9uPC9kaXY+PGRpdiBjbGFzcz0iaW5mby1ncmlkIj4ke3NlcnZpY2V9PC9kaXY+PGRpdiBjbGFzcz0iZGl2aWRlciI+PC9k
+aXY+PGRpdiBjbGFzcz0idGhhbmtzIj5UaGFuayB5b3UgZm9yIGNob29zaW5nIEFtYmFyIEZ1cm5pdHVyZSE8L2Rpdj48L2Rpdj48L2Rpdj5gOwp9CmZ1bmN0
+aW9uIHJvdW5kZWQoY3R4LHgseSx3LGgscil7Y3R4LmJlZ2luUGF0aCgpO2N0eC5tb3ZlVG8oeCtyLHkpO2N0eC5hcmNUbyh4K3cseSx4K3cseStoLHIpO2N0
+eC5hcmNUbyh4K3cseStoLHgseStoLHIpO2N0eC5hcmNUbyh4LHkraCx4LHkscik7Y3R4LmFyY1RvKHgseSx4K3cseSxyKTtjdHguY2xvc2VQYXRoKCk7Y3R4
+LmZpbGwoKTt9CmZ1bmN0aW9uIGxvYWRJbWcoZmlsZSl7cmV0dXJuIG5ldyBQcm9taXNlKChvayxubyk9Pntjb25zdCB1PVVSTC5jcmVhdGVPYmplY3RVUkwo
+ZmlsZSksaT1uZXcgSW1hZ2UoKTtpLm9ubG9hZD0oKT0+e1VSTC5yZXZva2VPYmplY3RVUkwodSk7b2soaSl9O2kub25lcnJvcj0oKT0+e1VSTC5yZXZva2VP
+YmplY3RVUkwodSk7bm8oRXJyb3IoIlVuYWJsZSB0byByZWFkIHNlbGVjdGVkIHBob3RvLiIpKX07aS5zcmM9dTt9KTt9CmZ1bmN0aW9uIGRyYXdXcmFwKGN0
+eCx0ZXh0LHgseSxtYXgpe2NvbnN0IHdvcmRzPVN0cmluZyh0ZXh0KS5zcGxpdCgvXHMrLyk7bGV0IGxpbmU9IiI7Zm9yKGNvbnN0IHdvcmQgb2Ygd29yZHMp
+e2NvbnN0IHQ9bGluZT9saW5lKyIgIit3b3JkOndvcmQ7aWYoY3R4Lm1lYXN1cmVUZXh0KHQpLndpZHRoPm1heCYmbGluZSl7Y3R4LmZpbGxUZXh0KGxpbmUs
+eCx5KTtsaW5lPXdvcmQ7eSs9MzI7fWVsc2UgbGluZT10O31pZihsaW5lKXtjdHguZmlsbFRleHQobGluZSx4LHkpO3krPTQwO31yZXR1cm4geTt9CmFzeW5j
+IGZ1bmN0aW9uIG1ha2VDYXJkKHYsZmlsZSl7CiBjb25zdCBpbWc9YXdhaXQgbG9hZEltZyhmaWxlKSxjPWRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoImNhbnZh
+cyIpO2Mud2lkdGg9MTA4MDtjLmhlaWdodD0xOTIwO2NvbnN0IHg9Yy5nZXRDb250ZXh0KCIyZCIpO2lmKCF4KXRocm93IEVycm9yKCJDYW52YXMgaW1hZ2Ug
+Z2VuZXJhdGlvbiBpcyBub3Qgc3VwcG9ydGVkIGluIHRoaXMgYnJvd3Nlci4iKTsKIGNvbnN0IFc9MTA4MCxwYWQ9NjQ7IHguZmlsbFN0eWxlPSIjZTllNWRh
+Ijt4LmZpbGxSZWN0KDAsMCxXLDE5MjApOwogLy8gY2FyZCBib2R5IHdpdGggc29mdCBzaGFkb3cKIHguc2F2ZSgpO3guc2hhZG93Q29sb3I9InJnYmEoMTUs
+NDIsMzMsLjI4KSI7eC5zaGFkb3dCbHVyPTM2O3guc2hhZG93T2Zmc2V0WT0xMDt4LmZpbGxTdHlsZT0iI2ZmZiI7cm91bmRlZCh4LDI0LDI0LFctNDgsMTg3
+MiwzNCk7eC5yZXN0b3JlKCk7CiAvLyBoZWFkZXIgKGNsaXBwZWQgdG8gdGhlIHJvdW5kZWQgY2FyZCkKIHguc2F2ZSgpO3guYmVnaW5QYXRoKCk7eC5yb3Vu
+ZFJlY3QoMjQsMjQsVy00OCwxODcyLDM0KTt4LmNsaXAoKTsKIGNvbnN0IGc9eC5jcmVhdGVMaW5lYXJHcmFkaWVudCgyNCwyNCxXLTI0LDIwNCk7Zy5hZGRD
+b2xvclN0b3AoMCwiIzBmMmYyNSIpO2cuYWRkQ29sb3JTdG9wKDEsIiMxYjRkM2QiKTt4LmZpbGxTdHlsZT1nO3guZmlsbFJlY3QoMjQsMjQsVy00OCwxODAp
+OwogeC5maWxsU3R5bGU9IiNmZmE5MzkiO3guZmlsbFJlY3QoMjQsMjAwLFctNDgsNSk7CiB4LmZpbGxTdHlsZT0iI2Y2ZjNlYyI7eC5maWxsUmVjdCgyNCwy
+MDUsVy00OCwxNjkxKTt4LnJlc3RvcmUoKTsKIHguZmlsbFN0eWxlPSIjZmZhOTM5Ijt4LmZvbnQ9IjgwMCA1MHB4IEFyaWFsIjt4LmZpbGxUZXh0KCJBTUJB
+UiBGVVJOSVRVUkUiLHBhZCw5OCk7CiB4LmZpbGxTdHlsZT0icmdiYSgyNDQsMjM5LDIyNywuODIpIjt4LmZvbnQ9IjYwMCAyMnB4IEFyaWFsIjt4LmZpbGxU
+ZXh0KCJDVVNUT01FUiBPUkRFUiBDQVJEIixwYWQsMTQyKTsKIHguZmlsbFN0eWxlPSJyZ2JhKDI1NSwyNTUsMjU1LC4xNCkiO3JvdW5kZWQoeCw3ODYsNjYs
+MjMwLDcyLDM2KTt4LnN0cm9rZVN0eWxlPSJyZ2JhKDI1NSwyNTUsMjU1LC4zNSkiO3gubGluZVdpZHRoPTI7eC5iZWdpblBhdGgoKTt4LnJvdW5kUmVjdCg3
+ODYsNjYsMjMwLDcyLDM2KTt4LnN0cm9rZSgpOwogeC5maWxsU3R5bGU9IiNmZmYiO3guZm9udD0iODAwIDI4cHggQXJpYWwiO3gudGV4dEFsaWduPSJjZW50
+ZXIiO3guZmlsbFRleHQodi5vcmRlcklkfHwiIiw5MDEsMTEzKTt4LnRleHRBbGlnbj0ibGVmdCI7CiAvLyBQcm9kdWN0IGltYWdlIHBhbmVsCiB4LnNhdmUo
+KTt4LnNoYWRvd0NvbG9yPSJyZ2JhKDAsMCwwLC4xNCkiO3guc2hhZG93Qmx1cj0yMDt4LnNoYWRvd09mZnNldFk9Njt4LmZpbGxTdHlsZT0iI2ZmZiI7cm91
+bmRlZCh4LHBhZCwyMjYsVy1wYWQqMiw1ODAsMjQpO3gucmVzdG9yZSgpOwogY29uc3QgbWF4Vz1XLXBhZCoyLTM2LG1heEg9NTQwLHNjYWxlPU1hdGgubWlu
+KG1heFcvaW1nLndpZHRoLG1heEgvaW1nLmhlaWdodCksaXc9aW1nLndpZHRoKnNjYWxlLGloPWltZy5oZWlnaHQqc2NhbGU7CiB4LnNhdmUoKTt4LmJlZ2lu
+UGF0aCgpO3gucm91bmRSZWN0KHBhZCsxOCwyNDYsbWF4VyxtYXhILDE2KTt4LmNsaXAoKTt4LmRyYXdJbWFnZShpbWcscGFkKzE4KyhtYXhXLWl3KS8yLDI0
+NisobWF4SC1paCkvMixpdyxpaCk7eC5yZXN0b3JlKCk7CiBsZXQgeT04NTI7CiBjb25zdCBzZWN0aW9uPXQ9Pnt4LmZpbGxTdHlsZT0iI2ZmYTkzOSI7cm91
+bmRlZCh4LHBhZCx5LTIyLDcsMjgsMyk7eC5maWxsU3R5bGU9IiMxNTNhMmUiO3guZm9udD0iODAwIDIycHggQXJpYWwiO3guZmlsbFRleHQodC50b1VwcGVy
+Q2FzZSgpLHBhZCsyMix5KTt5Kz00Mjt9OwogY29uc3QgbGluZT0oayx2YWwpPT57aWYoIVN0cmluZyh2YWw/PyIiKS50cmltKCkpcmV0dXJuO2NvbnN0IHRl
+eHQ9U3RyaW5nKHZhbCk7eC5maWxsU3R5bGU9IiM4YTdmNjkiO3guZm9udD0iODAwIDE5cHggQXJpYWwiO3guZmlsbFRleHQoay50b1VwcGVyQ2FzZSgpLHBh
+ZCx5KTt4LmZpbGxTdHlsZT0iIzE0MjExYiI7eC5mb250PSI2MDAgMjJweCBBcmlhbCI7bGV0IHl5PXk7Y29uc3QgbWF4PTg1MDtjb25zdCB3b3Jkcz10ZXh0
+LnNwbGl0KC9ccysvKTtsZXQgbGluZT0iIjtmb3IoY29uc3QgdyBvZiB3b3Jkcyl7Y29uc3QgdD1saW5lP2xpbmUrIiAiK3c6dztpZih4Lm1lYXN1cmVUZXh0
+KHQpLndpZHRoPm1heCYmbGluZSl7eC5maWxsVGV4dChsaW5lLHBhZCsxOTAseXkpO3l5Kz0yOTtsaW5lPXd9ZWxzZSBsaW5lPXR9aWYobGluZSl4LmZpbGxU
+ZXh0KGxpbmUscGFkKzE5MCx5eSk7eT1NYXRoLm1heCh5KzMyLHl5KzM4KX07CiBjb25zdCBkaXZpZGVyPSgpPT57eC5zdHJva2VTdHlsZT0iI2UwZGFjZCI7
+eC5saW5lV2lkdGg9Mjt4LmJlZ2luUGF0aCgpO3gubW92ZVRvKHBhZCx5KTt4LmxpbmVUbyhXLXBhZCx5KTt4LnN0cm9rZSgpO3krPTMwfTsKIHNlY3Rpb24o
+IlByb2R1Y3QgaW5mb3JtYXRpb24iKTtsaW5lKCJQcm9kdWN0Iix2LnByb2R1Y3QpO2NvbnN0IHNpemU9KHYubGVuZ3RofHx2LndpZHRofHx2LmhlaWdodCk/
+YEwgJHt2Lmxlbmd0aHx8IuKAlCJ9IMOXIFcgJHt2LndpZHRofHwi4oCUIn0gw5cgSCAke3YuaGVpZ2h0fHwi4oCUIn0gY21gOiIiO2xpbmUoIlNpemUiLHNp
+emUpO1siTWF0ZXJpYWwiLCJDb2xvciIsIlN0eWxlIiwiRGVzaWduIiwiSGFuZGxlIiwiRG9vciIsIlBhcnRpdGlvbiIsIkRyYXdlciJdLmZvckVhY2goaz0+
+bGluZShrLHZbay50b0xvd2VyQ2FzZSgpXSkpOwogZGl2aWRlcigpO3NlY3Rpb24oIkN1c3RvbWVyIGluZm9ybWF0aW9uIik7bGluZSgiTmFtZSIsdi5jdXN0
+b21lck5hbWUpO2xpbmUoIlBob25lIix2LnBob25lKTtsaW5lKCJMb2NhdGlvbiIsdi5sb2NhdGlvbik7bGluZSgiVGVsZWdyYW0iLHYudGVsZWdyYW1Vc2Vy
+bmFtZSk7CiBkaXZpZGVyKCk7c2VjdGlvbigiRGVsaXZlcnkgJiBwYXltZW50Iik7bGluZSgiUGF5bWVudCIsdi5wYXltZW50P2Ake3YucGF5bWVudH0gQmly
+cmA6IiIpO2xpbmUoIkFkdmFuY2UiLHYuYWR2YW5jZT9gJHt2LmFkdmFuY2V9IEJpcnJgOiIiKTtsaW5lKCJQYXltZW50IHN0YXR1cyIsdi5wYWlkRnVsbD8i
+UEFJRCBJTiBGVUxMIjoiIik7bGluZSgiT3JkZXIgZGF0ZSIsdi5vcmRlckRhdGUpO2xpbmUoIkNvbXBsZXRpb24gZGF0ZSIsdi5jb21wbGV0aW9uRGF0ZSk7
+bGluZSgiRGVsaXZlcnkgdHlwZSIsdi5kZWxpdmVyeVR5cGU9PT0iQnkgQW1iYXIgRGVsaXZlcnkiJiZ2LmRlbGl2ZXJ5U2VydmljZT9gJHt2LmRlbGl2ZXJ5
+VHlwZX0g4oCTICR7di5kZWxpdmVyeVNlcnZpY2V9YDp2LmRlbGl2ZXJ5VHlwZSk7aWYodi5kZWxpdmVyeVR5cGU9PT0iQnkgQW1iYXIgRGVsaXZlcnkiKWxp
+bmUoIkRlbGl2ZXJ5IGZlZSIsdi5kZWxpdmVyeUZlZT9gJHt2LmRlbGl2ZXJ5RmVlfSBCaXJyYDoiIik7bGluZSgiRGVsaXZlcnkgZGF0ZSIsdi5kZWxpdmVy
+eURhdGUpOwogY29uc3QgdGc9eC5jcmVhdGVMaW5lYXJHcmFkaWVudChwYWQsMTc5MCxXLXBhZCwxODY0KTt0Zy5hZGRDb2xvclN0b3AoMCwiIzBmMmYyNSIp
+O3RnLmFkZENvbG9yU3RvcCgxLCIjMWI0ZDNkIik7eC5maWxsU3R5bGU9dGc7cm91bmRlZCh4LHBhZCwxNzkwLFctcGFkKjIsNzQsMTgpO3guZmlsbFN0eWxl
+PSIjZmZhOTM5Ijt4LmZvbnQ9IjgwMCAyMnB4IEFyaWFsIjt4LnRleHRBbGlnbj0iY2VudGVyIjt4LmZpbGxUZXh0KCJUSEFOSyBZT1UgRk9SIENIT09TSU5H
+IEFNQkFSIEZVUk5JVFVSRSIsVy8yLDE4MzcpO3gudGV4dEFsaWduPSJsZWZ0IjsKIHJldHVybiBuZXcgUHJvbWlzZSgob2ssbm8pPT5jLnRvQmxvYihiPT5i
+P29rKGIpOm5vKEVycm9yKCJDb3VsZCBub3QgZ2VuZXJhdGUgY2FyZCBpbWFnZS4iKSksImltYWdlL2pwZWciLDAuOTUpKTsKfQpjb25zdCBkZWxpdmVyeUZl
+ZUZpZWxkPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJkZWxpdmVyeUZlZUZpZWxkIiksZGVsaXZlcnlTZXJ2aWNlRmllbGQ9ZG9jdW1lbnQuZ2V0RWxlbWVu
+dEJ5SWQoImRlbGl2ZXJ5U2VydmljZUZpZWxkIik7CmZ1bmN0aW9uIHN5bmNEZWxpdmVyeSgpewogY29uc3QgaXNEZWxpdmVyeT1mb3JtLmVsZW1lbnRzLmRl
+bGl2ZXJ5VHlwZS52YWx1ZT09PSJCeSBBbWJhciBEZWxpdmVyeSI7CiBkZWxpdmVyeUZlZUZpZWxkLnN0eWxlLmRpc3BsYXk9aXNEZWxpdmVyeT8iIjoibm9u
+ZSI7CiBkZWxpdmVyeVNlcnZpY2VGaWVsZC5zdHlsZS5kaXNwbGF5PWlzRGVsaXZlcnk/IiI6Im5vbmUiOwogaWYoIWlzRGVsaXZlcnkpIGZvcm0uZWxlbWVu
+dHMuZGVsaXZlcnlGZWUudmFsdWU9IiI7Cn0KZm9ybS5lbGVtZW50cy5kZWxpdmVyeVR5cGUuYWRkRXZlbnRMaXN0ZW5lcigiY2hhbmdlIiwoKT0+e3N5bmNE
+ZWxpdmVyeSgpO3ByZXZpZXdDYXJkKCk7fSk7CmZvcm0uYWRkRXZlbnRMaXN0ZW5lcigicmVzZXQiLCgpPT5zZXRUaW1lb3V0KHN5bmNEZWxpdmVyeSkpOwpz
+eW5jRGVsaXZlcnkoKTsKZm9ybS5hZGRFdmVudExpc3RlbmVyKCJpbnB1dCIsZT0+e2lmKGUudGFyZ2V0IT09cGhvdG9JbnB1dClwcmV2aWV3Q2FyZCgpO30p
+Owpmb3JtLmFkZEV2ZW50TGlzdGVuZXIoInN1Ym1pdCIsYXN5bmMgZT0+ewogZS5wcmV2ZW50RGVmYXVsdCgpO2lmKHByb2R1Y3RTZWxlY3QudmFsdWU9PT0i
+X19vdGhlciIpe2NvbnN0IG49cHJvZHVjdE90aGVyLnZhbHVlLnRyaW0oKTtpZihuKXthZGRQcm9kdWN0T3B0aW9uKG4pO3NhdmVDdXN0b21Qcm9kdWN0KG4p
+O319c3luY1Byb2R1Y3QoKTtpZighcHJvZHVjdFZhbHVlLnZhbHVlKXtyZXN1bHQudGV4dENvbnRlbnQ9IuKdjCBQbGVhc2UgY2hvb3NlIHRoZSBwcm9kdWN0
+IChvciB0eXBlIGl0IGlmIHlvdSBjaG9zZSBPdGhlcikuIjsocHJvZHVjdFNlbGVjdC52YWx1ZT09PSJfX290aGVyIj9wcm9kdWN0T3RoZXI6cHJvZHVjdFNl
+bGVjdCkuZm9jdXMoKTtyZXR1cm47fWNvbnN0IGY9cGhvdG9JbnB1dC5maWxlcz8uWzBdLHY9dmFscygpO2lmKCFTdHJpbmcodi5vcmRlcklkfHwiIikudHJp
+bSgpKXtyZXN1bHQudGV4dENvbnRlbnQ9IuKdjCBQbGVhc2UgdHlwZSB0aGUgT3JkZXIgY29kZS4iO2Zvcm0uZWxlbWVudHMub3JkZXJJZC5mb2N1cygpO3Jl
+dHVybjt9aWYoIWYpe3Jlc3VsdC50ZXh0Q29udGVudD0i4p2MIFBsZWFzZSBzZWxlY3QgdGhlIHByb2R1Y3QgcGhvdG8uIjtwaG90b0lucHV0LmZvY3VzKCk7
+cmV0dXJuO31pZighdi50ZWxlZ3JhbUNoYXRJZD8udHJpbSgpJiYhdi50ZWxlZ3JhbVVzZXJuYW1lPy50cmltKCkmJiEodi50ZWxlZ3JhbVBob25lfHx2LnBo
+b25lfHwiIikucmVwbGFjZSgvXEQvZywiIikubWF0Y2goL1xkezgsfS8pKXtyZXN1bHQudGV4dENvbnRlbnQ9IuKdjCBFbnRlciB0aGUgY3VzdG9tZXJcdTIw
+MTlzIFRlbGVncmFtIEB1c2VybmFtZSBvciBwaG9uZSBudW1iZXIuIjtmb3JtLmVsZW1lbnRzLnRlbGVncmFtVXNlcm5hbWUuZm9jdXMoKTtyZXR1cm47fQog
+Y29uc3QgYnRuPWZvcm0ucXVlcnlTZWxlY3RvcignYnV0dG9uW3R5cGU9InN1Ym1pdCJdJyk7YnRuLmRpc2FibGVkPXRydWU7cmVzdWx0LnRleHRDb250ZW50
+PSJHZW5lcmF0aW5nIGltYWdlIGNhcmTigKYiOwogdHJ5e2NvbnN0IHBuZz1hd2FpdCBtYWtlQ2FyZCh2LGYpLGZkPW5ldyBGb3JtRGF0YShmb3JtKTtmZC5h
+cHBlbmQoImNhcmRJbWFnZSIscG5nLGBhbWJhci1vcmRlci0ke3Yub3JkZXJJZHx8ImNhcmQifS5qcGdgKTtidG4udGV4dENvbnRlbnQ9IlNlbmRpbmcgb3Jk
+ZXIgY2FyZOKApiI7Y29uc3Qgcj1hd2FpdCBmZXRjaCgiL2FwaS9vcmRlcnMiLHttZXRob2Q6IlBPU1QiLGJvZHk6ZmR9KSxkPWF3YWl0IHIuanNvbigpO2lm
+KCFyLm9rfHwhZC5vayl0aHJvdyBFcnJvcihkLmVycm9yfHwiRGVsaXZlcnkgZmFpbGVkLiIpO3Jlc3VsdC5pbm5lckhUTUw9ZC5kZWxpdmVyZWQ/KCLinIUg
+Iitlc2MoZC53YXJuaW5nfHwoIk9yZGVyIGNhcmQgc2VudCB0byB0aGUgY3VzdG9tZXIgZnJvbSAiKyhkLnNlbnRGcm9tfHwieW91ciBUZWxlZ3JhbSBhY2Nv
+dW50IikrIi4iKSkrKGQuY2FyZFVybD9gIDxhIGhyZWY9IiR7ZC5jYXJkVXJsfSIgdGFyZ2V0PSJfYmxhbmsiIGRvd25sb2FkPkRvd25sb2FkIGNhcmQ8L2E+
+YDoiIikpOigi4pqg77iPICIrZXNjKGQud2FybmluZ3x8Ik9yZGVyIHNhdmVkLCBidXQgdGhlIGNhcmQgd2FzIG5vdCBkZWxpdmVyZWQuIikrKGQuY2FyZFVy
+bD9gIDxhIGhyZWY9IiR7ZC5jYXJkVXJsfSIgdGFyZ2V0PSJfYmxhbmsiIGRvd25sb2FkPkRvd25sb2FkIGNhcmQ8L2E+YDoiIikpO2Zvcm0ucmVzZXQoKTtp
+ZihwaG90b1VybClVUkwucmV2b2tlT2JqZWN0VVJMKHBob3RvVXJsKTtwaG90b1VybD1udWxsO3Bob3RvUHJldmlldy5oaWRkZW49dHJ1ZTtwaG90b1ByZXZp
+ZXcuc3R5bGUuZGlzcGxheT0ibm9uZSI7cGhvdG9QcmV2aWV3LnJlbW92ZUF0dHJpYnV0ZSgic3JjIik7cGhvdG9TdGF0dXMudGV4dENvbnRlbnQ9IkNob29z
+ZSBhbnkgcGhvdG8gZm9ybWF0IHN1cHBvcnRlZCBieSB5b3VyIGJyb3dzZXIgKGltYWdlLyopLiI7cGhvdG9OYW1lLnRleHRDb250ZW50PSJObyBwaG90byBz
+ZWxlY3RlZCI7cHJldmlld0NhcmQoKTt9Y2F0Y2goZXJyKXtyZXN1bHQudGV4dENvbnRlbnQ9IuKdjCAiK2Vyci5tZXNzYWdlO31maW5hbGx5e2J0bi5kaXNh
+YmxlZD1mYWxzZTtidG4udGV4dENvbnRlbnQ9IvCfk6ggQ3JlYXRlICYgU2VuZCBPcmRlciBDYXJkIjt9Cn0pOwpwcmV2aWV3Q2FyZCgpOwo8L3NjcmlwdD4K
+PGJ1dHRvbiBpZD0iYWNPcGVuIiBzdHlsZT0iZGlzcGxheTpub25lO3Bvc2l0aW9uOmZpeGVkO3JpZ2h0OjEwcHg7Ym90dG9tOjEwcHg7ei1pbmRleDo5OTk4
+O3BhZGRpbmc6MTBweCAxNHB4O2JvcmRlcjowO2JvcmRlci1yYWRpdXM6MjRweDtiYWNrZ3JvdW5kOnJnYmEoMjIsMTgsMTQsLjg4KTtib3JkZXI6MXB4IHNv
+bGlkICNjMThiM2E7Y29sb3I6I2YzYzc3Yztmb250OjYwMCAxNHB4IHN5c3RlbS11aTtib3gtc2hhZG93OjAgNHB4IDE4cHggcmdiYSgwLDAsMCwuMzUpO2Jh
+Y2tkcm9wLWZpbHRlcjpibHVyKDE0cHgpIj7wn5GlIE1hbmFnZSBBc3NpZ25lZCBBZG1pbnM8L2J1dHRvbj4KPGRpdiBpZD0iYWNPdmVybGF5IiBzdHlsZT0i
+ZGlzcGxheTpub25lO3Bvc2l0aW9uOmZpeGVkO2luc2V0OjA7ei1pbmRleDo5OTk5ODtiYWNrZ3JvdW5kOnJnYmEoMCwwLDAsLjUpO292ZXJmbG93OmF1dG8i
+PjxkaXYgaWQ9ImFjQm94IiBzdHlsZT0iYmFja2dyb3VuZDojZmZmO21heC13aWR0aDo1NjBweDttYXJnaW46MjBweCBhdXRvO2JvcmRlci1yYWRpdXM6MTRw
+eDtwYWRkaW5nOjE4cHg7Zm9udC1mYW1pbHk6c3lzdGVtLXVpLHNhbnMtc2VyaWY7Y29sb3I6IzIyMiI+PC9kaXY+PC9kaXY+CjxzdHlsZT4jYWNCb3ggaW5w
+dXQsI2FjQm94IHNlbGVjdCwjYWNCb3ggYnV0dG9ue2ZvbnQtc2l6ZToxNXB4O3BhZGRpbmc6OXB4O21hcmdpbjozcHggMDt3aWR0aDoxMDAlO2JveC1zaXpp
+bmc6Ym9yZGVyLWJveDtib3JkZXItcmFkaXVzOjhweDtib3JkZXI6MXB4IHNvbGlkICNjY2N9I2FjQm94IGJ1dHRvbntiYWNrZ3JvdW5kOiMxYTczZTg7Y29s
+b3I6I2ZmZjtib3JkZXI6MH0jYWNCb3ggYnV0dG9uLmRlbHtiYWNrZ3JvdW5kOiNjNjI4Mjg7d2lkdGg6YXV0bztwYWRkaW5nOjZweCAxMHB4O21hcmdpbjow
+fSNhY0JveCBidXR0b24uZ3JleXtiYWNrZ3JvdW5kOiM2NjZ9I2FjQm94IC5yb3d7ZGlzcGxheTpmbGV4O2p1c3RpZnktY29udGVudDpzcGFjZS1iZXR3ZWVu
+O2FsaWduLWl0ZW1zOmNlbnRlcjtnYXA6OHB4O3BhZGRpbmc6OHB4IDA7Ym9yZGVyLWJvdHRvbToxcHggc29saWQgI2VlZX0jYWNCb3ggaDN7bWFyZ2luOjE4
+cHggMCA2cHh9I2FjQm94IC5tc2d7bWFyZ2luLXRvcDoxMHB4O2ZvbnQtc2l6ZToxNHB4O3doaXRlLXNwYWNlOnByZS13cmFwfS5va3tjb2xvcjojMGE3ZDJj
+fS5iYWR7Y29sb3I6I2M2MjgyOH08L3N0eWxlPgo8c2NyaXB0PgooZnVuY3Rpb24oKXsKY29uc3QgZXNjPXQ9PlN0cmluZyh0PT1udWxsPyIiOnQpLnJlcGxh
+Y2UoL1smPD4iJ10vZyxjPT4oeyImIjoiJmFtcDsiLCI8IjoiJmx0OyIsIj4iOiImZ3Q7IiwnIic6IiZxdW90OyIsIiciOiImIzM5OyJ9W2NdKSk7CmNvbnN0
+IGFwaT1hc3luYyhwLGIpPT57Y29uc3Qgcj1hd2FpdCBmZXRjaChwLGI/e21ldGhvZDoiUE9TVCIsaGVhZGVyczp7IkNvbnRlbnQtVHlwZSI6ImFwcGxpY2F0
+aW9uL2pzb24ifSxib2R5OkpTT04uc3RyaW5naWZ5KGIpfTp7fSk7cmV0dXJuIHIuanNvbigpO307CmNvbnN0IG92PWRvY3VtZW50LmdldEVsZW1lbnRCeUlk
+KCJhY092ZXJsYXkiKSxib3g9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoImFjQm94Iik7CmNvbnN0IHNheT0oZCk9Pntjb25zdCBtPWRvY3VtZW50LmdldEVs
+ZW1lbnRCeUlkKCJhY01zZyIpO2lmKG0pe20uY2xhc3NOYW1lPSJtc2cgIisoZC5vaz8ib2siOiJiYWQiKTttLnRleHRDb250ZW50PWQubWVzc2FnZXx8ZC5l
+cnJvcnx8IiI7fX07CmNvbnN0IHZhbD1pZD0+KGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKGlkKXx8e30pLnZhbHVlfHwiIjsKYXN5bmMgZnVuY3Rpb24gcmVu
+ZGVyKGtlZXBNc2cpewogIGNvbnN0IG1lPWF3YWl0IGFwaSgiL2FwaS9tZSIpOwogIGlmKG1lLnJvbGUhPT0ib3duZXIiKXsKICAgIGJveC5pbm5lckhUTUw9
+JzxoMj7impnvuI8gQWRtaW4gQ29udHJvbDwvaDI+PHA+T25seSB0aGUgb3duZXIgY2FuIG1hbmFnZSBhZG1pbnMuIEVudGVyIHRoZSBvd25lciBrZXkgKEFE
+TUlOX1NFVFVQX0tFWSk6PC9wPjxpbnB1dCBpZD0iYWNLZXkiIHR5cGU9InBhc3N3b3JkIiBwbGFjZWhvbGRlcj0iT3duZXIga2V5Ij48YnV0dG9uIGRhdGEt
+YT0ia2V5Ij5FbnRlcjwvYnV0dG9uPjxidXR0b24gY2xhc3M9ImdyZXkiIGRhdGEtYT0iY2xvc2UiPkNsb3NlPC9idXR0b24+PGRpdiBpZD0iYWNNc2ciIGNs
+YXNzPSJtc2ciPjwvZGl2Pic7cmV0dXJuO30KICBjb25zdCBhPWF3YWl0IGFwaSgiL2FwaS9zZXR1cC9hcHAtYWRtaW5zIik7CiAgaWYoIWEub2spe2JveC5p
+bm5lckhUTUw9JzxwIGNsYXNzPSJiYWQiPicrZXNjKGEuZXJyb3IpKyc8L3A+PGJ1dHRvbiBjbGFzcz0iZ3JleSIgZGF0YS1hPSJjbG9zZSI+Q2xvc2U8L2J1
+dHRvbj4nO3JldHVybjt9CgogIGNvbnN0IHBlb3BsZT0oYS5hcHBBZG1pbnN8fFtdKS5tYXAocD0+JzxkaXYgY2xhc3M9InJvdyI+PGRpdj48Yj4nK2VzYyhw
+Lm5hbWV8fCIobm8gbmFtZSkiKSsnPC9iPjxicj48c21hbGw+VGVsZWdyYW0gSUQgJytlc2MocC50ZWxlZ3JhbUlkKSsnPC9zbWFsbD48L2Rpdj48YnV0dG9u
+IGNsYXNzPSJkZWwiIGRhdGEtYT0iZGVscGVyc29uIiBkYXRhLWlkPSInK2VzYyhwLnRlbGVncmFtSWQpKyciPkRlbGV0ZTwvYnV0dG9uPjwvZGl2PicpLmpv
+aW4oIiIpfHwnPHA+PHNtYWxsPk5vIGFkbWlucyBhc3NpZ25lZCB5ZXQuPC9zbWFsbD48L3A+JzsKICBib3guaW5uZXJIVE1MPSc8ZGl2IGNsYXNzPSJyb3ci
+PjxoMiBzdHlsZT0ibWFyZ2luOjAiPuKame+4jyBBZG1pbiBDb250cm9sPC9oMj48YnV0dG9uIGNsYXNzPSJncmV5IiBzdHlsZT0id2lkdGg6YXV0byIgZGF0
+YS1hPSJjbG9zZSI+Q2xvc2U8L2J1dHRvbj48L2Rpdj4nCiAgKyc8c21hbGw+QWNjZXNzIGNvbnRyb2wgaXMgPGI+JysoYS5lbmZvcmNlZD8nT04g4oCUIG9u
+bHkgYXNzaWduZWQgYWRtaW5zIGNhbiB1c2UgdGhlIGFwcCc6J09GRiDigJQgZXZlcnlvbmUgY2FuIHVzZSB0aGUgYXBwIHVudGlsIHlvdSBhc3NpZ24gc29t
+ZW9uZScpKyc8L2I+Ljwvc21hbGw+JwogICsnPGgzPvCfkaUgQWRtaW5zIHdobyBjYW4gdXNlIHRoZSBhcHAgKCcrKGEuYXBwQWRtaW5zfHxbXSkubGVuZ3Ro
+KycpPC9oMz48ZGl2IHN0eWxlPSJtYXgtaGVpZ2h0OjI0MHB4O292ZXJmbG93OmF1dG8iPicrcGVvcGxlKyc8L2Rpdj4nCiAgKyc8aDM+4p6VIEFzc2lnbiBh
+ZG1pbnMgKHVubGltaXRlZCk8L2gzPjx0ZXh0YXJlYSBpZD0ibklkIiByb3dzPSI0IiBzdHlsZT0iZm9udC1zaXplOjE1cHg7cGFkZGluZzo5cHg7d2lkdGg6
+MTAwJTtib3gtc2l6aW5nOmJvcmRlci1ib3g7Ym9yZGVyLXJhZGl1czo4cHg7Ym9yZGVyOjFweCBzb2xpZCAjY2NjIiBwbGFjZWhvbGRlcj0iT25lIHBlcnNv
+biBwZXIgbGluZTomIzEwOzEyMzQ1Njc4OSBBYmViZSYjMTA7OTg3NjU0MzIxIFNhcmEiPjwvdGV4dGFyZWE+PHA+PHNtYWxsPkVhY2ggYXNzaWduZWQgYWRt
+aW4gb3BlbnMgdGhlIE1pbmkgQXBwIGZyb20gdGhlaXIgb3duIFRlbGVncmFtLCB0YXBzIENvbm5lY3QgbXkgVGVsZWdyYW0gYWNjb3VudCwgYW5kIHNlbmRz
+IGNhcmRzIGZyb20gdGhlaXIgb3duIGFjY291bnQuPC9zbWFsbD48L3A+PGJ1dHRvbiBkYXRhLWE9ImFkZHBlcnNvbiI+QXNzaWduIGFkbWluPC9idXR0b24+
+JwogICsnPGgzPvCfk6ggTWVzc2FnZSBkZWxpdmVyeTwvaDM+PHA+PHNtYWxsPlVzZXMgQk9UX1RPS0VOIG9ubHkuIE5vIFRlbGVncmFtIEJ1c2luZXNzIGNv
+bm5lY3Rpb24sIFRHX0FQSV9JRCwgVEdfQVBJX0hBU0gsIG9yIHBlcnNvbmFsIFRlbGVncmFtIGxvZ2luIGlzIG5lZWRlZC48L3NtYWxsPjwvcD4nCiAgKyc8
+ZGl2IGlkPSJhY01zZyIgY2xhc3M9Im1zZyI+PC9kaXY+JzsKfQpvdi5hZGRFdmVudExpc3RlbmVyKCJjbGljayIsYXN5bmMgZT0+ewogIGNvbnN0IGI9ZS50
+YXJnZXQuY2xvc2VzdCgiYnV0dG9uW2RhdGEtYV0iKTtpZighYil7aWYoZS50YXJnZXQ9PT1vdilvdi5zdHlsZS5kaXNwbGF5PSJub25lIjtyZXR1cm47fQog
+IGNvbnN0IGFjdD1iLmRhdGFzZXQuYTsKICB0cnl7CiAgaWYoYWN0PT09ImNsb3NlIil7b3Yuc3R5bGUuZGlzcGxheT0ibm9uZSI7cmV0dXJuO30KICBpZihh
+Y3Q9PT0ia2V5Iil7dHJ5e2xvY2FsU3RvcmFnZS5zZXRJdGVtKCJvd25lcktleSIsdmFsKCJhY0tleSIpKTt9Y2F0Y2h7fWF3YWl0IHJlbmRlcigpO2NvbnN0
+IG1lPWF3YWl0IGFwaSgiL2FwaS9tZSIpO2lmKG1lLnJvbGUhPT0ib3duZXIiKXNheSh7b2s6ZmFsc2UsZXJyb3I6Ildyb25nIG93bmVyIGtleS4ifSk7cmV0
+dXJuO30KICBpZihhY3Q9PT0iYWRkcGVyc29uIil7Y29uc3QgZD1hd2FpdCBhcGkoIi9hcGkvc2V0dXAvYXBwLWFkbWlucy9hZGQiLHt0ZWxlZ3JhbUlkOnZh
+bCgibklkIil9KTthd2FpdCByZW5kZXIoKTtzYXkoZCk7cmV0dXJuO30KICBpZihhY3Q9PT0iZGVscGVyc29uIil7aWYoIWNvbmZpcm0oIkRlbGV0ZSB0aGlz
+IGFkbWluPyBUaGV5IHdpbGwgbG9zZSBhY2Nlc3MuIikpcmV0dXJuO2NvbnN0IGQ9YXdhaXQgYXBpKCIvYXBpL3NldHVwL2FwcC1hZG1pbnMvcmVtb3ZlIix7
+dGVsZWdyYW1JZDpiLmRhdGFzZXQuaWR9KTthd2FpdCByZW5kZXIoKTtzYXkoZCk7cmV0dXJuO30KICB9Y2F0Y2goZXJyKXtzYXkoe29rOmZhbHNlLGVycm9y
+OmVyci5tZXNzYWdlfSk7fQp9KTsKKGFzeW5jKCk9Pnt0cnl7Y29uc3QgbT1hd2FpdCBhcGkoIi9hcGkvbWUiKTtpZihtLnJvbGU9PT0ib3duZXIiKWRvY3Vt
+ZW50LmdldEVsZW1lbnRCeUlkKCJhY09wZW4iKS5zdHlsZS5kaXNwbGF5PSJibG9jayI7fWNhdGNoe319KSgpOwpkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgi
+YWNPcGVuIikub25jbGljaz0oKT0+e292LnN0eWxlLmRpc3BsYXk9ImJsb2NrIjtib3guaW5uZXJIVE1MPSJMb2FkaW5n4oCmIjtyZW5kZXIoKTt9Owp9KSgp
+Owo8L3NjcmlwdD4KPGRpdiBpZD0ic2hCYXIiIHN0eWxlPSJkaXNwbGF5Om5vbmU7cG9zaXRpb246Zml4ZWQ7cmlnaHQ6MTBweDtib3R0b206NThweDt6LWlu
+ZGV4Ojk5OTg7Z2FwOjZweCI+PGJ1dHRvbiBpZD0ic2hPcGVuIiBzdHlsZT0icGFkZGluZzoxMHB4IDE0cHg7Ym9yZGVyOjA7Ym9yZGVyLXJhZGl1czoyNHB4
+O2JhY2tncm91bmQ6IzE4ODAzODtjb2xvcjojZmZmO2ZvbnQ6NjAwIDE0cHggc3lzdGVtLXVpO2JveC1zaGFkb3c6MCAycHggOHB4IHJnYmEoMCwwLDAsLjMp
+Ij7wn5OKIEdvb2dsZSBTaGVldDwvYnV0dG9uPjxidXR0b24gaWQ9InNoQ2ZnIiB0aXRsZT0iU2hlZXQgc2V0dGluZ3MgLyBzeW5jIiBzdHlsZT0icGFkZGlu
+ZzoxMHB4IDEycHg7Ym9yZGVyOjA7Ym9yZGVyLXJhZGl1czoyNHB4O2JhY2tncm91bmQ6cmdiYSgyMiwxOCwxNCwuODgpO2JvcmRlcjoxcHggc29saWQgIzE4
+ODAzODtjb2xvcjojZmZmO2ZvbnQ6NjAwIDE0cHggc3lzdGVtLXVpO2JveC1zaGFkb3c6MCAycHggOHB4IHJnYmEoMCwwLDAsLjMpIj7impk8L2J1dHRvbj48
+YnV0dG9uIGlkPSJzaE5ldyIgdGl0bGU9IlN0YXJ0IGEgbmV3IEV0aGlvcGlhbi1tb250aCBzaGVldCIgc3R5bGU9ImRpc3BsYXk6bm9uZTtwYWRkaW5nOjEw
+cHggMTRweDtib3JkZXI6MDtib3JkZXItcmFkaXVzOjI0cHg7YmFja2dyb3VuZDojYjg5NTUyO2NvbG9yOiNmZmY7Zm9udDo2MDAgMTRweCBzeXN0ZW0tdWk7
+Ym94LXNoYWRvdzowIDJweCA4cHggcmdiYSgwLDAsMCwuMykiPuKZuyBBcmNoaXZlIG9sZCBsaXN0ICZhbXA7IFN0YXJ0IE5ldzwvYnV0dG9uPjwvZGl2Pgo8
+ZGl2IGlkPSJzaE92ZXJsYXkiIHN0eWxlPSJkaXNwbGF5Om5vbmU7cG9zaXRpb246Zml4ZWQ7aW5zZXQ6MDt6LWluZGV4Ojk5OTk4O2JhY2tncm91bmQ6cmdi
+YSgwLDAsMCwuNSk7b3ZlcmZsb3c6YXV0byI+PGRpdiBpZD0ic2hCb3giIHN0eWxlPSJiYWNrZ3JvdW5kOiNmZmY7bWF4LXdpZHRoOjU0MHB4O21hcmdpbjoy
+MHB4IGF1dG87Ym9yZGVyLXJhZGl1czoxNHB4O3BhZGRpbmc6MThweDtmb250LWZhbWlseTpzeXN0ZW0tdWksc2Fucy1zZXJpZjtjb2xvcjojMjIyIj48L2Rp
+dj48L2Rpdj4KPHNjcmlwdD4KLy8gR29vZ2xlIFNoZWV0IGJ1dHRvbiDigJQgZXZlcnkgYWRtaW4gY2FuIG9wZW4gdGhlIHNoZWV0OyBzZXR0aW5ncyAo4pqZ
+IHRlc3Qvc3luYykgYXJlIG1haW4gYWRtaW4gb25seSAoc2VydmVyIGVuZm9yY2VzIGl0KS4KKGZ1bmN0aW9uKCl7CmNvbnN0IGVzYz10PT5TdHJpbmcodD09
+bnVsbD8iIjp0KS5yZXBsYWNlKC9bJjw+IiddL2csYz0+KHsiJiI6IiZhbXA7IiwiPCI6IiZsdDsiLCI+IjoiJmd0OyIsJyInOiImcXVvdDsiLCInIjoiJiMz
+OTsifVtjXSkpOwpjb25zdCBhcGk9YXN5bmMocCxwb3N0KT0+e2NvbnN0IHI9YXdhaXQgZmV0Y2gocCxwb3N0P3ttZXRob2Q6IlBPU1QiLGhlYWRlcnM6eyJD
+b250ZW50LVR5cGUiOiJhcHBsaWNhdGlvbi9qc29uIn0sYm9keToie30ifTp7fSk7cmV0dXJuIHIuanNvbigpO307CmNvbnN0IGJhcj1kb2N1bWVudC5nZXRF
+bGVtZW50QnlJZCgic2hCYXIiKSxvdj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic2hPdmVybGF5IiksYm94PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJz
+aEJveCIpOwpjb25zdCBicz0nZm9udC1zaXplOjE1cHg7cGFkZGluZzoxMHB4O21hcmdpbjo0cHggMDt3aWR0aDoxMDAlO2JveC1zaXppbmc6Ym9yZGVyLWJv
+eDtib3JkZXI6MDtib3JkZXItcmFkaXVzOjhweDtjb2xvcjojZmZmO2JhY2tncm91bmQ6IzFhNzNlODtjdXJzb3I6cG9pbnRlcic7CmxldCBzdD1udWxsOwpm
+dW5jdGlvbiBvcGVuRXh0ZXJuYWwodSl7dHJ5e2lmKHdpbmRvdy5UZWxlZ3JhbT8uV2ViQXBwPy5vcGVuTGluayl7VGVsZWdyYW0uV2ViQXBwLm9wZW5MaW5r
+KHUpO3JldHVybjt9fWNhdGNoe313aW5kb3cub3Blbih1LCJfYmxhbmsiLCJub29wZW5lciIpO30KYXN5bmMgZnVuY3Rpb24gc3RhdHVzKCl7dHJ5e3N0PWF3
+YWl0IGFwaSgiL2FwaS9zaGVldHMvc3RhdHVzIik7fWNhdGNoe3N0PXtvazpmYWxzZSxlcnJvcjoiQ291bGQgbm90IHJlYWNoIHRoZSBzZXJ2ZXIuIn07fXJl
+dHVybiBzdDt9CmZ1bmN0aW9uIHJlbmRlcihtc2csZ29vZCl7CiAgY29uc3Qgcz1zdHx8e307CiAgY29uc3Qgb2s9cy5jb25maWd1cmVkJiYhcy5sYXN0RXJy
+b3I7CiAgYm94LmlubmVySFRNTD0nPGRpdiBzdHlsZT0iZGlzcGxheTpmbGV4O2p1c3RpZnktY29udGVudDpzcGFjZS1iZXR3ZWVuO2FsaWduLWl0ZW1zOmNl
+bnRlciI+PGgyIHN0eWxlPSJtYXJnaW46MCI+8J+TiiBHb29nbGUgU2hlZXQ8L2gyPjxidXR0b24gZGF0YS1hPSJjbG9zZSIgc3R5bGU9IicrYnMrJzt3aWR0
+aDphdXRvO2JhY2tncm91bmQ6IzY2NjtwYWRkaW5nOjZweCAxMnB4Ij5DbG9zZTwvYnV0dG9uPjwvZGl2PicKICArJzxwIHN0eWxlPSJtYXJnaW46MTBweCAw
+Ij5TdGF0dXM6ICcrKCFzLmNvbmZpZ3VyZWQ/JzxiIHN0eWxlPSJjb2xvcjojYzYyODI4Ij5ub3QgY29ubmVjdGVkIHlldDwvYj4nOm9rPyc8YiBzdHlsZT0i
+Y29sb3I6IzE4ODAzOCI+4pyTIGNvbm5lY3RlZDwvYj4nOic8YiBzdHlsZT0iY29sb3I6I2M2MjgyOCI+cHJvYmxlbTwvYj4nKSsnPC9wPicKICArKHMuY29u
+ZmlndXJlZD8nPGJ1dHRvbiBkYXRhLWE9Im9wZW4iIHN0eWxlPSInK2JzKyc7YmFja2dyb3VuZDojMTg4MDM4Ij7wn5OKIE9wZW4gR29vZ2xlIFNoZWV0IOKG
+lzwvYnV0dG9uPjxidXR0b24gZGF0YS1hPSJ0ZXN0IiBzdHlsZT0iJyticysnIj7wn5SMIFRlc3QgY29ubmVjdGlvbjwvYnV0dG9uPjxidXR0b24gZGF0YS1h
+PSJzeW5jIiBzdHlsZT0iJyticysnO2JhY2tncm91bmQ6I2IwNmYwMCI+8J+UhCBTeW5jIEFMTCBvcmRlcnMgdG8gdGhlIHNoZWV0IG5vdzwvYnV0dG9uPicK
+ICAgICsnPHAgc3R5bGU9ImZvbnQtc2l6ZToxM3B4O2NvbG9yOiM1NTUiPkV2ZXJ5IG5ldyBvcmRlciwgZGVsaXZlcnksIGN1c3RvbWVyIGFuc3dlciAoQ29u
+ZmlybSAvIFJlamVjdCAvIENvbW1lbnQpIGFuZCBhZG1pbiBjaGFuZ2UgaXMgd3JpdHRlbiB0byB0aGUgc2hlZXQgYXV0b21hdGljYWxseS4gVGFiczogPGI+
+T3JkZXJzPC9iPiwgPGI+QWN0aXZpdHkgTG9nPC9iPiwgPGI+RGFzaGJvYXJkPC9iPi4nKyhzLmxhc3RPa0F0Pyc8YnI+TGFzdCBzdWNjZXNzZnVsIHdyaXRl
+OiAnK2VzYyhzLmxhc3RPa0F0KTonJykrJzwvcD4nCiAgICA6JzxkaXYgc3R5bGU9ImZvbnQtc2l6ZToxNHB4O2xpbmUtaGVpZ2h0OjEuNSI+PGI+U2V0IGl0
+IHVwIChvbmNlKTo8L2I+PG9sIHN0eWxlPSJwYWRkaW5nLWxlZnQ6MjBweDttYXJnaW46NnB4IDAiPjxsaT5DcmVhdGUgYSBHb29nbGUgU2hlZXQg4oaSIDxi
+PkV4dGVuc2lvbnMg4oaSIEFwcHMgU2NyaXB0PC9iPi48L2xpPjxsaT5QYXN0ZSB0aGUgZmlsZSA8Y29kZT5nb29nbGUtc2hlZXQtc2NyaXB0LmdzPC9jb2Rl
+PiBhbmQgPGI+U2F2ZTwvYj4uPC9saT48bGk+PGI+RGVwbG95IOKGkiBOZXcgZGVwbG95bWVudCDihpIgV2ViIGFwcDwvYj4gKEV4ZWN1dGUgYXM6IE1lLCBB
+Y2Nlc3M6IEFueW9uZSkuPC9saT48bGk+Q29weSB0aGUgV2ViIGFwcCBVUkwgKGVuZHMgd2l0aCAvZXhlYykgYW5kIGFkZCBpdCBvbiB0aGUgc2VydmVyIGFz
+IDxjb2RlPkdPT0dMRV9TQ1JJUFRfVVJMPC9jb2RlPiwgdGhlbiByZXN0YXJ0LjwvbGk+PGxpPklmIHRoZSBXZWIgYXBwIGdpdmVzIDxiPkhUVFAgNDAxPC9i
+PiwgdXNlIDxiPkdvb2dsZSBGb3JtIG1vZGU8L2I+IGluc3RlYWQgKHNlZSBSRUFETUUpOiBzZXQgPGNvZGU+R09PR0xFX0ZPUk1fVVJMPC9jb2RlPiBhbmQg
+PGNvZGU+R09PR0xFX1NIRUVUX1VSTDwvY29kZT4uPC9saT48bGk+U2hhcmUgdGhlIEdvb2dsZSBTaGVldCB3aXRoIHlvdXIgb3RoZXIgYWRtaW5zIHNvIHRo
+ZXkgY2FuIG9wZW4gaXQuPC9saT48L29sPicKICAgICAgKyhzLmhhc1NoZWV0SWQmJiFzLmhhc0NyZWRlbnRpYWxzPyc8cCBzdHlsZT0iY29sb3I6I2M2Mjgy
+OCI+R09PR0xFX1NIRUVUX0lEIGlzIHNldCBidXQgdGhlIHNlcnZpY2UtYWNjb3VudCBrZXkgaXMgbWlzc2luZy48L3A+JzonJykrKCFzLmhhc1NoZWV0SWQm
+JnMuaGFzQ3JlZGVudGlhbHM/JzxwIHN0eWxlPSJjb2xvcjojYzYyODI4Ij5UaGUga2V5IGlzIHNldCBidXQgR09PR0xFX1NIRUVUX0lEIGlzIG1pc3Npbmcu
+PC9wPic6JycpKyc8L2Rpdj4nKQogICsocy5zZXJ2aWNlQWNjb3VudD8nPHAgc3R5bGU9ImZvbnQtc2l6ZToxMnB4O2NvbG9yOiM1NTUiPlNoYXJlIHRoZSBz
+aGVldCB3aXRoOiA8Yj4nK2VzYyhzLnNlcnZpY2VBY2NvdW50KSsnPC9iPjwvcD4nOicnKQogICsocy5sYXN0RXJyb3I/JzxwIHN0eWxlPSJjb2xvcjojYzYy
+ODI4O2ZvbnQtc2l6ZToxM3B4O3doaXRlLXNwYWNlOnByZS13cmFwIj7imqAgJytlc2Mocy5sYXN0RXJyb3IpKyc8L3A+JzonJykKICArJzxkaXYgaWQ9InNo
+TXNnIiBzdHlsZT0ibWFyZ2luLXRvcDo4cHg7Zm9udC1zaXplOjE0cHg7d2hpdGUtc3BhY2U6cHJlLXdyYXA7Y29sb3I6JysoZ29vZD09PWZhbHNlPycjYzYy
+ODI4JzonIzE4ODAzOCcpKyciPicrZXNjKG1zZ3x8IiIpKyc8L2Rpdj4nOwp9CmFzeW5jIGZ1bmN0aW9uIG9wZW5QYW5lbCgpe292LnN0eWxlLmRpc3BsYXk9
+ImJsb2NrIjtib3gudGV4dENvbnRlbnQ9IkxvYWRpbmfigKYiO2F3YWl0IHN0YXR1cygpO3JlbmRlcigpO30Kb3YuYWRkRXZlbnRMaXN0ZW5lcigiY2xpY2si
+LGFzeW5jIGU9PnsKICBjb25zdCBiPWUudGFyZ2V0LmNsb3Nlc3QoImJ1dHRvbltkYXRhLWFdIik7aWYoIWIpe2lmKGUudGFyZ2V0PT09b3Ypb3Yuc3R5bGUu
+ZGlzcGxheT0ibm9uZSI7cmV0dXJuO30KICBjb25zdCBhPWIuZGF0YXNldC5hOwogIGlmKGE9PT0iY2xvc2UiKXtvdi5zdHlsZS5kaXNwbGF5PSJub25lIjty
+ZXR1cm47fQogIGlmKGE9PT0ib3BlbiIpe2lmKHN0Py51cmwpb3BlbkV4dGVybmFsKHN0LnVybCk7cmV0dXJuO30KICBpZihhPT09InRlc3QifHxhPT09InN5
+bmMiKXsKICAgIGNvbnN0IGxhYmVsPWIudGV4dENvbnRlbnQ7Yi5kaXNhYmxlZD10cnVlO2IudGV4dENvbnRlbnQ9IldvcmtpbmfigKYiOwogICAgdHJ5e2Nv
+bnN0IGQ9YXdhaXQgYXBpKCIvYXBpL3NoZWV0cy8iK2EsdHJ1ZSk7c3Q9ey4uLnN0LC4uLmR9O3JlbmRlcihkLm1lc3NhZ2V8fGQuZXJyb3IsISFkLm9rKTt9
+CiAgICBjYXRjaChlcnIpe3JlbmRlcigi4p2MICIrZXJyLm1lc3NhZ2UsZmFsc2UpO30KICB9Cn0pOwovLyBNYWluIGJ1dHRvbjogb3BlbnMgdGhlIHNoZWV0
+IGRpcmVjdGx5IHdoZW4gY29ubmVjdGVkOyBvdGhlcndpc2Ugc2hvd3MgdGhlIHNldHVwIHBhbmVsLgpsZXQgc2hPd25lcj1mYWxzZTsKZG9jdW1lbnQuZ2V0
+RWxlbWVudEJ5SWQoInNoT3BlbiIpLm9uY2xpY2s9YXN5bmMoKT0+e2F3YWl0IHN0YXR1cygpO2lmKHN0JiZzdC5jb25maWd1cmVkJiZzdC51cmwmJiFzdC5s
+YXN0RXJyb3Ipe29wZW5FeHRlcm5hbChzdC51cmwpO31lbHNlIGlmKCFzaE93bmVyKXthbGVydCgiVGhlIEdvb2dsZSBTaGVldCBpcyBub3QgY29ubmVjdGVk
+IHlldC4gUGxlYXNlIGFzayB0aGUgbWFpbiBhZG1pbi4iKTt9ZWxzZXtvcGVuUGFuZWwoKTt9fTsKZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNoQ2ZnIiku
+b25jbGljaz1vcGVuUGFuZWw7Ci8vICJBcmNoaXZlIG9sZCBsaXN0ICYgU3RhcnQgTmV3IiDigJQgbWFpbiBhZG1pbiBvbmx5ICh0aGUgc2VydmVyIHJlZnVz
+ZXMgZXZlcnlvbmUgZWxzZSkuCmZ1bmN0aW9uIHNheU1zZyhtKXtjb25zdCB3PXdpbmRvdy5UZWxlZ3JhbT8uV2ViQXBwO2lmKHcmJncuc2hvd0FsZXJ0KXt0
+cnl7dy5zaG93QWxlcnQobSk7cmV0dXJuO31jYXRjaHt9fWFsZXJ0KG0pO30KZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNoTmV3Iikub25jbGljaz0oKT0+
+ewogIGNvbnN0IGI9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNoTmV3IiksbXNnPSJBcmNoaXZlIHRoZSBPTEQgbGlzdCBhbmQgc3RhcnQgdGhlIEdvb2ds
+ZSBTaGVldCBhcyBORVc/XG5cbkFsbCBjdXJyZW50IG1vbnRoIHRhYnMgYW5kIHRoZSBBY3Rpdml0eSBMb2cgYXJlIGtlcHQgYXMgJ0FyY2hpdmUg4oCmJyB0
+YWJzIChub3RoaW5nIGlzIGRlbGV0ZWQpLiBBIGNsZWFuIG5ldyBtb250aCB0YWIgaXMgY3JlYXRlZCBhbmQgb25seSBORVcgb3JkZXJzIGdvIGludG8gaXQu
+IjsKICBjb25zdCBnbz1hc3luYygpPT57Y29uc3Qgb2xkPWIudGV4dENvbnRlbnQ7Yi5kaXNhYmxlZD10cnVlO2IudGV4dENvbnRlbnQ9IlN0YXJ0aW5n4oCm
+Ijt0cnl7Y29uc3QgZD1hd2FpdCBhcGkoIi9hcGkvc2hlZXRzL3N0YXJ0LW5ldyIsdHJ1ZSk7c2F5TXNnKGQubWVzc2FnZXx8ZC5lcnJvcnx8IkRvbmUiKTtp
+ZihkLm9rJiZkLnVybClvcGVuRXh0ZXJuYWwoZC51cmwpO31jYXRjaChlKXtzYXlNc2coIuKdjCAiK2UubWVzc2FnZSk7fWIuZGlzYWJsZWQ9ZmFsc2U7Yi50
+ZXh0Q29udGVudD1vbGQ7fTsKICBjb25zdCB3PXdpbmRvdy5UZWxlZ3JhbT8uV2ViQXBwO2lmKHcmJncuc2hvd0NvbmZpcm0pe3cuc2hvd0NvbmZpcm0obXNn
+LG9rPT57aWYob2spZ28oKTt9KTt9ZWxzZSBpZihjb25maXJtKG1zZykpZ28oKTsKfTsKd2luZG93LkFNQkFSX29wZW5TaGVldFRhYj1hc3luYyh3aGljaCk9
+Pnthd2FpdCBzdGF0dXMoKTtjb25zdCB1PXdoaWNoPT09ImdyYXBocyI/c3QuZ3JhcGhzVXJsOndoaWNoPT09InN1bW1hcnkiP3N0LnN1bW1hcnlVcmw6c3Qu
+dXJsO2lmKHUpb3BlbkV4dGVybmFsKHUpO2Vsc2UgYWxlcnQoIlRoZSBHb29nbGUgU2hlZXQgaXMgbm90IGNvbm5lY3RlZCB5ZXQuIik7fTsKKGFzeW5jKCk9
+Pnt0cnl7Y29uc3QgbT1hd2FpdCBhcGkoIi9hcGkvbWUiKTtpZihtLnJvbGU9PT0ib3duZXIifHxtLnJvbGU9PT0iYWRtaW4iKXtiYXIuc3R5bGUuZGlzcGxh
+eT0iZmxleCI7c2hPd25lcj1tLnJvbGU9PT0ib3duZXIiO2lmKCFzaE93bmVyKWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJzaENmZyIpLnN0eWxlLmRpc3Bs
+YXk9Im5vbmUiO2Vsc2UgZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNoTmV3Iikuc3R5bGUuZGlzcGxheT0iaW5saW5lLWJsb2NrIjt9fWNhdGNoe319KSgp
+Owp9KSgpOwo8L3NjcmlwdD4KPGJ1dHRvbiBpZD0ibXlPcGVuIiBzdHlsZT0iZGlzcGxheTpub25lO3Bvc2l0aW9uOmZpeGVkO2xlZnQ6MTBweDtib3R0b206
+MTBweDt6LWluZGV4Ojk5OTg7cGFkZGluZzoxMHB4IDE0cHg7Ym9yZGVyOjA7Ym9yZGVyLXJhZGl1czoyNHB4O2JhY2tncm91bmQ6IzBhN2QyYztjb2xvcjoj
+ZmZmO2ZvbnQ6NjAwIDE0cHggc3lzdGVtLXVpO2JveC1zaGFkb3c6MCAycHggOHB4IHJnYmEoMCwwLDAsLjMpIj7wn5SXIENvbm5lY3QgbXkgVGVsZWdyYW0g
+YWNjb3VudDwvYnV0dG9uPgo8ZGl2IGlkPSJteU92ZXJsYXkiIHN0eWxlPSJkaXNwbGF5Om5vbmU7cG9zaXRpb246Zml4ZWQ7aW5zZXQ6MDt6LWluZGV4Ojk5
+OTk4O2JhY2tncm91bmQ6cmdiYSgwLDAsMCwuNSk7b3ZlcmZsb3c6YXV0byI+PGRpdiBpZD0ibXlCb3giIHN0eWxlPSJiYWNrZ3JvdW5kOiNmZmY7bWF4LXdp
+ZHRoOjUyMHB4O21hcmdpbjoyMHB4IGF1dG87Ym9yZGVyLXJhZGl1czoxNHB4O3BhZGRpbmc6MThweDtmb250LWZhbWlseTpzeXN0ZW0tdWksc2Fucy1zZXJp
+Zjtjb2xvcjojMjIyIj48L2Rpdj48L2Rpdj4KPHNjcmlwdD4KKGZ1bmN0aW9uKCl7CmNvbnN0IGVzYz10PT5TdHJpbmcodD09bnVsbD8iIjp0KS5yZXBsYWNl
+KC9bJjw+IiddL2csYz0+KHsiJiI6IiZhbXA7IiwiPCI6IiZsdDsiLCI+IjoiJmd0OyIsJyInOiImcXVvdDsiLCInIjoiJiMzOTsifVtjXSkpOwpjb25zdCBh
+cGk9YXN5bmMocCxiKT0+e2NvbnN0IHI9YXdhaXQgZmV0Y2gocCxiP3ttZXRob2Q6IlBPU1QiLGhlYWRlcnM6eyJDb250ZW50LVR5cGUiOiJhcHBsaWNhdGlv
+bi9qc29uIn0sYm9keTpKU09OLnN0cmluZ2lmeShiKX06e30pO3JldHVybiByLmpzb24oKTt9Owpjb25zdCBvdj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgi
+bXlPdmVybGF5IiksYm94PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJteUJveCIpLG9wZW5CdG49ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoIm15T3BlbiIp
+Owpjb25zdCBzdD0nZm9udC1zaXplOjE1cHg7cGFkZGluZzo5cHg7bWFyZ2luOjNweCAwO3dpZHRoOjEwMCU7Ym94LXNpemluZzpib3JkZXItYm94O2JvcmRl
+ci1yYWRpdXM6OHB4O2JvcmRlcjoxcHggc29saWQgI2NjYyc7CmNvbnN0IGJ0bj0nZm9udC1zaXplOjE1cHg7cGFkZGluZzoxMHB4O21hcmdpbjozcHggMDt3
+aWR0aDoxMDAlO2JvcmRlcjowO2JvcmRlci1yYWRpdXM6OHB4O2NvbG9yOiNmZmY7YmFja2dyb3VuZDojMWE3M2U4JzsKY29uc3QgdmFsPWlkPT4oZG9jdW1l
+bnQuZ2V0RWxlbWVudEJ5SWQoaWQpfHx7fSkudmFsdWV8fCIiOwpjb25zdCBzYXk9ZD0+e2NvbnN0IG09ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoIm15TXNn
+Iik7aWYobSl7bS5zdHlsZS5jb2xvcj1kLm9rPyIjMGE3ZDJjIjoiI2M2MjgyOCI7bS50ZXh0Q29udGVudD1kLm1lc3NhZ2V8fGQuZXJyb3J8fCIiO319Owps
+ZXQgcm9sZT0iIjsKLy8gT25jZSBjb25uZWN0ZWQgdGhlIENvbm5lY3QgYnV0dG9uIGRpc2FwcGVhcnM7IHRoZSBzdGF0dXMgYm94IHNob3dzIHRoZSBhY2Nv
+dW50IGFuZCBhIHNtYWxsIERpc2Nvbm5lY3QgbGluay4KYXN5bmMgZnVuY3Rpb24gcmVmcmVzaCgpewogIGNvbnN0IHNzPWRvY3VtZW50LmdldEVsZW1lbnRC
+eUlkKCJzZW5kZXJTdGF0ZSIpOwogIGNvbnN0IHM9YXdhaXQgYXBpKCIvYXBpL215LWFjY291bnQiKS5jYXRjaCgoKT0+KHtvazpmYWxzZX0pKTsKICBjb25z
+dCBjb25uZWN0ZWQ9ISEocy5vayYmcy5jb25uZWN0ZWQpOwogIG9wZW5CdG4uc3R5bGUuZGlzcGxheT0ocm9sZSYmIWNvbm5lY3RlZCk/ImJsb2NrIjoibm9u
+ZSI7CiAgaWYoIXNzKXJldHVybjsKICBpZihjb25uZWN0ZWQpc3MuaW5uZXJIVE1MPSc8c3BhbiBzdHlsZT0iY29sb3I6IzE3NmIzYTtmb250LXdlaWdodDo3
+MDAiPuKckyBDb25uZWN0ZWQ6ICcrZXNjKHMubGFiZWx8fCJ5b3VyIGFjY291bnQiKSsnPC9zcGFuPiA8YSBocmVmPSIjIiBpZD0ibXlEaXNjIiBzdHlsZT0i
+Zm9udC1zaXplOjEycHgiPkRpc2Nvbm5lY3Q8L2E+JzsKICBlbHNlIHNzLmlubmVySFRNTD1yb2xlPT09Im93bmVyIj8nPHNwYW4gc3R5bGU9ImNvbG9yOiMx
+NzZiM2E7Zm9udC13ZWlnaHQ6NzAwIj5NYWluIGFkbWluIGFjY291bnQgKFRlbGVncmFtIEJ1c2luZXNzKTwvc3Bhbj4gPHNwYW4gY2xhc3M9InNtYWxsIj7i
+gJQgdGFwIPCflJcgQ29ubmVjdCBteSBUZWxlZ3JhbSBhY2NvdW50IHRvIGFsc28gcmVhY2ggY3VzdG9tZXJzIHdobyBuZXZlciBtZXNzYWdlZCB5b3UuPC9z
+cGFuPic6JzxzcGFuIHN0eWxlPSJjb2xvcjojOWEzYzI2O2ZvbnQtd2VpZ2h0OjcwMCI+Tm90IGNvbm5lY3RlZCDigJQgdGFwIPCflJcgQ29ubmVjdCBteSBU
+ZWxlZ3JhbSBhY2NvdW50PC9zcGFuPic7CiAgY29uc3QgZD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgibXlEaXNjIik7aWYoZClkLm9uY2xpY2s9YXN5bmMg
+ZT0+e2UucHJldmVudERlZmF1bHQoKTtpZighY29uZmlybSgiRGlzY29ubmVjdCB5b3VyIFRlbGVncmFtIGFjY291bnQ/IikpcmV0dXJuO2F3YWl0IGFwaSgi
+L2FwaS9teS1hY2NvdW50L2Rpc2Nvbm5lY3QiLHt9KTtyZWZyZXNoKCk7fTsKfQphc3luYyBmdW5jdGlvbiByZW5kZXIoKXsKICBib3guaW5uZXJIVE1MPSc8
+aDIgc3R5bGU9Im1hcmdpbi10b3A6MCI+8J+UlyBDb25uZWN0IG15IFRlbGVncmFtIGFjY291bnQ8L2gyPjxwPk9yZGVyIGNhcmRzIHlvdSBjcmVhdGUgYXJl
+IHNlbnQgZnJvbSA8Yj55b3VyIG93bjwvYj4gVGVsZWdyYW0gYWNjb3VudC4gT25seSB5b3UgY2FuIHVzZSBpdC48L3A+JwogICsnPGlucHV0IGlkPSJteVBo
+b25lIiBzdHlsZT0iJytzdCsnIiBwbGFjZWhvbGRlcj0iWU9VUiBwaG9uZSB3aXRoIGNvdW50cnkgY29kZSwgKzI1MTkuLi4iPjxidXR0b24gc3R5bGU9Iicr
+YnRuKyciIGRhdGEtYT0ic2VuZCI+U2VuZCBjb2RlPC9idXR0b24+PGlucHV0IGlkPSJteUNvZGUiIHN0eWxlPSInK3N0KyciIHBsYWNlaG9sZGVyPSJDb2Rl
+IFRlbGVncmFtIHNlbnQgeW91Ij48aW5wdXQgaWQ9Im15UHciIHR5cGU9InBhc3N3b3JkIiBzdHlsZT0iJytzdCsnIiBwbGFjZWhvbGRlcj0iMi1zdGVwIHBh
+c3N3b3JkIChvbmx5IGlmIHlvdSBoYXZlIG9uZSkiPjxidXR0b24gc3R5bGU9IicrYnRuKyciIGRhdGEtYT0idmVyaWZ5Ij5WZXJpZnkgJmFtcDsgY29ubmVj
+dDwvYnV0dG9uPicKICArJzxidXR0b24gc3R5bGU9IicrYnRuKyc7YmFja2dyb3VuZDojNjY2IiBkYXRhLWE9ImNsb3NlIj5DbG9zZTwvYnV0dG9uPjxkaXYg
+aWQ9Im15TXNnIiBzdHlsZT0ibWFyZ2luLXRvcDo4cHg7Zm9udC1zaXplOjE0cHg7d2hpdGUtc3BhY2U6cHJlLXdyYXAiPjwvZGl2Pic7Cn0Kb3YuYWRkRXZl
+bnRMaXN0ZW5lcigiY2xpY2siLGFzeW5jIGU9Pntjb25zdCBiPWUudGFyZ2V0LmNsb3Nlc3QoImJ1dHRvbltkYXRhLWFdIik7aWYoIWIpe2lmKGUudGFyZ2V0
+PT09b3Ypb3Yuc3R5bGUuZGlzcGxheT0ibm9uZSI7cmV0dXJuO30KICB0cnl7Y29uc3QgYT1iLmRhdGFzZXQuYTsKICBpZihhPT09ImNsb3NlIil7b3Yuc3R5
+bGUuZGlzcGxheT0ibm9uZSI7cmV0dXJuO30KICBpZihhPT09InNlbmQiKXtzYXkoYXdhaXQgYXBpKCIvYXBpL215LWFjY291bnQvc2VuZC1jb2RlIix7cGhv
+bmU6dmFsKCJteVBob25lIil9KSk7cmV0dXJuO30KICBpZihhPT09InZlcmlmeSIpe2NvbnN0IGQ9YXdhaXQgYXBpKCIvYXBpL215LWFjY291bnQvdmVyaWZ5
+Iix7Y29kZTp2YWwoIm15Q29kZSIpLHBhc3N3b3JkOnZhbCgibXlQdyIpfSk7c2F5KGQpO2lmKGQub2spe3NldFRpbWVvdXQoKCk9Pntvdi5zdHlsZS5kaXNw
+bGF5PSJub25lIjtyZWZyZXNoKCk7fSw5MDApO31yZXR1cm47fQogIH1jYXRjaChlcnIpe3NheSh7b2s6ZmFsc2UsZXJyb3I6ZXJyLm1lc3NhZ2V9KTt9fSk7
+Cm9wZW5CdG4ub25jbGljaz0oKT0+e292LnN0eWxlLmRpc3BsYXk9ImJsb2NrIjtyZW5kZXIoKTt9OwooYXN5bmMoKT0+e3RyeXtjb25zdCBtPWF3YWl0IGFw
+aSgiL2FwaS9tZSIpO2lmKG0ucm9sZT09PSJhZG1pbiJ8fG0ucm9sZT09PSJvd25lciIpe3JvbGU9bS5yb2xlO2F3YWl0IHJlZnJlc2goKTsKICB7ZG9jdW1l
+bnQuZ2V0RWxlbWVudEJ5SWQoInBpY2tXcmFwIikuc3R5bGUuZGlzcGxheT0iYmxvY2siO3RyeXtjb25zdCBsaXN0PWF3YWl0IGFwaSgiL2FwaS9jdXN0b21l
+cnMiKTtjb25zdCBzZWw9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoImN1c3RvbWVyUGljayIpO2lmKHNlbCYmQXJyYXkuaXNBcnJheShsaXN0KSl7c2VsLmlu
+bmVySFRNTD0nPG9wdGlvbiB2YWx1ZT0iIj7igJQgQ2hvb3NlIGEgY3VzdG9tZXIg4oCUPC9vcHRpb24+JytsaXN0Lm1hcChjPT4nPG9wdGlvbiB2YWx1ZT0i
+Jytlc2MoYy5pZCkrJyIgZGF0YS11PSInK2VzYyhjLnVzZXJuYW1lfHwiIikrJyI+Jytlc2MoW2MuZmlyc3RfbmFtZSxjLmxhc3RfbmFtZV0uZmlsdGVyKEJv
+b2xlYW4pLmpvaW4oIiAiKXx8Yy51c2VybmFtZXx8Yy5pZCkrKGMudXNlcm5hbWU/IiAoQCIrZXNjKGMudXNlcm5hbWUpKyIpIjoiIikrJzwvb3B0aW9uPicp
+LmpvaW4oIiIpO3NlbC5vbmNoYW5nZT0oKT0+e2NvbnN0IG89c2VsLnNlbGVjdGVkT3B0aW9uc1swXTtpZighb3x8IW8udmFsdWUpcmV0dXJuO2Zvcm0uZWxl
+bWVudHMudGVsZWdyYW1DaGF0SWQudmFsdWU9by52YWx1ZTtpZihvLmRhdGFzZXQudSYmZm9ybS5lbGVtZW50cy50ZWxlZ3JhbVVzZXJuYW1lKWZvcm0uZWxl
+bWVudHMudGVsZWdyYW1Vc2VybmFtZS52YWx1ZT0iQCIrby5kYXRhc2V0LnU7fTt9fWNhdGNoe319fQp9Y2F0Y2h7fX0pKCk7Cn0pKCk7Cjwvc2NyaXB0Pgo8
+c3R5bGU+CiNhY09wZW4sI3NoQmFyLCNteU9wZW57ZGlzcGxheTpub25lIWltcG9ydGFudH0KI3N0T3Blbntwb3NpdGlvbjpmaXhlZDtyaWdodDoxNHB4O2Jv
+dHRvbToxNHB4O3otaW5kZXg6OTk5ODt3aWR0aDo0MHB4O2hlaWdodDo0MHB4O3BhZGRpbmc6MDtib3JkZXItcmFkaXVzOjE0cHg7Ym9yZGVyOjFweCBzb2xp
+ZCByZ2JhKDI1NSwyNTUsMjU1LC4xOCk7YmFja2dyb3VuZDpyZ2JhKDI0LDIyLDE5LC43Mik7LXdlYmtpdC1iYWNrZHJvcC1maWx0ZXI6Ymx1cigxNHB4KTti
+YWNrZHJvcC1maWx0ZXI6Ymx1cigxNHB4KTtjb2xvcjojZjNkOWE0O2Rpc3BsYXk6bm9uZTthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNl
+bnRlcjtib3gtc2hhZG93OjAgNnB4IDIwcHggcmdiYSgwLDAsMCwuMjgpO2N1cnNvcjpwb2ludGVyO3RyYW5zaXRpb246dHJhbnNmb3JtIC4ycyxiYWNrZ3Jv
+dW5kIC4yc30jc3RPcGVuOmhvdmVyLCNzdE9wZW46YWN0aXZle3RyYW5zZm9ybTpyb3RhdGUoNjBkZWcpO2JhY2tncm91bmQ6cmdiYSgyNCwyMiwxOSwuOSl9
+I3N0T3BlbiBzdmd7d2lkdGg6MjBweDtoZWlnaHQ6MjBweH0KI3N0Qm94IGJ1dHRvbntkaXNwbGF5OmZsZXg7YWxpZ24taXRlbXM6Y2VudGVyO2dhcDoxMHB4
+O3dpZHRoOjEwMCU7Ym94LXNpemluZzpib3JkZXItYm94O3RleHQtYWxpZ246bGVmdDtmb250OjUwMCAxNHB4IHN5c3RlbS11aSxzYW5zLXNlcmlmO3BhZGRp
+bmc6MTFweCAxMnB4O21hcmdpbjo1cHggMDtib3JkZXI6MXB4IHNvbGlkICNlY2U2ZDg7Ym9yZGVyLXJhZGl1czoxMnB4O2JhY2tncm91bmQ6I2ZhZjhmMztj
+b2xvcjojMjIyO2N1cnNvcjpwb2ludGVyO3RyYW5zaXRpb246YmFja2dyb3VuZCAuMTVzfSNzdEJveCBidXR0b246aG92ZXJ7YmFja2dyb3VuZDojZjFlYmRk
+fQojc3RCb3ggYnV0dG9uLm1haW57YmFja2dyb3VuZDojMTUzYTJlO2NvbG9yOiNmZmY7Ym9yZGVyLWNvbG9yOiMxNTNhMmV9CiNzdEJveCBidXR0b24ud2Fy
+bntiYWNrZ3JvdW5kOiNmZmY2ZTU7Y29sb3I6IzhhNWEwMDtib3JkZXItY29sb3I6I2U2YzQ3YX0KI3N0Qm94IGg0e21hcmdpbjoxNHB4IDAgMnB4O2ZvbnQ6
+NzAwIDEycHggc3lzdGVtLXVpLHNhbnMtc2VyaWY7bGV0dGVyLXNwYWNpbmc6LjA2ZW07dGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlO2NvbG9yOiM3Nzd9Cjwv
+c3R5bGU+CjxidXR0b24gaWQ9InN0T3BlbiIgdGl0bGU9IlNldHRpbmdzIiBhcmlhLWxhYmVsPSJTZXR0aW5ncyI+PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQi
+IGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpv
+aW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIzIi8+PHBhdGggZD0iTTE5LjQgMTVhMS43IDEuNyAwIDAgMCAuMyAxLjhsLjEuMWEyIDIg
+MCAxIDEtMi44IDIuOGwtLjEtLjFhMS43IDEuNyAwIDAgMC0xLjgtLjMgMS43IDEuNyAwIDAgMC0xIDEuNVYyMWEyIDIgMCAxIDEtNCAwdi0uMWExLjcgMS43
+IDAgMCAwLTEuMS0xLjUgMS43IDEuNyAwIDAgMC0xLjguM2wtLjEuMWEyIDIgMCAxIDEtMi44LTIuOGwuMS0uMWExLjcgMS43IDAgMCAwIC4zLTEuOCAxLjcg
+MS43IDAgMCAwLTEuNS0xSDNhMiAyIDAgMSAxIDAtNGguMWExLjcgMS43IDAgMCAwIDEuNS0xLjEgMS43IDEuNyAwIDAgMC0uMy0xLjhsLS4xLS4xYTIgMiAw
+IDEgMSAyLjgtMi44bC4xLjFhMS43IDEuNyAwIDAgMCAxLjguM0g5YTEuNyAxLjcgMCAwIDAgMS0xLjVWM2EyIDIgMCAxIDEgNCAwdi4xYTEuNyAxLjcgMCAw
+IDAgMSAxLjUgMS43IDEuNyAwIDAgMCAxLjgtLjNsLjEtLjFhMiAyIDAgMSAxIDIuOCAyLjhsLS4xLjFhMS43IDEuNyAwIDAgMC0uMyAxLjhWOWExLjcgMS43
+IDAgMCAwIDEuNSAxSDIxYTIgMiAwIDEgMSAwIDRoLS4xYTEuNyAxLjcgMCAwIDAtMS41IDF6Ii8+PC9zdmc+PC9idXR0b24+CjxkaXYgaWQ9InN0T3Zlcmxh
+eSIgc3R5bGU9ImRpc3BsYXk6bm9uZTtwb3NpdGlvbjpmaXhlZDtpbnNldDowO3otaW5kZXg6OTk5OTc7YmFja2dyb3VuZDpyZ2JhKDAsMCwwLC4zOCk7LXdl
+YmtpdC1iYWNrZHJvcC1maWx0ZXI6Ymx1cigzcHgpO2JhY2tkcm9wLWZpbHRlcjpibHVyKDNweCk7b3ZlcmZsb3c6YXV0bztmbGV4LWRpcmVjdGlvbjpjb2x1
+bW47anVzdGlmeS1jb250ZW50OmZsZXgtZW5kIj48ZGl2IGlkPSJzdEJveCIgc3R5bGU9ImJhY2tncm91bmQ6I2ZmZjttYXgtd2lkdGg6NDAwcHg7bWFyZ2lu
+OmF1dG8gMTJweCAxMnB4IGF1dG87Ym9yZGVyLXJhZGl1czoyMHB4O3BhZGRpbmc6MTRweDtib3gtc2hhZG93OjAgMjBweCA1MHB4IHJnYmEoMCwwLDAsLjMp
+O2ZvbnQtZmFtaWx5OnN5c3RlbS11aSxzYW5zLXNlcmlmO2NvbG9yOiMyMjIiPjwvZGl2PjwvZGl2Pgo8c2NyaXB0PgovLyBPTkUgc2V0dGluZ3MgaWNvbiBo
+b2xkcyBldmVyeSBjb250cm9sIGJ1dHRvbi4gVGhlIG9sZCBmbG9hdGluZyBidXR0b25zIHN0YXkgaGlkZGVuIGFuZCBhcmUgdHJpZ2dlcmVkIGZyb20gaGVy
+ZS4KKGZ1bmN0aW9uKCl7CmNvbnN0IGdlYXI9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInN0T3BlbiIpLG92PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJz
+dE92ZXJsYXkiKSxib3g9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInN0Qm94Iik7CmxldCByb2xlPSIiOwpjb25zdCBpdGVtcz0oKT0+ewogIGNvbnN0IEw9
+W107CiAgTC5wdXNoKCc8aDQ+R29vZ2xlIFNoZWV0PC9oND4nKTsKICBMLnB1c2goJzxidXR0b24gY2xhc3M9Im1haW4iIGRhdGEtYz0ic2hlZXQiPvCfk4og
+T3BlbiBHb29nbGUgU2hlZXQ8L2J1dHRvbj4nKTsKICBMLnB1c2goJzxidXR0b24gZGF0YS1jPSJzdW1tYXJ5Ij7wn5SiIFN1bW1hcnkgKG51bWJlcnMpPC9i
+dXR0b24+Jyk7CiAgTC5wdXNoKCc8YnV0dG9uIGRhdGEtYz0iZ3JhcGhzIj7wn5OIIEdyYXBocyBwYWdlPC9idXR0b24+Jyk7CiAgaWYocm9sZT09PSJvd25l
+ciIpewogICAgTC5wdXNoKCc8YnV0dG9uIGRhdGEtYz0iY2ZnIj7wn5SMIFNoZWV0IGNvbm5lY3Rpb246IHRlc3QgLyBzeW5jIGFsbDwvYnV0dG9uPicpOwog
+ICAgTC5wdXNoKCc8YnV0dG9uIGNsYXNzPSJ3YXJuIiBkYXRhLWM9ImZyZXNoIj7imbsgQXJjaGl2ZSBvbGQgbGlzdCAmYW1wOyBTdGFydCBOZXc8L2J1dHRv
+bj4nKTsKICAgIEwucHVzaCgnPGg0PkFkbWluczwvaDQ+Jyk7CiAgICBMLnB1c2goJzxidXR0b24gZGF0YS1jPSJhZG1pbnMiPvCfkaUgTWFuYWdlIEFzc2ln
+bmVkIEFkbWluczwvYnV0dG9uPicpOwogIH0KICBMLnB1c2goJzxoND5NeSBhY2NvdW50PC9oND4nKTsKICBMLnB1c2goJzxidXR0b24gZGF0YS1jPSJjb25u
+ZWN0Ij7wn5SXIENvbm5lY3QgbXkgVGVsZWdyYW0gYWNjb3VudDwvYnV0dG9uPicpOwogIHJldHVybiBMLmpvaW4oIiIpOwp9OwpmdW5jdGlvbiBzaG93KCl7
+Ym94LmlubmVySFRNTD0nPGRpdiBzdHlsZT0iZGlzcGxheTpmbGV4O2p1c3RpZnktY29udGVudDpzcGFjZS1iZXR3ZWVuO2FsaWduLWl0ZW1zOmNlbnRlciI+
+PGgyIHN0eWxlPSJtYXJnaW46MDtmb250OjcwMCAxN3B4IHN5c3RlbS11aSI+U2V0dGluZ3M8L2gyPjxidXR0b24gZGF0YS1jPSJjbG9zZSIgc3R5bGU9Indp
+ZHRoOmF1dG87bWFyZ2luOjA7cGFkZGluZzo4cHggMTRweDtiYWNrZ3JvdW5kOiM2NjY7Y29sb3I6I2ZmZiI+Q2xvc2U8L2J1dHRvbj48L2Rpdj4nK2l0ZW1z
+KCk7b3Yuc3R5bGUuZGlzcGxheT0iZmxleCI7fQpjb25zdCBnbz1pZD0+e292LnN0eWxlLmRpc3BsYXk9Im5vbmUiO2NvbnN0IGU9ZG9jdW1lbnQuZ2V0RWxl
+bWVudEJ5SWQoaWQpO2lmKGUpZS5jbGljaygpO307CmdlYXIub25jbGljaz1zaG93Owpvdi5hZGRFdmVudExpc3RlbmVyKCJjbGljayIsZT0+ewogIGNvbnN0
+IGI9ZS50YXJnZXQuY2xvc2VzdCgiYnV0dG9uW2RhdGEtY10iKTtpZighYil7aWYoZS50YXJnZXQ9PT1vdilvdi5zdHlsZS5kaXNwbGF5PSJub25lIjtyZXR1
+cm47fQogIGNvbnN0IGM9Yi5kYXRhc2V0LmM7CiAgaWYoYz09PSJjbG9zZSIpe292LnN0eWxlLmRpc3BsYXk9Im5vbmUiO3JldHVybjt9CiAgaWYoYz09PSJz
+aGVldCIpe2dvKCJzaE9wZW4iKTtyZXR1cm47fQogIGlmKGM9PT0ic3VtbWFyeSJ8fGM9PT0iZ3JhcGhzIil7b3Yuc3R5bGUuZGlzcGxheT0ibm9uZSI7d2lu
+ZG93LkFNQkFSX29wZW5TaGVldFRhYiYmd2luZG93LkFNQkFSX29wZW5TaGVldFRhYihjKTtyZXR1cm47fQogIGlmKGM9PT0iY2ZnIil7Z28oInNoQ2ZnIik7
+cmV0dXJuO30KICBpZihjPT09ImZyZXNoIil7Z28oInNoTmV3Iik7cmV0dXJuO30KICBpZihjPT09ImFkbWlucyIpe2dvKCJhY09wZW4iKTtyZXR1cm47fQog
+IGlmKGM9PT0iY29ubmVjdCIpe2dvKCJteU9wZW4iKTtyZXR1cm47fQp9KTsKKGFzeW5jKCk9Pnt0cnl7Y29uc3Qgcj1hd2FpdCBmZXRjaCgiL2FwaS9tZSIp
+O2NvbnN0IG09YXdhaXQgci5qc29uKCk7aWYobS5yb2xlPT09Im93bmVyInx8bS5yb2xlPT09ImFkbWluIil7cm9sZT1tLnJvbGU7Z2Vhci5zdHlsZS5kaXNw
+bGF5PSJmbGV4Ijt9fWNhdGNoe319KSgpOwp9KSgpOwo8L3NjcmlwdD4KPC9ib2R5Pgo8L2h0bWw+Cg==
+`.replace(/\s+/g, ""), "base64").toString("utf8");
+const PAGE_SETUP = Buffer.from(`
+PCFkb2N0eXBlIGh0bWw+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxtZXRhIG5hbWU9InZpZXdwb3J0IiBjb250ZW50PSJ3aWR0aD1kZXZp
+Y2Utd2lkdGgsaW5pdGlhbC1zY2FsZT0xIj48dGl0bGU+QW1iYXIgRnVybml0dXJlIOKAlCBTZXR1cDwvdGl0bGU+CjxzdHlsZT5ib2R5e2ZvbnQtZmFtaWx5
+OnN5c3RlbS11aSxzYW5zLXNlcmlmO21heC13aWR0aDo1NjBweDttYXJnaW46MjRweCBhdXRvO3BhZGRpbmc6MCAxNnB4O2NvbG9yOiMyMjJ9aW5wdXQsYnV0
+dG9ue2ZvbnQtc2l6ZToxNnB4O3BhZGRpbmc6MTBweDttYXJnaW46NHB4IDA7d2lkdGg6MTAwJTtib3gtc2l6aW5nOmJvcmRlci1ib3h9YnV0dG9ue2JhY2tn
+cm91bmQ6IzFhNzNlODtjb2xvcjojZmZmO2JvcmRlcjowO2JvcmRlci1yYWRpdXM6OHB4fWgye21hcmdpbi10b3A6MjhweH1wcmV7YmFja2dyb3VuZDojZjRm
+NGY0O3BhZGRpbmc6MTBweDtib3JkZXItcmFkaXVzOjhweDt3aGl0ZS1zcGFjZTpwcmUtd3JhcH0ub2t7Y29sb3I6IzBhN2QyY30uYmFke2NvbG9yOiNjNjI4
+Mjh9PC9zdHlsZT48L2hlYWQ+PGJvZHk+CjxoMT5TZXR1cCAmYW1wOyBjaGVja3M8L2gxPgo8aW5wdXQgaWQ9ImtleSIgdHlwZT0icGFzc3dvcmQiIHBsYWNl
+aG9sZGVyPSJTZXR1cCBrZXkgKEFETUlOX1NFVFVQX0tFWSBmcm9tIFJlbmRlcikiPgo8YnV0dG9uIG9uY2xpY2s9InN0YXR1cygpIj4xLiBDaGVjayBzdGF0
+dXM8L2J1dHRvbj48cHJlIGlkPSJzdGF0dXMiPuKAlDwvcHJlPgo8aDI+Mi4gVGVsZWdyYW0gYm90IGRlbGl2ZXJ5PC9oMj48cD5BTUJBUiBzZW5kcyBhbGwg
+b3JkZXIgY2FyZHMgdXNpbmcgQk9UX1RPS0VOIG9ubHkuIE5vIFRlbGVncmFtIEJ1c2luZXNzIGNvbm5lY3Rpb24sIFRHX0FQSV9JRCwgVEdfQVBJX0hBU0gs
+IG9yIHBlcnNvbmFsIFRlbGVncmFtIGxvZ2luIGlzIHJlcXVpcmVkLiBPcmRlciBjYXJkcyBhcmUgZGVsaXZlcmVkIG9ubHkgdG8gdGhlIG1haW4gYWRtaW4g
+YW5kIHN1Ym1pdHRpbmcgYWRtaW4uIEN1c3RvbWVycyBuZXZlciByZWNlaXZlIG9yZGVyIGNhcmRzLiBFYWNoIGFkbWluIG11c3QgcHJlc3MgU3RhcnQgaW4g
+dGhlIEFNQkFSIGJvdCB0byByZWNlaXZlIGEgcHJpdmF0ZSBjb3B5LiBObyBwZXJzb25hbC1hY2NvdW50IGNvbm5lY3Rpb24gaXMgcmVxdWlyZWQuPC9wPgo8
+aDI+NS4gQXNzaWduIHBlb3BsZSB3aG8gY2FuIFVTRSB0aGUgYXBwPC9oMj4KPGRpdiBzdHlsZT0iZm9udC1zaXplOjE0cHgiPkVhY2ggcGVyc29uIG9wZW5z
+IHRoZSBhcHAgZnJvbSBUZWxlZ3JhbTsgaWYgdGhleSBhcmUgbm90IGFzc2lnbmVkIHRoZXkgc2VlIHRoZWlyIFRlbGVncmFtIElEIHRvIHNlbmQgeW91Ljwv
+ZGl2Pgo8aW5wdXQgaWQ9ImFpZCIgcGxhY2Vob2xkZXI9IlBlcnNvbidzIG51bWVyaWMgVGVsZWdyYW0gSUQiPjxpbnB1dCBpZD0iYW5hbWUiIHBsYWNlaG9s
+ZGVyPSJUaGVpciBuYW1lIj4KPGJ1dHRvbiBvbmNsaWNrPSJhZGRBcHAoKSI+QXNzaWduIGFzIGFkbWluPC9idXR0b24+PGJ1dHRvbiBvbmNsaWNrPSJsaXN0
+QXBwKCkiIHN0eWxlPSJiYWNrZ3JvdW5kOiM1NTUiPlNob3cgYXNzaWduZWQgYWRtaW5zPC9idXR0b24+PGlucHV0IGlkPSJhcm0iIHBsYWNlaG9sZGVyPSJU
+ZWxlZ3JhbSBJRCB0byByZW1vdmUiPjxidXR0b24gb25jbGljaz0icm1BcHAoKSIgc3R5bGU9ImJhY2tncm91bmQ6I2M2MjgyOCI+UmVtb3ZlIGFzc2lnbmVk
+IGFkbWluPC9idXR0b24+Cgo8cHJlIGlkPSJvdXQiPjwvcHJlPgo8c2NyaXB0Pgpjb25zdCAkPWk9PmRvY3VtZW50LmdldEVsZW1lbnRCeUlkKGkpOwphc3lu
+YyBmdW5jdGlvbiBjYWxsKHBhdGgsYm9keSl7Y29uc3Qgcj1hd2FpdCBmZXRjaChwYXRoLHttZXRob2Q6Ym9keT8iUE9TVCI6IkdFVCIsaGVhZGVyczp7IkNv
+bnRlbnQtVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24ifSxib2R5OmJvZHk/SlNPTi5zdHJpbmdpZnkoe2tleTokKCJrZXkiKS52YWx1ZSwuLi5ib2R5fSk6dW5k
+ZWZpbmVkfSk7cmV0dXJuIHIuanNvbigpfQpjb25zdCBzaG93PWQ9PnskKCJvdXQiKS5jbGFzc05hbWU9ZC5vaz8ib2siOiJiYWQiOyQoIm91dCIpLnRleHRD
+b250ZW50PShkLm1lc3NhZ2V8fGQuZXJyb3J8fEpTT04uc3RyaW5naWZ5KGQpKX07CmFzeW5jIGZ1bmN0aW9uIHN0YXR1cygpewogY29uc3QgZD1hd2FpdCBj
+YWxsKCIvYXBpL3NldHVwL3N0YXR1cz9rZXk9IitlbmNvZGVVUklDb21wb25lbnQoJCgia2V5IikudmFsdWUpKTsKIGlmKCFkLm9rKXskKCJzdGF0dXMiKS50
+ZXh0Q29udGVudD1kLmVycm9yO3JldHVybjt9CiBjb25zdCBsPShuLHYpPT4odj8i4pyFICI6IuKdjCAiKStuOwogY29uc3QgbGluZXM9W2woIkJPVF9UT0tF
+TiIsZC5ib3RUb2tlbiksbCgiQURNSU5fQ0hBVF9JRCIsZC5hZG1pbkNoYXRJZCksbCgiU3VwYWJhc2UiLGQuc3VwYWJhc2UpLGwoIldlYmhvb2sgc2V0Iiwh
+IWQud2ViaG9va1VybCksIktub3duIGJvdCB1c2VyczogIitkLmtub3duQ3VzdG9tZXJzLCJLbm93biBjdXN0b21lcnM6ICIrZC5rbm93bkN1c3RvbWVyc107
+CiBpZihkLndlYmhvb2tFcnJvcikgbGluZXMucHVzaCgiV2ViaG9vayBlcnJvcjogIitkLndlYmhvb2tFcnJvcik7CiAkKCJzdGF0dXMiKS50ZXh0Q29udGVu
+dD1saW5lcy5qb2luKCJcbiIpOwp9CmFzeW5jIGZ1bmN0aW9uIGFkZEFwcCgpe3Nob3coYXdhaXQgY2FsbCgiL2FwaS9zZXR1cC9hcHAtYWRtaW5zL2FkZCIs
+e3RlbGVncmFtSWQ6JCgiYWlkIikudmFsdWUsbmFtZTokKCJhbmFtZSIpLnZhbHVlfSkpfQphc3luYyBmdW5jdGlvbiBsaXN0QXBwKCl7Y29uc3QgZD1hd2Fp
+dCBjYWxsKCIvYXBpL3NldHVwL2FwcC1hZG1pbnM/a2V5PSIrZW5jb2RlVVJJQ29tcG9uZW50KCQoImtleSIpLnZhbHVlKSk7JCgib3V0IikuY2xhc3NOYW1l
+PWQub2s/Im9rIjoiYmFkIjskKCJvdXQiKS50ZXh0Q29udGVudD1kLm9rPygiQWNjZXNzIGNvbnRyb2w6ICIrKGQuZW5mb3JjZWQ/Ik9OIjoiT0ZGIChvcGVu
+IHRvIGV2ZXJ5b25lIHVudGlsIHlvdSBhc3NpZ24gc29tZW9uZSkiKSsiXG4iKyhkLmFwcEFkbWlucy5tYXAoYT0+YS50ZWxlZ3JhbUlkKyIg4oCUICIrKGEu
+bmFtZXx8IiIpKS5qb2luKCJcbiIpfHwiTm8gYXNzaWduZWQgYWRtaW5zIHlldCIpKTpkLmVycm9yfQphc3luYyBmdW5jdGlvbiBybUFwcCgpe3Nob3coYXdh
+aXQgY2FsbCgiL2FwaS9zZXR1cC9hcHAtYWRtaW5zL3JlbW92ZSIse3RlbGVncmFtSWQ6JCgiYXJtIikudmFsdWV9KSl9CmFzeW5jIGZ1bmN0aW9uIHRlc3Qo
+KXtzaG93KGF3YWl0IGNhbGwoIi9hcGkvc2V0dXAvdGVzdCIse3RhcmdldDokKCJ0YXJnZXQiKS52YWx1ZX0pKX0KPC9zY3JpcHQ+PC9ib2R5PjwvaHRtbD4K
+`.replace(/\s+/g, ""), "base64").toString("utf8");
+// No pinch / double-tap / ctrl+wheel zoom anywhere in the mini app (also applied to the built-in fallback pages).
+const NOZOOM_HEAD = `<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"><style>html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}</style><script>(function(){var p=function(e){e.preventDefault()};["gesturestart","gesturechange","gestureend"].forEach(function(t){document.addEventListener(t,p,{passive:false})});document.addEventListener("touchmove",function(e){if(e.touches&&e.touches.length>1&&e.cancelable)e.preventDefault()},{passive:false});var l=0;document.addEventListener("touchend",function(e){var n=Date.now();if(n-l<350&&e.cancelable)e.preventDefault();l=n},{passive:false});document.addEventListener("wheel",function(e){if(e.ctrlKey)e.preventDefault()},{passive:false});document.addEventListener("keydown",function(e){if((e.ctrlKey||e.metaKey)&&["+","-","=","0"].indexOf(e.key)>-1)e.preventDefault()});})();</script>`;
+const noZoom = html => html.includes("user-scalable=no") ? html : html.replace(/<meta[^>]*name=["']viewport["'][^>]*>/i, "").replace(/<head[^>]*>/i, m => m + NOZOOM_HEAD);
+// Serves public/<file> when it exists (so you can edit it); otherwise the built-in copy above, so the app always starts.
+const sendPage = (file, fallback) => (req, res) => {
+  res.set("Cache-Control", "no-cache");
+  fs.readFile(path.join(__dirname, "public", file), "utf8", (err, txt) => res.type("html").send(noZoom(err || !txt ? fallback : txt)));
+};
+// The Mini App opens on the HOME page (choose an area). The order form lives at /orders.html (and /index.html);
+// "/?edit=<order id>" (the ✏️ Edit order button in the admin bot) still opens the order form directly.
+// If public/home.html is ever missing, "/" falls back to the order form so the app never breaks.
+const sendOrderForm = sendPage("index.html", PAGE_INDEX);
+const sendHome = (req, res) => {
+  if (req.query.edit) return sendOrderForm(req, res);
+  fs.readFile(path.join(__dirname, "public", "home.html"), "utf8", (err, txt) => {
+    if (err || !txt) return sendOrderForm(req, res);
+    res.set("Cache-Control", "no-cache").type("html").send(noZoom(txt));
+  });
+};
+app.get("/", sendHome);
+app.get(["/index.html", "/orders.html"], sendOrderForm);
+app.get("/setup.html", sendPage("setup.html", PAGE_SETUP));
+app.get("/callers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/reports.html", sendPage("reports.html", "<!doctype html><meta charset=utf-8><p>public/reports.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/workshop.html", sendPage("workshop.html", "<!doctype html><meta charset=utf-8><p>public/workshop.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/material.html", sendPage("material.html", "<!doctype html><meta charset=utf-8><p>public/material.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/stories.html", sendPage("stories.html", "<!doctype html><meta charset=utf-8><p>public/stories.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/greeting.html", sendPage("greeting.html", "<!doctype html><meta charset=utf-8><p>public/greeting.html is missing. Keep the public folder in the deploy.</p>"));
+app.get(["/home", "/home.html"], sendHome);
+app.get("/rating.html", sendPage("rating.html", "<!doctype html><meta charset=utf-8><p>public/rating.html is missing. Keep the public folder in the deploy.</p>"));
+app.get("/customers.html", sendPage("callers.html", "<!doctype html><meta charset=utf-8><p>public/callers.html is missing. Keep the public folder in the deploy.</p>"));
+app.use(express.static(path.join(__dirname, "public"), { maxAge: "10m" }));
+
+app.get("/healthz", (req, res) => res.status(200).json({ ok: true, service: "ambar-furniture-mini-app" }));
+
+const uploadDir = path.join(__dirname, "public", "uploads");
+fs.mkdirSync(uploadDir, { recursive: true });
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 15 * 1024 * 1024, files: 2 },
+  fileFilter: (req, file, cb) => {
+    if (["productPhoto", "cardImage"].includes(file.fieldname) && file.mimetype?.startsWith("image/")) return cb(null, true);
+    cb(new Error("Please upload a valid image file."));
+  }
+});
+
+let orders = [];
+let nextId = 1;
+let supabaseReady = Promise.resolve();
+// ── Google Sheet control (built in; does nothing until GOOGLE_SHEET_ID is set) ──
+const sheets = (() => {
+const module = { exports: {} };
+"use strict";
+/**
+ * Google Sheets control for Ambar Furniture.
+ *
+ * Tabs it keeps in your spreadsheet:
+ *   • Orders        – one row per order, always up to date (status, customer, product, delivery, comments…)
+ *   • Dashboard     – live totals (formulas) built on the Orders tab
+ *   (the old "Activity Log" tab was removed)
+ *
+ * No extra npm package is needed: it signs the Google login itself with Node's crypto and uses fetch (Node 20+).
+ *
+ * Environment variables (set in Render):
+ *   GOOGLE_SHEET_ID                – the long id in the sheet URL  …/spreadsheets/d/<THIS PART>/edit
+ *   GOOGLE_SERVICE_ACCOUNT_JSON    – the whole service-account JSON key (raw JSON or base64)
+ *      (or)  GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY
+ *   SHEET_TIMEZONE                 – optional, default Africa/Addis_Ababa
+ * Then share the Google Sheet with the service-account e-mail as "Editor".
+ */
+const crypto = require("crypto");
+
+const TZ = process.env.SHEET_TIMEZONE || "Africa/Addis_Ababa";
+const SHEET_ID = (process.env.GOOGLE_SHEET_ID || "").trim().replace(/^.*\/d\/([^/]+).*$/, "$1");
+const T_ORDERS = "Orders", T_LOG = "Activity Log", T_DASH = "Dashboard";
+
+const ORDER_HEAD = [ // customer information comes first
+  "Customer Name", "Phone", "Telegram Username", "Telegram Chat ID", "Location",
+  "Order Code", "Status", "Order Date", "Completion Date", "Delivery Type", "Delivery Service", "Delivery Fee", "Delivery Date",
+  "Product", "Length (cm)", "Width (cm)", "Height (cm)", "Material", "Color", "Style", "Design", "Handle", "Door", "Partition", "Drawer", "Additional Features",
+  "Payment", "Advance", "Paid In Full", "Delivered To Customer", "Answer Closed", "Comments", "Latest Comment",
+  "Created At", "Last Updated", "Created By", "Created By Role", "Card Image", "Product Photo", "Answer Link", "Delivery Note",
+  "ID",
+  "Telegram Name", "Customer ID" // v91: the customer's Telegram name + Customer ID are always the LAST two columns (for every admin's orders)
+];
+const LOG_HEAD = ["Time", "Event", "Order Code", "Product", "Customer", "Details", "By"];
+const COL = Object.fromEntries(ORDER_HEAD.map((h, i) => [h, i]));
+const colLetter = n => { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+const LAST_COL = colLetter(ORDER_HEAD.length - 1);
+
+// ── credentials ────────────────────────────────────────────────────────────────
+function readCreds() {
+  let raw = (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "").trim();
+  if (raw) {
+    try {
+      if (!raw.startsWith("{")) raw = Buffer.from(raw, "base64").toString("utf8");
+      const j = JSON.parse(raw);
+      if (j.client_email && j.private_key) return { email: j.client_email, key: String(j.private_key).replace(/\\n/g, "\n") };
+    } catch { /* fall through */ }
+  }
+  const email = (process.env.GOOGLE_CLIENT_EMAIL || "").trim(), key = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n").replace(/^["']|["']$/g, "");
+  return email && key ? { email, key } : null;
+}
+const creds = readCreds();
+let SCRIPT_URL = (process.env.GOOGLE_SCRIPT_URL || "").trim(), SCRIPT_KEY = (process.env.GOOGLE_SCRIPT_KEY || "").trim();
+let scriptSheetUrl = (process.env.GOOGLE_SHEET_URL || "").trim();
+let FORM_RAW = (process.env.GOOGLE_FORM_URL || "").trim();
+let FORM = null;
+const parseForm = () => { // pre-filled Google Form link → submit address + the one answer box
+  const id = FORM_RAW.match(/forms\/d\/e\/([\w-]+)/), en = FORM_RAW.match(/entry\.(\d+)/);
+  FORM = id && en ? { url: `https://docs.google.com/forms/d/e/${id[1]}/formResponse`, entry: "entry." + en[1] } : null;
+};
+parseForm();
+// DIRECT is recomputed whenever the saved connection changes
+let DIRECT = !!(SCRIPT_URL || FORM_RAW); // direct (no Google Cloud / API) mode: Web app, or Google Form
+const configured = () => !!(DIRECT || (SHEET_ID && creds));
+// ── PERMANENT CONNECTION: once the sheet is connected it is saved (file + Supabase) and restored on every start. It is never forgotten on errors. ──
+let persistFn = async () => {}; // wired to file/Supabase storage below, after the module
+const connectionState = () => ({ scriptUrl: SCRIPT_URL, scriptKey: SCRIPT_KEY, sheetUrl: scriptSheetUrl, formUrl: FORM_RAW, cutoffMs: 0, savedAt: new Date().toISOString() });
+function applyConnection(c) {
+  if (!c) return;
+  if (c.scriptUrl) SCRIPT_URL = String(c.scriptUrl).trim();
+  if (c.scriptKey != null && c.scriptKey !== "") SCRIPT_KEY = String(c.scriptKey).trim();
+  if (c.sheetUrl) scriptSheetUrl = String(c.sheetUrl).trim();
+  if (c.formUrl) { FORM_RAW = String(c.formUrl).trim(); parseForm(); }
+  DIRECT = !!(SCRIPT_URL || FORM_RAW);
+  readyP = null;
+}
+// Google Form route: no public Web app needed. The form is public, a trigger inside the sheet reads each submission.
+async function callForm(payload) {
+  if (!FORM) throw new Error("GOOGLE_FORM_URL is wrong. Paste the pre-filled link of your form (it contains /forms/d/e/…/viewform and entry.123456=…).");
+  if (payload.action === "state") return { ok: true, values: null, row: 0 };
+  const r = await fetch(FORM.url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ [FORM.entry]: JSON.stringify({ ...payload, key: SCRIPT_KEY }), fvv: "1", pageHistory: "0" }).toString(), redirect: "manual" });
+  const loc = r.headers.get("location") || "";
+  if (r.status === 401 || r.status === 403 || /accounts\.google\.com|ServiceLogin/i.test(loc)) throw new Error(`The Google Form asks people to sign in (HTTP ${r.status}). In the form: Settings → Responses → turn OFF "Restrict to users in <organization>" and "Limit to 1 response"; make sure "Collect email addresses" is OFF.`);
+  if (r.status === 404) throw new Error("Google Form not found. Re-copy the pre-filled link (it must contain /forms/d/e/…).");
+  if (r.status === 400) throw new Error("Google Form rejected the answer. The form must have exactly ONE question of type Paragraph, and it must not be 'Required' with other questions.");
+  if (r.status >= 500) throw new Error("Google Form error HTTP " + r.status);
+  return { ok: true };
+}
+
+// ── direct connection through a Google Apps Script web app (no Google Cloud / API) ──
+async function callScript(payload) {
+  if (!SCRIPT_URL) return callForm(payload);
+  // Accept the URL however it was pasted: with quotes/spaces, "GOOGLE_SCRIPT_URL=…", or just the deployment ID.
+  let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, "");
+  const found = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i);
+  if (found) url = found[0];
+  else if (/^[A-Za-z0-9_-]{20,}$/.test(url)) url = `https://script.google.com/macros/s/${url}/exec`;
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//i.test(url)) throw new Error(`GOOGLE_SCRIPT_URL is wrong (the server received: "${SCRIPT_URL.slice(0, 70)}"). Paste the Web app URL from Deploy → Manage deployments, starting with https://script.google.com/ and ending with /exec.`);
+  if (/\/dev(\?|$)/.test(url)) throw new Error("GOOGLE_SCRIPT_URL ends with /dev (test URL). Use the Web app URL that ends with /exec.");
+  // Apps Script answers a POST with a redirect; follow it by hand (the answer is read with GET).
+  let r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ ...payload, key: SCRIPT_KEY }), redirect: "manual" });
+  let at = url;
+  for (let hop = 0; hop < 5 && r.status >= 300 && r.status < 400 && r.headers.get("location"); hop++) { at = new URL(r.headers.get("location"), at).href; r = await fetch(at, { redirect: "manual" }); }
+  const t = await r.text();
+  let d;
+  try { d = JSON.parse(t); } catch {
+    const low = t.toLowerCase();
+    let why;
+    if (low.includes("accounts.google.com") || low.includes("sign in") || r.status === 401 || r.status === 403) why = "Google is asking visitors to sign in, so the Web app is not public. Fix: in Apps Script click Deploy → New deployment → gear → Web app → Execute as: Me → Who has access: Anyone → Deploy, then put the NEW /exec URL in GOOGLE_SCRIPT_URL (editing an old deployment often keeps the old access). Test: open the /exec URL in an Incognito window; it must show {\"ok\":true…} without asking to sign in. If \"Anyone\" is not offered, your Google account (school/work) blocks it: create the sheet and script with a personal @gmail.com account.";
+    else if (r.status === 404 || low.includes("unable to open the file") || low.includes("page not found")) why = "The Web app URL was not found. Re-copy the URL from Deploy → Manage deployments (it must end with /exec).";
+    else if (low.includes("authorization") || low.includes("permission")) why = "The script needs permission. In Apps Script press Run on doGet once and allow access, then redeploy as a New version.";
+    else why = "Make sure google-sheet-script.gs is pasted fully, saved, and deployed as a Web app (New version).";
+    throw new Error(`Google Script did not answer correctly (HTTP ${r.status}). ${why} Reply started with: ${t.replace(/\s+/g, " ").slice(0, 120)}`);
+  }
+  if (!d.ok) throw new Error(/getSheetByName|getActive|not linked|openById/i.test(String(d.error)) ? "The Google script is not linked to your sheet. Open the SHEET → Extensions → Apps Script, paste google-sheet-script.gs there (or put the sheet ID in SHEET_ID at the top of the script), Save, run 'authorize' once, then Deploy → New deployment and use the new /exec URL." : (d.error || "Google Script error"));
+  return d;
+}
+
+// ── Google auth (service account JWT → access token) ───────────────────────────
+let token = { value: "", exp: 0 };
+const b64u = b => Buffer.from(b).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+async function accessToken() {
+  if (token.value && Date.now() < token.exp - 60000) return token.value;
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64u(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = b64u(JSON.stringify({ iss: creds.email, scope: "https://www.googleapis.com/auth/spreadsheets", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 }));
+  const sig = crypto.createSign("RSA-SHA256").update(`${head}.${claim}`).sign(creds.key);
+  const jwt = `${head}.${claim}.${b64u(sig)}`;
+  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.access_token) throw new Error("Google login failed: " + (d.error_description || d.error || r.status));
+  token = { value: d.access_token, exp: Date.now() + (Number(d.expires_in) || 3600) * 1000 };
+  return token.value;
+}
+const API = "https://sheets.googleapis.com/v4/spreadsheets/";
+async function g(path, { method = "GET", body } = {}) {
+  const r = await fetch(API + SHEET_ID + path, { method, headers: { Authorization: "Bearer " + await accessToken(), "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = d?.error?.message || String(r.status);
+    if (r.status === 403 || r.status === 404) throw new Error(`${msg} — share the Google Sheet with ${creds.email} as Editor, and check GOOGLE_SHEET_ID.`);
+    throw new Error(msg);
+  }
+  return d;
+}
+const q = s => encodeURIComponent(s);
+
+// ── helpers ────────────────────────────────────────────────────────────────────
+// ── Ethiopian calendar: every date written to the sheet is an Ethiopian date, text "yyyy/mm/dd" ──
+function gregToEth(y, m, d) {
+  const a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3;
+  const jdn = d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+  const r = (jdn - 1723856) % 1461, n = (r % 365) + 365 * Math.floor(r / 1460);
+  return { y: 4 * Math.floor((jdn - 1723856) / 1461) + Math.floor(r / 365) - Math.floor(r / 1460), m: Math.floor(n / 30) + 1, d: (n % 30) + 1 };
+}
+const ethText = e => String(e.y).padStart(4, "0") + "/" + String(e.m).padStart(2, "0") + "/" + String(e.d).padStart(2, "0");
+// Order / Completion / Delivery date: new orders already hold Ethiopian "yyyy/mm/dd"; older orders hold Gregorian "yyyy-mm-dd" → converted.
+const ethDate = v => {
+  const s = String(v == null ? "" : v).trim();
+  if (/^\d{4}\/\d{2}\/\d{2}/.test(s)) return s.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? ethText(gregToEth(+m[1], +m[2], +m[3])) : s;
+};
+const stamp = (d = new Date()) => { // 2019/03/03 14:05:09  (Ethiopian date, sortable)
+  const g = new Date(d).toLocaleString("sv-SE", { timeZone: TZ }); // 2026-11-11 14:05:09
+  return ethDate(g.slice(0, 10)) + g.slice(10);
+};
+const clean = v => (v == null ? "" : String(v)).slice(0, 4000);
+const abs = (order, p) => !p ? "" : /^https?:/i.test(p) ? p : ((process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "") + p);
+function orderRow(o, created, updated) {
+  const comments = Array.isArray(o.comments) ? o.comments : [];
+  const last = comments[comments.length - 1];
+  const row = new Array(ORDER_HEAD.length).fill("");
+  const set = (h, v) => { row[COL[h]] = typeof v === "number" ? v : clean(v); };
+  set("ID", o.id); set("Order Code", o.orderId); set("Created At", created); set("Last Updated", updated); set("Status", o.status || "Pending");
+  set("Product", o.product); set("Length (cm)", o.length); set("Width (cm)", o.width); set("Height (cm)", o.height);
+  set("Material", o.material); set("Color", o.color); set("Style", o.style); set("Design", o.design); set("Handle", o.handle); set("Door", o.door); set("Partition", o.partition); set("Drawer", o.drawer); set("Additional Features", o.additionalFeatures);
+  set("Customer Name", o.customerName); set("Phone", o.phone || o.telegramPhone); set("Telegram Username", o.telegramUsername); set("Telegram Chat ID", o.telegramChatId);
+  set("Order Date", ethDate(o.orderDate)); set("Delivery Date", ethDate(o.deliveryDate)); set("Delivery Type", o.deliveryType); set("Delivery Fee", o.deliveryFee); set("Location", o.location); set("Payment", o.payment); set("Advance", o.advance); set("Paid In Full", o.paidFull ? "Yes" : "No");
+  set("Delivered To Customer", o.sent ? "Yes" : "No"); set("Answer Closed", o.closed ? "Yes" : "No");
+  set("Comments", comments.length); set("Latest Comment", last ? (last.decision ? `[${last.decision}] ` : "") + (last.comment || "") : "");
+  set("Created By", o.createdByName); set("Created By Role", o.createdByRole);
+  set("Card Image", abs(o, o.cardImage)); set("Product Photo", abs(o, o.photo));
+  const base = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "").replace(/\/+$/, "");
+  set("Answer Link", base && o.token ? `${base}/o/${o.token}` : "");
+  set("Delivery Note", o.sent ? "" : ("Sent from: " + (o.adminLabel || o.sender || "—") + " — ❌ NOT delivered" + (o.deliveryNote ? " (" + clean(o.deliveryNote).slice(0, 500) + ")" : " (Delivery was not completed)")));
+  set("Completion Date", ethDate(o.completionDate)); set("Delivery Service", o.deliveryService);
+  // v91: Telegram name + Customer ID (last two columns). Filled from the order itself, else looked up in the customer lists.
+  let who = {}; try { who = (nameResolver && nameResolver(o)) || {}; } catch { who = {}; }
+  const cidShow = String(o.customerId || who.customerId || "");
+  const tgShow = String(who.name || o.telegramUsername || "");
+  set("Telegram Name", tgShow ? (cidShow ? cidShow + " \u00b7 " + tgShow : tgShow) : cidShow); // v135: Customer ID beside the Telegram account name
+  set("Customer ID", cidShow);
+  return row;
+}
+let nameResolver = null; // set by the app once the customer lists are loaded: order -> { name, customerId }
+
+// ── one-time setup: create tabs, headers, formatting, dashboard ────────────────
+let readyP = null, lastError = "", lastOkAt = "", lastSyncAt = "";
+let summaryUrl = "", graphsUrl = "", cutoffMs = 0; // cutoffMs: orders created before the last "Archive & Start New" never go back into the sheet
+const isOld = o => cutoffMs > 0 && o && o.createdAt && Date.parse(o.createdAt) < cutoffMs;
+function ready() {
+  if (DIRECT) {
+    if (!readyP) readyP = callScript({ action: "setup", orderHead: ORDER_HEAD, logHead: LOG_HEAD, callerHead: CALLER_HEAD }).then(d => { if (d.url) scriptSheetUrl = d.url; if (d.summaryUrl) summaryUrl = d.summaryUrl; if (d.graphsUrl) graphsUrl = d.graphsUrl; if (d.cutoff) cutoffMs = Math.max(cutoffMs, Number(d.cutoff) || 0); lastError = ""; lastOkAt = stamp(); Promise.resolve(persistFn(connectionState())).catch(() => {}); }).catch(e => { readyP = null; lastError = e.message; throw e; });
+    return readyP;
+  }
+  if (!readyP) readyP = setup().catch(e => { readyP = null; lastError = e.message; throw e; });
+  return readyP;
+}
+async function setup() {
+  const meta = await g("?fields=sheets.properties");
+  const have = new Map((meta.sheets || []).map(s => [s.properties.title, s.properties.sheetId]));
+  const need = [T_ORDERS, T_DASH].filter(t => !have.has(t));
+  if (need.length) {
+    const r = await g(":batchUpdate", { method: "POST", body: { requests: need.map(title => ({ addSheet: { properties: { title } } })) } });
+    (r.replies || []).forEach(x => have.set(x.addSheet.properties.title, x.addSheet.properties.sheetId));
+  }
+  const fmt = [];
+  const headerFmt = (sheetId, cols) => {
+    fmt.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: cols }, cell: { userEnteredFormat: { backgroundColor: { red: 0.06, green: 0.18, blue: 0.145 }, textFormat: { bold: true, foregroundColor: { red: 0.96, green: 0.94, blue: 0.89 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat)" } });
+    fmt.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } });
+  };
+  for (const [title, head] of [[T_ORDERS, ORDER_HEAD]]) {
+    const cur = await g(`/values/${q(`'${title}'!A1:A1`)}`);
+    if (!cur.values?.[0]?.[0] || need.includes(title)) {
+      await g(`/values/${q(`'${title}'!A1`)}?valueInputOption=RAW`, { method: "PUT", body: { values: [head] } });
+      headerFmt(have.get(title), head.length);
+    }
+  }
+  if (need.includes(T_ORDERS)) {
+    const sid = have.get(T_ORDERS), c = n => ({ sheetId: sid, startRowIndex: 1, startColumnIndex: COL[n], endColumnIndex: COL[n] + 1 });
+    const rule = (text, red, green, blue) => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [c("Status")], booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: text }] }, format: { backgroundColor: { red, green, blue } } } } } });
+    fmt.push(rule("Confirmed", 0.78, 0.92, 0.80), rule("Rejected", 0.96, 0.78, 0.78), rule("Pending", 1, 0.93, 0.74));
+  }
+  if (need.includes(T_DASH)) {
+    const L = n => colLetter(COL[n]);
+    const rows = [
+      ["AMBAR FURNITURE — Control Dashboard", ""],
+      ["(live: built from the Orders tab — do not type over these cells)", ""],
+      ["Total orders", `=COUNTA(${T_ORDERS}!${L("ID")}2:${L("ID")})`],
+      ["Pending (waiting for customer)", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Pending")`],
+      ["Confirmed", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Confirmed")`],
+      ["Rejected", `=COUNTIF(${T_ORDERS}!${L("Status")}2:${L("Status")},"Rejected")`],
+      ["Cards NOT delivered to customer", `=COUNTIF(${T_ORDERS}!${L("Delivered To Customer")}2:${L("Delivered To Customer")},"No")`],
+      ["Customer comments received", `=SUM(${T_ORDERS}!${L("Comments")}2:${L("Comments")})`],
+      ["", ""],
+      ["Orders by product", ""],
+      [`=IFERROR(QUERY(${T_ORDERS}!A2:${LAST_COL},"select ${L("Product")}, count(${L("ID")}) where ${L("ID")} is not null group by ${L("Product")} label ${L("Product")} 'Product', count(${L("ID")}) 'Orders'",0),"no orders yet")`, ""],
+    ];
+    await g(`/values/${q(`'${T_DASH}'!A1`)}?valueInputOption=USER_ENTERED`, { method: "PUT", body: { values: rows } });
+    const sid = have.get(T_DASH);
+    fmt.push({ repeatCell: { range: { sheetId: sid, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 14 } } }, fields: "userEnteredFormat.textFormat" } });
+    fmt.push({ updateDimensionProperties: { range: { sheetId: sid, dimension: "COLUMNS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 300 }, fields: "pixelSize" } });
+  }
+  if (fmt.length) await g(":batchUpdate", { method: "POST", body: { requests: fmt } });
+  lastError = ""; lastOkAt = stamp();
+}
+
+// ── serialized write queue (never blocks, never throws into the order flow) ────
+let chain = Promise.resolve();
+const enqueue = fn => { const p = chain.then(fn); chain = p.catch(() => { }); return p; };
+
+// ── Orders tab: known rows cache ───────────────────────────────────────────────
+let rows = null; // Map(id -> { row, created, status, comments, delivered, closed, note })
+const parseRow = (r, rowNo) => ({
+  row: rowNo, created: r[COL["Created At"]] || "", status: r[COL["Status"]] || "", comments: Number(r[COL["Comments"]]) || 0,
+  delivered: r[COL["Delivered To Customer"]] === "Yes", closed: r[COL["Answer Closed"]] === "Yes", note: r[COL["Delivery Note"]] || ""
+});
+async function loadRows() {
+  const d = await g(`/values/${q(`'${T_ORDERS}'!A2:${LAST_COL}`)}`);
+  rows = new Map();
+  (d.values || []).forEach((r, i) => { if (r[COL["ID"]]) rows.set(String(r[COL["ID"]]), parseRow(r, i + 2)); });
+}
+const rowFromRange = range => { const m = String(range || "").match(/!.*?(\d+)(?::[A-Z]+(\d+))?$/); return m ? Number(m[1]) : 0; };
+
+// The Activity Log was removed from the Google Sheet: movements are no longer written anywhere.
+async function appendLog() { }
+const logRow = (event, o, details, by) => [stamp(), event, clean(o?.orderId), clean(o?.product), clean(o?.customerName), clean(details), clean(by)];
+
+function diffEvents(o, prev) {
+  const ev = [], cs = Array.isArray(o.comments) ? o.comments : [];
+  const dims = [o.length, o.width, o.height].some(Boolean) ? ` · ${o.length || "—"}×${o.width || "—"}×${o.height || "—"} cm` : "";
+  if (!prev) {
+    ev.push(logRow("Order created", o, `${o.product || "—"}${dims} · ${o.deliveryType || "—"}${o.telegramUsername ? " · " + o.telegramUsername : ""}`, o.createdByName || o.adminLabel || "Admin"));
+    if (o.sent) ev.push(logRow("Card delivered to customer", o, `via ${o.sender || "—"}`, "System"));
+    else if (o.deliveryNote) ev.push(logRow("Card NOT delivered", o, o.deliveryNote, "System"));
+    cs.forEach(c => ev.push(logRow("Customer comment", o, (c.decision ? `[${c.decision}] ` : "") + c.comment, "Customer")));
+    if (o.status && o.status !== "Pending") ev.push(logRow(`Order ${o.status}`, o, "", "Customer"));
+    return ev;
+  }
+  if (o.sent && !prev.delivered) ev.push(logRow("Card delivered to customer", o, `via ${o.sender || "—"}`, "System"));
+  if (!o.sent && o.deliveryNote && o.deliveryNote !== prev.note) ev.push(logRow("Card NOT delivered", o, o.deliveryNote, "System"));
+  if ((o.status || "Pending") !== prev.status) ev.push(logRow(`Order ${o.status || "Pending"}`, o, `was ${prev.status || "—"}`, "Customer"));
+  for (let i = prev.comments; i < cs.length; i++) ev.push(logRow("Customer comment", o, (cs[i].decision ? `[${cs[i].decision}] ` : "") + cs[i].comment, "Customer"));
+  if (o.closed && !prev.closed) ev.push(logRow("Answer link closed", o, "customer answered once", "System"));
+  return ev;
+}
+
+async function upsertOrder(order) {
+  await ready();
+  if (isOld(order)) return; // archived: belongs to the old list
+  if (DIRECT) { // one call per order: the sheet script adds / updates the row and writes the activity log itself
+    const now = stamp();
+    const values = orderRow(order, order.createdAt ? stamp(order.createdAt) : now, now);
+    let lastErr;
+    for (let i = 0; i < 3; i++) {
+      try { await callScript({ action: "upsert", id: String(order.id), head: ORDER_HEAD, row: values }); lastOkAt = stamp(); lastError = ""; return; }
+      catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
+    }
+    throw lastErr;
+  }
+  if (!rows) await loadRows();
+  const id = String(order.id);
+  let prev = rows.get(id);
+  if (!prev) { await loadRows(); prev = rows.get(id); } // another instance may have written it
+  const now = stamp();
+  const created = prev?.created || (order.createdAt ? stamp(order.createdAt) : now);
+  const values = orderRow(order, created, now);
+  const events = diffEvents(order, prev);
+  let rowNo;
+  if (prev) {
+    rowNo = prev.row;
+    await g(`/values/${q(`'${T_ORDERS}'!A${rowNo}:${LAST_COL}${rowNo}`)}?valueInputOption=RAW`, { method: "PUT", body: { values: [values] } });
+  } else {
+    const r = await g(`/values/${q(`'${T_ORDERS}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: [values] } });
+    rowNo = rowFromRange(r.updates?.updatedRange);
+  }
+  rows.set(id, parseRow(values, rowNo));
+  await appendLog(events);
+  lastOkAt = stamp(); lastError = "";
+}
+
+// ── public API ────────────────────────────────────────────────────────────────
+/** Call after every order change. Fire-and-forget; failures are only logged. */
+function track(order) {
+  if (!configured() || !order) return;
+  const snapshot = JSON.parse(JSON.stringify(order)); // freeze the state at this moment
+  return enqueue(() => upsertOrder(snapshot)).catch(e => { lastError = e.message; console.warn("Google Sheet sync failed:", e.message); });
+}
+/** Wait (max 25 s) until every queued sheet write has finished. */
+const idle = () => Promise.race([chain, new Promise(r => setTimeout(r, 25000))]);
+/** (no-op) the Activity Log was removed. */
+function log() { /* Activity Log removed – kept so existing callers still work */ }
+/** Rebuild/refresh every order row in one go (owner button). */
+function syncAll(allOrders, by = "Owner") {
+  if (!configured()) return Promise.reject(new Error("Google Sheet is not configured."));
+  if (DIRECT) return enqueue(async () => {
+    await ready();
+    const now = stamp();
+    const rowsOut = allOrders.filter(o => !isOld(o)).map(o => orderRow(o, o.createdAt ? stamp(o.createdAt) : now, now));
+    let d = {};
+    if (SCRIPT_URL) {
+      let added = 0, updated = 0;
+      for (let i = 0; i < rowsOut.length; i += 25) { const r = await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 25), logs: [] }); added += r.added || 0; updated += r.updated || 0; }
+      d = { added, updated };
+    }
+    else { // Form mode: small batches, one form submission each
+      for (let i = 0; i < rowsOut.length; i += 10) await callScript({ action: "syncAll", head: ORDER_HEAD, rows: rowsOut.slice(i, i + 10), logs: [] });
+      d = { added: "—", updated: "—" };
+    }
+    lastSyncAt = stamp(); lastOkAt = lastSyncAt; lastError = "";
+    return { total: allOrders.length, added: d.added, updated: d.updated };
+  });
+  return enqueue(async () => {
+    await ready(); await loadRows();
+    const now = stamp(), updates = [], fresh = [], events = [];
+    for (const o of allOrders) {
+      const prev = rows.get(String(o.id)), created = prev?.created || (o.createdAt ? stamp(o.createdAt) : now), v = orderRow(o, created, now);
+      if (prev) updates.push({ range: `'${T_ORDERS}'!A${prev.row}:${LAST_COL}${prev.row}`, values: [v] }); else { fresh.push(v); events.push(logRow("Order created", o, "added by full sync", "System")); }
+    }
+    for (let i = 0; i < updates.length; i += 200) await g("/values:batchUpdate", { method: "POST", body: { valueInputOption: "RAW", data: updates.slice(i, i + 200) } });
+    for (let i = 0; i < fresh.length; i += 200) await g(`/values/${q(`'${T_ORDERS}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { method: "POST", body: { values: fresh.slice(i, i + 200) } });
+    await appendLog([...events, logRow("Full sync", null, `${allOrders.length} orders refreshed (${fresh.length} new to the sheet)`, by)]);
+    await loadRows();
+    lastSyncAt = stamp(); lastOkAt = lastSyncAt; lastError = "";
+    return { total: allOrders.length, added: fresh.length, updated: updates.length };
+  });
+}
+/** "Start New Month": the sheet script creates (or opens) the tab of the current Ethiopian month. */
+function newMonth(by = "Admin") {
+  if (!DIRECT) return Promise.reject(new Error("Month tabs need the Apps Script connection (GOOGLE_SCRIPT_URL or GOOGLE_FORM_URL)."));
+  return enqueue(async () => {
+    await ready();
+    const d = await callScript({ action: "newMonth", head: ORDER_HEAD, by });
+    lastOkAt = stamp(); lastError = "";
+    return SCRIPT_URL ? d : { ok: true, name: "", created: true, url: "", sent: true };
+  });
+}
+/** "Start from ZERO": the sheet script keeps every month tab as a "Backup …" tab and starts clean. */
+function startFresh(by = "Admin") {
+  if (!DIRECT) return Promise.reject(new Error("Archive & Start New needs the Apps Script connection (GOOGLE_SCRIPT_URL or GOOGLE_FORM_URL)."));
+  return enqueue(async () => {
+    await ready();
+    const d = await callScript({ action: "startFresh", head: ORDER_HEAD, logHead: LOG_HEAD, by });
+    cutoffMs = Math.max(cutoffMs, Number(d && d.cutoff) || Date.now()); // Form mode returns nothing: use this server's clock
+    lastOkAt = stamp(); lastError = "";
+    return SCRIPT_URL ? d : { ok: true, name: "", archived: "", url: "", sent: true };
+  });
+}
+/** Callers Data tab ("Callers"): needs the Apps Script Web app link (GOOGLE_SCRIPT_URL). Never throws; returns { ok, error }. */
+const CALLER_HEAD = ["Customer ID", "Phone Number", "Name", "Additional Phone Number", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source", "⭐ Interested In"];
+function callersCall(payload) {
+  if (!SCRIPT_URL) return Promise.resolve({ ok: false, error: "Google Sheet is not connected (main admin: open Settings → Connections and paste the Web app /exec URL)." });
+  return enqueue(async () => { await ready(); const d = await callScript({ ...payload, head: CALLER_HEAD }); return { ...d, ok: true }; })
+    .catch(async e => {
+      if (!/unknown action/i.test(String(e && e.message || e))) return { ok: false, error: String(e && e.message || e).slice(0, 300) };
+      const v = await scriptVersionNow(), want = expectedScriptVersion().short;
+      const seen = v ? `Your saved link runs script "${v}"` : "Your saved link did not report a script version (very old script)";
+      return { ok: false, needsScript: true, error: `${seen}, but the Customers Data tab needs ${want}. Fix (2 minutes, once): tap "Copy new script" below → script.google.com → New project → paste → Save → run "authorize" once → Deploy → New deployment → Web app (Execute as: Me, Access: Anyone) → paste the new /exec link here and press Connect & sync. The script creates the Google Sheet and the Customers Data tab by itself. (If you pasted it into your OLD project, use Deploy → Manage deployments → Edit → Version: New version → Deploy.)` };
+    });
+}
+const SCRIPT_VERSION_FALLBACK = "v93"; // keep equal to VERSION in google-sheet-script.gs (used if the .gs file is not on the server)
+const SCRIPT_FILE = [path.join(__dirname, "google-sheet-script.gs"), path.join(process.cwd(), "google-sheet-script.gs")].find(f => { try { return fs.existsSync(f); } catch { return false; } }) || path.join(__dirname, "google-sheet-script.gs");
+function expectedScriptVersion() { // the version the bundled google-sheet-script.gs reports (e.g. "v71")
+  try { const m = fs.readFileSync(SCRIPT_FILE, "utf8").match(/var VERSION\s*=\s*"([^"]*)"/); const t = m ? m[1] : ""; const v = t.match(/\bv\d+\b/); if (v) return { full: t, short: v[0] }; } catch {}
+  return { full: "", short: SCRIPT_VERSION_FALLBACK };
+}
+async function scriptVersionNow() { // asks the saved Web app link which script version it is really running
+  try {
+    let url = SCRIPT_URL.replace(/["'`\s]/g, "").replace(/^GOOGLE_SCRIPT_URL=/i, ""); const f = url.match(/https:\/\/script\.google(?:usercontent)?\.com\/[^\s]*/i); if (f) url = f[0];
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) }); const txt = await r.text(); scriptVersionNow.raw = txt.slice(0, 200); const d = JSON.parse(txt); return String(d.version || "no version (very old script)");
+  } catch { return ""; }
+}
+const callerSave = row => callersCall({ action: "callerUpsert", row });
+const callersSyncAll = rows => callersCall({ action: "callersSync", rows });
+const callerRemove = id => callersCall({ action: "callerDelete", id });
+/** Connect (or re-connect) from the app: checks the link, then SAVES it permanently. */
+async function connect(input = {}) {
+  const prev = connectionState();
+  const url = String(input.scriptUrl || "").trim(), form = String(input.formUrl || "").trim();
+  if (!url && !form) throw new Error("Paste the Google Web app URL (…/exec) first.");
+  applyConnection({ scriptUrl: url, scriptKey: input.scriptKey, sheetUrl: input.sheetUrl, formUrl: form });
+  try { await enqueue(async () => { readyP = null; await ready(); }); }
+  catch (e) { applyConnection(prev); throw e; } // a wrong link never replaces a working saved one
+  await persistFn(connectionState());
+  return { ok: true };
+}
+/** Background keep-alive: if the sheet is saved but the last call failed (Google hiccup, restart…), quietly reconnect. Never forgets the link. */
+function keepAlive(everyMs = 120000) {
+  setInterval(() => { if (configured() && lastError && !readyP) enqueue(async () => { readyP = null; await ready(); }).then(() => console.log("Google Sheet reconnected."), () => {}); }, everyMs).unref?.();
+}
+/** Connection test / first setup. */
+function test() {
+  if (!configured()) return Promise.reject(new Error("Not configured."));
+  if (DIRECT) return enqueue(async () => { readyP = null; await ready(); return { ok: true }; });
+  return enqueue(async () => { await ready(); await loadRows(); return { ok: true, orders: rows.size }; });
+}
+function status() {
+  return {
+    configured: configured(), hasSheetId: !!(DIRECT || SHEET_ID), hasCredentials: !!(DIRECT || creds), serviceAccount: DIRECT ? "Direct connection (no API)" : creds?.email || "",
+    url: DIRECT ? scriptSheetUrl : SHEET_ID ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit` : "", lastOkAt, lastSyncAt, lastError, summaryUrl, graphsUrl, saved: !!(SCRIPT_URL || FORM_RAW)
+  };
+}
+module.exports = { scriptVersionNow, expectedScriptVersion, SCRIPT_FILE, helpers: { TZ, ethDate, stamp, clean }, callerSave, callersSyncAll, callerRemove, track, idle, log, syncAll, newMonth, startFresh, test, status, configured, connect, keepAlive, applyConnection, setPersist: f => { persistFn = f; }, setNameResolver: f => { nameResolver = f; }, _internals: { orderRow, ORDER_HEAD, colLetter } };
+
+return module.exports;
+})();
+
+// ── Google Sheet connection: saved on disk AND in Supabase, restored on every start (env variables stay as a fallback) ──
+const SHEET_CONN_FILES = [path.join(__dirname, "data", "sheet-connection.json"), path.join(BUSINESS_STORE_DIR, "sheet-connection.json")];
+async function saveSheetConnection(c) {
+  const text = JSON.stringify(c);
+  for (const f of SHEET_CONN_FILES) { try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); } catch {} }
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "google_sheet_connection", value: c, updated_at: new Date().toISOString() }); } catch (e) { console.warn("Sheet connection Supabase save failed:", e.message); } }
+}
+async function restoreSheetConnection() {
+  let c = null;
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "google_sheet_connection").maybeSingle(); if (data?.value && (data.value.scriptUrl || data.value.formUrl)) c = data.value; } catch {} }
+  if (!c) for (const f of SHEET_CONN_FILES) { try { const j = JSON.parse(fs.readFileSync(f, "utf8")); if (j && (j.scriptUrl || j.formUrl)) { c = j; break; } } catch {} }
+  if (c) { sheets.applyConnection(c); console.log("Google Sheet connection restored from saved settings."); }
+  else if (sheets.configured()) await saveSheetConnection({ scriptUrl: process.env.GOOGLE_SCRIPT_URL || "", scriptKey: process.env.GOOGLE_SCRIPT_KEY || "", sheetUrl: process.env.GOOGLE_SHEET_URL || "", formUrl: process.env.GOOGLE_FORM_URL || "" }); // first run: keep the env link permanently too
+}
+sheets.setPersist(saveSheetConnection);
+
+async function persistBusinessConnections() {
+  // Always keep a local copy, and mirror to Supabase when configured.
+  saveBusinessConnections();
+  if (!supabase) return;
+  try {
+    const enabled = [...businessConnections.values()].filter(c => c?.is_enabled !== false);
+    const { error } = await supabase.from("app_settings").upsert({ key: "telegram_business_connections", value: enabled, updated_at: new Date().toISOString() });
+    if (error) console.error("Supabase business connection save failed:", error.message);
+  } catch (error) { console.error("Supabase business connection save failed:", error.message); }
+}
+async function restoreBusinessConnections() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.from("app_settings").select("value").eq("key", "telegram_business_connections").maybeSingle();
+    if (error) { console.error("Supabase business connection restore failed:", error.message); return; }
+    // Merge (never clear): a connection that arrived by webhook during startup must not be wiped.
+    if (Array.isArray(data?.value)) for (const c of data.value) if (c?.id && c.is_enabled !== false && !businessConnections.has(String(c.id))) businessConnections.set(String(c.id), c);
+  } catch (error) { console.error("Supabase business connection restore failed:", error.message); }
+}
+async function uploadToSupabase(file, folder, contentType) {
+  if (!supabase) return `/uploads/${file.filename}`;
+  const objectPath = `${folder}/${Date.now()}-${file.filename}`;
+  const bytes = await fs.promises.readFile(file.path);
+  const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(objectPath, bytes, { contentType: contentType || file.mimetype || "application/octet-stream", upsert: true });
+  if (error) throw new Error(`Supabase Storage upload failed: ${error.message}`);
+  const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(objectPath);
+  return data.publicUrl;
+}
+// After an order is saved, tell the admin straight away if the Google Sheet could not be updated.
+async function sheetWarning() {
+  try { if (!sheets.configured()) return ""; await sheets.idle(); const e = sheets.status().lastError; return e ? ` ⚠ Google Sheet NOT updated: ${e}` : " ✅ Saved to the Google Sheet."; } catch { return ""; }
+}
+// v93: a customer who makes an order becomes "Customer"; the order-status column always follows that customer's LATEST order
+// (an older order being updated can never overwrite it). Legacy orders without a Customer ID are matched by phone / @username.
+function applyCustomerStatus(customer, mine, now) {
+  const latest = [...mine].sort((x, y) => String(y.createdAt || "").localeCompare(String(x.createdAt || "")) || (Number(y.id) || 0) - (Number(x.id) || 0))[0];
+  if (!latest) return false;
+  const before = JSON.stringify([customer.customerStatus, customer.orderStatus, customer.orderId, customer.rejectionReason, customer.lastConversation]);
+  const codes = String(customer.orderId || "").split(/\s*,\s*/).filter(Boolean);
+  mine.forEach(o => { if (o.orderId && !codes.includes(String(o.orderId))) codes.push(String(o.orderId)); });
+  customer.orderId = codes.join(", ").slice(0, 300);
+  customer.customerStatus = "Customer";
+  const st = ["Pending", "Confirmed", "Rejected"].includes(String(latest.status)) ? String(latest.status) : "Pending";
+  customer.orderStatus = st;
+  const lastComment = [...(latest.comments || [])].reverse().find(c => c.comment);
+  customer.rejectionReason = st === "Rejected" ? String(lastComment?.comment || customer.rejectionReason || "Rejected by the customer").slice(0, 300) : "";
+  customer.lastConversation = st === "Confirmed" ? `Order ${latest.orderId || ""} confirmed` : st === "Rejected" ? `Order ${latest.orderId || ""} rejected` : `Order ${latest.orderId || ""} placed`;
+  const changed = before !== JSON.stringify([customer.customerStatus, customer.orderStatus, customer.orderId, customer.rejectionReason, customer.lastConversation]);
+  if (changed && now) { const t = callerNow(); customer.date = t.date; customer.time = t.time; customer.updatedAt = cH.stamp(); }
+  return changed;
+}
+async function syncCustomerOrderStatus(order) {
+  try {
+    const customerId = String(order?.customerId || "") || customerIdFor(order || {});
+    if (!customerId || !Array.isArray(callersDb?.list)) return;
+    const customer = callersDb.list.find(c => String(c.id) === customerId);
+    if (!customer) return;
+    const mine = (orders || []).filter(o => String(o.id) !== String(order.id) && (String(o.customerId || "") || customerIdFor(o)) === customerId).concat(order);
+    applyCustomerStatus(customer, mine, true);
+    await saveCallers();
+    Promise.resolve(sheets.callerSave(callerSheetRow(customer))).then(r => { const n = sheetNote(r); if (!n.ok) console.warn("Customer order status sheet sync failed:", n.error); }).catch(e => console.warn("Customer order status sheet sync failed:", e.message));
+  } catch (e) { console.warn("Customer order status sync failed:", e.message); }
+}
+// Backfill: make every customer who has orders a "Customer" with the right order status (runs at start and before each customer sync).
+async function refreshCustomerStatuses() {
+  try {
+    if (!Array.isArray(callersDb?.list) || !Array.isArray(orders)) return 0;
+    const by = new Map();
+    for (const o of orders) { const id = String(o.customerId || "") || customerIdFor(o); if (id) { if (!by.has(id)) by.set(id, []); by.get(id).push(o); } }
+    let n = 0;
+    for (const c of callersDb.list) { const mine = by.get(String(c.id)); if (mine && applyCustomerStatus(c, mine, true)) n++; }
+    if (n) await saveCallers();
+    return n;
+  } catch (e) { console.warn("Customer status refresh failed:", e.message); return 0; }
+}
+async function saveOrderRecord(order) {
+  const saved = await saveOrderRecordCore(order);
+  await syncCustomerOrderStatus(order);
+  try { sheets.track(order); } catch (e) { console.warn("Sheet track error:", e.message); }
+  return saved;
+}
+async function saveOrderRecordCore(order) {
+  if (!supabase) {
+    const index = orders.findIndex(x => String(x.id) === String(order.id));
+    if (index >= 0) orders[index] = order; else orders.push(order);
+    return order;
+  }
+  const row = { id: order.id, order_id: order.orderId, status: order.status || "Pending", telegram_chat_id: String(order.telegramChatId || ""), business_connection_id: order.businessConnectionId || null, telegram_message_id: order.telegramMessageId || null, sent: !!order.sent, photo_url: order.photo || null, card_image_url: order.cardImage || null, comments: order.comments || [], order_data: order };
+  const { error } = await supabase.from("orders").upsert(row, { onConflict: "id" });
+  invalidateOrders();
+  if (error) throw new Error(`Supabase order save failed: ${error.message}`);
+  return order;
+}
+let ordersLoadedAt = 0, ordersLoading = null;
+const invalidateOrders = () => { ordersLoadedAt = 0; };
+// Reads are cached for 5 s and run one at a time; every write (and "Start from ZERO") invalidates the cache.
+function loadOrders() {
+  if (!supabase) return Promise.resolve();
+  if (ordersLoading) return ordersLoading;
+  if (Date.now() - ordersLoadedAt < 5000) return Promise.resolve();
+  ordersLoading = loadOrdersNow().finally(() => { ordersLoading = null; });
+  return ordersLoading;
+}
+async function loadOrdersNow() {
+  if (!supabase) return;
+  const startedAt = Date.now();
+  const { data, error } = await supabase.from("orders").select("order_data,id,status,comments,photo_url,card_image_url,business_connection_id,telegram_message_id,sent").order("id", { ascending: true });
+  if (error) { console.error("Supabase order restore failed:", error.message); return; }
+  orders = (data || []).map(row => ({ ...(row.order_data || {}), id: row.id, status: row.status, comments: row.comments || [], photo: row.photo_url || row.order_data?.photo, cardImage: row.card_image_url || row.order_data?.cardImage, businessConnectionId: row.business_connection_id, telegramMessageId: row.telegram_message_id, sent: row.sent }));
+  nextId = Math.max(0, ...orders.map(o => Number(o.id) || 0)) + 1;
+  ordersLoadedAt = startedAt;
+}
+
+// Telegram sends this object when the admin connects/disconnects the bot in Telegram Business.
+// Persisting the connection prevents a normal server restart from making the dashboard say
+// "Not connected". ADMIN_BUSINESS_CONNECTION_ID can also be supplied as a production fallback.
+let businessConnections = new Map();
+try { fs.mkdirSync(BUSINESS_STORE_DIR, { recursive: true }); } catch {}
+
+function loadBusinessConnections() {
+  try {
+    if (fs.existsSync(BUSINESS_STORE)) {
+      const saved = JSON.parse(fs.readFileSync(BUSINESS_STORE, "utf8"));
+      if (Array.isArray(saved)) {
+        for (const connection of saved) {
+          if (connection?.id && connection.is_enabled !== false) {
+            businessConnections.set(String(connection.id), connection);
           }
-          results.push({ name: r.name, ok: true, count: groups.length });
-        } catch (e) { results.push({ name: r.name, ok: false, error: tgFriendly(e) }); }
+        }
       }
-      const okN = results.filter(x => x.ok).length;
-      Object.assign(t, { lastDate: todayAddis(), lastAt: n.d + " " + n.t, lastBy: senderName, results, ok: okN > 0, error: okN ? (okN < results.length ? "Some admins / groups could not be reached." : "") : (results[0]?.error || "Nobody could be reached.") });
-      persist();
-      return { ok: okN > 0, results, error: t.error };
-    } catch (e) {
-      Object.assign(t, { lastDate: todayAddis(), lastAt: nowEth().d + " " + nowEth().t, ok: false, error: e.message, results: [] });
-      persist();
-      return { ok: false, error: e.message };
-    } finally { tgBusy = false; }
-  }
-  // every assigned sender account sends the stock once a day at ITS OWN assigned time, from its own Telegram account
-  async function tgTick() {
-    const t = db.tg;
-    if (!t.on || tgBusy) return;
-    const today = todayAddis(), now = timeAddis();
-    for (const e of t.senders || []) {
-      if (tgBusy || e.lastDate === today || now < (e.time || "08:00")) continue;
-      const acc = accFor(e.id);
-      e.lastDate = today;
-      if (!acc?.ready) { Object.assign(e, { ok: false, error: nameOfAdmin(e.id) + "'s Telegram account is not connected.", lastAt: nowEth().d + " " + nowEth().t }); persist(); continue; }
-      const r = await sendDaily({ by: { id: e.id, name: nameOfAdmin(e.id), acc } });
-      Object.assign(e, { ok: !!r.ok, error: r.ok ? (r.error || "") : (r.error || "Could not send."), lastAt: nowEth().d + " " + nowEth().t });
-      persist();
     }
+  } catch (error) {
+    console.error("Could not load Telegram Business connections:", error.message);
   }
-
-
-  // ── MATERIAL LAYOUT: two tables like the reference sheet, and the order can be changed by hold + drag ──
-  const MAT_G1 = "OAK & NORMAL MDF", MAT_G2 = "LAMINATE, PLYWOOD & OTHERS";
-  const MAT_REF = [ // [table, material, type, unit] — the arrangement of the reference Material Report
-    [MAT_G1, "OAK", "6", "244-122"], [MAT_G1, "OAK", "18", "244-122"],
-    [MAT_G1, "NORMAL MDF", "6", "244-122"], [MAT_G1, "NORMAL MDF", "10", "244-122"], [MAT_G1, "NORMAL MDF", "12", "244-122"], [MAT_G1, "NORMAL MDF", "18", "244-122"],
-    [MAT_G2, "LAMINATE", "18 GRAY", "244-122"], [MAT_G2, "LAMINATE", "18 RED/WOOD", "244-122"],
-    [MAT_G2, "plywood/suf", "6", "244-122"], [MAT_G2, "plywood/suf", "8", "244-122"], [MAT_G2, "plywood/suf", "12", "244-122"],
-    [MAT_G2, "chipped", "12", "244-122"], [MAT_G2, "LAMINATE", "6 white", "244-122"],
-    [MAT_G2, "LAMINATE WHITE/cream", "18", "244-122"], [MAT_G2, "LAMINATE WHITE", "18", "244-123"],
-    [MAT_G2, "AUSTRALIA", "4 BY 5", "4 BY 5"], [MAT_G2, "AUSTRALIA", "7 BY 5", "7 BY 5"],
-    [MAT_G2, "MORALE", "4 BY 5", "4 BY 5"], [MAT_G2, "MORALE", "7 BY 5", "7 BY 5"],
-    [MAT_G2, "uv", "black 18", "244-122"]
-  ];
-  // The tables in display order (saved order first, then any other table found on a material).
-  function groupsOrdered() {
-    const out = [];
-    for (const g of (db.matGroups || [])) if (g && !out.includes(g)) out.push(g);
-    for (const m of db.materials) { const g = m.group || "MATERIAL"; if (!out.includes(g)) out.push(g); }
-    return out;
+}
+function saveBusinessConnections() {
+  try {
+    const enabled = [...businessConnections.values()].filter(c => c?.is_enabled !== false);
+    fs.writeFileSync(BUSINESS_STORE, JSON.stringify(enabled, null, 2));
+  } catch (error) {
+    console.error("Could not persist Telegram Business connections:", error.message);
   }
-  // Materials as shown: table by table, inside a table in the saved (dragged) order.
-  function orderedMaterials() {
-    const gs = groupsOrdered();
-    return db.materials.map((m, i) => ({ m, i, g: gs.indexOf(m.group || "MATERIAL") })).sort((a, b) => a.g - b.g || a.i - b.i).map(o => o.m);
-  }
-  // Runs once (and again after "Start from 0"): puts the reference materials on top in the two tables; every other material stays, after them.
-  function layoutMaterials() {
-    if (db.matLayout === 2) return;
-    const key = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase(), have = new Map();
-    for (const m of db.materials) have.set(key(m.name, m.type), m);
-    const first = [], n = nowEth();
-    for (const [g, name, type, unit] of MAT_REF) {
-      let m = have.get(key(name, type));
-      if (!m) { m = { id: uid(), name, type, unit, group: g, qty: 0, min: 0, created: { ...n, by: "Reference layout" } }; db.materials.push(m); }
-      m.group = g; first.push(m);
-    }
-    const rest = db.materials.filter(m => !first.includes(m));
-    for (const m of rest) if (!m.group || m.group === "MATERIAL") m.group = MAT_G2;
-    db.materials = [...first, ...rest];
-    db.matGroups = [MAT_G1, MAT_G2];
-    db.matLayout = 2;
-    persist();
-  }
+}
+loadBusinessConnections();
 
-  // ── routes ─────────────────────────────────────────────────────────────────────────────────
-  const router = express.Router();
-  router.use(requireAccess);
-  router.use((req, res, next) => hasPerm(req.actor, "reports") ? next() : res.status(403).json({ ok: false, error: "Reports are only for admins the main admin gave the Reports section." }));
-  const ownerOnly = (req, res, next) => req.actor?.role === "owner" ? next() : res.status(403).json({ ok: false, error: "Only a main admin can do this." });
-  router.use(express.json({ limit: "200kb" }));
-  // v174: Reports is VIEW-ONLY for products and materials. Creating, editing and deleting happens ONLY in Workshop; these handlers are kept below (collected in OPS)
-  // and are reachable only through the Workshop module (wsOp). The old Reports URLs answer 403.
-  const OPS = {};
-  const wr = { post: (p, ...fns) => { OPS[p] = fns[fns.length - 1]; } };
-  router.use((req, res, next) => (req.method !== "GET" && /^\/(product|material)\//.test(req.path)) ? res.status(403).json({ ok: false, error: "Reports is view-only. Do this in the Workshop section." }) : next());
+// Customers who have chatted with the admin account (learned from business_message updates).
+// Lets the admin pick the recipient by name/@username instead of typing a numeric chat ID.
+const customers = new Map();
+const CUSTOMER_STORE = path.join(BUSINESS_STORE_DIR, "customers.json");
+try { for (const c of JSON.parse(fs.readFileSync(CUSTOMER_STORE, "utf8"))) customers.set(String(c.id), c); } catch {}
+async function persistCustomers() {
+  const list = [...customers.values()];
+  try { fs.writeFileSync(CUSTOMER_STORE, JSON.stringify(list)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "telegram_customers", value: list, updated_at: new Date().toISOString() }); } catch {} }
+}
+async function restoreCustomers() {
+  if (!supabase) return;
+  try {
+    const { data } = await supabase.from("app_settings").select("value").eq("key", "telegram_customers").maybeSingle();
+    if (Array.isArray(data?.value)) for (const c of data.value) if (c?.id && !customers.has(String(c.id))) customers.set(String(c.id), c);
+  } catch {}
+}
+function rememberCustomer(chat = {}, from = {}, businessConnectionId = "") {
+  if (!chat.id || String(from.id ?? chat.id) !== String(chat.id)) return;
+  const name = [chat.first_name || from.first_name, chat.last_name || from.last_name].filter(Boolean).join(" ");
+  const previous = customers.get(String(chat.id)) || {};
+  customers.set(String(chat.id), {
+    ...previous,
+    id: String(chat.id),
+    name: name || previous.name || "",
+    username: chat.username || from.username || previous.username || "",
+    // A customer belongs to the Business connection that delivered their chat update.
+    // Reusing a different connection can make Telegram return BUSINESS_PEER_INVALID,
+    // even when the numeric customer chat ID itself is correct.
+    businessConnectionId: String(businessConnectionId || previous.businessConnectionId || ""),
+    at: new Date().toISOString()
+  });
+  persistCustomers();
+}
 
-  router.get("/state", (req, res) => res.json({ ok: true, ...view() }));
+// v91: the customer's Telegram NAME (profile name seen by the bot) for an order, plus the Customer ID from Customers Data.
+function telegramNameFor(o) {
+  // v135: ALWAYS the customer's real Telegram account name (the profile name the bot saw), never the name typed in Customers Data.
+  const label = t => t ? (t.name || [t.first_name, t.last_name].filter(Boolean).join(" ") || (t.username ? "@" + t.username : "")) : "";
+  let n = label(customers.get(String(o.telegramChatId || "")));
+  if (n) return n;
+  const rec = (callersDb.list || []).find(c => c.id === (String(o.customerId || "") || customerIdFor(o)));
+  if (rec) { n = label(tgOfCaller(rec)); if (n) return n; }
+  const un = String(o.telegramUsername || "").replace(/^@/, "").toLowerCase();
+  if (un) for (const c of customers.values()) if (String(c.username || "").toLowerCase() === un) { n = label(c); if (n) return n; }
+  return un ? "@" + un : "";
+}
+function customerIdFor(o) {
+  if (o.customerId) return String(o.customerId);
+  const list = callersDb.list || [];
+  const byTg = o.telegramChatId ? list.find(c => c.telegramId && c.telegramId === String(o.telegramChatId)) : null;
+  if (byTg) return byTg.id;
+  const pk = typeof phoneKey === "function" ? phoneKey(o.phone || o.telegramPhone) : "";
+  const un = String(o.telegramUsername || "").replace(/^@/, "").toLowerCase();
+  const hit = list.find(c => (pk.length >= 7 && (phoneKey(c.phone) === pk || phoneKey(c.additionalPhone) === pk)) || (un && String(c.username || "").replace(/^@/, "").toLowerCase() === un));
+  return hit ? hit.id : "";
+}
+sheets.setNameResolver(o => ({ name: telegramNameFor(o), customerId: customerIdFor(o) }));
 
-  // WORKFLOW → STOCK → SOLD  (same columns as the Google Sheet: Prod Id · Model · Description · Order Type · Priority · Start Date · Status · Finished · Delivery · Sales Name · Location · Changes · Correction)
-  const CATS = ["SHOE SHELF", "OTHERS", "GADGETS"];
-  const lab = p => [p.ptype, p.model, p.desc].filter(Boolean).join(" ") || p.code;
-  const up = (v, n) => clip(v, n).toUpperCase();
-  const orderTypeOf = v => /CUS|ORD/i.test(String(v || "")) ? "ORDER" : "READYMADE"; // READYMADE or ORDER
-  const priorityOf2 = v => { const x = String(v || "").toUpperCase(); return x.startsWith("H") ? "HIGH" : x.startsWith("M") ? "MEDIUM" : "LOW"; };
-  const dateOk = v => !v || /^\d{4}\/\d{2}\/\d{2}$/.test(v);
-  const timeOk = v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(v || ""));
-  const hhmm = v => { const m = /^(\d{1,2}):(\d{2})/.exec(String(v || "")); return m ? String(m[1]).padStart(2, "0") + ":" + m[2] : ""; };
-  const soldTypeIn = v => { const x = String(v || "").toUpperCase().replace(/\s/g, ""); return x === "S.TODAY" || x === "STODAY" || x === "TODAY" ? "S.TODAY" : x === "SOLD" ? "SOLD" : ""; }; // "" = automatic
-  function readProduct(b) {
-    const ptype = clip(String(b.ptype || "").toLowerCase() === "other" ? b.ptypeOther : b.ptype, 40);
-    return { ptype, code: clip(b.code, 30), sno: clip(b.sno, 20), model: up(b.model, 40), desc: clip(b.desc, 160), orderType: orderTypeOf(b.orderType), priority: priorityOf2(b.priority),
-      category: up(b.category, 30) || "OTHERS", handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), salesName: clip(b.salesName, 80), location: clip(b.location, 80), deliveryDate: clip(b.deliveryDate, 10), changes: clip(b.changes, 200), note: clip(b.note, 300) };
-  }
-  const readErr = f => (!f.model && !f.desc && !f.ptype) ? "Write the model or the description." : !dateOk(f.deliveryDate) ? "The delivery date must look like 2019/03/25 (year/month/day, Ethiopian)." : "";
-  // v160: products are NOT added in Reports any more — they are added only from the Workshop section (wsAddProduct below).
-  wr.post("/product/edit", async (req, res) => {
-    const b = req.body || {}, p = findP(b.id);
-    if (!p) return fail(res, "Product not found.");
-    const f = readProduct(b), err = readErr(f);
-    if (err) return fail(res, err);
-    if (!f.code) return fail(res, "The Prod ID is needed.");
-    if (codeTaken(f.code, p.id)) return fail(res, `Prod ID “${f.code}” is already used.`);
-    let newPhoto = null, oldPhoto = p.photo || "";
-    if (b.photo) { try { newPhoto = await savePhoto(b.photo); } catch (e) { return fail(res, e.message); } }
-    else if (b.removePhoto) newPhoto = "";
-    const changed = p.code !== f.code || lab(p) !== lab({ ...f }) || (p.handle || "") !== f.handle;
-    Object.assign(p, f);
-    if (newPhoto !== null) { p.photo = newPhoto; hist(p, newPhoto ? "Photo changed" : "Photo removed", req); await dropPhoto(oldPhoto); }
-    if (changed) hist(p, "Edited", req);
-    audit("Report: product edited", `${p.code} ${lab(p)}`, req.actor);
-    done(res, "✅ Saved.");
-  });
-  wr.post("/product/finish", (req, res) => { // Workflow → In Stock
-    const p = findP(req.body?.id);
-    if (!p) return fail(res, "Product not found.");
-    if (p.status !== "workflow") return fail(res, "This product is not in Workflow.");
-    p.status = "stock"; p.finished = stamp(req); hist(p, "Finished → In Stock", req);
-    audit("Report: product finished", `${p.code} → In Stock`, req.actor);
-    done(res, `✅ ${p.code} is finished and now IN STOCK.`);
-  });
-  wr.post("/product/sold", (req, res) => { // In Stock → Sold (Ethiopian date + time recorded)
-    const b = req.body || {}, p = findP(b.id);
-    if (!p) return fail(res, "Product not found.");
-    if (p.status !== "stock") return fail(res, "Only a product that is IN STOCK can be sold.");
-    // Sales info = the REAL salesperson of the mini app (the Sales Name; empty = the admin who presses Sold)
-    const seller = clip(b.salesName, 80) || p.salesName || who(req);
-    p.salesName = seller;
-    const st = stamp(req);
-    if (b.d) { if (!dateOk(b.d)) return fail(res, "The sold date must look like 2019/03/25 (year/month/day, Ethiopian)."); st.d = b.d; }
-    if (b.t) { if (!timeOk(b.t)) return fail(res, "The sold time must look like 14:30 (24-hour Addis Ababa clock)."); st.t = hhmm(b.t); }
-    p.status = "sold"; p.sold = { ...st, salesName: seller, salesInfo: seller, note: clip(b.note, 300) };
-    const sty = soldTypeIn(b.soldType); if (sty) p.sold.type = sty; // empty = automatic (S.TODAY on the sale day, SOLD afterwards)
-    hist(p, "Sold", req, sty ? { soldType: sty } : {});
-    audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
-    done(res, `💰 ${p.code} sold — ${p.sold.d} · ${ethClock(p.sold.t)}.`);
-  });
-  wr.post("/product/restock", (req, res) => {
-    const p = findP(req.body?.id);
-    if (!p) return fail(res, "Product not found.");
-    if (p.status !== "sold") return fail(res, "Only a Sold Out product can be restocked.");
-    const previous = p.sold ? { ...p.sold } : null;
-    p.status = "stock"; delete p.sold;
-    hist(p, "Restocked → In Stock", req, { previousSale: previous ? previous.d + " " + previous.t : "" });
-    audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
-    done(res, `♻️ ${p.code} restocked and returned to In Stock.`);
-  });
-
-  wr.post("/product/times", (req, res) => { // adjust the Ethiopian dates + clock times (Started · Finished/jumped to stock · Sold) and the Sold type
-    const b = req.body || {}, p = findP(b.id);
-    if (!p) return fail(res, "Product not found.");
-    const parts = [["added", "Start"], ["finished", "Finished (moved to Stock)"], ["sold", "Sold"]], applied = [];
-    for (const [k, label] of parts) {
-      if (!p[k]) continue;
-      const d = String(b[k + "D"] ?? "").trim(), t = String(b[k + "T"] ?? "").trim();
-      if (d && !dateOk(d)) return fail(res, `${label} date must look like 2019/03/25 (year/month/day, Ethiopian).`);
-      if (t && !timeOk(t)) return fail(res, `${label} time must look like 14:30 (24-hour Addis Ababa clock).`);
-      const nd = d || p[k].d, nt = t ? hhmm(t) : p[k].t;
-      if (nd !== p[k].d || nt !== p[k].t) { applied.push(`${label} ${p[k].d} ${p[k].t} → ${nd} ${nt}`); p[k] = { ...p[k], d: nd, t: nt }; }
-    }
-    if (p.sold) {
-      const sty = soldTypeIn(b.soldType), old = p.sold.type || "";
-      if (sty !== old) { if (sty) p.sold.type = sty; else delete p.sold.type; applied.push(`Sold type ${old || "auto"} → ${sty || "auto"}`); }
-    }
-    if (!applied.length) return done(res, "Nothing changed.");
-    hist(p, "Dates / times adjusted", req, { change: applied.join(" · ").slice(0, 300) });
-    audit("Report: dates adjusted", `${p.code} ${applied.join(" · ")}`, req.actor);
-    done(res, `🕒 ${p.code}: dates and times saved.`);
-  });
-  wr.post("/product/undo", (req, res) => { // fix a mistake: Sold → In Stock, In Stock → Workflow
-    const p = findP(req.body?.id);
-    if (!p) return fail(res, "Product not found.");
-    if (p.status === "sold") { p.status = "stock"; delete p.sold; hist(p, "Sale cancelled → In Stock", req); }
-    else if (p.status === "stock") { p.status = "workflow"; delete p.finished; hist(p, "Moved back → Workflow", req); }
-    else return fail(res, "Nothing to undo.");
-    audit("Report: product undo", `${p.code} → ${p.status}`, req.actor);
-    done(res, `↩ ${p.code} moved back to ${p.status === "stock" ? "In Stock" : "Workflow"}.`);
-  });
-  wr.post("/product/delete", (req, res) => {
-    const p = findP(req.body?.id);
-    if (!p) return fail(res, "Product not found.");
-    db.products = db.products.filter(x => x !== p);
-    if (typeof workshopDeleteProducts === "function") workshopDeleteProducts([p.id]);
-    dropPhoto(p.photo).catch(() => {});
-    audit("Report: product deleted", `${p.code} ${lab(p)}`, req.actor);
-    done(res, `🗑 ${p.code} deleted.`);
-  });
-
-  // MATERIAL: new · add · cut   (Material · Type · Unit · Available · Opening stock · daily use · Total used · Note)
-  const matKey = (n, t) => (clip(n, 100) + "|" + clip(t, 30)).toLowerCase();
-  const matName = m => m.name + (m.type ? " " + m.type : "");
-  const H = {}; // v162: material ADD / CUT exist only for the Workshop section (no Reports route any more); same materials, same log
-  H.add = (req, res) => {
-    const b = req.body || {}, name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || (groupsOrdered()[1] || groupsOrdered()[0] || MAT_G2);
-    if (!name) return fail(res, "Write the material name.");
-    if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists. Use ➕ Add on it.`);
-    const qty = (b.qty === "" || b.qty == null) ? 0 : num(b.qty), min = (b.min === "" || b.min == null) ? 0 : num(b.min);
-    if (Number.isNaN(qty) || qty < 0) return fail(res, "The quantity must be a number (0 or more).");
-    if (Number.isNaN(min) || min < 0) return fail(res, "The low-stock alert must be a number.");
-    const m = { id: uid(), name, type, unit, group, qty, min, created: stamp(req) };
-    db.materials.push(m);
-    addLog(req, m, "new", qty, qty, clip(b.note, 200) || "New material");
-    audit("Report: material added", `${matName(m)} ${qty} ${unit}`, req.actor);
-    done(res, `✅ ${matName(m)} added.`);
-};
-  H.move = (req, res) => {
-    const b = req.body || {}, m = findM(b.id), type = b.type === "cut" ? "cut" : "add";
-    if (!m) return fail(res, "Material not found.");
-    const qty = num(b.qty);
-    if (Number.isNaN(qty) || qty <= 0) return fail(res, "Write a quantity bigger than 0.");
-    if (type === "cut" && qty > m.qty) return fail(res, `Only ${m.qty} left of ${matName(m)}. You cannot cut ${qty}.`);
-    m.qty = Math.round((type === "cut" ? m.qty - qty : m.qty + qty) * 1000) / 1000;
-    addLog(req, m, type, qty, m.qty, b.note);
-    audit("Report: material " + type, `${matName(m)} ${qty} → ${m.qty}`, req.actor);
-    done(res, type === "cut" ? `✂️ Cut ${qty} of ${matName(m)}. Left: ${m.qty}.` : `➕ Added ${qty} to ${matName(m)}. Now: ${m.qty}.`);
-};
-  // STOCK EDIT (correction): wrong quantity typed by mistake → set the real quantity. Recorded as a "fix" movement (signed difference) with the reason.
-  wr.post("/material/correct", (req, res) => {
-    const b = req.body || {}, m = findM(b.id);
-    if (!m) return fail(res, "Material not found.");
-    const to = num(b.qty);
-    if (b.qty === "" || b.qty == null || Number.isNaN(to) || to < 0) return fail(res, "Write the correct quantity (0 or more).");
-    const old = m.qty, diff = Math.round((to - old) * 1000) / 1000;
-    if (diff === 0) return fail(res, `The quantity is already ${old}. Nothing to correct.`);
-    m.qty = to;
-    addLog(req, m, "fix", diff, m.qty, clip(b.note, 160) ? `Correction ${old} → ${to}: ${clip(b.note, 160)}` : `Correction ${old} → ${to}`);
-    audit("Report: material corrected", `${matName(m)} ${old} → ${to}`, req.actor);
-    done(res, `✏️ ${matName(m)} corrected: ${old} → ${to}.`);
-  });
-  wr.post("/material/edit", (req, res) => {
-    const b = req.body || {}, m = findM(b.id);
-    if (!m) return fail(res, "Material not found.");
-    const name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || "MATERIAL", min = (b.min === "" || b.min == null) ? 0 : num(b.min);
-    if (!name) return fail(res, "Write the material name.");
-    if (Number.isNaN(min) || min < 0) return fail(res, "The low-stock alert must be a number.");
-    if (db.materials.some(x => x.id !== m.id && matKey(x.name, x.type) === matKey(name, type))) return fail(res, `“${name} ${type}” already exists.`);
-    Object.assign(m, { name, type, unit, group, min });
-    db.log.forEach(l => { if (l.matId === m.id) { l.material = name; l.mtype = type; l.unit = unit; } });
-    done(res, "✅ Saved.");
-  });
-  // HOLD + DRAG: the app sends the new arrangement — the tables in order and, inside each table, the materials in order.
-  wr.post("/material/arrange", (req, res) => {
-    const b = req.body || {}, list = Array.isArray(b.order) ? b.order : [], gl = Array.isArray(b.groups) ? b.groups : [];
-    const byId = new Map(db.materials.map(m => [m.id, m])), seen = new Set(), next = [];
-    for (const it of list) {
-      const m = it && byId.get(String(it.id || ""));
-      if (!m || seen.has(m.id)) continue;
-      seen.add(m.id);
-      const g = up(it.group, 30); if (g) m.group = g;
-      next.push(m);
-    }
-    for (const m of db.materials) if (!seen.has(m.id)) next.push(m); // anything the app did not know about keeps its place at the end
-    db.materials = next;
-    const gs = []; for (const g of gl.map(x => up(x, 30)).filter(Boolean)) if (!gs.includes(g)) gs.push(g);
-    db.matGroups = gs;
-    audit("Report: materials rearranged", `${next.length} material(s)`, req.actor);
-    done(res, "✅ Arrangement saved.");
-  });
-  wr.post("/material/delete", (req, res) => {
-    const m = findM(req.body?.id);
-    if (!m) return fail(res, "Material not found.");
-    db.materials = db.materials.filter(x => x !== m);
-    audit("Report: material deleted", matName(m), req.actor);
-    done(res, `🗑 ${matName(m)} deleted. Its movements stay in the log.`);
-  });
-
-  // DAILY STOCK → TELEGRAM (main admin only)
-  router.post("/tg/config", ownerOnly, async (req, res) => {
-    const b = req.body || {}, t = db.tg, on = b.on === true || b.on === "true";
-    const okTime = v => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || ""));
-    if (Array.isArray(b.senders)) { // every admin account that should send the stock every day, each at its own time
-      const known = new Set(senders().map(x => x.id)), out = [];
-      for (const x of b.senders) { const id = String(x?.id || ""); if (!known.has(id) || out.some(o => o.id === id)) continue; const old = (t.senders || []).find(o => o.id === id); out.push({ id, time: okTime(x.time) ? String(x.time) : (old?.time || "08:00"), lastDate: old?.lastDate || "", lastAt: old?.lastAt || "", ok: old?.ok, error: old?.error || "" }); }
-      t.senders = out; t.sendAs = out[0]?.id || ""; t.time = out[0]?.time || t.time || "08:00";
-    }
-    if (on && !(t.senders || []).length) return fail(res, "Tick at least one admin account that sends the stock every day.");
-    if (b.to !== undefined) { const to = cleanTo(b.to); t.to = to && to.length ? to : null; }
-    if (b.targets !== undefined) t.targets = cleanTargets(b.targets);
-    if (b.dm !== undefined) t.dm = b.dm === true || b.dm === "true";
-    t.on = on; persist();
-    const off = (t.senders || []).filter(e => !accFor(e.id)?.ready).map(e => nameOfAdmin(e.id));
-    done(res, on ? `🟢 Daily stock is ON — ${(t.senders || []).map(e => nameOfAdmin(e.id) + " at " + e.time).join(" · ")} (Addis Ababa clock), each from their own Telegram account.` + (off.length ? ` ⚠️ Not connected yet: ${off.join(", ")}.` : "") : "⚪ Daily stock is OFF.");
-  });
-  router.post("/tg/to", ownerOnly, (req, res) => { // choose which admins receive the stock message
-    if (req.body?.sendAs) { const er = setSender(req, req.body.sendAs); if (er) return fail(res, er); }
-    const to = cleanTo(req.body?.to); db.tg.to = to && to.length ? to : null;
-    if (req.body?.targets !== undefined) db.tg.targets = cleanTargets(req.body.targets);
-    if (req.body?.dm !== undefined) db.tg.dm = req.body.dm === true || req.body.dm === "true";
-    persist();
-    done(res, (db.tg.dm === false ? "✅ Not sent privately to admins." : db.tg.to ? `✅ The stock goes to ${recipients().length} selected admin(s).` : "✅ The stock goes to every admin.") + (db.tg.targets.length ? ` + ${db.tg.targets.length} group(s).` : ""));
-  });
-  // The groups / channels the person's OWN Telegram account is in (so a private group can be picked without typing anything) + the topics of a forum group
-  router.get("/tg/groups", async (req, res) => {
+async function businessConnectionForCustomer(chatId) {
+  const customer = customers.get(String(chatId));
+  const customerConnectionId = customer?.businessConnectionId;
+  if (customerConnectionId) {
+    const cached = businessConnections.get(String(customerConnectionId));
+    if (cached && isUsable(cached)) return cached;
+    // Refresh the exact connection associated with this customer rather than accidentally
+    // sending through another connected Business account.
     try {
-      const acc = accFor(req.actor?.telegramId);
-      if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account." });
-      const ds = await acc.client.getDialogs({ limit: 300 });
-      const list = ds.filter(d => d.isGroup || d.isChannel).map(d => ({ id: String(d.id), title: clip(d.title || d.name, 80), username: d.entity?.username || "", forum: !!d.entity?.forum, mega: !!(d.entity?.megagroup || d.entity?.forum), broadcast: !!d.entity?.broadcast })).filter(x => /^-?\d+$/.test(x.id));
-      res.json({ ok: true, groups: list });
-    } catch (e) { res.json({ ok: false, error: tgFriendly(e) }); }
-  });
-  router.get("/tg/topics", async (req, res) => {
-    try {
-      const acc = accFor(req.actor?.telegramId);
-      if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected." });
-      const g = parseTgLink(String(req.query.chat || "")); if (!g) return res.json({ ok: false, error: "Unknown group." });
-      const { Api } = require("telegram");
-      const ent = await resolveTarget(acc, g);
-      const r = await acc.client.invoke(new Api.channels.GetForumTopics({ channel: ent, offsetDate: 0, offsetId: 0, offsetTopic: 0, limit: 100 }));
-      res.json({ ok: true, topics: (r.topics || []).filter(t => t.className === "ForumTopic").map(t => ({ id: Number(t.id), title: clip(t.title, 80) })) });
-    } catch (e) { res.json({ ok: false, error: /CHANNEL_FORUM_MISSING|not a forum/i.test(String(e?.errorMessage || e?.message)) ? "This group has no topics." : tgFriendly(e) }); }
-  });
-  // SEND NOW — any admin who may open Reports (main admin, assigned main admin or assigned admin) sends FROM HIS OWN Telegram account.
-  router.post("/tg/send", async (req, res) => {
-    const me = String(req.actor?.telegramId || "");
-    if (!me) return res.json({ ok: false, error: "Open the app from Telegram so your own account can be used.", ...view() });
-    const acc = accFor(me);
-    if (!acc?.ready) return res.json({ ok: false, error: "Your own Telegram account is not connected. Connect it in Settings → Connect my Telegram account, then press Send now again.", ...view() });
-    const b = req.body || {};
-    const r = await sendDaily({ by: { id: me, name: clip(req.actor?.name, 60) || nameOfAdmin(me), acc }, to: Array.isArray(b.to) ? (cleanTo(b.to) || []) : undefined, targets: b.targets !== undefined ? cleanTargets(b.targets) : undefined, dm: b.dm !== undefined ? (b.dm === true || b.dm === "true") : undefined });
-    res.json({ ...(r.ok ? { ok: true, message: "✅ Stock sent from your Telegram account." + (r.error ? " " + r.error : "") } : { ok: false, error: r.error || "Could not send." }), ...view() });
-  });
+      const fresh = await telegram("getBusinessConnection", { business_connection_id: String(customerConnectionId) });
+      if (isUsable(fresh)) {
+        businessConnections.set(String(fresh.id || customerConnectionId), fresh);
+        await persistBusinessConnections();
+        return fresh;
+      }
+    } catch (error) {
+      console.error("Could not refresh customer's Telegram Business connection:", error.message);
+    }
+  }
+  return activeBusinessConnection();
+}
+// Accepts "123456789", " 123 456 789 ", "ID: 123456789", "tg://user?id=123456789" and strips
+// invisible characters (RTL marks, zero-width spaces) that Telegram clients add when copying.
+function sanitizeChatId(input = "") {
+  let raw = String(input).normalize("NFKC").replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "").trim();
+  if (!raw) return "";
+  const fromLink = raw.match(/[?&]id=(-?\d+)/);
+  if (fromLink) return fromLink[1];
+  if (/^-?\d+$/.test(raw)) return raw;
+  const compact = raw.replace(/[\s,._]/g, "");
+  if (/^-?\d{5,}$/.test(compact)) return compact;
+  const labelled = raw.match(/(?:id|chat)\D{0,6}(-?\d{5,})/i);
+  return labelled ? labelled[1] : "";
+}
+function resolveChatId(input = "", username = "") {
+  const numeric = sanitizeChatId(input);
+  if (numeric) return numeric;
+  const handle = String(input || username).trim().replace(/^@/, "").replace(/^https?:\/\/t\.me\//i, "").toLowerCase();
+  if (!handle) return "";
+  return [...customers.values()].find(c => (c.username || "").toLowerCase() === handle)?.id || "";
+}
+function isAdminOwnId(chatId) {
+  const id = String(chatId);
+  return [...businessConnections.values()].some(c => String(c.user?.id || "") === id || String(c.user_chat_id || "") === id);
+}
+function candidateConnections(chatId, primary) {
+  const list = [];
+  const add = c => { if (c?.id && !list.some(x => String(x.id) === String(c.id))) list.push(c); };
+  add(primary);
+  add(businessConnections.get(String(customers.get(String(chatId))?.businessConnectionId || "")));
+  for (const c of businessConnections.values()) if (isUsable(c)) add(c);
+  if (BUSINESS_CONNECTION_ID) add({ id: BUSINESS_CONNECTION_ID, is_enabled: true, rights: { can_reply: true }, configured: true });
+  return list;
+}
+// ── App admins: people the owner assigns to use the app ──────────────────────────
+// Owner = whoever holds ADMIN_SETUP_KEY (or a Telegram ID in OWNER_TELEGRAM_IDS). The owner assigns
+// admins by Telegram ID at /setup.html. Until at least one admin/owner ID exists the app stays open.
+const APP_ADMINS_FILE = path.join(__dirname, "data", "app-admins.json");
+let appAdmins = []; // [{ telegramId, name, accountId }]
+// Accept the explicit main-admin variables and the historical singular variable.
+// For compatibility, a legacy ADMIN_TELEGRAM_IDS value containing exactly ONE ID
+// is treated as the owner; a multi-ID legacy allowlist is never promoted wholesale.
+function numericTelegramIds(...values) {
+  return [...new Set(values.flatMap(v => String(v || "").split(/[;,\s]+/)).map(v => v.replace(/\D/g, "")).filter(Boolean))];
+}
+const LEGACY_ADMIN_IDS = numericTelegramIds(process.env.ADMIN_TELEGRAM_IDS);
+// ENV_OWNER_IDS = the original main admin(s) from Render. They can never be removed from inside the app.
+const ENV_OWNER_IDS = numericTelegramIds(
+  process.env.OWNER_TELEGRAM_IDS,
+  process.env.MAIN_ADMIN_TELEGRAM_ID,
+  process.env.ADMIN_TELEGRAM_ID,
+  LEGACY_ADMIN_IDS.length === 1 ? LEGACY_ADMIN_IDS[0] : ""
+);
+// OWNER_IDS = every main admin: the original ones + the extra main admins assigned inside the app (appAdmins[].main).
+// It is changed IN PLACE so stories.js / greetings.js / ratings.js (which hold this same array) see changes at once.
+const OWNER_IDS = [...ENV_OWNER_IDS];
+function syncOwners() {
+  const extra = appAdmins.filter(a => a && a.main && a.telegramId).map(a => String(a.telegramId));
+  OWNER_IDS.length = 0;
+  OWNER_IDS.push(...new Set([...ENV_OWNER_IDS, ...extra]));
+}
+async function loadAppAdmins() {
+  let list = [];
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "app_admins").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
+  if (!list.length) { try { list = JSON.parse(fs.readFileSync(APP_ADMINS_FILE, "utf8")); } catch {} }
+  appAdmins = list.filter(a => a?.telegramId).map(a => ({ ...a, accountId: a.accountId && String(a.accountId).startsWith("u" + String(a.telegramId)) ? a.accountId : "" }));
+  syncOwners();
+}
+async function saveAppAdmins() {
+  syncOwners();
+  try { fs.mkdirSync(path.dirname(APP_ADMINS_FILE), { recursive: true }); fs.writeFileSync(APP_ADMINS_FILE, JSON.stringify(appAdmins)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "app_admins", value: appAdmins, updated_at: new Date().toISOString() }); } catch {} }
+}
+function verifyInitData(initData) {
+  try {
+    if (!initData || !BOT_TOKEN) return null;
+    const p = new URLSearchParams(initData); const hash = p.get("hash"); if (!hash) return null; p.delete("hash");
+    const str = [...p.entries()].map(([k, v]) => `${k}=${v}`).sort().join("\n");
+    const secret = crypto.createHmac("sha256", "WebAppData").update(BOT_TOKEN).digest();
+    const calc = crypto.createHmac("sha256", secret).update(str).digest("hex");
+    if (calc.length !== hash.length || !crypto.timingSafeEqual(Buffer.from(calc), Buffer.from(hash))) return null;
+    if (Date.now() / 1000 - Number(p.get("auth_date") || 0) > 7 * 86400) return null;
+    return JSON.parse(p.get("user") || "null");
+  } catch { return null; }
+}
+// Fail closed: the app is never public. Only OWNER_TELEGRAM_IDS and appAdmins may enter.
+const accessEnforced = () => true;
+function identify(req) {
+  const setupKey = String(process.env.ADMIN_SETUP_KEY || "");
+  const given = String(req.get("x-setup-key") || "");
+  if (setupKey && given && given.length === setupKey.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(setupKey))) return { role: "owner", name: "Owner", telegramId: "", accountId: "" };
+  const user = verifyInitData(req.get("x-telegram-init-data"));
+  if (!user) return { telegramId: "" };
+  const id = String(user.id), name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || id;
+  const a = appAdmins.find(x => String(x.telegramId) === id);
+  if (OWNER_IDS.includes(id)) return { role: "owner", name: (a && a.name) || name, telegramId: id, accountId: (a && a.accountId) || "", primary: ENV_OWNER_IDS.includes(id) };
+  return a ? { role: "admin", viewer: !!a.viewer, name: a.name || name, telegramId: id, accountId: a.accountId || "", perms: permsOf(a) } : { telegramId: id, name };
+}
+// ── v120 SECTION ACCESS: the main admin chooses which sections each assigned admin may open ──
+// Existing admins (no list saved yet) keep what they had before: everything except Reports.
+const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop", "material", "stockview", "sheet"];
+const DEFAULT_PERMS = ["orders", "customers", "greeting", "rating", "stories", "stockview", "sheet"];
+function permsOf(rec) { // v184: "stockview" + "sheet" are new; admins saved before keep them until the main admin saves their access again
+  if (!Array.isArray(rec?.perms)) return DEFAULT_PERMS.slice();
+  const list = ALL_PERMS.filter(p => rec.perms.includes(p));
+  return Number(rec.permsVer) >= 2 ? list : [...new Set([...list, "stockview", "sheet"])];
+}
+function cleanPerms(v) { const arr = Array.isArray(v) ? v : String(v || "").split(","); return ALL_PERMS.filter(p => arr.map(x => String(x).trim()).includes(p)); }
+// which section an API path belongs to (null = open to every assigned admin)
+function permNeeded(url) {
+  const p = String(url || "").split("?")[0];
+  if (p.startsWith("/api/reports")) return ["reports"];
+  if (p === "/api/stock") return ["stockview", "reports", "workshop"]; // v184 Stock view
+  if (p.startsWith("/api/workshop")) return ["workshop"];
+  if (p.startsWith("/api/material")) return ["material", "workshop"]; // v177: the Material section (admins who already had Workshop keep access)
+  if (p.startsWith("/api/ratings")) return ["rating"];
+  if (p.startsWith("/api/greetings")) return ["greeting"];
+  if (p.startsWith("/api/stories")) return ["stories"];
+  if (p.startsWith("/api/callers") || p.startsWith("/api/customers")) return ["customers", "orders"];
+  if (p.startsWith("/api/orders")) return ["orders"];
+  return null;
+}
+function hasPerm(actor, key) { return actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key); }
+function requireAccess(req, res, next) {
+  if (!accessEnforced()) { req.actor = { role: "open", name: "", telegramId: "", accountId: "" }; return next(); }
+  const a = identify(req);
+  if (!a.role) return res.status(401).json({ ok: false, code: "UNAUTHORISED", error: "You are not an assigned admin. Send the owner your Telegram ID" + (a.telegramId ? `: ${a.telegramId}` : ".") });
+  // v118 VIEW-ONLY admins: they may look, never change. Enforced here for EVERY protected route (orders, customers, stories, greetings, ratings, sheets…).
+  if (a.viewer && !["GET", "HEAD", "OPTIONS"].includes(req.method)) return res.status(403).json({ ok: false, code: "VIEW_ONLY", error: "👁 You are a view-only admin: you can watch, but not change anything." });
+  if (a.role === "admin") {
+    const need = permNeeded(req.originalUrl);
+    if (need && !need.some(k => (a.perms || []).includes(k))) return res.status(403).json({ ok: false, code: "NO_PERMISSION", error: "🔒 The main admin has not given you access to this section. Ask them to turn it on in Manage Admins." });
+  }
+  req.actor = a; next();
+}
+app.get("/api/me", (req, res) => {
+  const a = identify(req);
+  const error = a.role ? "" : (!a.telegramId
+    ? "Telegram identity was not received. Open AMBAR Furniture from its Telegram bot menu button, not a normal browser tab."
+    : `Telegram account ${a.telegramId} is not authorized. Add this exact numeric ID to MAIN_ADMIN_TELEGRAM_ID (or OWNER_TELEGRAM_IDS) in Render, then redeploy.`);
+  res.json({ ok: true, enforced: accessEnforced(), role: a.role || "", viewer: !!a.viewer, perms: a.role === "owner" ? ALL_PERMS : (a.perms || []), name: a.name || "", telegramId: a.telegramId || "", primary: !!a.primary || (a.role === "owner" && !a.telegramId), error });
+});
+const ownerOnly = (req, res, next) => (req.actor?.role === "admin") ? res.status(403).json({ ok: false, error: "Owner only." }) : next();
+function inlineId_ref(callback, connectionId, chatId) {
+  if (callback.inline_message_id) return { inline_message_id: callback.inline_message_id };
+  return { chat_id: String(chatId), message_id: callback.message?.message_id, ...(connectionId ? { business_connection_id: String(connectionId) } : {}) };
+}
+// After the customer has answered ONCE (Confirm, Reject, or one comment) the buttons are closed everywhere.
+async function closeOrderButtons(order) {
+  order.closed = true;
+  try { await saveOrderRecord(order); } catch {}
+  const r = order.btnRef || {};
+  const locked = lockedKeyboard(order);
+  const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "";
+  const caption = cardCaptionHtml(order, mark, ""); // closed order: no answer link any more
+  if (r.inline_message_id) {
+    await safely("close inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: r.inline_message_id, reply_markup: locked }));
+    await safely("close inline caption", () => telegram("editMessageCaption", { inline_message_id: r.inline_message_id, caption, parse_mode: "HTML", reply_markup: locked }));
+  } else if (r.chat_id && r.message_id) {
+    const biz = r.business_connection_id ? { business_connection_id: r.business_connection_id } : {};
+    await safely("close buttons", () => telegram("editMessageReplyMarkup", { ...biz, chat_id: r.chat_id, message_id: r.message_id, reply_markup: locked }));
+    (await safely("close caption", () => telegram("editMessageCaption", { ...biz, chat_id: r.chat_id, message_id: r.message_id, caption, parse_mode: "HTML", reply_markup: locked })))
+      || await safely("close text", () => telegram("editMessageText", { ...biz, chat_id: r.chat_id, message_id: r.message_id, text: caption, parse_mode: "HTML", reply_markup: locked }));
+  }
+  if (order.botButtonsMessageId && order.telegramChatId && !r.message_id) {
+    await safely("close bot buttons", () => telegram("editMessageReplyMarkup", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, reply_markup: locked }));
+    (await safely("close bot caption", () => telegram("editMessageCaption", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, caption, parse_mode: "HTML", reply_markup: locked })))
+      || await safely("close bot text", () => telegram("editMessageText", { chat_id: String(order.telegramChatId), message_id: order.botButtonsMessageId, text: caption, parse_mode: "HTML", reply_markup: locked }));
+  }
+  // The photo the admin account sent carries the plain-text link: remove it so nothing clickable is left.
+  const own = admins.get(String(order.adminId || ""));
+  if (own?.ready && order.telegramMessageId && order.telegramChatId && order.sender === "admin_user_account") {
+    try { await own.client.editMessage(BigInt(String(order.telegramChatId)), { message: Number(order.telegramMessageId), text: `AMBAR FURNITURE — ORDER CARD\nOrder: ${order.orderId}\nProduct: ${order.product || "Furniture order"}\nCustomer: ${order.customerName || ""}${mark ? "\nStatus: " + mark : ""}` }); } catch (e) { console.warn("Caption link removal failed:", e.message); }
+  }
+}
+// ── Customer answer page: link inside the Telegram message, big Confirm / Reject / Comment buttons, no bot Start needed ──
+function answerPageHtml(order, note = "") {
+  const done = order.status === "Confirmed" ? "✅ You confirmed this order. Thank you!" : order.status === "Rejected" ? "❌ You rejected this order." : order.closed ? "✅ Your answer was received. Thank you!" : "";
+  const img = order.cardImage ? `/cards/${order.id}.jpg` : "";
+  const locked = done ? " disabled" : "";
+  return `<!doctype html><html><head><meta charset="utf-8">${NOZOOM_HEAD}<title>Order ${esc(order.orderId)} — Ambar Furniture</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#e9e5da;color:#153a2e}.wrap{max-width:560px;margin:auto;padding:14px}.card{background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 14px 40px #0f2a2133}
+.head{background:linear-gradient(135deg,#0f2f25,#1b4d3d);padding:18px 20px;border-bottom:4px solid #ffa939}.head b{color:#ffa939;font-size:22px;letter-spacing:1px}.head div{color:#f4efe3;font-size:12px;margin-top:4px;letter-spacing:1px}
+img{width:100%;display:block}.pad{padding:18px 18px 22px}button{width:100%;border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:800;margin-top:10px;cursor:pointer}
+.ok{background:#1f8a4c;color:#fff}.no{background:#fff;color:#b3261e;border:2px solid #e3b4b0}.cm{background:#fff;color:#153a2e;border:2px solid #cfd8d3}textarea{width:100%;border:1px solid #cfd8d3;border-radius:12px;padding:12px;font-size:16px;margin-top:10px;min-height:90px}
+button:disabled{opacity:.45;cursor:not-allowed}.msg{background:#f4f1ea;border-radius:12px;padding:14px;text-align:center;font-weight:700;margin-top:10px}</style></head><body><div class="wrap"><div class="card">
+<div class="head"><b>AMBAR FURNITURE</b><div>ORDER ${esc(order.orderId)}</div></div>${img ? `<img src="${img}" alt="Order card">` : ""}
+<div class="pad" id="box">${done ? `<div class="msg">${done}</div>` : ""}<button class="ok" data-a="confirm"${locked}>${order.status === "Confirmed" ? "✅ Confirmed" : "✅ Confirm Order"}</button><button class="no" data-a="reject"${locked}>${order.status === "Rejected" ? "❌ Rejected" : "❌ Reject Order"}</button><button class="cm" data-a="comment"${locked}>💬 Comment</button><div id="cbox" style="display:none"><textarea id="ct" placeholder="Type your comment…"></textarea><div id="commentChoices"><button class="ok" data-a="confirm_comment">✅ Confirm &amp; Send Comment</button><button class="no" data-a="reject_comment">❌ Reject &amp; Send Comment</button></div></div>
+<div class="msg" id="out" style="display:${note ? "block" : "none"}">${esc(note)}</div></div></div></div>
+<script>const T=${JSON.stringify(order.token)};const out=document.getElementById("out");
+async function go(action,comment){try{const r=await fetch("/respond/"+T,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,comment})});const d=await r.json();out.style.display="block";out.textContent=d.message||d.error||"Done";if(d.ok){document.querySelectorAll("button,textarea").forEach(b=>b.disabled=true);}}catch(e){out.style.display="block";out.textContent="Network error, please try again.";}}
+document.getElementById("box").addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(!b)return;const a=b.dataset.a;if(a==="comment"){document.getElementById("cbox").style.display="block";b.style.display="none";return;}if(a==="confirm_comment"||a==="reject_comment"){const t=document.getElementById("ct").value.trim();if(!t){out.style.display="block";out.textContent="Please type your comment first.";return;}go(a,t);return;}go(a);});</script></body></html>`;
+}
+app.get("/o/:token", async (req, res) => {
+  await supabaseReady; if (supabase) await loadOrders();
+  const order = orders.find(o => o.token && o.token === req.params.token);
+  if (!order) return res.status(404).send("Order link not found.");
+  res.set("Cache-Control", "no-store").send(answerPageHtml(order));
+});
+app.post("/respond/:token", express.json(), async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const order = orders.find(o => o.token && o.token === req.params.token);
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
+    const action = String(req.body?.action || "");
+    if (order.closed || order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: "Your answer was already received. Thank you!" });
+    if (action === "confirm" || action === "reject") {
+      if (order.status === "Confirmed" || order.status === "Rejected") return res.json({ ok: true, message: `Order already ${order.status}.` });
+      order.status = action === "confirm" ? "Confirmed" : "Rejected";
+      await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
+      await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
+      return res.json({ ok: true, message: order.status === "Confirmed" ? "✅ Order confirmed. Thank you for choosing Ambar Furniture!" : "❌ Order rejected." });
+    }
+    if (action === "comment" || action === "confirm_comment" || action === "reject_comment") {
+      const text = String(req.body?.comment || "").trim().slice(0, 1000);
+      if (!text) return res.status(400).json({ ok: false, error: "Please type your comment." });
+      if (action === "confirm_comment") order.status = "Confirmed";
+      if (action === "reject_comment") order.status = "Rejected";
+      if (action === "confirm_comment" || action === "reject_comment") order.closed = true;
+      order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: "web", decision: action === "confirm_comment" ? "Confirmed" : action === "reject_comment" ? "Rejected" : "Comment" });
+      await saveOrderRecord(order); await updateAuditCopies(order); await closeOrderButtons(order);
+      const decision = action === "confirm_comment" ? "✅ CONFIRMED" : action === "reject_comment" ? "❌ REJECTED" : "💬 COMMENT";
+      await notifyAdminsText(order, `${decision} + comment on <b>${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
+      if (action === "confirm_comment") return res.json({ ok: true, message: "✅ Order confirmed and your comment was sent. Thank you!" });
+      if (action === "reject_comment") return res.json({ ok: true, message: "❌ Order rejected and your comment was sent." });
+      return res.json({ ok: true, message: "✅ Your comment was sent. Thank you!" });
+    }
+    res.status(400).json({ ok: false, error: "Unknown action." });
+  } catch (e) { res.status(500).json({ ok: false, error: "Server error, please try again." }); }
+});
+// Public JPEG URL of an order card (Telegram inline photo results need an https .jpg URL).
+app.get("/cards/:id.jpg", async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const order = orders.find(o => String(o.id) === String(req.params.id));
+    if (!order?.cardImage) return res.sendStatus(404);
+    res.set("Content-Type", "image/jpeg").set("Cache-Control", "public, max-age=3600");
+    if (/^https?:/i.test(order.cardImage)) { const r = await fetch(order.cardImage); return res.send(Buffer.from(await r.arrayBuffer())); }
+    res.send(await fs.promises.readFile(path.join(__dirname, "public", order.cardImage.replace(/^\/+/, ""))));
+  } catch (e) { res.sendStatus(500); }
+});
+app.use(["/api/customers", "/api/admins", "/api/orders", "/api/business", "/api/my-account"], requireAccess);
+app.use("/api/business", ownerOnly);
 
-  // BACKUP sheet
-  router.post("/backup/connect", ownerOnly, async (req, res) => {
-    try {
-      const url = scriptUrl(req.body?.scriptUrl), key = String(req.body?.scriptKey || "").trim();
-      const p = await callScript({ action: "ping" }, { url, key });
-      cfg.scriptUrl = url; cfg.scriptKey = key; cfg.sheetName = p.name || ""; cfg.sheetUrl = p.url || "";
-      await saveCfg();
-      const r = await backupNow();
-      res.json({ ...(r.ok ? { ok: true, message: `✅ Connected to “${cfg.sheetName}”. Backup sent.` } : { ok: false, error: "Connected, but the first backup failed: " + r.error }), ...view() });
-    } catch (e) { res.json({ ok: false, error: e.message }); }
-  });
-  router.post("/backup/now", async (req, res) => {
-    const r = await backupNow();
-    res.json({ ...(r.ok ? { ok: true, message: "✅ Backup saved in the Google Sheet." } : { ok: false, error: r.error }), ...view() });
-  });
-  router.post("/backup/disconnect", ownerOnly, async (req, res) => {
-    cfg = { ...cfg, scriptUrl: "", scriptKey: "", sheetName: "", sheetUrl: "", backup: { at: "", d: "", t: "", ok: null, error: "", count: 0 } };
-    await saveCfg();
-    res.json({ ok: true, message: "Backup sheet disconnected. The data stays in the app.", ...view() });
-  });
+app.get("/api/customers", (req, res) => {
+  const mine = c => !c.businessConnectionId || req.actor?.role !== "admin" || req.actor?.viewer || String(businessConnections.get(String(c.businessConnectionId))?.user?.id || "") === req.actor.telegramId;
+  const adminIds = new Set(allAdminChatIds({})); // admins are not customers
+  res.json([...customers.values()].filter(c => mine(c) && !adminIds.has(String(c.id))).map(c => { const r = callerOfTg(c); return { ...c, first_name: c.name || c.first_name || "", customerId: r ? r.id : "" }; }).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 300));
+});
 
-  // The PDF is built in the phone; this puts a copy into the admin's own Telegram chat.
-  router.post("/send-pdf", express.raw({ type: ["application/pdf", "application/octet-stream"], limit: "30mb" }), async (req, res) => {
+function esc(value = "") {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+// After the customer answers, the buttons STAY VISIBLE but are locked (Telegram has no real "disabled" button):
+// the chosen one is ticked, the others show a lock, and tapping any of them only answers "already answered".
+function lockedKeyboard(order) {
+  const id = order.id, confirmed = order.status === "Confirmed", rejected = order.status === "Rejected";
+  return { inline_keyboard: [
+    [{ text: confirmed ? "✅ Confirmed" : "🔒 Confirm Order", callback_data: `done:${id}` }, { text: rejected ? "❌ Rejected" : "🔒 Reject Order", callback_data: `done:${id}` }],
+    [{ text: (order.comments || []).length ? "💬 Comment sent" : "🔒 Comment", callback_data: `done:${id}` }]
+  ] };
+}
+function keyboard(id, order, opts = {}) {
+  // The customer's order message carries FOUR buttons right under the card:
+  //   1) 🔗 መልስ ለመስጠት ክፈት (opens the answer page)   2) ✅ Confirm Order   3) ❌ Reject Order   4) 💬 Comment
+  // Once the order is answered the same buttons stay visible but locked (see lockedKeyboard).
+  if (order && order.closed) return lockedKeyboard(order);
+  const link = opts.noLink ? "" : answerLink(order);
+  const rows = [];
+  if (link) rows.push([{ text: "🔗 መልስ ለመስጠት ክፈት", url: link }]);
+  rows.push([{ text: "✅ Confirm Order", callback_data: `confirm:${id}` }, { text: "❌ Reject Order", callback_data: `reject:${id}` }]);
+  rows.push([{ text: "💬 Comment", callback_data: `comment:${id}` }]);
+  return { inline_keyboard: rows };
+}
+// Fallback layouts: if Telegram ever refuses the 4-button keyboard, the card is still delivered (4 buttons → link only → no buttons).
+function keyboardAttempts(order) {
+  const full = keyboard(order.id, order), link = answerLink(order);
+  const linkOnly = link && !order.closed ? { inline_keyboard: [[{ text: "🔗 መልስ ለመስጠት ክፈት", url: link }]] } : null;
+  return [full, linkOnly, null].filter((x, i, a) => i === a.length - 1 || x);
+}
+function activeBusinessConnection() {
+  // Prefer the explicitly configured connection when present.
+  if (BUSINESS_CONNECTION_ID) {
+    const configured = businessConnections.get(String(BUSINESS_CONNECTION_ID));
+    if (configured) return isUsable(configured) ? configured : null;
+    // No update received since the last restart: trust the configured ID; Telegram validates it at send time.
+    return { id: String(BUSINESS_CONNECTION_ID), is_enabled: true, rights: { can_reply: true }, configured: true };
+  }
+  return [...businessConnections.values()].find(isUsable);
+}
+const telegram = (method, body, opts) => tgApi.call(method, body, opts);
+function answerLink(order) {
+  return order && order.token && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/o/${order.token}` : "";
+}
+function cardCaptionHtml(order, status = "Pending", note = "Please review the attached order card.", opts = {}) {
+  const link = opts.noLink ? "" : answerLink(order);
+  if (link && !order.closed && (!status || /pending/i.test(status))) note = (note ? note + "\n\n" : "") + `🔗 <a href="${link}">Open answer</a>`;
+  return `<b>AMBAR FURNITURE — ${(opts.edited || order._edited) ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName)}${order.paidFull ? "\n<b>Payment:</b> ✅ PAID IN FULL" : ""}${status && !/pending/i.test(status) ? "\n<b>Status:</b> " + esc(status) : ""}${note ? "\n\n" + note : ""}`;
+}
+// Every admin (main admin(s) + every assigned admin + ADMIN_CHAT_ID) receives every order in the AMBAR bot.
+function allAdminChatIds(order) {
+  return [...new Set([ADMIN_CHAT_ID, ...OWNER_IDS, ...appAdmins.map(a => a.telegramId), order?.createdByTelegramId].filter(Boolean).map(String).filter(x => /^-?\d+$/.test(x)))];
+}
+function notifyAdminsText(order, text) {
+  const targets = new Set(allAdminChatIds(order));
+  return Promise.all([...targets].map(to => safely("Admin notification", () => telegram("sendMessage", { chat_id: to, text, parse_mode: "HTML" }))));
+}
+// ── Cross-check copies: every card an admin sends is ALSO posted by the bot to the admin chat(s) ──
+function auditTargets(order) {
+  return allAdminChatIds(order);
+}
+function auditCaptionHtml(order) {
+  const st = order.status === "Confirmed" ? "✅ CONFIRMED" : order.status === "Rejected" ? "❌ REJECTED" : "⏳ Pending";
+  const comments = order.comments || [], last = comments[comments.length - 1];
+  const who = order.telegramUsername || order.telegramChatId || "";
+  const decided = order.status === "Confirmed" || order.status === "Rejected";
+  return `🧾 <b>CROSS-CHECK COPY</b>\n<b>Customer:</b> ${esc(order.customerName || "")} ${who ? "(" + esc(who) + ")" : ""}\n<b>Sent from:</b> ${esc(order.adminLabel || "")}${order.sent ? "" : " — ❌ NOT delivered" + (order.deliveryNote ? " (" + esc(String(order.deliveryNote).slice(0, 200)) + ")" : "")}${decided ? "\n<b>Customer answered:</b> " + st : ""}${order.paidFull ? "\n<b>Payment:</b> 💰 PAID IN FULL (confirmed by admin)" : ""}${last ? `\n<b>Comment:</b> ${esc(String(last.comment).slice(0, 250))}` : ""}`;
+}
+async function sendAuditCopies(order, filePath) {
+  const bytes = await fs.promises.readFile(filePath);
+  const copies = [], failed = [];
+  for (const target of auditTargets(order)) {
     try {
-      const chatId = String(req.actor?.telegramId || "");
-      if (!chatId) return res.json({ ok: false, error: "Open the app from Telegram (not a browser) to receive the PDF in your chat." });
-      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-      if (buf.length < 100 || buf.slice(0, 4).toString() !== "%PDF") return res.json({ ok: false, error: "The PDF was not received. Try again." });
-      const name = String(req.query.name || "report").replace(/[^\w.\- ]+/g, "").trim().slice(0, 80) || "report";
-      await tgApi.sendForm("sendDocument", () => {
+      const sent = await tgApi.sendForm("sendPhoto", () => {
         const body = new FormData();
-        body.append("chat_id", chatId);
-        body.append("caption", `📄 ${name}`);
-        body.append("document", new Blob([buf], { type: "application/pdf" }), name.replace(/\.pdf$/i, "") + ".pdf");
+        body.append("chat_id", target);
+        body.append("photo", new Blob([bytes], { type: "image/png" }), "order-card.png");
+        body.append("caption", auditCaptionHtml(order));
+        body.append("parse_mode", "HTML");
+        body.append("reply_markup", JSON.stringify(auditKeyboard(order)));
         return body;
       });
-      res.json({ ok: true, message: "✅ Sent to your Telegram chat with the bot. If you don't see it, open the AMBAR bot chat and press Start once." });
-    } catch (e) { res.json({ ok: false, error: /chat not found|bot can't initiate|blocked/i.test(e.message) ? "Open the AMBAR bot chat once and press Start, then try again." : e.message }); }
-  });
-
-  // The Apps Script text, so it can be copied from the page.
-  router.get("/script", (req, res) => {
-    try { res.type("text/plain; charset=utf-8").send(fs.readFileSync(path.join(__dirname, "reports-sheet-script.gs"), "utf8")); }
-    catch { res.status(404).type("text/plain").send("reports-sheet-script.gs was not found on the server."); }
-  });
-  app.use("/api/reports", router);
-
-  // v150: the Workshop module reads the readymade (in-stock, not ORDER) products from here
-  const readymade = () => ({ groups: stockGroups(db.products.filter(p => p.status === "stock" && !/CUS|ORD/i.test(String(p.orderType || "")))), photoBuf, caption: groupCaption });
-  // v152: UNFINISHED readymade products (still in Workflow, not ORDER) — shown (not sent) on the Workshop page
-  // v158: Workshop Workflow Products is a live view of ALL Reports products in Workflow (orders + readymade).
-  // The Reports record is the source of truth; the Workshop job only adds the active production stage.
-  const inProgress = () => db.products
-    .filter(p => p.status === "workflow")
-    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", workshopStage: p.workshopStage || "", jobId: p.jobId || "", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", photo: p.photo || "" }))
-    .sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.priority] ?? 2) - ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[b.priority] ?? 2));
-  function wsSetStage(id, stage, byName, jobId) {
-    const p = findP(id); if (!p || p.status !== "workflow") return false;
-    const allowed = ["workshop", "finishing"];
-    if (!allowed.includes(stage)) return false;
-    if (jobId) p.jobId = clip(jobId, 40);
-    if (p.workshopStage === stage) { persist(); return true; }
-    const req = wsReq(byName); p.workshopStage = stage; p.workshopStageAt = stamp(req);
-    hist(p, stage === "workshop" ? "Workshop stage → In workshop" : "Workshop stage → In finishing", req);
-    persist(); scheduleBackup(); return true;
+      copies.push({ chat_id: target, message_id: sent.message_id });
+    } catch (error) { failed.push(target); console.warn(`Cross-check copy to ${target} failed:`, error.message); }
   }
-  // v153: used by the Workshop module (Telegram buttons "Finished workshop" → "Finished").
-  // A product sent to the workshop is put into the Workflow (so Reports shows it); the final "Finished" button moves it to STOCK.
-  const wsReq = name => ({ actor: { name: clip(name, 60) || "Workshop" } });
-  async function wsAddProduct(f, byName) {
-    const req = wsReq(byName);
-    let photo = "";
-    if (f.photoBuf && f.photoBuf.length > 200 && f.photoBuf.length <= 1.5 * 1024 * 1024) { try { photo = await savePhoto("data:image/jpeg;base64," + f.photoBuf.toString("base64")); } catch {} }
-    const requestedCode = clip(f.code, 30);
-    const p = { id: uid(), ptype: clip(f.ptype, 40), code: requestedCode && !codeTaken(requestedCode) ? requestedCode : (f.seqId ? nextSeqCode(f.ptype) : nextCode()), sno: "", model: up(f.model, 40), desc: clip(f.desc, 160), orderType: f.orderType === "ORDER" ? "ORDER" : "READYMADE", priority: priorityOf2(f.priority || "MEDIUM"),
-      category: /^shoe shelf$/i.test(String(f.ptype || "").trim()) ? "SHOE SHELF" : "OTHERS", handle: clip(f.handle, 60), capacity: "", salesName: clip(f.salesName, 80), location: "", deliveryDate: dateOk(f.deliveryDate) ? clip(f.deliveryDate, 10) : "", changes: "", note: clip(f.note, 300),
-      photo, status: "workflow", added: stamp(req), history: [], orderRef: clip(f.orderRef, 60), jobId: clip(f.jobId, 40), custom: !!f.custom, color: clip(f.color, 40), wsSaved: !!f.wsSaved }; // v177: custom = a one-off custom product (Workshop → Readymade → Custom products)
-    hist(p, "Added to Workflow (sent to the workshop)", req);
-    bumpCounter(p.code); db.products.unshift(p); persist(); scheduleBackup();
-    audit("Report: product added", `${p.code} ${lab(p)} (workshop)`, req.actor);
-    return { id: p.id, code: p.code };
-  }
-  function wsFinish(id, byName) { // Workflow → In Stock (same as the Finished button of Reports)
-    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
-    if (p.status !== "workflow") return { ok: true, already: true, code: p.code };
-    const req = wsReq(byName);
-    p.status = "stock"; p.finished = stamp(req); hist(p, "Finished (workshop button) → In Stock", req);
-    persist(); scheduleBackup(); audit("Report: product finished", `${p.code} → In Stock (workshop)`, req.actor);
-    return { ok: true, code: p.code };
-  }
-  function wsRemove(ids) { // roll back products made for a send that failed
-    const set = new Set((ids || []).map(String)); const gone = db.products.filter(p => set.has(p.id) && p.status === "workflow");
-    if (!gone.length) return; db.products = db.products.filter(p => !gone.includes(p)); persist(); scheduleBackup();
-    for (const g of gone) dropPhoto(g.photo).catch(() => {});
-  }
-  function wsSoldOut(id, byName, customer) { // Workshop stock-group button: In Stock → Sold Out
-    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
-    if (p.status === "sold") return { ok: true, already: true, code: p.code };
-    if (p.status !== "stock") return { ok: false, error: "Only an IN STOCK product can be marked Sold Out." };
-    const req = wsReq(byName), n = nowEth(), seller = clip(byName, 80) || "Workshop";
-    p.status = "sold"; p.sold = { d: n.d, t: n.t, salesName: seller, salesInfo: customer ? clip(customer, 120) : seller, note: customer ? "Sold to " + clip(customer, 120) + " (sent from Customer ID → Send to workshop)" : "Marked Sold Out from the Telegram stock group" };
-    hist(p, customer ? "Sold Out → " + clip(customer, 120) : "Sold Out (Telegram stock button)", req); persist(); scheduleBackup();
-    audit("Report: product sold", `${p.code} ${p.sold.d} ${p.sold.t}`, req.actor);
-    return { ok: true, code: p.code };
-  }
-  function wsRestock(id, byName) { // Workshop stock-group button: Sold Out → In Stock
-    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
-    if (p.status === "stock") return { ok: true, already: true, code: p.code };
-    if (p.status !== "sold") return { ok: false, error: "Only a Sold Out product can be restocked." };
-    const req = wsReq(byName), previous = p.sold ? { ...p.sold } : null;
-    p.status = "stock"; delete p.sold;
-    hist(p, "Restocked (Telegram stock button) → In Stock", req, { previousSale: previous ? previous.d + " " + previous.t : "" });
-    persist(); scheduleBackup(); audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
-    return { ok: true, code: p.code };
-  }
-  // v174: Workshop runs the product / material write handlers (edit, correct, delete, arrange …). Same data, same Google Sheet backup (done() schedules it).
-  async function wsOp(name, body, actor) {
-    const fn = OPS[name]; if (!fn) return { ok: false, error: "Unknown action." };
-    let out = { ok: false, error: "No answer." };
-    await fn({ body: body || {}, actor: { name: clip(actor?.name, 60) || "Workshop", role: actor?.role, telegramId: actor?.telegramId } }, { json: o => { out = o; return o; } });
-    return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
-  }
-  // v161: the Workshop "Material" tab uses the SAME materials and log as Reports → Material
-  // v165: material cuts requested from Workshop require main-admin approval.
-  function wsCutRequests() {
-    return db.materialCutRequests.filter(x => x.status === "pending").slice().reverse().map(x => ({ ...x }));
-  }
-  function wsRequestCut(body, actor) {
-    const m = findM(body?.id);
-    if (!m) return { ok: false, error: "Material not found." };
-    const qty = num(body?.qty);
-    if (Number.isNaN(qty) || qty <= 0) return { ok: false, error: "Write a quantity bigger than 0." };
-    if (qty > m.qty) return { ok: false, error: `Only ${m.qty} left of ${matName(m)}. You cannot request ${qty}.` };
-    const req = {
-      id: uid(), materialId: m.id, material: m.name, mtype: m.type || "", unit: m.unit || "pcs",
-      qty, before: m.qty, after: Math.round((m.qty - qty) * 1000) / 1000,
-      note: clip(body?.note, 200), by: clip(actor?.name || "Admin", 60),
-      telegramId: String(actor?.telegramId || ""), created: stamp({ actor }),
-      status: "pending", decidedBy: "", decidedAt: "", decisionNote: ""
-    };
-    db.materialCutRequests.push(req);
-    audit("Report: material cut requested", `${matName(m)} ${qty} ${m.unit || "pcs"} — pending main-admin approval`, actor);
-    persist();
-    return { ok: true, request: req, message: `✂️ Cut request submitted for ${matName(m)}: ${qty} ${m.unit || "pcs"}. Waiting for main admin approval.` };
-  }
-  function wsApproveCut(id, approve, actor, note) {
-    const r = db.materialCutRequests.find(x => String(x.id) === String(id));
-    if (!r) return { ok: false, error: "Cut request not found." };
-    if (r.status !== "pending") return { ok: false, error: "This cut request was already decided." };
-    const m = findM(r.materialId);
-    if (!m) { r.status = "rejected"; r.decidedBy = clip(actor?.name || "Main admin", 60); r.decidedAt = stamp({ actor }); persist(); return { ok: false, error: "Material no longer exists." }; }
-    r.decidedBy = clip(actor?.name || "Main admin", 60);
-    r.decidedAt = stamp({ actor }); r.decisionNote = clip(note, 200) || "";
-    if (!approve) {
-      r.status = "rejected";
-      audit("Report: material cut rejected", `${matName(m)} ${r.qty} ${m.unit || "pcs"}`, actor);
-      persist();
-      return { ok: true, request: r, message: `❌ Cut request rejected: ${matName(m)} ${r.qty} ${m.unit || "pcs"}.` };
-    }
-    if (r.qty > m.qty) { r.status = "rejected"; persist(); return { ok: false, error: `Stock changed. Only ${m.qty} ${m.unit || "pcs"} remains.` }; }
-    const old = m.qty;
-    m.qty = Math.round((m.qty - r.qty) * 1000) / 1000;
-    r.before = old; r.after = m.qty; r.status = "approved";
-    addLog({ body: {}, actor }, m, "cut", r.qty, m.qty, r.note || "Approved cut request");
-    audit("Report: material cut approved", `${matName(m)} ${r.qty} → ${m.qty}`, actor);
-    persist(); scheduleBackup(1500);
-    return { ok: true, request: r, message: `✅ Cut approved: ${matName(m)} ${r.qty} ${m.unit || "pcs"}. Left: ${m.qty}.` };
-  }
-  // v175: Material ADD (new material or more stock) by a non-main admin goes to the "Pending Admin Confirmation" queue. Nothing reaches the confirmed stock
-  // until the main admin approves it. The main admin's own adds are applied at once (nobody above him to confirm).
-  const addReqView = x => ({ ...x });
-  function wsAddRequests() { // pending, newest first
-    return db.materialAddRequests.filter(x => x.status === "pending").slice().reverse().map(addReqView);
-  }
-  function wsAddHistory(telegramId, limit) { // recently decided requests (approved / rejected), newest first; telegramId "" = everybody
-    return db.materialAddRequests.filter(x => x.status !== "pending" && (!telegramId || String(x.telegramId) === String(telegramId))).slice().reverse().slice(0, limit || 15).map(addReqView);
-  }
-  function wsRequestAdd(kind, body, actor) {
-    const b = body || {}, by = clip(actor?.name || "Admin", 60), tid = String(actor?.telegramId || "");
-    let r;
-    if (kind === "new") {
-      const name = clip(b.name, 100), type = clip(b.type, 30), unit = clip(b.unit, 20) || "pcs", group = up(b.group, 30) || (groupsOrdered()[1] || groupsOrdered()[0] || MAT_G2);
-      if (!name) return { ok: false, error: "Write the material name." };
-      if (db.materials.some(m => matKey(m.name, m.type) === matKey(name, type))) return { ok: false, error: `“${name} ${type}” already exists. Use ➕ Add on it.` };
-      if (db.materialAddRequests.some(x => x.status === "pending" && x.kind === "new" && matKey(x.material, x.mtype) === matKey(name, type))) return { ok: false, error: `“${name} ${type}” is already waiting for confirmation.` };
-      const qty = (b.qty === "" || b.qty == null) ? 0 : num(b.qty), min = (b.min === "" || b.min == null) ? 0 : num(b.min);
-      if (Number.isNaN(qty) || qty < 0) return { ok: false, error: "The quantity must be a number (0 or more)." };
-      if (Number.isNaN(min) || min < 0) return { ok: false, error: "The low-stock alert must be a number." };
-      r = { kind: "new", materialId: "", material: name, mtype: type, unit, group, qty, min, before: 0, after: qty };
-    } else {
-      const m = findM(b.id);
-      if (!m) return { ok: false, error: "Material not found." };
-      const qty = num(b.qty);
-      if (Number.isNaN(qty) || qty <= 0) return { ok: false, error: "Write a quantity bigger than 0." };
-      r = { kind: "add", materialId: m.id, material: m.name, mtype: m.type || "", unit: m.unit || "pcs", group: m.group || "MATERIAL", qty, min: 0, before: m.qty, after: Math.round((m.qty + qty) * 1000) / 1000 };
-    }
-    const req = { id: uid(), ...r, note: clip(b.note, 200), by, telegramId: tid, created: stamp({ actor }), status: "pending", decidedBy: "", decidedAt: "", decisionNote: "" };
-    db.materialAddRequests.push(req);
-    audit("Report: material add requested", `${req.material}${req.mtype ? " " + req.mtype : ""} +${req.qty} ${req.unit} — pending main-admin confirmation`, actor);
-    persist();
-    return { ok: true, request: req, message: `⏳ ${req.material}${req.mtype ? " " + req.mtype : ""}: ${req.qty} ${req.unit} sent for confirmation. It is NOT in the stock until the main admin approves it.` };
-  }
-  function wsApproveAdd(id, approve, actor, note) {
-    const r = db.materialAddRequests.find(x => String(x.id) === String(id));
-    if (!r) return { ok: false, error: "Request not found." };
-    if (r.status !== "pending") return { ok: false, error: "This request was already decided." };
-    const label = r.material + (r.mtype ? " " + r.mtype : "");
-    r.decidedBy = clip(actor?.name || "Main admin", 60); r.decidedAt = stamp({ actor }); r.decisionNote = clip(note, 200) || "";
-    if (!approve) {
-      r.status = "rejected";
-      audit("Report: material add rejected", `${label} +${r.qty} ${r.unit}`, actor);
-      persist();
-      return { ok: true, request: r, message: `❌ Material request rejected: ${label} ${r.qty} ${r.unit}. Stock unchanged.` };
-    }
-    // apply with the same handlers as an immediate add; the movement is logged under the requester's name, with the approver in the note
-    const noteTxt = clip((r.note ? r.note + " · " : "") + "Approved by " + r.decidedBy, 200);
-    let out = { ok: false, error: "No answer." };
-    const fake = { body: r.kind === "new" ? { name: r.material, type: r.mtype, unit: r.unit, group: r.group, qty: r.qty, min: r.min, note: noteTxt } : { id: r.materialId, type: "add", qty: r.qty, note: noteTxt }, actor: { name: r.by, telegramId: r.telegramId } };
-    (r.kind === "new" ? H.add : H.move)(fake, { json: o => { out = o; } });
-    if (!out.ok) { // e.g. the same material was created meanwhile, or it was deleted: the request cannot be applied
-      r.status = "rejected"; r.decisionNote = clip("Could not be applied: " + (out.error || "unknown"), 200); persist();
-      return { ok: false, error: "Could not add it: " + (out.error || "unknown error") + " The request was closed." };
-    }
-    r.status = "approved";
-    const m = r.kind === "new" ? db.materials.find(x => matKey(x.name, x.type) === matKey(r.material, r.mtype)) : findM(r.materialId);
-    if (m) { r.materialId = m.id; r.after = m.qty; }
-    audit("Report: material add approved", `${label} +${r.qty} ${r.unit}`, actor);
-    persist(); scheduleBackup(1500);
-    return { ok: true, request: r, message: `✅ Approved: ${label} +${r.qty} ${r.unit} added to Material Stock.` };
-  }
-  // v171: Material dispatch → the cut is applied to the stock at the SAME moment it is posted to the group (no approval step for the main admin).
-  function wsCutNow(body, actor, note) {
-    const m = findM(body?.id);
-    if (!m) return { ok: false, error: "Material not found." };
-    const qty = num(body?.qty);
-    if (Number.isNaN(qty) || qty <= 0) return { ok: false, error: "Write a quantity bigger than 0." };
-    if (qty > m.qty) return { ok: false, error: `Only ${m.qty} ${m.unit || "pcs"} left of ${matName(m)}. You cannot cut ${qty}.` };
-    const before = m.qty;
-    m.qty = Math.round((before - qty) * 1000) / 1000;
-    addLog({ body: {}, actor }, m, "cut", qty, m.qty, clip(note, 200) || "Cut from Material dispatch");
-    audit("Report: material cut (dispatch)", `${matName(m)} ${qty} → ${m.qty}`, actor);
-    persist(); scheduleBackup(1500);
-    return { ok: true, id: m.id, material: matName(m), unit: m.unit || "pcs", qty, before, after: m.qty };
-  }
-  function wsRevertCut(id, qty, actor) { // the Telegram post failed → put the stock back so the app and the group never disagree
-    const m = findM(id); if (!m) return false;
-    m.qty = Math.round((m.qty + Number(qty)) * 1000) / 1000;
-    addLog({ body: {}, actor }, m, "add", Number(qty), m.qty, "Cut reverted — the Telegram post failed");
-    audit("Report: material cut reverted", `${matName(m)} +${qty} → ${m.qty}`, actor);
-    persist(); scheduleBackup(1500);
-    return true;
-  }
-  // v171: readymade products a customer can buy (In Stock, or already marked Sold Out) — used by Driver dispatch
-  const wsStockProducts = () => db.products
-    .filter(p => (p.status === "stock" || p.status === "sold") && !/CUS|ORD/i.test(String(p.orderType || "")))
-    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", photo: p.photo || "", status: p.status }))
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === "stock" ? -1 : 1))
-    .slice(0, 400);
-  // v176: every readymade / order product that is In Stock (or Sold Out) with ALL its info — used by Home → Stock view and the Workshop page
-  const wsStockView = () => db.products
-    .filter(p => p.status === "stock" || p.status === "sold")
-    .map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", category: p.category || "", capacity: p.capacity || "", location: p.location || "", note: p.note || "", priority: p.priority || "", custom: !!p.custom, color: p.color || "", wsSaved: !!p.wsSaved || !!p.custom || JSON.stringify(p.history || []).includes("sent to the workshop"), orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", salesName: p.salesName || "", deliveryDate: p.deliveryDate || "", photo: p.photo || "", status: p.status, added: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "", finished: p.finished ? [p.finished.d, p.finished.t].filter(Boolean).join(" ") : "" }))
-    .slice(0, 1000);
-  const wsMaterials = () => ({ materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })), groups: groupsOrdered() });
-  function wsMaterial(kind, body, byName) {
-    let out = { ok: false, error: "Unknown material action." };
-    const fn = H[kind]; if (!fn) return out;
-    fn({ body: body || {}, actor: { name: clip(byName, 60) || "Workshop" } }, { json: o => { out = o; } });
-    return { ok: !!out.ok, error: out.error || "", message: out.message || "" };
-  }
-  // v174: every Reports product, read-only, for the Workshop "Records" tab (where products are edited / deleted)
-  const wsRecords = () => db.products.slice(0, 800).map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", priority: p.priority || "LOW", orderType: p.orderType || "READYMADE", orderRef: p.orderRef || "", status: p.status, salesName: p.salesName || "", note: p.note || "", sno: p.sno || "", category: p.category || "", capacity: p.capacity || "", location: p.location || "", deliveryDate: p.deliveryDate || "", changes: p.changes || "", photo: p.photo || "", stage: p.workshopStage || "", jobId: p.jobId || "", started: p.added ? [p.added.d, p.added.t].filter(Boolean).join(" ") : "" }));
-  const wsStatus = id => { const p = findP(id); return p ? { code: p.code, status: p.status } : null; };
-  // v173: data for the monthly PDF report (read only). The Workshop module filters it by month.
-  const wsReportData = () => ({
-    products: db.products.map(p => ({ id: p.id, code: p.code || "", model: p.model || "", desc: p.desc || "", ptype: p.ptype || "", handle: p.handle || "", orderType: p.orderType || "", orderRef: p.orderRef || "", priority: p.priority || "", status: p.status, workshopStage: p.workshopStage || "", salesName: p.salesName || "", location: p.location || "", deliveryDate: p.deliveryDate || "", photo: p.photo || "", added: p.added || null, finished: p.finished || null, sold: p.sold || null })),
-    materials: orderedMaterials().map(m => ({ id: m.id, name: m.name, type: m.type || "", unit: m.unit || "", group: m.group || "MATERIAL", qty: m.qty, min: m.min || 0 })),
-    log: db.log.map(l => ({ d: l.d || "", t: l.t || "", material: l.material || "", mtype: l.mtype || "", unit: l.unit || "", type: l.type || "", qty: l.qty, balance: l.balance, note: l.note || "", by: l.by || "" }))
-  });
-  // v173 START FROM 0 (Workshop settings): keeps standard products (workshop), Workflow products, In-stock products and ALL materials with their stock.
-  // Removes only the finished movements: Sold products, the material movement log and decided cut requests. Never throws; returns what was removed.
-  async function wsResetKeep(byName, upto) { // upto = Ethiopian month "2019/03": only movements up to that month are removed (used after the automatic monthly report)
-    const old = d => !upto || String(d || "").slice(0, 7) <= upto;
-    const sold = db.products.filter(p => p.status === "sold" && old(p.sold && p.sold.d)), logOld = db.log.filter(l => old(l.d)), cutOld = db.materialCutRequests.filter(x => x.status !== "pending" && old((x.decidedAt && x.decidedAt.d) || (x.created && x.created.d) || ""));
-    const soldSet = new Set(sold), logSet = new Set(logOld), cutSet = new Set(cutOld);
-    db.products = db.products.filter(p => !soldSet.has(p));
-    db.log = db.log.filter(l => !logSet.has(l));
-    db.materialCutRequests = db.materialCutRequests.filter(x => !cutSet.has(x));
-    db.materialAddRequests = db.materialAddRequests.filter(x => x.status === "pending" || !old((x.decidedAt && x.decidedAt.d) || (x.created && x.created.d) || ""));
-    persist(); scheduleBackup(1500);
-    sold.forEach(p => dropPhoto(p.photo).catch(() => {}));
-    audit("Report: START FROM 0 (workshop settings)", `${sold.length} sold, ${logOld.length} material movement(s), ${cutOld.length} cut request(s) cleared`, { name: clip(byName, 60) || "Main admin" });
-    return { sold: sold.length, log: logOld.length, cuts: cutOld.length };
-  }
-  // The same Google-Sheet safety step as the Reports "Start from ZERO": save, then keep the old month tabs as "Archive …" tabs. Throws if the sheet is connected but fails.
-  async function wsArchiveSheet() {
-    if (!cfg.scriptUrl) return { archived: 0, connected: false };
-    clearTimeout(timer);
-    const b = await backupNow();
-    if (!b.ok && !b.queued) throw new Error("The Google Sheet backup failed: " + b.error);
-    const a = await callScript({ action: "archive", data: { now: nowEth() } });
-    return { archived: a.archived || 0, connected: true };
-  }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, wsStockView, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  order.auditCopies = copies;
+  return { delivered: copies.length, failed };
 }
-module.exports = { register };
+// Keep the cross-check copies current when the customer confirms / rejects / comments.
+// Admin-only button on the bot's cross-check copy: appears after the customer CONFIRMED the order.
+// The admin taps it once the customer has sent the full payment -> the order is marked "Paid In Full" (data confirmed).
+function auditKeyboard(order) {
+  const row = [];
+  row.push(order.paidFull
+    ? { text: "✅ Paid in full — recorded", callback_data: `paiddone:${order.id}` }
+    : { text: "💰 Customer paid in full", callback_data: `paid:${order.id}` });
+  // ✏️ Edit order: opens the order form pre-filled (mini app). Needs an https PUBLIC_BASE_URL.
+  // Once the order is PAID IN FULL it is closed: the edit section is removed.
+  if (!order.paidFull) row.push(/^https:/i.test(PUBLIC_BASE_URL || "")
+    ? { text: "✏️ Edit order", web_app: { url: `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/?edit=${order.id}` } }
+    : { text: "✏️ Edit order", callback_data: `editorder:${order.id}` });
+  return { inline_keyboard: [row] };
+}
+async function updateAuditCopies(order) {
+  for (const c of order.auditCopies || []) {
+    const rm = auditKeyboard(order);
+    await safely("Audit copy update", () => telegram("editMessageCaption", { chat_id: c.chat_id, message_id: c.message_id, caption: auditCaptionHtml(order), parse_mode: "HTML", ...(rm ? { reply_markup: rm } : {}) }));
+  }
+}
+async function sendCardAsAdmin(chatId, filePath, order, connection) {
+  const bytes = await fs.promises.readFile(filePath);
+  const caption = cardCaptionHtml(order);
+  const peerProblem = /BUSINESS_PEER_INVALID|chat not found|PEER_ID_INVALID|BUSINESS_PEER_USAGE_MISSING/i;
+  const attempts = (order.strictAdmin || order.onlyConnection) ? (connection ? [connection] : []) : candidateConnections(chatId, connection);
+  let lastError;
+  for (const conn of attempts) {
+    try {
+      let sent, markupErr;
+      for (const markup of keyboardAttempts(order)) { // 4 buttons first; plain link / no buttons only if Telegram refuses them
+        try {
+          sent = await tgApi.sendForm("sendPhoto", () => {
+            const body = new FormData();
+            body.append("business_connection_id", String(conn.id));
+            body.append("chat_id", String(chatId).trim());
+            body.append("photo", new Blob([bytes], { type: "image/png" }), path.basename(filePath) + ".png");
+            body.append("caption", caption);
+            body.append("parse_mode", "HTML");
+            if (markup) body.append("reply_markup", JSON.stringify(markup));
+            return body;
+          });
+          markupErr = null; break;
+        } catch (e) { markupErr = e; if (peerProblem.test(e.message) || /BUSINESS_CONNECTION_INVALID/i.test(e.message)) break; }
+      }
+      if (markupErr) throw markupErr;
+
+      // The answer button is included ONLY on the original card message.
+      // Do not send a second fallback message: the customer must receive exactly one button.
+      // Remember which connection really worked for this customer.
+      const known = customers.get(String(chatId));
+      if (known && known.businessConnectionId !== String(conn.id)) { known.businessConnectionId = String(conn.id); persistCustomers(); }
+      order.businessConnectionId = String(conn.id);
+      return sent;
+    } catch (error) {
+      lastError = error;
+      console.warn(`sendPhoto via connection ${conn.id} failed:`, error.message);
+      if (!peerProblem.test(error.message) && !/BUSINESS_CONNECTION_INVALID/i.test(error.message)) break; // other errors: another connection will not help
+    }
+  }
+  const base = friendlyError(lastError?.message);
+  const checklist = " Checklist: (1) use the customer's own numeric user ID (not the admin's, not the bot's); (2) the customer must have sent a message to the admin account recently (Telegram allows replies for ~24h after their last message); (3) in Telegram → Settings → Business → Chatbots, the bot must be allowed to access this chat (not excluded) with 'Reply to messages' on. Best fix: pick the customer from the dropdown after they message the admin account.";
+  const err = new Error(base + checklist);
+  err.raw = lastError?.message || "unknown";
+  err.tried = attempts.length;
+  throw err;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Admin accounts (MTProto user logins). SEVERAL admins can be logged in; each order is sent from
+// the admin chosen in the form. Requires TG_API_ID and TG_API_HASH. Log admins in at /setup.html.
+// User accounts send the card with one clickable answer link; all answer actions live on the web page.
+// ───────────────────────────────────────────────────────────────────────────────
+const admins = new Map(); // id -> { id, label, session, client, ready, error, tgUserId }
+const ADMIN_SESSIONS_FILE = path.join(__dirname, "data", "admin-sessions.json");
+const anyAdminReady = () => [...admins.values()].some(a => a.ready);
+function adminError() {
+  if (!process.env.TG_API_ID || !process.env.TG_API_HASH) return "TG_API_ID / TG_API_HASH are not set in Render.";
+  if (!admins.size) return "No admin account is logged in yet. Open /setup.html and add one.";
+  return [...admins.values()].map(a => `${a.label}: ${a.error || "not ready"}`).join("; ");
+}
+async function loadAdminRecords() {
+  let list = [];
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "admin_user_sessions").maybeSingle(); if (Array.isArray(data?.value)) list = data.value; } catch {} }
+  if (!list.length) { try { list = JSON.parse(fs.readFileSync(ADMIN_SESSIONS_FILE, "utf8")); } catch {} }
+  // Older single-admin installs: env TG_SESSION, or the previously stored single session.
+  const legacy = [];
+  if (process.env.TG_SESSION) legacy.push(process.env.TG_SESSION.trim());
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "admin_user_session").maybeSingle(); if (data?.value?.session) legacy.push(String(data.value.session)); } catch {} }
+  try { const t = fs.readFileSync(path.join(__dirname, "data", "admin-session.txt"), "utf8").trim(); if (t) legacy.push(t); } catch {}
+  for (const sess of legacy) if (sess && !list.some(r => r.session === sess)) list.push({ id: list.some(r => r.id === "main") ? "main" + list.length : "main", label: "Main admin", session: sess });
+  return list;
+}
+async function saveAdminRecords() {
+  const list = [...admins.values()].map(({ id, label, session, ownerTelegramId }) => ({ id, label, session, ownerTelegramId: ownerTelegramId || "" }));
+  try { fs.mkdirSync(path.dirname(ADMIN_SESSIONS_FILE), { recursive: true }); fs.writeFileSync(ADMIN_SESSIONS_FILE, JSON.stringify(list)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "admin_user_sessions", value: list, updated_at: new Date().toISOString() }); } catch {} }
+}
+async function startAdmin(record) {
+  const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+  const admin = { id: record.id, label: record.label || record.id, session: record.session, ownerTelegramId: record.ownerTelegramId || "", client: null, ready: false, error: "", tgUserId: "" };
+  admins.set(admin.id, admin);
+  if (!apiId || !apiHash) { admin.error = "TG_API_ID / TG_API_HASH missing"; return admin; }
+  try {
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions"); const { NewMessage } = require("telegram/events");
+    admin.client = new TelegramClient(new StringSession(record.session), apiId, apiHash, { connectionRetries: 5 });
+    await admin.client.connect();
+    if (!(await admin.client.checkAuthorization())) throw new Error("login expired, log this admin in again at /setup.html");
+    try { admin.tgUserId = String((await admin.client.getMe()).id); } catch {}
+    admin.ready = true;
+    console.log(`Admin account ready: ${admin.label}`);
+    admin.client.addEventHandler(async event => {
+      try {
+        const msg = event.message;
+        if (!msg || msg.out || !msg.isPrivate) return;
+        try { greetingModule.autoPersonal(admin, msg).catch(e => console.warn("Auto greeting:", e.message)); } catch {}
+        const senderId = String(msg.senderId);
+        const text = String(msg.message || "").trim();
+        if (!text) return;
+        await supabaseReady;
+        if (supabase) await loadOrders();
+        const mine = orders.filter(o => o.sender === "admin_user_account" && String(o.adminId || "") === admin.id && String(o.telegramChatId) === senderId);
+        const order = mine[mine.length - 1];
+        if (!order) return;
+        // No automatic replies to customer texts. A text is saved only as the answer to a 💬 Comment tap.
+        if (order.closed || String(order.awaitingCommentFrom || "") !== senderId) return;
+        order.awaitingCommentFrom = ""; order.comments = order.comments || []; order.comments.push({ comment: text, at: new Date().toISOString(), from: senderId });
+        await saveOrderRecord(order);
+        await updateAuditCopies(order); await closeOrderButtons(order);
+        await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(text)}`);
+      } catch (error) { console.warn("Admin message handler failed:", error.message); }
+    }, new NewMessage({ incoming: true }));
+    // Customer tapped Confirm / Reject on the poll.
+    try {
+      const { Raw } = require("telegram/events"); const { Api } = require("telegram");
+      admin.client.addEventHandler(async update => {
+        try {
+          if (!(update instanceof Api.UpdateMessagePollVote)) return;
+          const senderId = String(update.peer?.userId ?? "");
+          const choice = update.options?.[0] ? Buffer.from(update.options[0]).toString() : "";
+          if (!senderId || !choice) return;
+          await supabaseReady; if (supabase) await loadOrders();
+          const mine = orders.filter(o => o.sender === "admin_user_account" && String(o.adminId || "") === admin.id && String(o.telegramChatId) === senderId);
+          const order = mine[mine.length - 1]; if (!order) return;
+          if (choice === "3") { await admin.client.sendMessage(BigInt(senderId), { message: `Please type your comment for ${order.orderId} and send it here.` }); return; }
+          if (order.status === "Confirmed" || order.status === "Rejected") return;
+          order.status = choice === "1" ? "Confirmed" : "Rejected"; await saveOrderRecord(order); await updateAuditCopies(order);
+          // the poll disappears and a clear text with the order ID replaces it
+          if (order.pollMessageId) { try { await admin.client.deleteMessages(await admin.client.getInputEntity(BigInt(senderId)), [order.pollMessageId], { revoke: true }); } catch (e) { console.warn("Poll delete failed:", e.message); } }
+          await admin.client.sendMessage(BigInt(senderId), { message: choice === "1" ? `Order ${order.orderId} — ✅ CONFIRMED. Thank you for choosing Ambar Furniture!` : `Order ${order.orderId} — ❌ REJECTED.` });
+          await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> is <b>${esc(order.status)}</b> (customer tapped the poll). Sent from ${esc(order.adminLabel || "")}.`);
+        } catch (e) { console.warn("Poll vote handler failed:", e.message); }
+      }, new Raw({ types: [Api.UpdateMessagePollVote] }));
+    } catch (e) { console.warn("Poll vote listener unavailable:", e.message); }
+  } catch (error) { admin.error = error.message; console.error(`Admin ${admin.label} unavailable:`, error.message); }
+  return admin;
+}
+async function initAdmins() {
+  for (const rec of await loadAdminRecords()) if (!admins.get(rec.id)?.ready) await startAdmin(rec);
+}
+function pickAdmin(adminId) {
+  const chosen = admins.get(String(adminId || ""));
+  if (chosen?.ready) return chosen;
+  return [...admins.values()].find(a => a.ready) || null;
+}
+async function resolveUserEntity(client, order) {
+  const username = String(order.telegramUsername || "").trim().replace(/^@/, "").replace(/^https?:\/\/t\.me\//i, "");
+  const phone = String(order.telegramPhone || order.phone || "").replace(/[^\d+]/g, "");
+  const id = /^\d+$/.test(String(order.telegramChatId || "")) ? String(order.telegramChatId) : "";
+  const tries = [];
+  if (username) tries.push(() => client.getEntity(username));
+  if (phone.replace(/\D/g, "").length >= 8) tries.push(async () => {
+    const { Api } = require("telegram"); const bigInt = require("big-integer");
+    const res = await client.invoke(new Api.contacts.ImportContacts({ contacts: [new Api.InputPhoneContact({ clientId: bigInt(Date.now()), phone: phone.startsWith("+") ? phone : "+" + phone, firstName: order.customerName || "Customer", lastName: "" })] }));
+    if (!res.users?.length) throw new Error("That phone number is not on Telegram (or hides itself from contact lookup).");
+    return res.users[0];
+  });
+  if (id) tries.push(() => client.getEntity(BigInt(id)));
+  let last;
+  for (const t of tries) { try { return await t(); } catch (e) { last = e; } }
+  throw new Error(last?.message || "Enter the customer's @username or phone number so the admin account can find them.");
+}
+async function sendDecisionPoll(admin, entity, order) {
+  let lastError = "";
+  try {
+    const { Api } = require("telegram"); const bigInt = require("big-integer");
+    const peer = await admin.client.getInputEntity(entity);
+    const mk = t => new Api.TextWithEntities({ text: t, entities: [] });
+    const opts = [["1", "✅ Confirm"], ["2", "❌ Reject"], ["3", "💬 I have a comment"]];
+    const build = wrap => new Api.InputMediaPoll({ poll: new Api.Poll({ id: bigInt(Date.now()), question: wrap(`Order ${order.orderId} — please choose`),
+      answers: opts.map(([k, t]) => new Api.PollAnswer({ text: wrap(t), option: Buffer.from(k) })), publicVoters: true }) });
+    for (const wrap of [mk, t => t]) {
+      try {
+        const res = await admin.client.invoke(new Api.messages.SendMedia({ peer, media: build(wrap), message: "", randomId: bigInt(Math.floor(Math.random() * 1e15)) }));
+        let messageId = 0;
+        for (const u of (res.updates || [])) { if (u instanceof Api.UpdateMessageID) messageId = u.id; else if (!messageId && u.message?.id) messageId = u.message.id; }
+        return { ok: true, messageId };
+      }
+      catch (e) { lastError = e.errorMessage || e.message; }
+    }
+  } catch (e) { lastError = e.errorMessage || e.message; }
+  console.warn("Decision poll not sent:", lastError);
+  return { ok: false, error: lastError };
+}
+// Real tappable Confirm / Reject / Comment buttons. A personal Telegram account cannot send inline buttons,
+// so the AMBAR bot sends them. Works when the customer has opened the bot and pressed Start; otherwise returns ok:false.
+// Tappable buttons for ANY customer (no /start needed): the admin's account posts an inline-bot message
+// "via @AmbarBot". The bot answers the inline query with the card text + Confirm/Reject/Comment keyboard.
+// Requires Inline Mode enabled for the bot in @BotFather (/setinline).
+let cachedBotUsername = "", inlineWebhookChecked = false;
+async function botUsername() {
+  if (cachedBotUsername) return cachedBotUsername;
+  const fromEnv = String(process.env.BOT_USERNAME || "").replace(/^@/, "").trim();
+  if (fromEnv) return (cachedBotUsername = fromEnv);
+  const me = await telegram("getMe", {}); return (cachedBotUsername = me.username || "");
+}
+async function sendInlineButtons(admin, entity, order) {
+  try {
+    const { Api } = require("telegram"); const bigInt = require("big-integer");
+    const me = await telegram("getMe", {});
+    if (me && me.supports_inline_queries === false) return { ok: false, error: "INLINE_MODE_OFF: Inline Mode is switched off for the bot. Open @BotFather → /setinline → choose the bot → type any placeholder text." };
+    // make sure Telegram will deliver inline queries to this server
+    if (!inlineWebhookChecked) { inlineWebhookChecked = true; try { await tgApi.healWebhookIfNeeded(await telegram("getWebhookInfo", {})); } catch {} }
+    const username = me?.username || await botUsername();
+    if (!username) return { ok: false, error: "bot username unknown" };
+    const peer = await admin.client.getInputEntity(entity);
+    const bot = await admin.client.getEntity(username);
+    const res = await admin.client.invoke(new Api.messages.GetInlineBotResults({ bot, peer, query: `order:${order.id}`, offset: "" }));
+    const first = res.results?.[0];
+    if (!first) return { ok: false, error: "bot returned no inline result (enable Inline Mode in @BotFather: /setinline)" };
+    const sent = await admin.client.invoke(new Api.messages.SendInlineBotResult({ peer, queryId: res.queryId, id: first.id, randomId: bigInt(Math.floor(Math.random() * 1e15)) }));
+    let messageId = 0; for (const u of (sent.updates || [])) { if (u instanceof Api.UpdateMessageID) messageId = u.id; }
+    return { ok: true, withCard: first.type === "photo", messageId };
+  } catch (error) { return { ok: false, error: error.errorMessage || error.message }; }
+}
+// Most reliable route: the AMBAR bot itself sends the card photo WITH the 3 buttons in one message.
+// Works when the customer has opened the bot (pressed Start); otherwise Telegram refuses and we use the admin-account routes.
+
+// True when the AMBAR bot can message this customer (they pressed Start in the bot).
+async function botCanMessage(chatId) {
+  if (!BOT_TOKEN || !/^-?\d{5,}$/.test(String(chatId || ""))) return false;
+  try { await telegram("sendChatAction", { chat_id: String(chatId), action: "typing" }); return true; } catch { return false; }
+}
+// The answer link as its OWN message with a real button (a personal Telegram account cannot attach bot buttons to its card).
+async function sendAnswerButton(order, chatId) {
+  const kb = keyboard(order.id, order);
+  if (!kb.inline_keyboard.length) return { ok: false, error: "PUBLIC_BASE_URL is not https" };
+  try {
+    const sent = await telegram("sendMessage", { chat_id: String(chatId), text: (order._edited ? "✏️ The order was edited — please answer again 👇" : "👇 Please answer your order below"), reply_markup: kb });
+    return { ok: true, messageId: sent.message_id };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
+async function sendBotCard(order, chatId, filePath, opts = {}) {
+  if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
+  let bytes; try { bytes = await fs.promises.readFile(filePath); } catch (e) { return { ok: false, error: "card file: " + e.message }; }
+  const hard = /blocked|chat not found|can't initiate|deactivated|Forbidden/i;
+  let lastError = "";
+  for (const markup of keyboardAttempts(order)) {
+    try {
+      const sent = await tgApi.sendForm("sendPhoto", () => {
+        const body = new FormData();
+        body.append("chat_id", String(chatId));
+        body.append("photo", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
+        body.append("caption", cardCaptionHtml(order, "", "", { noLink: true, edited: !!opts.edited }));
+        body.append("parse_mode", "HTML");
+        if (markup) body.append("reply_markup", JSON.stringify(markup));
+        return body;
+      });
+      return { ok: true, messageId: sent.message_id };
+    } catch (error) { lastError = error.message; if (hard.test(error.message)) return { ok: false, error: error.message }; }
+  }
+  // Photo itself failed: text message + buttons.
+  for (const markup of keyboardAttempts(order)) {
+    try {
+      const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}), text: cardCaptionHtml(order, "", "Please review your order below 👇", { noLink: true, edited: !!opts.edited }) });
+      return { ok: true, messageId: sent.message_id, fallback: true };
+    } catch (e2) { lastError += " | " + e2.message; }
+  }
+  return { ok: false, error: lastError };
+}
+
+// ── Cards that could not be delivered yet (customer has not pressed Start) are sent AUTOMATICALLY the moment the customer opens the bot ──
+async function cardFileForOrder(order) {
+  const ref = String(order.cardImage || "");
+  if (!ref) throw new Error("order has no card image");
+  const tmp = path.join(require("os").tmpdir(), `ambar-card-${order.id}-${Date.now()}.jpg`);
+  if (/^https?:/i.test(ref)) { const r = await fetch(ref); if (!r.ok) throw new Error("card download failed " + r.status); await fs.promises.writeFile(tmp, Buffer.from(await r.arrayBuffer())); return tmp; }
+  await fs.promises.copyFile(path.join(uploadDir, path.basename(ref.split("?")[0])), tmp); return tmp;
+}
+async function deliverPendingCards(chat = {}, from = {}, text = "") {
+  const chatId = String(chat.id || ""); if (!/^\d+$/.test(chatId)) return;
+  const payload = (String(text).match(/^\/start(?:@\w+)?\s+o_([a-f0-9]{8,})/i) || [])[1] || "";
+  const handle = String(from.username || chat.username || "").replace(/^@/, "").toLowerCase();
+  await supabaseReady; if (supabase) await loadOrders();
+  const pending = orders.filter(o => !o.sent && !o.closed && o.status !== "Rejected" && ((payload && o.token === payload) || String(o.telegramChatId || "") === chatId || (handle && String(o.telegramUsername || "").replace(/^@/, "").toLowerCase() === handle)));
+  if (!pending.length && /^\/start/i.test(String(text).trim())) await telegram("sendMessage", { chat_id: chatId, text: "✅ Welcome to AMBAR Furniture. Your order cards will arrive here." }).catch(() => {});
+  for (const o of pending) {
+    let file = "";
+    try {
+      file = await cardFileForOrder(o);
+      const r = await sendBotCard(o, chatId, file);
+      if (!r.ok) { console.warn("Pending card not delivered:", r.error); continue; }
+      o.telegramChatId = chatId; o.sender = "bot"; o.telegramMessageId = r.messageId; o.botButtonsMessageId = r.messageId;
+      o.sent = true; o.customerDelivered = true; o.deliveryNote = ""; o.buttonsLine = "✅ card + Open answer link sent in one message";
+      await saveOrderRecord(o); await updateAuditCopies(o).catch(() => {});
+      await notifyAdminsText(o, `✅ Order <b>${esc(o.orderId)}</b> card was delivered to ${esc(o.customerName || "the customer")} (they just opened the bot).`).catch(() => {});
+    } catch (e) { console.warn("Pending card delivery failed:", e.message); }
+    finally { if (file) fs.promises.unlink(file).catch(() => {}); }
+  }
+}
+async function sendBotButtons(order, chatId) {
+  if (!BOT_TOKEN || !/^-?\d+$/.test(String(chatId || ""))) return { ok: false, error: "no numeric customer chat id" };
+  try {
+    const sent = await telegram("sendMessage", { chat_id: String(chatId), parse_mode: "HTML", reply_markup: keyboard(order.id, order),
+      text: cardCaptionHtml(order, "", "Please choose an option below 👇") });
+    return { ok: true, messageId: sent.message_id };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
+function buttonsNote(r) {
+  const why = e => /INLINE_MODE_OFF/.test(e) ? "Inline Mode is OFF — in @BotFather send /setinline, pick the bot, type any placeholder text, then send again."
+    : /BOT_INLINE_DISABLED/.test(e) ? "Inline Mode is OFF — in @BotFather send /setinline, pick the bot, type any placeholder text, then send again."
+    : /BOT_RESPONSE_TIMEOUT/.test(e) ? "The bot did not answer in time (server asleep or webhook not set). Open the app once, wait 30 seconds, and send again."
+    : /Forbidden|chat not found|bot can't initiate|blocked/i.test(e) ? "the customer has not pressed Start on the bot" : e;
+  if (r.buttons === "inline" || r.buttons === "botcard") return "";
+  if (r.buttons === "link") return " (Customer got a link to a page with the Confirm / Reject / Comment buttons.)";
+  if (r.buttons === "botchat") return ` (Buttons were sent through the bot chat. To reach customers who never pressed Start: ${why(r.inlineError || "")})`;
+  return ` ⚠️ The 3 buttons could NOT be sent. Reason: ${why(r.inlineError || "unknown")} / Bot chat: ${why(r.directError || "unknown")}. The customer was asked to reply CONFIRM / REJECT / a comment by text.`;
+}
+async function sendCardViaUserAccount(order, filePath) {
+  const own = admins.get(String(order.adminId || ""));
+  const admin = order.strictAdmin ? (own?.ready ? own : null) : (own?.ready ? own : pickAdmin(order.adminId));
+  if (!admin) throw new Error(order.strictAdmin ? "Your own Telegram account is not connected. Ask the main admin to generate your connection QR and scan it in Telegram." : adminError());
+  const entity = await resolveUserEntity(admin.client, order);
+
+  // IMPORTANT: A personal Telegram account cannot reliably create bot-style inline
+  // keyboard buttons for a customer who has never interacted with the bot. The old
+  // implementation depended on an inline-bot result, which could leave the answer
+  // control invisible until a later customer message/update.
+  //
+  // Always send the card directly from the connected admin account and put the answer
+  // URL in the same message immediately. Telegram renders the HTTPS URL as a clickable
+  // link without requiring any later customer message.
+  // FIRST try: post the card as an inline-bot message in the customer's chat with the admin, with the real
+  // 🔗 / ✅ Confirm / ❌ Reject / 💬 Comment buttons directly under the card (no /start needed). If that fails, fall back to the old behaviour below.
+  const inl = await sendInlineButtons(admin, entity, order);
+  if (inl.ok) {
+    order.adminId = admin.id; order.adminLabel = admin.label; order.pollMessageId = 0;
+    return { message_id: inl.messageId, chatId: String(entity.id), admin, pollSent: false, pollError: "", buttons: "inline", inlineError: "", directError: "", immediateLink: true };
+  }
+  const inlineFailure = inl.error || "";
+  const link = answerLink(order);
+  const botReach = await botCanMessage(entity.id); // then the answer link is sent as a separate real button below
+  const caption = `<b>AMBAR FURNITURE — ${order._edited ? "✏️ EDITED ORDER" : "ORDER CARD"}</b>\n<b>Order:</b> ${esc(order.orderId)}\n<b>Product:</b> ${esc(order.product || "Furniture order")}\n<b>Customer:</b> ${esc(order.customerName || "")}${botReach || !link ? "" : `\n\n🔗 <a href="${link}">መልስ ለመስጠት ክፈት</a>`}`;
+
+  const photoPath = filePath + ".jpg";
+  await fs.promises.copyFile(filePath, photoPath);
+  let sent;
+  try {
+    sent = await admin.client.sendFile(entity, {
+      file: photoPath,
+      caption,
+      parseMode: "html",
+      forceDocument: false
+    });
+  } finally {
+    fs.promises.unlink(photoPath).catch(() => {});
+  }
+
+  order.adminId = admin.id;
+  order.adminLabel = admin.label;
+  order.pollMessageId = 0;
+  let buttonMsg = null;
+  if (botReach) { buttonMsg = await sendAnswerButton(order, String(entity.id)); if (buttonMsg.ok) order.botButtonsMessageId = buttonMsg.messageId; }
+  return {
+    message_id: sent.id,
+    chatId: String(entity.id),
+    admin,
+    pollSent: false,
+    pollError: "",
+    buttons: buttonMsg?.ok ? "botchat" : "link",
+    inlineError: inlineFailure,
+    directError: "",
+    immediateLink: true
+  };
+}
+
+function accountFor(actor) {
+  // Every Telegram Mini App user may use only the personal account linked to their
+  // own Telegram ID. This includes the main admin; never fall back to another
+  // person's connected session.
+  if (actor?.telegramId) {
+    const own = admins.get("u" + String(actor.telegramId));
+    if (own && (!own.ownerTelegramId || String(own.ownerTelegramId) === String(actor.telegramId))) return own;
+  }
+  // Backward compatibility for an older main-admin session created before
+  // per-user account IDs were introduced. Assigned admins never use this fallback.
+  if (actor?.role === "owner" && (!actor.telegramId || ENV_OWNER_IDS.includes(String(actor.telegramId)))) return [...admins.values()].find(x => !x.ownerTelegramId) || null;
+  return null;
+}
+
+// ── Setup page API (protected by ADMIN_SETUP_KEY) ─────────────────────────────
+function setupAuth(req, res) {
+  // The owner (setup key header, or an owner Telegram ID from the Mini App) may manage admins from inside the app.
+  if (identify(req).role === "owner") return true;
+  const key = String(process.env.ADMIN_SETUP_KEY || "");
+  if (!key) { res.status(403).json({ ok: false, error: "Set ADMIN_SETUP_KEY in Render (any long secret) and redeploy, then enter it here." }); return false; }
+  if (String(req.body?.key || req.query?.key || "") !== key) { res.status(401).json({ ok: false, error: "Wrong setup key." }); return false; }
+  return true;
+}
+// Public: the order form uses this to list admins (labels only, no secrets).
+app.get("/api/admins", (req, res) => {
+  // Owners may choose any connected sender account. Assigned admins can see/use only their own.
+  const mine = req.actor?.role === "owner"
+    ? [...admins.values()]
+    : [...admins.values()].filter(a => a.id === (req.actor?.accountId || (req.actor?.telegramId ? "u" + req.actor.telegramId : "")));
+  res.json({ ok: true, admins: mine.map(a => ({ id: a.id, label: a.label, ready: !!a.ready, error: a.ready ? "" : (a.error || "Not connected") })) });
+});
+function telegramLoginError(error) {
+  const raw = String(error?.errorMessage || error?.message || error || "Telegram login failed.");
+  const code = String(error?.errorMessage || raw).toUpperCase();
+  if (/API_ID_INVALID|API_ID_PUBLISHED_FLOOD|API_HASH_INVALID/.test(code)) return "Telegram rejected TG_API_ID / TG_API_HASH. Recheck both values from my.telegram.org → API development tools, save them in Render, and redeploy.";
+  if (/PHONE_NUMBER_INVALID/.test(code)) return "Phone number is invalid. Enter the Telegram account number with country code, for example +2519XXXXXXXX.";
+  if (/PHONE_NUMBER_BANNED/.test(code)) return "Telegram has restricted this phone number from logging in. Contact Telegram support or use another permitted account.";
+  if (/PHONE_CODE_INVALID|PHONE_CODE_EMPTY/.test(code)) return "That login code is incorrect or expired. Request a fresh code and enter the newest one.";
+  if (/PHONE_CODE_EXPIRED/.test(code)) return "That login code expired. Press Send code again and use the newest code.";
+  if (/SEND_CODE_UNAVAILABLE/.test(code)) return "Telegram refused the SMS resend: SEND_CODE_UNAVAILABLE means Telegram has no further SMS/phone delivery option available for this login attempt. It is not an AMBAR delivery failure. Do not keep retrying SMS. Return to the normal code request and check Telegram on another device already logged into this exact phone number. If Telegram reports in-app delivery but no service notification appears, AMBAR cannot force Telegram to create or forward that notification; wait and try again later or use Telegram's official QR login from a logged-in device if available.";
+  if (/SMS_CODE_CREATE_FAILED/.test(code)) return "Telegram could not create an SMS code for this number. SMS delivery is currently unavailable for this login attempt. Use Telegram's normal in-app delivery if offered, or try later.";
+  if (/PHONE_CODE_FLOOD|PHONE_NUMBER_FLOOD|FLOOD_WAIT/.test(code)) return "Telegram is limiting login attempts. Wait for the restriction to expire before requesting another code. Repeated attempts can extend the restriction.";
+  if (/AUTH_RESTART|SESSION_PASSWORD_NEEDED/.test(code)) return raw;
+  if (/NETWORK|TIMEOUT|CONNECTION/.test(code)) return "Could not reach Telegram. Check the server's internet connection and try Send code again.";
+  return raw;
+}
+app.get("/api/setup/status", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  let webhook = null; try { webhook = await telegram("getWebhookInfo", {}); } catch (e) { webhook = { error: e.message }; }
+  const conns = [...businessConnections.values()];
+  res.json({ ok: true,
+    botToken: !!BOT_TOKEN, adminChatId: !!ADMIN_CHAT_ID, supabase: !!supabase,
+    tgApiId: !!process.env.TG_API_ID, tgApiHash: !!process.env.TG_API_HASH,
+    admins: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: a.ready, error: a.error })),
+    webhookUrl: webhook?.url || "", webhookError: webhook?.last_error_message || webhook?.error || "",
+    businessConnections: conns.length, usableBusinessConnections: conns.filter(isUsable).length, knownCustomers: customers.size });
+});
+app.post("/api/setup/remove", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const admin = admins.get(String(req.body?.id || ""));
+  if (!admin) return res.status(404).json({ ok: false, error: "Admin not found." });
+  try { await admin.client?.disconnect(); } catch {}
+  admins.delete(admin.id);
+  await saveAdminRecords();
+  res.json({ ok: true, message: `Removed ${admin.label}.` });
+});
+app.post("/api/setup/test", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  try {
+    const admin = pickAdmin(req.body?.adminId);
+    if (!admin) return res.status(400).json({ ok: false, error: adminError() });
+    const target = String(req.body?.target || "").trim();
+    if (!target) return res.status(400).json({ ok: false, error: "Enter an @username or phone to test." });
+    const isPhone = target.startsWith("+") || /^\d{8,}$/.test(target);
+    const entity = await resolveUserEntity(admin.client, { telegramUsername: isPhone ? "" : target, telegramPhone: isPhone ? target : "", customerName: "Test" });
+    await admin.client.sendMessage(entity, { message: `✅ Test message from Ambar Furniture (sent from admin: ${admin.label}).` });
+    res.json({ ok: true, message: `Test message sent from ${admin.label}.` });
+  } catch (error) { res.status(400).json({ ok: false, error: error.errorMessage || error.message }); }
+});
+
+app.get("/api/setup/app-admins", (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const people = appAdmins.map(person => {
+    const account = admins.get(String(person.accountId || ""));
+    return { ...person, perms: permsOf(person), connected: !!account?.ready, accountLabel: account?.label || "", connectionError: account && !account.ready ? (account.error || "Not connected") : "" };
+  });
+  res.json({ ok: true, allPerms: ALL_PERMS, enforced: accessEnforced(), owners: OWNER_IDS, primaryOwners: ENV_OWNER_IDS, appAdmins: people, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: !!a.ready, ownerTelegramId: a.ownerTelegramId || "", error: a.ready ? "" : (a.error || "Not connected") })) });
+});
+app.post("/api/setup/app-admins/add", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  // One or many people: one per line as "telegramId name" (unlimited).
+  const lines = String(req.body?.telegramId || "").split(/\r?\n|;/).map(x => x.trim()).filter(Boolean);
+  const added = [];
+  for (const line of lines) {
+    const m = line.match(/(\d{5,})\s*[,:-]?\s*(.*)$/);
+    if (!m) continue;
+    const telegramId = m[1];
+    const name = (m[2] || (lines.length === 1 ? String(req.body?.name || "") : "")).trim().slice(0, 60);
+    const prev = appAdmins.find(a => String(a.telegramId) === telegramId);
+    const asMain = req.body?.main === true || req.body?.main === "1" || req.body?.main === "true" || !!prev?.main;
+    const wantViewer = req.body?.viewer === true || req.body?.viewer === "1" || req.body?.viewer === "true" || (req.body?.viewer === undefined && !!prev?.viewer);
+    const base = { ...(prev || {}) }; delete base.viewer;
+    const permList = req.body?.perms !== undefined ? cleanPerms(req.body.perms) : (prev ? permsOf(prev) : DEFAULT_PERMS.slice());
+    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...base, telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", perms: permList, permsVer: 2, ...(asMain ? { main: true } : {}), ...(wantViewer && !asMain ? { viewer: true } : {}) });
+    added.push(name || telegramId);
+  }
+  if (!added.length) return res.status(400).json({ ok: false, error: "Enter numeric Telegram IDs, one per line, e.g. 123456789 Abebe" });
+  await saveAppAdmins();
+  sheets.log("Admin assigned", added.join(", "), identify(req).name || "Owner");
+  res.json({ ok: true, message: `${added.length} admin${added.length > 1 ? "s" : ""} assigned: ${added.join(", ")}.` });
+});
+// Give / take away MAIN ADMIN rights (full control, same as the original main admin). Any main admin can do this,
+// but the original main admin (set in Render) can never be demoted from inside the app.
+app.post("/api/setup/app-admins/set-main", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  if (ENV_OWNER_IDS.includes(telegramId)) return res.status(400).json({ ok: false, error: "This is the original main admin (set in Render). It can't be changed here." });
+  const make = req.body?.main === true || req.body?.main === "1" || req.body?.main === "true";
+  const me = identify(req);
+  if (!make && String(me.telegramId) === telegramId) return res.status(400).json({ ok: false, error: "You can't remove your own main-admin rights. Ask another main admin." });
+  if (make) { rec.main = true; delete rec.viewer; } else delete rec.main; // a main admin is never view-only
+  await saveAppAdmins();
+  sheets.log(make ? "Main admin added" : "Main admin removed", rec.name || rec.telegramId, me.name || "Owner");
+  res.json({ ok: true, message: make ? `${rec.name || telegramId} is now a MAIN ADMIN (full control). They must reopen the app once.` : `${rec.name || telegramId} is a normal assigned admin again.` });
+});
+// v118: VIEW-ONLY admin — can watch everything but not change or send anything (the server blocks every write for them).
+app.post("/api/setup/app-admins/set-viewer", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  if (OWNER_IDS.includes(telegramId)) return res.status(400).json({ ok: false, error: "A main admin can't be view-only. Remove the main-admin rights first." });
+  const make = req.body?.viewer === true || req.body?.viewer === "1" || req.body?.viewer === "true";
+  if (make) rec.viewer = true; else delete rec.viewer;
+  await saveAppAdmins();
+  sheets.log(make ? "Admin set to view-only" : "Admin may edit again", rec.name || rec.telegramId, identify(req).name || "Owner");
+  res.json({ ok: true, message: make ? `👁 ${rec.name || telegramId} is now VIEW-ONLY: can watch, cannot change anything.` : `${rec.name || telegramId} is a normal assigned admin again (can create and edit).` });
+});
+app.post("/api/setup/app-admins/set-perms", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  rec.perms = cleanPerms(req.body?.perms); rec.permsVer = 2;
+  await saveAppAdmins();
+  sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner");
+  res.json({ ok: true, perms: rec.perms, message: `✅ Access saved for ${rec.name || telegramId}: ${rec.perms.length ? rec.perms.join(", ") : "no sections"}. They see the change when they reopen the app.` });
+});
+app.post("/api/setup/app-admins/remove", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  if (ENV_OWNER_IDS.includes(telegramId)) return res.status(400).json({ ok: false, error: "This is the original main admin (set in Render). It can't be removed here." });
+  if (String(identify(req).telegramId) === telegramId) return res.status(400).json({ ok: false, error: "You can't delete yourself. Ask another main admin." });
+  const gone = appAdmins.find(a => String(a.telegramId) === telegramId);
+  appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId);
+  await saveAppAdmins();
+  sheets.log("Admin removed", (gone && (gone.name || gone.telegramId)) || telegramId, identify(req).name || "Owner");
+  const own = gone && admins.get(String(gone.accountId || ""));
+  if (own && own.ownerTelegramId === telegramId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
+  res.json({ ok: true, message: "Admin removed." });
+});
+// v93: after a rename, EVERYTHING that carried the old name now carries the new one: orders (Created By, sending-account label),
+// the connected Telegram account label, Customers Data (Sales Name / created by) and the Google Sheet (re-synced).
+async function propagateAdminRename({ telegramId, accountId, oldName, newName }) {
+  let nOrders = 0, nCust = 0;
+  try {
+    const acc = accountId ? admins.get(String(accountId)) : null;
+    if (acc) { acc.label = newName; await saveAdminRecords(); }
+    try { await supabaseReady; if (supabase) await loadOrders(); } catch {}
+    const mineO = o => String(o.createdByTelegramId || "") === String(telegramId) || (oldName && o.createdByName === oldName && o.createdByRole !== "owner");
+    for (const o of orders) {
+      let ch = false;
+      if (mineO(o) && o.createdByName !== newName) { o.createdByName = newName; ch = true; }
+      if (accountId && String(o.adminId || "") === String(accountId) && o.adminLabel !== newName) { o.adminLabel = newName; ch = true; }
+      if (ch) { nOrders++; try { await saveOrderRecordCore(o); } catch (e) { console.warn("Rename: order save failed:", e.message); } }
+    }
+    for (const c of callersDb.list) {
+      let ch = false;
+      if (oldName && c.salesName === oldName) { c.salesName = newName; ch = true; }
+      if (oldName && c.createdBy === oldName) { c.createdBy = newName; ch = true; }
+      if (ch) { nCust++; c.updatedAt = cH.stamp(); }
+    }
+    if (nCust) await saveCallers();
+    if (sheets.configured()) {
+      if (nOrders) sheets.syncAll(orders, "Admin renamed").catch(e => console.warn("Rename: sheet order sync failed:", e.message));
+      if (nCust) pushAllCallers().catch(e => console.warn("Rename: sheet customer sync failed:", e.message));
+    }
+  } catch (e) { console.warn("Admin rename propagation failed:", e.message); return " (Some old records could not be renamed: " + e.message + ")"; }
+  return ` Updated ${nOrders} order(s) and ${nCust} customer record(s) to the new name${sheets.configured() ? "; the Google Sheet is refreshing" : ""}.`;
+}
+// v92: ✏️ edit an assigned admin (name, Telegram ID, phone, note). Owner / setup key only.
+app.post("/api/setup/app-admins/update", async (req, res) => {
+  if (!setupAuth(req, res)) return;
+  const oldId = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === oldId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  const newId = String(req.body?.newTelegramId || oldId).replace(/\D/g, "");
+  if (newId.length < 5) return res.status(400).json({ ok: false, error: "Enter a valid numeric Telegram ID (5+ digits)." });
+  if (newId !== oldId) {
+    if (appAdmins.some(a => String(a.telegramId) === newId)) return res.status(409).json({ ok: false, error: `Telegram ID ${newId} is already assigned to another admin.` });
+    if (OWNER_IDS.includes(newId)) return res.status(409).json({ ok: false, error: `Telegram ID ${newId} belongs to the main admin.` });
+  }
+  const clean = (v, n) => String(v == null ? "" : v).replace(/[\r\n]+/g, " ").trim().slice(0, n);
+  const before = rec.name || rec.telegramId;
+  const oldName = String(rec.name || ""), oldAccountId = String(rec.accountId || "");
+  if (req.body?.name !== undefined) rec.name = clean(req.body.name, 60);
+  if (req.body?.phone !== undefined) rec.phone = clean(req.body.phone, 30);
+  if (req.body?.note !== undefined) rec.note = clean(req.body.note, 200);
+  let extra = "";
+  if (req.body?.main !== undefined) { // assignee: main admin (set from the edit form)
+    const wantMain = req.body.main === true || req.body.main === "1" || req.body.main === "true";
+    if (!wantMain && rec.main && String(identify(req).telegramId) === oldId) return res.status(400).json({ ok: false, error: "You can't remove your own main-admin rights. Ask another main admin." });
+    if (wantMain && !rec.main) { rec.main = true; delete rec.viewer; extra += " Now a MAIN ADMIN — they must reopen the app once."; sheets.log("Main admin added", rec.name || rec.telegramId, identify(req).name || "Owner"); }
+    else if (!wantMain && rec.main) { delete rec.main; extra += " Main-admin rights removed."; sheets.log("Main admin removed", rec.name || rec.telegramId, identify(req).name || "Owner"); }
+  }
+  if (req.body?.perms !== undefined) { rec.perms = cleanPerms(req.body.perms); rec.permsVer = 2; extra += " Section access updated."; sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner"); }
+  if (req.body?.viewer !== undefined) {
+    const wantViewer = req.body.viewer === true || req.body.viewer === "1" || req.body.viewer === "true";
+    if (wantViewer && (rec.main || OWNER_IDS.includes(oldId))) extra += " (Not set to view-only: a main admin can't be view-only.)";
+    else if (wantViewer && !rec.viewer) { rec.viewer = true; extra += " Now VIEW-ONLY."; }
+    else if (!wantViewer && rec.viewer) { delete rec.viewer; extra += " May edit again."; }
+  }
+  if (newId !== oldId) { // the personal Telegram login belongs to the OLD ID, so it is disconnected; the new person connects their own
+    const own = admins.get(String(rec.accountId || ""));
+    if (own && own.ownerTelegramId === oldId) { try { await own.client?.disconnect(); } catch {} admins.delete(own.id); await saveAdminRecords(); }
+    rec.telegramId = newId; rec.accountId = "";
+    extra = " Telegram ID changed — the main admin must generate a new connection QR and the new person scans it.";
+  }
+  await saveAppAdmins();
+  sheets.log("Admin edited", before + " → " + (rec.name || rec.telegramId), identify(req).name || "Owner");
+  let synced = "";
+  if (String(rec.name || "") !== oldName && rec.name) synced = await propagateAdminRename({ telegramId: oldId, accountId: oldAccountId, oldName, newName: rec.name });
+  res.json({ ok: true, message: `Saved: ${rec.name || rec.telegramId}.${extra}${synced}`, admin: rec });
+});
+// ── Assigned admins connect THEIR OWN Telegram account ───────────────────────────
+async function finishMyLogin(actor, client) {
+  const session = client.session.save();
+  try { await client.disconnect(); } catch {}
+  const id = "u" + actor.telegramId;
+  const prev = admins.get(id); if (prev) { try { await prev.client?.disconnect(); } catch {} admins.delete(id); }
+  const acc = await startAdmin({ id, label: actor.name || "Admin " + actor.telegramId, session, ownerTelegramId: actor.telegramId });
+  const rec = appAdmins.find(x => String(x.telegramId) === actor.telegramId); if (rec) rec.accountId = id;
+  await saveAdminRecords(); await saveAppAdmins();
+  return acc;
+}
+function myActor(req, res) {
+  if (!["owner", "admin"].includes(req.actor?.role)) { res.status(403).json({ ok: false, error: "Only the main admin or an assigned admin can connect an account." }); return null; }
+  if (!req.actor.telegramId) { res.status(400).json({ ok: false, error: "Open this app from Telegram (not a browser) to connect your own account." }); return null; }
+  return req.actor;
+}
+app.get("/api/my-account", (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  const acc = accountFor(a);
+  res.json({ ok: true, connected: !!acc?.ready, label: acc?.label || "", error: acc && !acc.ready ? acc.error : "" });
+});
+// ── QR-ONLY CONNECTION ───────────────────────────────────────────────────────────────────────────────
+// The MAIN ADMIN generates a connection QR for an assigned admin (Admin Control). The assigned admin scans it
+// from their own Telegram (Settings → Devices → Link Desktop Device). No phone number, no SMS, no login code.
+// The scanned account must match the assigned Telegram ID, otherwise the login is refused and logged out.
+const pendingQr = new Map(); // key: Telegram ID of the admin being connected
+const QR_LIMIT_MS = 5 * 60 * 1000;
+const qrLink = token => "tg://login?token=" + Buffer.from(token).toString("base64url");
+async function qrStop(id) { const p = pendingQr.get(id); if (!p) return; p.stop = true; try { p.pwResolve?.(null); } catch {} pendingQr.delete(id); try { await p.client.disconnect(); } catch {} }
+async function qrExport(p, apiId, apiHash) {
+  const { Api } = require("telegram");
+  let r = await p.client.invoke(new Api.auth.ExportLoginToken({ apiId, apiHash, exceptIds: [] }));
+  if (String(r?.className) === "auth.LoginTokenMigrateTo") {
+    await p.client._switchDC(r.dcId);
+    r = await p.client.invoke(new Api.auth.ImportLoginToken({ token: r.token }));
+  }
+  const cn = String(r?.className);
+  if (cn === "auth.LoginTokenSuccess") return { done: true };
+  if (cn === "auth.LoginToken") return { done: false, token: r.token, expires: Number(r.expires) };
+  throw new Error("Unexpected Telegram QR response (" + cn + ").");
+}
+async function qrFinish(p, target) {
+  const { Api } = require("telegram");
+  const me = await p.client.getMe();
+  if (String(me?.id) !== String(target.telegramId)) {
+    try { await p.client.invoke(new Api.auth.LogOut()); } catch {}
+    p.status = "error";
+    p.error = `Wrong Telegram account: this QR was scanned by ${[me?.firstName, me?.lastName].filter(Boolean).join(" ") || "another account"} (ID ${me?.id}). It must be scanned by ${target.name || "the assigned admin"} (ID ${target.telegramId}). Generate a new QR and try again.`;
+    return;
+  }
+  const acc = await finishMyLogin(target, p.client);
+  p.status = acc.ready ? "done" : "error";
+  p.message = acc.ready ? `${target.name || "Admin " + target.telegramId} is connected ✅. Orders they create are now sent from their own Telegram account.` : "";
+  if (!acc.ready) p.error = "Logged in, but could not start: " + acc.error;
+}
+async function qrRun(p, apiId, apiHash, target, first) {
+  try {
+    const started = Date.now(); let r = first;
+    while (!p.stop && Date.now() - started < QR_LIMIT_MS) {
+      if (r?.done) return await qrFinish(p, target);
+      if (r?.token) { p.token = r.token; p.expires = r.expires; }
+      await new Promise(x => setTimeout(x, 3000));
+      if (p.stop) return;
+      try { r = await qrExport(p, apiId, apiHash); }
+      catch (e) {
+        if (e?.errorMessage !== "SESSION_PASSWORD_NEEDED") throw e;
+        // The scanning account has 2-step verification: wait for the password (retry on a wrong one).
+        while (!p.stop) {
+          p.status = "password";
+          const pw = await new Promise(resolve => { p.pwResolve = resolve; });
+          if (p.stop || pw == null) return;
+          try { await p.client.signInWithPassword({ apiId, apiHash }, { password: async () => String(pw), onError: async err => { throw err; } }); return await qrFinish(p, target); }
+          catch (err) { p.pwError = telegramLoginError(err); }
+        }
+      }
+    }
+    if (!p.stop) { p.status = "error"; p.error = "The QR expired before it was scanned. Press “Generate connection QR” to make a new one."; }
+  } catch (e) { p.status = "error"; p.error = telegramLoginError(e); }
+}
+// Only a main admin (or the setup key) may generate QR codes, and only for people already assigned in the app.
+function qrTargetFor(req, res) {
+  if (!setupAuth(req, res)) return null;
+  const id = String(req.body?.telegramId || "").replace(/\D/g, "");
+  const rec = appAdmins.find(a => String(a.telegramId) === id);
+  if (rec) return { telegramId: id, name: rec.name || "Admin " + id };
+  if (id && OWNER_IDS.includes(id)) return { telegramId: id, name: identify(req).telegramId === id ? (identify(req).name || "Main admin") : "Main admin " + id };
+  res.status(404).json({ ok: false, error: "Assign this Telegram ID as an admin first, then generate the connection QR." });
+  return null;
+}
+app.post("/api/setup/app-admins/qr-start", async (req, res) => {
+  const target = qrTargetFor(req, res); if (!target) return;
+  let client;
+  try {
+    const apiId = Number(process.env.TG_API_ID || 0), apiHash = process.env.TG_API_HASH || "";
+    if (!apiId || !apiHash) return res.status(400).json({ ok: false, error: "Add TG_API_ID and TG_API_HASH in Render first (from my.telegram.org → API development tools), then redeploy." });
+    await qrStop(target.telegramId);
+    const { TelegramClient } = require("telegram"); const { StringSession } = require("telegram/sessions");
+    client = new TelegramClient(new StringSession(""), apiId, apiHash, { connectionRetries: 5, requestRetries: 2 });
+    await client.connect();
+    const p = { client, token: null, expires: 0, status: "waiting", message: "", error: "", pwError: "", pwResolve: null, stop: false };
+    const first = await qrExport(p, apiId, apiHash);
+    if (first.done) return res.status(400).json({ ok: false, error: "Unexpected: Telegram reported an instant login. Try again." });
+    p.token = first.token; p.expires = first.expires;
+    pendingQr.set(target.telegramId, p);
+    qrRun(p, apiId, apiHash, target, first); // background; the page polls /qr-poll
+    res.json({ ok: true, status: "waiting", name: target.name, link: qrLink(p.token), expires: p.expires });
+  } catch (error) {
+    if (client) { try { await client.disconnect(); } catch {} }
+    res.status(400).json({ ok: false, error: telegramLoginError(error) });
+  }
+});
+app.post("/api/setup/app-admins/qr-poll", async (req, res) => {
+  const target = qrTargetFor(req, res); if (!target) return;
+  const p = pendingQr.get(target.telegramId);
+  if (!p) return res.json({ ok: false, status: "none", error: "No QR in progress. Press “Generate connection QR”." });
+  if (p.status === "done") { pendingQr.delete(target.telegramId); return res.json({ ok: true, status: "done", message: p.message }); }
+  if (p.status === "error") { const error = p.error || "QR connection failed."; pendingQr.delete(target.telegramId); try { await p.client.disconnect(); } catch {} return res.json({ ok: false, status: "error", error }); }
+  if (p.status === "password") return res.json({ ok: true, status: "password", message: p.pwError ? "Wrong 2-step password: " + p.pwError : "Scan accepted. This Telegram account has 2-step verification — the admin must type their own 2-step password below." });
+  res.json({ ok: true, status: "waiting", link: p.token ? qrLink(p.token) : "", expires: p.expires });
+});
+app.post("/api/setup/app-admins/qr-password", async (req, res) => {
+  const target = qrTargetFor(req, res); if (!target) return;
+  const p = pendingQr.get(target.telegramId);
+  if (!p || p.status !== "password" || !p.pwResolve) return res.status(400).json({ ok: false, error: "Telegram is not waiting for a 2-step password right now." });
+  const pw = String(req.body?.password || "");
+  if (!pw) return res.status(400).json({ ok: false, error: "Enter the 2-step password." });
+  p.pwError = ""; p.status = "waiting"; const f = p.pwResolve; p.pwResolve = null; f(pw);
+  res.json({ ok: true, message: "Checking the password…" });
+});
+app.post("/api/setup/app-admins/qr-cancel", async (req, res) => {
+  const target = qrTargetFor(req, res); if (!target) return;
+  await qrStop(target.telegramId);
+  res.json({ ok: true });
+});
+app.post("/api/my-account/disconnect", async (req, res) => {
+  const a = myActor(req, res); if (!a) return;
+  const acc = admins.get("u" + a.telegramId);
+  if (acc) { try { await acc.client?.disconnect(); } catch {} admins.delete(acc.id); await saveAdminRecords(); }
+  res.json({ ok: true, message: "Your Telegram account was disconnected." });
+});
+
+
+app.get("/api/business/status", async (req, res) => {
+  await supabaseReady;
+  let connection = activeBusinessConnection();
+  let botBusinessEnabled = false, botUsername = null, webhook = null;
+  if (!BOT_TOKEN) {
+    return res.json({ connected: false, canReply: false, botBusinessEnabled: false, botUsername: null, webhookReady: false, error: "BOT_TOKEN is not configured on the server (Render → Environment)." });
+  }
+  try {
+    const bot = await telegram("getMe", {});
+    botBusinessEnabled = !!bot.can_connect_to_business;
+    botUsername = bot.username || null;
+    webhook = await telegram("getWebhookInfo", {});
+  } catch (error) {
+    return res.json({ connected: false, canReply: false, botBusinessEnabled: false, botUsername, webhookReady: false, error: friendlyError(error.message) });
+  }
+  // Repair the webhook automatically if Telegram points somewhere else (old URL, lost secret, missing update types).
+  try {
+    if (await tgApi.healWebhookIfNeeded(webhook)) webhook = await telegram("getWebhookInfo", {});
+  } catch (error) { console.warn("Webhook self-heal failed:", error.message); }
+
+  let refreshError = null;
+  if (connection?.id) {
+    try {
+      const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
+      if (fresh.is_enabled === false) {
+        businessConnections.delete(String(connection.id)); await persistBusinessConnections(); connection = null;
+      } else {
+        businessConnections.set(String(fresh.id || connection.id), fresh); await persistBusinessConnections(); connection = fresh;
+      }
+    } catch (error) {
+      // A temporary Telegram/network failure must NOT make a valid connection look disconnected.
+      console.warn("Business connection status refresh failed:", error.message);
+      if (/BUSINESS_CONNECTION_INVALID|not found|invalid/i.test(error.message) && !connection.configured) {
+        businessConnections.delete(String(connection.id)); await persistBusinessConnections(); connection = null;
+      } else refreshError = friendlyError(error.message);
+    }
+  }
+  const webhookReady = !!webhook && webhook.url === tgApi.webhookUrl &&
+    ["business_connection", "business_message"].every(x => (webhook.allowed_updates || []).includes(x));
+  res.json({
+    connected: !!connection,
+    sender: connection?.user ? [connection.user.first_name, connection.user.last_name].filter(Boolean).join(" ") : null,
+    canReply: connection ? canReply(connection) : false,
+    connectionId: connection?.id || null,
+    botBusinessEnabled,
+    botUsername,
+    webhookReady,
+    webhookUrl: webhook?.url || null,
+    webhookLastError: webhook?.last_error_message || null,
+    webhookPending: webhook?.pending_update_count || 0,
+    needsReconnect: !connection,
+    warning: refreshError,
+    instructions: !botBusinessEnabled
+      ? "Business/Secretary Mode is not enabled for this bot. Open @BotFather → your bot → Bot Settings/Business Mode (Secretary Mode) and enable it, then reconnect the bot from Telegram Business."
+      : !connection
+        ? "The bot is Business-enabled, but Telegram has not supplied a Business connection to this server yet. Reconnect the bot from the administrator's Telegram Business → Chatbots, grant Reply to messages, then send a customer message."
+        : null
+  });
+});
+
+app.post("/api/business/refresh", async (req, res) => {
+  try {
+    await supabaseReady;
+    const connection = activeBusinessConnection();
+    if (!connection?.id) return res.status(409).json({ ok: false, error: "No Telegram Business connection ID is known yet. Connect the bot in Telegram Business and send/receive a message once." });
+    const fresh = await telegram("getBusinessConnection", { business_connection_id: connection.id });
+    if (fresh.is_enabled === false) {
+      businessConnections.delete(String(fresh.id || connection.id));
+      await persistBusinessConnections();
+      return res.json({ ok: true, connected: false });
+    }
+    businessConnections.set(String(fresh.id || connection.id), fresh);
+    await persistBusinessConnections();
+    res.json({ ok: true, connected: true, sender: [fresh.user?.first_name, fresh.user?.last_name].filter(Boolean).join(" "), canReply: canReply(fresh) });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: friendlyError(error.message) });
+  }
+});
+
+app.get("/api/business/diagnostics", async (req, res) => {
+  try {
+    await supabaseReady;
+    const webhook = await telegram("getWebhookInfo", {});
+    const me = await telegram("getMe", {});
+    const connections = [...businessConnections.values()].map(c => ({
+      id: c.id,
+      enabled: c.is_enabled !== false,
+      canReply: canReply(c),
+      user: c.user?.username || c.user?.first_name || null
+    }));
+    res.json({
+      ok: true,
+      webhook: {
+        url: webhook.url || null,
+        expectedUrl: tgApi.webhookUrl || null,
+        urlMatches: webhook.url === tgApi.webhookUrl,
+        hasCustomCertificate: !!webhook.has_custom_certificate,
+        pendingUpdateCount: webhook.pending_update_count || 0,
+        lastErrorDate: webhook.last_error_date || null,
+        lastErrorMessage: webhook.last_error_message || null,
+        allowedUpdates: webhook.allowed_updates || []
+      },
+      bot: { id: me.id, username: me.username || null, canConnectToBusiness: !!me.can_connect_to_business },
+      configuredBusinessConnectionId: BUSINESS_CONNECTION_ID || null,
+      savedConnections: connections,
+      publicBaseUrl: PUBLIC_BASE_URL || null
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: friendlyError(error.message) });
+  }
+});
+
+app.post("/api/business/reconfigure-webhook", async (req, res) => {
+  try {
+    const result = await tgApi.configureWebhook();
+    const webhook = await telegram("getWebhookInfo", {});
+    res.status(result.ok ? 200 : 500).json({ ok: result.ok, error: result.reason || undefined, webhook });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: friendlyError(error.message) });
+  }
+});
+
+app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
+  try {
+    await supabaseReady;
+    const order = { ...req.body };
+    order.createdByName = req.actor?.name || "";
+    order.createdByTelegramId = req.actor?.telegramId || "";
+    order.createdByRole = req.actor?.role || "admin";
+    const productPhoto = req.files?.productPhoto?.[0];
+    const cardImage = req.files?.cardImage?.[0];
+    if (!productPhoto) return res.status(400).json({ ok: false, error: "Product photo is missing. Please select it again." });
+    if (!cardImage) return res.status(400).json({ ok: false, error: "Generated PNG card is missing. Please try again." });
+    order.telegramChatId = resolveChatId(order.telegramChatId, order.telegramUsername);
+    const hasContact = String(order.telegramUsername || "").trim() || String(order.telegramPhone || "").replace(/\D/g, "").length >= 8 || String(order.phone || "").replace(/\D/g, "").length >= 8;
+    if (!order.telegramChatId && !hasContact) return res.status(400).json({ ok: false, error: "Enter the customer's Telegram @username or phone number." });
+    if (!BOT_TOKEN) return res.status(500).json({ ok: false, error: "BOT_TOKEN is not configured on the server." });
+
+    // Cards go out in the NAME of whoever creates the order — never from the bot:
+    //  • main admin: Telegram Business first (card + Confirm/Reject/Comment buttons; no personal login needed),
+    //    then the main admin's own connected account if there is one;
+    //  • assigned admin: ONLY their own connected account.
+    const isOwner = req.actor?.role === "owner";
+    const requestedSenderId = String(req.body?.senderAdminId || "").trim();
+    const account = isOwner && requestedSenderId
+      ? admins.get(requestedSenderId)
+      : accountFor(req.actor);
+    if (isOwner && requestedSenderId && !account) return res.status(400).json({ ok: false, error: "The selected sending admin account is no longer available. Refresh the app and choose a connected admin." });
+    if (isOwner && requestedSenderId && !account.ready) return res.status(400).json({ ok: false, error: `The selected account (${account.label}) is not connected. Ask that admin to connect their Telegram account first.` });
+    if (isOwner && !account?.ready && !order.telegramChatId) return res.status(400).json({ ok: false, error: "Pick the customer from the list (people who pressed Start in the AMBAR bot), or connect your Telegram account to send by @username / phone." });
+    const allConns = [...businessConnections.values()];
+    const myConn = order.telegramChatId
+      ? (allConns.find(c => isUsable(c) && String(c.user?.id || "") === String(req.actor?.telegramId || ""))
+        || (isOwner ? (allConns.find(c => isUsable(c) && OWNER_IDS.includes(String(c.user?.id || ""))) || await businessConnectionForCustomer(order.telegramChatId).catch(() => null)) : null))
+      : null;
+
+    if (!isOwner && !account?.ready && !myConn && !/^\d{5,}$/.test(String(order.telegramChatId || ""))) return res.status(400).json({ ok: false, error: "Choose the customer from the list (people who pressed Start in the AMBAR bot), or connect your own Telegram account, then send the order again." });
+    if (supabase) await loadOrders();
+    order.id = nextId++;
+    order.token = order.token || require("crypto").randomBytes(12).toString("hex"); // answer-page link token
+    // Every order must belong to a customer already saved in Customers Data.
+    const selectedCustomerId = String(order.customerId || "").trim();
+    if (!selectedCustomerId) { nextId--; return res.status(400).json({ ok: false, error: "Please select an existing customer from Customers Data before creating an order." }); }
+    const cust = callersDb.list.find(c => c.id === selectedCustomerId);
+    if (!cust) { nextId--; return res.status(400).json({ ok: false, error: "Customer ID " + selectedCustomerId + " was not found in Customers Data. Add the customer there first." }); }
+    order.customerId = cust.id;
+    order.customerName = cust.name || order.customerName;
+    order.phone = cust.phone || order.phone;
+    order.location = cust.location || order.location;
+    order.telegramUsername = cust.username || order.telegramUsername;
+    order.telegramName = telegramNameFor(order); // saved with the order so every admin's row carries it
+    order.orderId = nextOrderId(cust.id, order.orderDate, "");
+    reservedOrderIds.add(order.orderId.toLowerCase());
+    order.status = "Pending";
+    order.createdAt = order.createdAt || new Date().toISOString();
+    order.comments = [];
+    order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
+    order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
+    order.adminId = account?.id || ""; order.adminLabel = account?.label || "Main admin";
+    order.strictAdmin = !isOwner; order.onlyConnection = true;
+    order.sender = "admin_user_account"; order.businessConnectionId = null; order.sent = false;
+    await saveOrderRecord(order); // delivery failures must never discard an order
+
+    let sentFrom = "", failure = "", pollNote = "", directFailure = "";
+    // Best route first: the bot sends the card photo WITH the 3 buttons as ONE message (visible immediately).
+    // Works whenever the customer has opened the AMBAR bot (pressed Start) — no need for them to write a text first.
+    if (/^\d{5,}$/.test(String(order.telegramChatId || ""))) {
+      const direct = await sendBotCard(order, String(order.telegramChatId), cardImage.path);
+      if (direct.ok) { order.sender = "bot"; order.telegramMessageId = direct.messageId; order.botButtonsMessageId = direct.messageId; order.sent = true; order.buttonsLine = "✅ card + Open answer link sent in one message"; sentFrom = "the AMBAR bot (card with buttons)"; }
+      else directFailure = direct.error;
+    }
+    // The customer ALSO gets the card in their normal chat with the admin (Telegram Business), not only from the bot.
+    if (myConn) {
+      try {
+        const sent = await sendCardAsAdmin(order.telegramChatId, cardImage.path, order, myConn);
+        if (!order.sent) { order.sender = "admin_business_account"; order.buttonsLine = "✅ Open answer link delivered with the card"; order.telegramMessageId = sent.message_id; order.sent = true; sentFrom = "your Telegram account (Telegram Business, with buttons)"; }
+        else { order.adminCopyMessageId = sent.message_id; sentFrom += " + your own Telegram chat with the customer"; }
+      } catch (error) { if (!order.sent) failure = error.raw || error.message; else console.warn("Extra Business copy to customer failed:", error.raw || error.message); }
+    }
+    if (!order.sent && account?.ready) {
+      try {
+        const r = await sendCardViaUserAccount(order, cardImage.path);
+        pollNote = buttonsNote(r); order.buttonsLine = (r.buttons === "inline" || r.buttons === "botcard") ? "✅ Open answer link delivered with the card" : r.buttons === "link" ? "✅ Open answer link delivered with the card" : r.buttons === "botchat" ? "✅ Open answer link delivered in the bot chat" : "❌ Answer link NOT delivered — " + buttonsNote(r).replace(/^[^R]*Reason: /, "").slice(0, 300); order.sender = "admin_user_account"; order.businessConnectionId = null; order.telegramChatId = r.chatId; order.telegramMessageId = r.message_id; order.sent = true; sentFrom = account.label;
+        try { rememberCustomer({ id: r.chatId, username: String(order.telegramUsername || "").replace(/^@/, ""), first_name: order.customerName }, { id: r.chatId }, ""); } catch {}
+      } catch (error) { failure = (failure ? failure + " | " : "") + error.message; }
+    }
+    order.customerDelivered = !!order.sent;
+    order.deliveryNote = order.sent ? "" : failure;
+    const audit = await sendAuditCopies(order, cardImage.path).catch(e => ({ delivered: 0, failed: ["all"], error: e.message }));
+    const auditNote = audit.delivered ? ` Cross-check copy posted to the admin bot (${audit.delivered}).` : " Cross-check copy NOT delivered: the main admin / ADMIN_CHAT_ID must open the AMBAR bot and press Start.";
+    await saveOrderRecord(order);
+    if (order.sent) {
+      const toAdmin = allAdminChatIds(order).includes(String(order.telegramChatId || ""));
+      const who = `${order.customerName || "the customer"} (${order.telegramUsername || "chat id " + order.telegramChatId})`;
+      const adminWarn = toAdmin ? " ⚠ WARNING: the selected chat ID belongs to an ADMIN account, not a customer — pick the real customer from the list." : "";
+      return res.json({ ok: true, delivered: true, customerDelivered: true, sentFrom, order, cardUrl: order.cardImage, auditCopies: audit.delivered, warning: `Order card sent to ${who} from ${sentFrom}.${adminWarn}${pollNote}${auditNote}${await sheetWarning()}` });
+    }
+    return res.json({ ok: true, delivered: false, customerDelivered: false, order, cardUrl: order.cardImage,
+      auditCopies: audit.delivered,
+      warning: `Order ${order.orderId} was saved but the card could not be sent yet: ${directFailure || failure || "the customer has not opened the AMBAR bot"}. ⏳ SEND THIS LINK TO THE CUSTOMER — when they open it and press Start, the card arrives at once: ${await botUsername().then(u => u ? "https://t.me/" + u + "?start=o_" + order.token : "(bot link unavailable)").catch(() => "")} ${isOwner ? "Connect your Telegram account (green button) to reach any customer by @username or phone." : "Check the customer's @username or phone number and try again."}${auditNote}${await sheetWarning()}` });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ── Edit an existing order (✏️ button in the admin bot). The Google Sheet row of the SAME order is updated, never a new row. ──
+const EDITABLE_FIELDS = ["orderId", "product", "length", "width", "height", "material", "color", "style", "design", "handle", "door", "partition", "drawer", "additionalFeatures",
+  "customerName", "phone", "location", "telegramUsername", "telegramPhone", "payment", "advance", "orderDate", "completionDate", "deliveryType", "deliveryService", "deliveryFee", "deliveryDate"];
+app.get("/api/orders/:id", async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const o = orders.find(x => String(x.id) === String(req.params.id));
+    if (!o) return res.status(404).json({ ok: false, error: "Order not found." });
+    res.json({ ok: true, order: Object.fromEntries([...EDITABLE_FIELDS, "id", "photo", "cardImage", "status"].map(k => [k, o[k] ?? ""]).concat([["paidFull", !!o.paidFull]])) });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+// Swap the card picture + caption in the admin cross-check copies (and the customer's bot message) after an edit.
+async function refreshCardMessages(order, filePath) {
+  const bytes = await fs.promises.readFile(filePath);
+  const edit = (chatId, messageId, caption, markup) => tgApi.sendForm("editMessageMedia", () => {
+    const body = new FormData();
+    body.append("chat_id", String(chatId)); body.append("message_id", String(messageId));
+    body.append("media", JSON.stringify({ type: "photo", media: "attach://card", caption, parse_mode: "HTML" }));
+    body.append("card", new Blob([bytes], { type: "image/jpeg" }), "order-card.jpg");
+    if (markup) body.append("reply_markup", JSON.stringify(markup));
+    return body;
+  });
+  let admins = 0, customer = false;
+  for (const c of order.auditCopies || []) {
+    try { await edit(c.chat_id, c.message_id, auditCaptionHtml(order), auditKeyboard(order)); admins++; }
+    catch (e) { if (!/not modified/i.test(e.message)) console.warn("Edit audit copy failed:", e.message); }
+  }
+  return { admins, customer };
+}
+app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
+  try {
+    await supabaseReady; if (supabase) await loadOrders();
+    const order = orders.find(x => String(x.id) === String(req.params.id));
+    if (!order) return res.status(404).json({ ok: false, error: "Order not found." });
+    if (order.paidFull) return res.status(403).json({ ok: false, error: "This order is closed (paid in full). It can no longer be edited." });
+    const body = req.body || {}, changed = [];
+    for (const k of EDITABLE_FIELDS) {
+      if (!(k in body)) continue;
+      let nv = String(body[k] ?? "").trim();
+      if (k === "orderId") { nv = nv.slice(0, 40); if (!nv) return res.status(400).json({ ok: false, error: "Order code cannot be empty." }); }
+      if (k === "orderDate" || k === "completionDate" || k === "deliveryDate") { nv = ethDate(nv); if (ethDate(order[k]) === nv) continue; } // old Gregorian date == same Ethiopian date → not a change
+      if (String(order[k] ?? "") !== nv) { order[k] = nv; changed.push(k); }
+    }
+    if (order.deliveryType !== "By Ambar Delivery") { order.deliveryFee = ""; order.deliveryService = ""; }
+    const productPhoto = req.files?.productPhoto?.[0], cardImage = req.files?.cardImage?.[0];
+    if (productPhoto) { order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype); changed.push("photo"); }
+    if (cardImage) order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
+    if (!changed.length && !cardImage) return res.json({ ok: true, order, changed, warning: "Nothing was changed." });
+    order.editedAt = new Date().toISOString(); order.editedBy = req.actor?.name || "Admin";
+    await saveOrderRecord(order); // the sheet upsert is keyed by the order ID → the same row is updated
+    let tgNote = "";
+    if (cardImage) {
+      const r = await refreshCardMessages(order, cardImage.path).catch(() => ({ admins: 0 }));
+      tgNote = ` Card updated in the admin bot (${r.admins}).`;
+      // The customer gets the edited order again (new card + answer button); they can answer it again.
+      order.status = "Pending"; order.closed = false; order._edited = true;
+      const chat = String(order.telegramChatId || ""), errs = [];
+      let ok = false;
+      if (/^-?\d{5,}$/.test(chat)) {
+        const s1 = await sendBotCard(order, chat, cardImage.path, { edited: true });
+        if (s1.ok) { ok = true; order.sender = "bot"; order.botButtonsMessageId = s1.messageId; order.telegramMessageId = s1.messageId; } else errs.push("bot: " + s1.error);
+        if (!ok) {
+          try {
+            const conn = await businessConnectionForCustomer(chat).catch(() => null);
+            if (conn || businessConnections.size) { const s2 = await sendCardAsAdmin(chat, cardImage.path, order, conn); ok = true; order.sender = "admin_business_account"; order.telegramMessageId = s2.message_id; }
+          } catch (e) { errs.push("business: " + (e.raw || e.message)); }
+        }
+      }
+      if (!ok) {
+        try { const r2 = await sendCardViaUserAccount(order, cardImage.path); ok = true; order.sender = "admin_user_account"; order.telegramChatId = r2.chatId; order.telegramMessageId = r2.message_id; }
+        catch (e) { errs.push("account: " + e.message); }
+      }
+      delete order._edited;
+      if (ok) { order.sent = true; order.customerDelivered = true; order.deliveryNote = ""; tgNote += " ✅ Edited order sent to the customer again."; }
+      else tgNote += ` ❌ Edited order NOT sent to the customer (${errs.join(" | ").slice(0, 300) || "no route"}). The customer must press Start in the AMBAR bot, or your Telegram account must be connected.`;
+      await saveOrderRecord(order).catch(() => {});
+      await updateAuditCopies(order).catch(() => {});
+    }
+    notifyAdminsText(order, `✏️ <b>${esc(order.orderId)}</b> was edited by ${esc(order.editedBy)} (${esc(order.customerName || "customer")}).`).catch(() => {});
+    res.json({ ok: true, order, changed, warning: `Order ${order.orderId} updated.${tgNote}${await sheetWarning()}` });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
+// ── Google Sheet (MAIN ADMIN / OWNER ONLY) ─────────────────────────────────────
+// Every admin may OPEN the sheet (status/link only). Test / sync stay main-admin only.
+const sheetsAccess = (req, res, next) => {
+  if (req.actor?.role === "owner") return next();
+  if (req.actor?.role === "admin" && req.method === "GET" && req.path === "/status") return next();
+  res.status(403).json({ ok: false, error: "Only the main admin can change the Google Sheet connection." });
+};
+app.use("/api/sheets", requireAccess, sheetsAccess);
+const sheetVerCache = { v: "", at: 0 };
+app.get("/api/sheets/status", async (req, res) => {
+  const st = sheets.status();
+  if (req.actor?.role === "owner" && st.configured && !req.query.quick) { // asking Google which script version runs is slow: remember the answer for 5 minutes
+    if (!sheetVerCache.v || Date.now() - sheetVerCache.at > 300000 || req.query.fresh) { sheetVerCache.v = (await sheets.scriptVersionNow()) || "not reachable"; sheetVerCache.at = Date.now(); }
+    st.scriptVersion = sheetVerCache.v; st.scriptWanted = sheets.expectedScriptVersion().short;
+  }
+  // How much data is in the app (what "Sync ALL" sends).
+  const counts = { orderCount: Array.isArray(orders) ? orders.length : 0, customerCount: callersDb.list.length };
+  if (req.actor?.role === "owner") return res.json({ ok: true, role: "owner", ...st, ...counts });
+  res.json({ ok: true, role: req.actor?.role || "admin", configured: st.configured, url: st.url, summaryUrl: st.summaryUrl, graphsUrl: st.graphsUrl, lastOkAt: st.lastOkAt, lastSyncAt: st.lastSyncAt, ...counts });
+});
+app.post("/api/sheets/connect", async (req, res) => { // main admin only: connect once, saved for all time
+  try { await sheets.connect(req.body || {}); res.json({ ok: true, message: "✅ Google Sheet connected and saved. It stays connected permanently, even after restarts.", ...sheets.status() }); }
+  catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
+});
+app.post("/api/sheets/test", async (req, res) => {
+  try { const r = await sheets.test(); await pushAllCallers(); res.json({ ok: true, message: `✅ Connected to Google Sheet (${r.orders} orders already in it).`, ...sheets.status() }); }
+  catch (e) { res.json({ ok: false, error: e.message, ...sheets.status() }); }
+});
+app.post("/api/sheets/new-month", async (req, res) => { // main admin only (sheetsAccess blocks everyone else)
+  try {
+    const r = await sheets.newMonth(req.actor?.name || "Admin");
+    res.json({ ok: true, ...r, message: r.sent ? "✅ Request sent. The new month tab appears in the sheet within a minute." : r.created ? `✅ New month started: ${r.name}. New orders for this month go to this tab.` : `ℹ️ ${r.name} already exists — it is now the active tab.` });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post("/api/sheets/start-new", async (req, res) => { // MAIN ADMIN ONLY (sheetsAccess blocks everyone else)
+  try {
+    const r = await sheets.startFresh(req.actor?.name || "Admin");
+    res.json({ ok: true, ...r, message: r.sent ? "✅ Request sent. Within a minute the old list is archived in the sheet and a clean new month tab appears." : `✅ Started as NEW. ${r.archived} old tab(s) were kept as "Archive …" tabs; new orders go into ${r.name}.` });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post("/api/sheets/reset-all", async (req, res) => { // MAIN ADMIN ONLY: backup to the sheet, then wipe every order and start from zero
+  try {
+    if (req.body?.confirm !== "ZERO") return res.json({ ok: false, error: "Not confirmed." });
+    await supabaseReady; if (supabase) await loadOrders();
+    const by = req.actor?.name || "Owner", total = orders.length;
+    let backup = "";
+    if (sheets.configured()) { // 1) every order is written to the sheet first, 2) the sheet keeps it all as "Backup …" tabs and starts new. Any failure here STOPS the reset (nothing is deleted).
+      if (total) await sheets.syncAll(orders, by);
+      const r = await sheets.startFresh(by);
+      backup = r.sent ? " The sheet backup is being created (about a minute)." : ` The sheet kept ${r.archived} old tab(s) as "Backup …" tabs and started a clean one.`;
+    } else backup = " (Google Sheet is not connected, so there is no sheet backup.)";
+    if (supabase) { const { error } = await supabase.from("orders").delete().not("id", "is", null); if (error) throw new Error("Could not delete orders: " + error.message); }
+    orders = []; nextId = 1; invalidateOrders();
+    res.json({ ok: true, removed: total, message: `✅ Started from ZERO. ${total} order(s) removed from the app.${backup}` });
+  } catch (e) { res.json({ ok: false, error: e.message + " — nothing was deleted from the app." }); }
+});
+// SYNC ALL: one button, one Google Sheet. Orders AND customer data are sent together; the result reports each part separately
+// (one part failing never hides the other).
+async function syncOrdersPart(by) {
+  try { await supabaseReady; if (supabase) await loadOrders(); } catch {}
+  try { const r = await sheets.syncAll(orders, by); return { ok: true, total: r.total, added: r.added, updated: r.updated }; }
+  catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 400) }; }
+}
+async function syncCustomersPart() {
+  try {
+    await refreshCustomerStatuses();
+    const c = await pushAllCallers(); // newest customer first, written to the "Customers Data" tab of the same sheet
+    return c.ok ? { ok: true, total: callersDb.list.length } : { ok: false, needsScript: !!c.needsScript, error: c.error || "Customers were not written." };
+  } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 400) }; }
+}
+const partLine = (label, p) => !p ? "" : p.ok ? `✅ ${label}: ${p.total} synced` + (p.added !== undefined ? ` (${p.added} new, ${p.updated} refreshed)` : "") : `❌ ${label}: ${p.error}`;
+async function syncEverything(by, which = "all") { // which: "orders" | "customers" | "all"
+  const parts = {};
+  if (which !== "customers") parts.orders = await syncOrdersPart(by);
+  if (which !== "orders") parts.customers = await syncCustomersPart();
+  const ok = Object.values(parts).every(p => p.ok);
+  const sid = u => (String(u || "").match(/\/d\/([\w-]+)/) || [])[1] || "", oId = sid(sheets.status().url), cId = sid(callersSheetUrl);
+  const sameLine = parts.orders?.ok && parts.customers?.ok && oId && cId ? (oId === cId ? "✅ Orders and Customers Data are in the SAME Google Sheet." : "⚠ Orders and Customers went to DIFFERENT Google Sheets — press Connect & sync EVERYTHING again.") : "";
+  return { ok, parts, needsScript: !!(parts.customers && parts.customers.needsScript), message: [partLine("Orders (main order index)", parts.orders), partLine("Customers (Customers Data tab)", parts.customers), sameLine].filter(Boolean).join("\n"), error: ok ? "" : "Sync finished with a problem." };
+}
+const syncRoute = which => async (req, res) => {
+  const r = await syncEverything(req.actor?.name || "Owner", which);
+  res.json({ ...r, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
+};
+// The latest Google script, served by the app so it can be copied with one tap (main admin only).
+app.get("/api/sheets/script", (req, res) => { try { res.type("text/plain; charset=utf-8").send(fs.readFileSync(sheets.SCRIPT_FILE, "utf8")); } catch (e) { res.status(404).type("text/plain").send("google-sheet-script.gs was not found on the server."); } });
+// Backup: every customer as CSV (opens in Google Sheets / Excel) — works even while the Google script is old.
+app.get("/api/sheets/customers.csv", (req, res) => {
+  const esc = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`, head = ["Customer ID", "Phone Number", "Name", "Additional Phone Number", "username", "Location", "Status", "Last Conversation", "Date", "Time", "Status", "Rejection Reason", "Sales Name", "Total Spend", "Order id", "Source"];
+  const rows = [...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow);
+  res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": "attachment; filename=customers-data.csv" }).send("\ufeff" + [head, ...rows].map(r => r.map(esc).join(",")).join("\r\n"));
+});
+app.post("/api/sheets/sync-orders", syncRoute("orders"));       // 1) the main order index only
+app.post("/api/sheets/sync-customers", syncRoute("customers")); // 2) the Customers Data tab only
+app.post("/api/sheets/sync", syncRoute("all"));                // 3) everything
+// ONE-CLICK CONNECT (⚙ Settings): saves the Google link (when one is typed), checks the script, creates every tab incl. "Customers Data",
+// then sends ALL data (orders + customers) to the same sheet.
+app.post("/api/sheets/connect-all", async (req, res) => {
+  const b = req.body || {}, by = req.actor?.name || "Owner", steps = [];
+  try {
+    if (String(b.scriptUrl || "").trim() || String(b.formUrl || "").trim()) { await sheets.connect(b); steps.push("✅ Google link connected and saved."); }
+    else if (sheets.configured()) { await sheets.test(); steps.push("✅ Connection checked."); }
+    else return res.json({ ok: false, error: "Paste the Google Web app link (it ends with /exec) first.", ...sheets.status() });
+  } catch (e) { return res.json({ ok: false, error: e.message, ...sheets.status() }); }
+  steps.push("✅ Google Sheet reached.");
+  { const v = await sheets.scriptVersionNow(), want = sheets.expectedScriptVersion().short;
+    if (v !== want) steps.push(`⚠ This link runs script "${v || "unknown"}", not ${want}. It is the OLD deployment link. Open your NEW Web app link in a browser: it must show "version":"${want}". Paste THAT link here.`); }
+  const r = await syncEverything(by);
+  res.json({ ok: r.ok, needsScript: r.needsScript, parts: r.parts, message: steps.join("\n") + "\n" + r.message, error: r.error, orderCount: orders.length, customerCount: callersDb.list.length, ...sheets.status() });
+});
+
+app.get("/api/orders", async (req, res) => {
+  try {
+    await supabaseReady;
+    if (supabase) await loadOrders();
+    res.json(req.actor?.role === "admin" && !req.actor?.viewer ? orders.filter(o => String(o.createdByTelegramId || "") === req.actor.telegramId) : orders);
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+app.post("/api/orders/:id/comment", async (req, res) => {
+  try {
+    await supabaseReady;
+    if (supabase) await loadOrders();
+    const order = orders.find(item => String(item.id) === String(req.params.id));
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    const comment = String(req.body.comment || "").trim();
+    if (!comment) return res.status(400).json({ error: "Comment is required" });
+    order.comments.push({ comment, at: new Date().toISOString() });
+    await saveOrderRecord(order);
+    res.json({ ok: true, order });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
+async function safely(label, fn) {
+  try { return await fn(); } catch (error) { console.warn(`${label} failed:`, error.message); return null; }
+}
+
+app.post("/api/telegram/webhook", async (req, res) => {
+  // Acknowledge first: Telegram retries (and eventually disables) webhooks that answer slowly or with errors.
+  if (tgApi.secret && req.get("X-Telegram-Bot-Api-Secret-Token") !== tgApi.secret) return res.sendStatus(401);
+  res.sendStatus(200);
+  try {
+    const update = req.body || {};
+
+    if (update.business_connection) {
+      const connection = update.business_connection;
+      if (connection.is_enabled !== false) businessConnections.set(String(connection.id), connection);
+      else businessConnections.delete(String(connection.id));
+      await persistBusinessConnections();
+      console.log("Telegram Business connection update:", {
+        id: connection.id,
+        enabled: connection.is_enabled !== false,
+        canReply: canReply(connection),
+        user: connection.user?.username || connection.user?.first_name || null
+      });
+    }
+
+    // A customer who starts or messages the AMBAR bot becomes reachable by chat ID.
+    // This is what lets the bot deliver order cards without Telegram Business.
+    const botMessage = update.message;
+    if (botMessage?.chat?.id && botMessage.chat.type === "private") {
+      const botNewChat = !customers.has(String(botMessage.chat.id));
+      rememberCustomer(botMessage.chat, botMessage.from || botMessage.chat, "");
+      greetingModule.autoBot(botMessage, botNewChat).catch(e => console.warn("Auto greeting:", e.message));
+      await deliverPendingCards(botMessage.chat, botMessage.from || botMessage.chat, botMessage.text || "").catch(e => console.warn("deliverPendingCards:", e.message));
+    }
+
+    // Customer typed a comment in the bot chat after tapping 💬 Comment.
+    if (botMessage?.text && botMessage.chat?.type === "private" && !/^\/start(?:\s|$)/i.test(String(botMessage.text).trim())) {
+      await supabaseReady;
+      if (supabase) await loadOrders();
+      const chatKey = String(botMessage.chat.id);
+      const pending = orders.filter(item => !item.closed && String(item.awaitingCommentFrom || "") === chatKey).pop();
+      if (pending) {
+        pending.comments = pending.comments || [];
+        pending.comments.push({ comment: botMessage.text, at: new Date().toISOString(), from: chatKey });
+        pending.awaitingCommentFrom = "";
+        await saveOrderRecord(pending);
+        await updateAuditCopies(pending); await closeOrderButtons(pending);
+        await notifyAdminsText(pending, `💬 <b>Comment on ${esc(pending.orderId)}</b> from the customer (${esc(pending.customerName || "customer")}):\n${esc(botMessage.text)}`);
+      }
+    }
+
+    const chosen = update.chosen_inline_result;
+    if (chosen?.inline_message_id) {
+      const cm = /^[po](\d+)$/.exec(String(chosen.result_id || ""));
+      await supabaseReady; if (supabase) await loadOrders();
+      const co = cm && orders.find(item => String(item.id) === cm[1]);
+      if (co) {
+        co.btnRef = { inline_message_id: chosen.inline_message_id };
+        try { await saveOrderRecord(co); } catch {}
+        // The edit (adds the answer-page button) makes Telegram push the message again, so the buttons show at once.
+        await safely("refresh inline buttons", () => telegram("editMessageReplyMarkup", { inline_message_id: chosen.inline_message_id, reply_markup: keyboard(co.id, co) }));
+      }
+    }
+
+    const inlineQuery = update.inline_query;
+    if (inlineQuery) {
+      const m = /^order:(\d+)$/.exec(String(inlineQuery.query || "").trim());
+      await supabaseReady; if (supabase) await loadOrders();
+      const found = m && orders.find(item => String(item.id) === m[1]);
+      const cardUrl = found && PUBLIC_BASE_URL && /^https:/i.test(PUBLIC_BASE_URL) ? `${PUBLIC_BASE_URL}/cards/${found.id}.jpg` : "";
+      const results = found && cardUrl ? [{ type: "photo", id: `p${found.id}`, photo_url: cardUrl, thumbnail_url: cardUrl, photo_width: 1080, photo_height: 1920,
+        caption: cardCaptionHtml(found, "", ""), parse_mode: "HTML", reply_markup: keyboard(found.id, found) }]
+        : found ? [{ type: "article", id: `o${found.id}`, title: `Order ${found.orderId}`, description: "Confirm / Reject / Comment",
+        input_message_content: { message_text: cardCaptionHtml(found, "", "Please choose an option below 👇"), parse_mode: "HTML" }, reply_markup: keyboard(found.id, found) }] : [];
+      await safely("answerInlineQuery", () => telegram("answerInlineQuery", { inline_query_id: inlineQuery.id, results, cache_time: 0, is_personal: true }));
+    }
+
+    const callback = update.callback_query;
+    if (callback && String(callback.data || "").startsWith("mat:")) { // v178: Material ✅ Approve / ❌ Reject buttons (sent to the main admin)
+      await safely("material callback", () => materialModule.handleCallback(callback));
+    } else if (callback) {
+      const [action, id] = String(callback.data || "").split(":");
+      await supabaseReady;
+      if (supabase) await loadOrders();
+      const order = orders.find(item => String(item.id) === String(id));
+      const answer = text => safely("answerCallbackQuery", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, text }));
+      if (!order) { await answer("This order was not found."); }
+      else if (action === "editorder") {
+        const fromId = String(callback.from?.id || "");
+        if (order.paidFull) await answer("This order is closed (paid in full). Editing is no longer available.");
+        else await answer(allAdminChatIds(order).includes(fromId) ? "Editing needs PUBLIC_BASE_URL (https) on the server. Set it, then press ✏️ Edit order again." : "Only admins can do this.");
+      }
+      else if (action === "paid" || action === "paiddone") {
+        // Admin-only: mark the order as paid in full after the customer confirmed and sent the full payment.
+        const fromId = String(callback.from?.id || "");
+        if (!allAdminChatIds(order).includes(fromId)) { await answer("Only admins can do this."); }
+        else if (action === "paiddone" || order.paidFull) { await answer("Already recorded as paid in full."); }
+        else {
+          order.paidFull = true;
+          order.paidFullAt = new Date().toISOString();
+          await saveOrderRecord(order);
+          await updateAuditCopies(order);
+          // Send a warm, personal thank-you directly to the customer after the admin confirms full payment.
+          const customerChat = String(order.telegramChatId || order.customerTelegramId || resolveChatId("", order.telegramUsername) || "");
+          if (/^-?\d+$/.test(customerChat)) {
+            const thankYou = `Dear ${order.customerName || "valued customer"},\n\nThank you sincerely for completing the full payment for your AMBAR Furniture order ${order.orderId}. We truly appreciate your trust and support. Your order is now marked as fully paid, and our team will continue taking care of it with great attention.\n\nWith gratitude,\nAMBAR Furniture 🤎`;
+            try { await tgApi.call("sendMessage", { chat_id: customerChat, text: thankYou }); order.thankYouSent = true; await saveOrderRecord(order); }
+            catch (e) { console.warn("Paid-in-full customer thank-you could not be sent:", e.message); }
+          }
+          await answer(order.thankYouSent ? "💰 Recorded as paid in full. ✅ Thank-you message sent to the customer." : "💰 Recorded as paid in full. ⚠ Thank-you NOT sent: the customer has not pressed Start in the AMBAR bot.");
+          await notifyAdminsText(order, `💰 <b>${esc(order.orderId)}</b> marked <b>PAID IN FULL</b> (${esc(order.customerName || "customer")}).`);
+        }
+      }
+      else {
+        // The card lives in the admin's Business chat, so every edit/reply must carry the business connection.
+        const connectionId = callback.message?.business_connection_id || order.businessConnectionId || null;
+        const chatId = callback.message?.chat?.id || order.telegramChatId;
+        const inlineId = callback.inline_message_id || "";
+        order.btnRef = inlineId_ref(callback, connectionId, chatId);
+        if (action === "done" || order.closed) { await answer("This order was already answered. Thank you!"); if (order.closed) await closeOrderButtons(order); return; }
+        const ownAdmin = admins.get(String(order.adminId || ""));
+        const tellCustomer = async text => { if (ownAdmin?.ready) { try { await ownAdmin.client.sendMessage(BigInt(String(chatId)), { message: text }); } catch (e) { console.warn("Customer note failed:", e.message); } } };
+        const biz = connectionId ? { business_connection_id: String(connectionId) } : {};
+        if (action === "confirm" || action === "reject") {
+          if (order.status === "Confirmed" || order.status === "Rejected") { await answer(`Order already ${order.status}.`); }
+          else {
+            order.status = action === "confirm" ? "Confirmed" : "Rejected";
+            order.closed = true;
+            await saveOrderRecord(order);
+            await updateAuditCopies(order);
+            await answer(`Order ${order.status}.`);
+            const mark = order.status === "Confirmed" ? "✅ CONFIRMED" : "❌ REJECTED";
+            // 1) buttons stay visible but locked, and the card shows the final status
+            if (inlineId) {
+              (await safely("editMessageCaption(inline)", () => telegram("editMessageCaption", { inline_message_id: inlineId, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) })))
+                || await safely("editMessageText(inline)", () => telegram("editMessageText", { inline_message_id: inlineId, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) }));
+              await tellCustomer(`Order ${order.orderId} — ${mark}. Thank you for choosing Ambar Furniture!`);
+              await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
+              return;
+            }
+            const isPhoto = !!callback.message?.photo;
+            const edited = await safely(isPhoto ? "editMessageCaption" : "editMessageText", () => isPhoto
+              ? telegram("editMessageCaption", { ...biz, chat_id: chatId, message_id: callback.message.message_id, caption: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) })
+              : telegram("editMessageText", { ...biz, chat_id: chatId, message_id: callback.message.message_id, text: cardCaptionHtml(order, mark, ""), parse_mode: "HTML", reply_markup: lockedKeyboard(order) }));
+            if (!edited) await safely("editMessageReplyMarkup", () => telegram("editMessageReplyMarkup", { ...biz, chat_id: chatId, message_id: callback.message.message_id, reply_markup: lockedKeyboard(order) }));
+            // 2) a clear text with the order ID
+            await safely("sendMessage", () => telegram("sendMessage", { ...biz, chat_id: chatId,
+              text: `<b>Order ${esc(order.orderId)}</b> — ${mark}. Thank you for choosing Ambar Furniture!`, parse_mode: "HTML" }));
+            // 3) tell the admins
+            await notifyAdminsText(order, `📩 <b>${esc(order.orderId)}</b> was <b>${esc(order.status)}</b> by the customer (${esc(order.customerName || "customer")}).`);
+          }
+        } else if (action === "comment") {
+          order.awaitingCommentFrom = String(chatId);
+          await saveOrderRecord(order);
+          if (inlineId) {
+            // No chat access for the bot here: ask the customer to type in this same chat; the admin account saves it as the comment.
+            await safely("comment alert", () => telegram("answerCallbackQuery", { callback_query_id: callback.id, show_alert: true, text: `Please type your comment for ${order.orderId} in this chat and send it.` }));
+            await tellCustomer(`💬 Type your comment for Order ${order.orderId} below and send it.`);
+            return;
+          }
+          await answer("Type your comment and send it.");
+          const prompt = { ...biz, chat_id: chatId, text: `💬 Type your comment for <b>Order ${esc(order.orderId)}</b> below and send it.`, parse_mode: "HTML" };
+          // force_reply opens the typing box for the customer; fall back to plain text if Telegram refuses it here.
+          const ok = await safely("comment prompt", () => telegram("sendMessage", { ...prompt, reply_markup: { force_reply: true, input_field_placeholder: "Type your comment…" } }));
+          if (!ok) await safely("comment prompt (plain)", () => telegram("sendMessage", prompt));
+        }
+      }
+    }
+
+    // Business messages are messages exchanged in the admin's chats with customers.
+    const businessMessage = update.business_message;
+    if (businessMessage) {
+      const connectionId = businessMessage.business_connection_id;
+      const chatId = businessMessage.chat?.id;
+      const isNewChat = !customers.has(String(chatId));
+      rememberCustomer(businessMessage.chat, businessMessage.from, connectionId);
+      greetingModule.autoBusiness(businessMessage, isNewChat).catch(e => console.warn("Auto greeting:", e.message));
+
+      // A business message is a reliable way to learn the connection ID after a redeploy,
+      // even when Telegram did not resend the original business_connection update.
+      if (connectionId && !businessConnections.has(String(connectionId))) {
+        await safely("Business connection refresh", async () => {
+          const fresh = await telegram("getBusinessConnection", { business_connection_id: connectionId });
+          if (fresh.is_enabled !== false && canReply(fresh)) { businessConnections.set(String(fresh.id || connectionId), fresh); await persistBusinessConnections(); }
+        });
+      }
+
+      // Only customer messages count as comments (ignore the admin's own messages in that chat).
+      const fromCustomer = businessMessage.from?.id === undefined || String(businessMessage.from.id) === String(chatId);
+
+      // The customer typed something after pressing Comment (or just wrote to the admin): save it and tell the admins.
+      if (businessMessage.text && fromCustomer) {
+        await supabaseReady;
+        if (supabase) await loadOrders();
+        const list = orders.filter(item => String(item.telegramChatId).trim() === String(chatId));
+        const order = list[list.length - 1];
+        if (order && !order.closed && String(order.awaitingCommentFrom || "") === String(chatId)) {
+          const wasAsked = true;
+          order.comments = order.comments || [];
+          order.comments.push({ comment: businessMessage.text, at: new Date().toISOString(), from: chatId });
+          if (wasAsked) order.awaitingCommentFrom = "";
+          await saveOrderRecord(order);
+          await updateAuditCopies(order); await closeOrderButtons(order);
+          await notifyAdminsText(order, `💬 <b>Comment on ${esc(order.orderId)}</b> from the customer (${esc(order.customerName || "customer")}):\n${esc(businessMessage.text)}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Telegram webhook error:", error);
+  }
+});
+
+// ── CALLERS DATA (separate index: /callers.html) ─────────────────────────────────
+// One record per customer. Customer ID = 0001, 0002, 0003 … and is never reused.
+// The same phone number always finds the SAME customer (one ID for one customer).
+// Sales Name is filled automatically with the name of the admin who is logged in.
+const cH = sheets.helpers; // TZ, ethDate, stamp, clean live inside the sheet module
+const CALLERS_FILE = path.join(__dirname, "data", "callers.json");
+let callersDb = { nextSeq: 1, list: [] };
+async function loadCallers() {
+  let db = null;
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "callers_data").maybeSingle(); if (data?.value && Array.isArray(data.value.list)) db = data.value; } catch {} }
+  if (!db) { try { const f = JSON.parse(fs.readFileSync(CALLERS_FILE, "utf8")); if (f && Array.isArray(f.list)) db = f; } catch {} }
+  if (db) { callersDb = { nextSeq: Math.max(Number(db.nextSeq) || 1, ...db.list.map(c => (Number(c.seq) || 0) + 1), 1), list: db.list }; }
+}
+async function saveCallers() {
+  try { fs.mkdirSync(path.dirname(CALLERS_FILE), { recursive: true }); fs.writeFileSync(CALLERS_FILE, JSON.stringify(callersDb)); } catch {}
+  if (supabase) { try { await supabase.from("app_settings").upsert({ key: "callers_data", value: callersDb, updated_at: new Date().toISOString() }); } catch {} }
+}
+const callerId = n => String(n).padStart(4, "0");
+// 0911…, +251911…, 251911… and 911… are the same customer.
+const phoneKey = p => { let d = String(p || "").replace(/\D/g, "").replace(/^0+/, ""); if (d.startsWith("251") && d.length >= 11) d = d.slice(3); return d; };
+const CALLER_STATUS = ["New Lead", "Interested", "Customer", "Not Interested"];
+const CALL_ORDER_STATUS = ["Pending", "Confirmed", "Rejected", "Follow-up"];
+const INTEREST_PRODUCTS = ["Shoe Shelf", "Console Table", "Chest Drawer", "Center Table", "TV Stand", "Dining Table", "Mirror"]; // same list as the order page; "Other" products are typed
+const cleanInterests = v => { const arr = Array.isArray(v) ? v : String(v || "").split(","); const out = []; for (const x of arr) { const t = cH.clean(x).trim().slice(0, 60); if (t && !out.some(o => o.toLowerCase() === t.toLowerCase())) out.push(t); } return out.slice(0, 20); };
+const CALLER_SOURCES = ["Telegram", "Facebook", "Instagram", "TikTok", "Phone Call", "Walk-in", "Referral", "Other"];
+const callerNow = () => { const g = new Date().toLocaleString("sv-SE", { timeZone: cH.TZ }); return { date: cH.ethDate(g.slice(0, 10)), time: g.slice(11, 16) }; };
+const callerPick = (v, list, fallback) => list.includes(String(v)) ? String(v) : fallback;
+function callerFields(b, actor, prev) {
+  const now = callerNow();
+  const username = String(b.username || "").trim().replace(/^@+/, "");
+  const orderStatus = callerPick(b.orderStatus, CALL_ORDER_STATUS, prev?.orderStatus || "Pending");
+  const spend = Number(String(b.totalSpend ?? "").replace(/,/g, ""));
+  const rawDate=String(b.date||"").trim(); const d=/^\d{4}\/\d{2}\/\d{2}$/.test(rawDate)?rawDate:(/^\d{2}\/\d{2}\/\d{4}$/.test(rawDate)?rawDate.slice(6)+"/"+rawDate.slice(3,5)+"/"+rawDate.slice(0,2):(prev?.date||now.date));
+  const t = /^\d{2}:\d{2}$/.test(String(b.time || "").trim()) ? String(b.time).trim() : (prev?.time || now.time);
+  return {
+    phone: cH.clean(b.phone).trim().slice(0, 30),
+    additionalPhone: cH.clean(b.additionalPhone).trim().slice(0, 30),
+    name: cH.clean(b.name).trim().slice(0, 120),
+    username: username ? "@" + username.slice(0, 60) : "",
+    location: cH.clean(b.location).trim().slice(0, 160),
+    customerStatus: callerPick(b.customerStatus, CALLER_STATUS, prev?.customerStatus || "New Lead"),
+    lastConversation: cH.clean(b.lastConversation).trim().slice(0, 1500),
+    date: d, time: t, orderStatus,
+    rejectionReason: orderStatus === "Rejected" ? cH.clean(b.rejectionReason).trim().slice(0, 300) : "",
+    totalSpend: Number.isFinite(spend) && spend > 0 ? spend : 0,
+    orderId: cH.clean(b.orderId).trim().slice(0, 300),
+    source: callerPick(b.source, CALLER_SOURCES, prev?.source || "Telegram"),
+    interests: b.interests === undefined ? (prev?.interests || []) : cleanInterests(b.interests), // ⭐ special / interested customer: products they want next
+    interestNote: b.interestNote === undefined ? (prev?.interestNote || "") : cH.clean(b.interestNote).trim().slice(0, 500),
+    telegramId: b.telegramId === undefined ? (prev?.telegramId || "") : String(b.telegramId || "").replace(/\D/g, "").slice(0, 20) // v133: the customer's Telegram account (chat id) — linked to the Customer ID
+  };
+}
+function callerError(f) {
+  if (phoneKey(f.phone).length < 7) return "Enter a valid phone number.";
+  if (!f.name) return "Enter the customer name.";
+  if (f.orderStatus === "Rejected" && !f.rejectionReason) return "Write the rejection reason.";
+  return "";
+}
+const pushAllCallers = async () => sheetNote(await sheets.callersSyncAll([...callersDb.list].sort((a, b) => b.seq - a.seq).map(callerSheetRow))); // newest customer first
+const callerSheetRow = c => [c.id, c.phone, c.name, c.additionalPhone || "", c.username, c.location, c.customerStatus, c.lastConversation, c.date, c.time, c.orderStatus, c.rejectionReason, c.salesName, c.totalSpend || "", c.orderId, c.source, (c.interests||[]).length ? (c.interests.join(", ") + (c.interestNote ? " — " + c.interestNote : "")) : ""];
+let callersSheetUrl = "";
+const sheetNote = r => { if (r && r.url) callersSheetUrl = r.url; return r && r.ok ? { ok: true } : { ok: false, needsScript: !!(r && r.needsScript), error: (r && r.error) || "Google Sheet not updated." }; };
+// ── ORDER ID = Customer ID + Ethiopian month (+ letter when the same customer orders again that month) ──
+// 0007-03 (first order), 0007-03A (second), 0007-03B (third) …  Change ORDER_ID_SEP to "" for 000703 / 000703A.
+const ORDER_ID_SEP = "-";
+const letterSuffix = n => { let t = "", k = n + 1; while (k > 0) { const m = (k - 1) % 26; t = String.fromCharCode(65 + m) + t; k = Math.floor((k - 1) / 26); } return t; }; // 0→A 1→B … 26→AA
+const reservedOrderIds = new Set();
+const orderMonth2 = dateLike => { const e = cH.ethDate(dateLike || ""); return /^\d{4}\/\d{2}\/\d{2}$/.test(e) ? e.slice(5, 7) : callerNow().date.slice(5, 7); };
+const orderIdInUse = code => { const k = String(code).toLowerCase(); return reservedOrderIds.has(k) || (Array.isArray(orders) && orders.some(o => String(o.orderId || "").toLowerCase() === k)); };
+function nextOrderId(customerId, dateLike, wanted) {
+  const base = `${customerId}${ORDER_ID_SEP}${orderMonth2(dateLike)}`;
+  const w = String(wanted || "").trim();
+  let code = "";
+  if (w && w.toUpperCase().startsWith(base) && /^[A-Z]*$/.test(w.slice(base.length).toUpperCase()) && !orderIdInUse(w)) code = base + w.slice(base.length).toUpperCase();
+  for (let i = -1; !code; i++) { const c = i < 0 ? base : base + letterSuffix(i); if (!orderIdInUse(c)) code = c; }
+  return code;
+}
+async function linkOrderToCustomer(order) { // the customer's "Order id" column lists every order code of that customer
+  const rec = callersDb.list.find(c => c.id === String(order.customerId || ""));
+  if (!rec || !order.orderId) return;
+  const codes = String(rec.orderId || "").split(/\s*,\s*/).filter(Boolean);
+  if (!codes.includes(order.orderId)) codes.push(order.orderId);
+  rec.orderId = codes.join(", ").slice(0, 300); rec.updatedAt = cH.stamp();
+  await saveCallers();
+  sheets.callerSave(callerSheetRow(rec)).then(sheetNote).catch(() => {});
+}
+// ── v133: Customer ID ⇄ Telegram account. A customer record can be linked to the Telegram account (name · @username · chat id) the bot saw;
+// the link is saved on both sides, and a customer with the same @username is matched automatically.
+const tgOfCaller = rec => {
+  if (rec.telegramId && customers.has(String(rec.telegramId))) return customers.get(String(rec.telegramId));
+  const un = String(rec.username || "").replace(/^@/, "").toLowerCase();
+  if (un) for (const c of customers.values()) if (String(c.username || "").toLowerCase() === un) return c;
+  return null;
+};
+const withTg = rec => { const t = tgOfCaller(rec); return { ...rec, telegramId: t ? String(t.id) : (rec.telegramId || ""), telegramName: t ? (t.name || (t.username ? "@" + t.username : "")) : "" }; };
+const callerOfTg = c => callersDb.list.find(r => r.telegramId && r.telegramId === String(c.id)) || (c.username ? callersDb.list.find(r => String(r.username || "").replace(/^@/, "").toLowerCase() === String(c.username).toLowerCase()) : null) || null;
+function syncTgLink(rec, oldId) { // keep the Telegram account's own record in step with the customer record
+  if (oldId && oldId !== rec.telegramId && customers.has(String(oldId))) { const o = customers.get(String(oldId)); if (o.customerId === rec.id) delete o.customerId; }
+  if (rec.telegramId && customers.has(String(rec.telegramId))) customers.get(String(rec.telegramId)).customerId = rec.id;
+  try { persistCustomers(); } catch {}
+}
+const tgTaken = (telegramId, exceptId) => telegramId ? callersDb.list.find(c => c.id !== exceptId && c.telegramId === telegramId) : null;
+app.use("/api/callers", requireAccess);
+app.get("/api/callers/order-id", (req, res) => {
+  const cust = callersDb.list.find(c => c.id === String(req.query.customerId || "").trim());
+  if (!cust) return res.status(404).json({ ok: false, error: "Customer ID not found." });
+  res.json({ ok: true, orderId: nextOrderId(cust.id, req.query.date), customer: { id: cust.id, name: cust.name, phone: cust.phone, additionalPhone: cust.additionalPhone || "", username: cust.username, location: cust.location } });
+});
+app.get("/api/callers", (req, res) => {
+  const list = [...callersDb.list].sort((a, b) => b.seq - a.seq);
+  res.json({ ok: true, me: { role: req.actor.role, name: req.actor.name || "" }, now: callerNow(), sheetUrl: callersSheetUrl || sheets.status().url || "", nextId: callerId(callersDb.nextSeq), customers: list.map(withTg),
+    options: { customerStatus: CALLER_STATUS, orderStatus: CALL_ORDER_STATUS, source: CALLER_SOURCES, products: INTEREST_PRODUCTS } });
+});
+app.get("/api/callers/lookup", (req, res) => {
+  const k = phoneKey(req.query.phone);
+  res.json({ ok: true, customer: k.length >= 7 ? (callersDb.list.find(c => phoneKey(c.phone) === k || phoneKey(c.additionalPhone) === k) || null) : null });
+});
+app.post("/api/callers", async (req, res) => {
+  const f = callerFields(req.body || {}, req.actor);
+  const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
+  const dup = callersDb.list.find(c => phoneKey(c.phone) === phoneKey(f.phone) || (f.additionalPhone && phoneKey(c.additionalPhone) === phoneKey(f.additionalPhone)));
+  if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
+  const tdup = tgTaken(f.telegramId, ""); if (tdup) return res.status(409).json({ ok: false, error: `This Telegram account is already linked to customer ${tdup.id} (${tdup.name}).` });
+  // Sales Name = the logged-in admin's name. Only the owner may type another sales name.
+  const sales = req.actor.role === "owner" && String(req.body?.salesName || "").trim() ? String(req.body.salesName).trim().slice(0, 80) : (req.actor.name || "");
+  const seq = callersDb.nextSeq++;
+  const rec = { id: callerId(seq), seq, ...f, salesName: sales, createdBy: req.actor.name || "", createdAt: cH.stamp(), updatedAt: cH.stamp(), history: [] };
+  callersDb.list.push(rec); await saveCallers(); syncTgLink(rec, "");
+  const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
+  res.json({ ok: true, customer: withTg(rec), sheet, message: `Saved. Customer ID ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
+});
+app.post("/api/callers/:id/interest", async (req, res) => { // after an order: the customer wants another product → ⭐ interested / special customer
+  const rec = callersDb.list.find(c => c.id === req.params.id);
+  if (!rec) return res.status(404).json({ ok: false, error: "Customer not found." });
+  const add = cleanInterests(req.body?.products);
+  if (!add.length) return res.status(400).json({ ok: false, error: "Select at least one product." });
+  rec.interests = cleanInterests([...(rec.interests || []), ...add]);
+  const note = cH.clean(req.body?.note).trim().slice(0, 500);
+  if (note) rec.interestNote = note;
+  const now = callerNow(); rec.interestDate = now.date + " " + now.time; rec.interestBy = req.actor.name || "";
+  rec.updatedAt = cH.stamp(); await saveCallers();
+  res.json({ ok: true, customer: rec, message: `⭐ ${rec.name} saved as an interested customer: ${rec.interests.join(", ")}` });
+});
+app.put("/api/callers/:id", async (req, res) => {
+  const rec = callersDb.list.find(c => c.id === req.params.id);
+  if (!rec) return res.status(404).json({ ok: false, error: "Customer not found." });
+  const f = callerFields(req.body || {}, req.actor, rec);
+  const err = callerError(f); if (err) return res.status(400).json({ ok: false, error: err });
+  const dup = callersDb.list.find(c => c.id !== rec.id && (phoneKey(c.phone) === phoneKey(f.phone) || (f.additionalPhone && phoneKey(c.additionalPhone) === phoneKey(f.additionalPhone))));
+  if (dup) return res.status(409).json({ ok: false, duplicate: true, customer: dup, error: `This phone number already belongs to customer ${dup.id} (${dup.name}).` });
+  const tdup = tgTaken(f.telegramId, rec.id); if (tdup) return res.status(409).json({ ok: false, error: `This Telegram account is already linked to customer ${tdup.id} (${tdup.name}).` });
+  const oldTg = rec.telegramId || "";
+  const watch = ["lastConversation", "date", "time", "orderStatus", "rejectionReason", "totalSpend", "orderId"];
+  if (watch.some(k => String(rec[k] ?? "") !== String(f[k] ?? ""))) {
+    rec.history = [{ date: rec.date, time: rec.time, lastConversation: rec.lastConversation, orderStatus: rec.orderStatus, rejectionReason: rec.rejectionReason, totalSpend: rec.totalSpend, orderId: rec.orderId, by: req.actor.name || "" }, ...(rec.history || [])].slice(0, 50);
+  }
+  Object.assign(rec, f); // the ID never changes
+  if (req.actor.role === "owner" && String(req.body?.salesName || "").trim()) rec.salesName = String(req.body.salesName).trim().slice(0, 80);
+  rec.updatedAt = cH.stamp(); await saveCallers(); syncTgLink(rec, oldTg);
+  const sheet = sheetNote(await sheets.callerSave(callerSheetRow(rec)));
+  res.json({ ok: true, customer: withTg(rec), sheet, message: `Updated customer ${rec.id}` + (sheet.ok ? " · Google Sheet updated" : " · Google Sheet NOT updated: " + sheet.error) });
+});
+app.post("/api/callers/sync", async (req, res) => { // owner only: write every customer to the "Callers" tab (back-fill / repair)
+  if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
+  const sheet = await pushAllCallers();
+  res.json({ ok: sheet.ok, sheet, error: sheet.ok ? "" : sheet.error, message: sheet.ok ? `Google Sheet updated: ${callersDb.list.length} customers.` : "" });
+});
+app.delete("/api/callers/:id", async (req, res) => {
+  if (req.actor.role !== "owner") return res.status(403).json({ ok: false, error: "Owner only." });
+  const before = callersDb.list.length;
+  callersDb.list = callersDb.list.filter(c => c.id !== req.params.id); // numbering is NOT reused
+  if (callersDb.list.length === before) return res.status(404).json({ ok: false, error: "Customer not found." });
+  await saveCallers();
+  const sheet = sheetNote(await sheets.callerRemove(req.params.id));
+  res.json({ ok: true, sheet, message: "Deleted." + (sheet.ok ? "" : " Google Sheet NOT updated: " + sheet.error) });
+});
+
+// ── Weekly Story planner (separate module + page: /stories.html) ──
+const storyPlanner = require("./stories").register(app, {
+  requireAccess, accountFor, admins, businessConnections, isUsable, ownerIds: OWNER_IDS, tgApi, supabase,
+  helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR, getAppAdmins: () => appAdmins
+});
+// ── First Greeting (separate module + page: /greeting.html) ──
+const greetingModule = require("./greetings").register(app, {
+  requireAccess, accountFor, resolveUser: resolveUserEntity, getCallers: () => callersDb, businessConnections, isUsable,
+  ownerIds: OWNER_IDS, telegram, resolveChatId, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR,
+  getAppAdmins: () => appAdmins
+});
+// ── Customer Rating (separate module + page: /rating.html; public customer page: /rate/<token>) ──
+const ratingModule = require("./ratings").register(app, {
+  requireAccess, getOrders: () => orders, loadOrders, saveOrderRecord, telegram, admins, accountFor, resolveUser: resolveUserEntity,
+  businessConnections, isUsable, ownerIds: OWNER_IDS, notifyAdminsText, supabase, helpers: sheets.helpers, baseDir: BUSINESS_STORE_DIR,
+  publicBaseUrl: PUBLIC_BASE_URL, noZoomHead: NOZOOM_HEAD, getAppAdmins: () => appAdmins, getCallers: () => callersDb
+});
+// ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
+const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
+// ── Workshop v176 (rebuilt): order + readymade products → the workshop Telegram group, with the customer info (module + page: /workshop.html) ──
+// v183: a stock product sold to a customer (Workshop → Sold Out group) updates the customer's info
+async function customerBoughtFromStock(customerId, text, by) {
+  const rec = callersDb.list.find(c => c.id === String(customerId || "")); if (!rec) return false;
+  rec.history = [{ date: rec.date, time: rec.time, lastConversation: rec.lastConversation, orderStatus: rec.orderStatus, rejectionReason: rec.rejectionReason, totalSpend: rec.totalSpend, orderId: rec.orderId, by: String(by || "") }, ...(rec.history || [])].slice(0, 50);
+  rec.customerStatus = "Customer"; rec.lastConversation = ("Bought from stock (Sold Out): " + String(text || "")).slice(0, 1500);
+  rec.updatedAt = cH.stamp(); await saveCallers();
+  try { await sheets.callerSave(callerSheetRow(rec)); } catch {}
+  return true;
+}
+const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, onSold: customerBoughtFromStock, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
+// ── Material v178: alert + Telegram Approve/Reject buttons to the main admin; cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
+const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule, tgApi, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
+app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
+app.get("*", sendHome);
+
+process.on("unhandledRejection", error => console.error("Unhandled rejection:", error));
+process.on("uncaughtException", error => console.error("Uncaught exception:", error));
+
+if (require.main === module) app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Ambar Furniture app running on port ${PORT}`);
+  (async () => {
+    supabaseReady = supabase
+      ? Promise.all([loadOrders(), restoreBusinessConnections(), restoreCustomers()]).then(() => console.log("Supabase data restored."), error => console.error("Supabase restore failed:", error.message))
+      : Promise.resolve();
+    await supabaseReady;
+    await restoreSheetConnection(); // the saved Google Sheet link comes back by itself
+    sheets.keepAlive();
+    await loadAppAdmins(); // load allowlist before serving any authenticated app API requests
+    await loadCallers(); // callers data (Customer IDs 0001, 0002 …)
+    await initAdmins(); // log the admin accounts back in (main admin + assigned admins)
+    await greetingModule.load(); // first-greeting log
+    await reportsModule.load(); // the reports Google Sheet link comes back by itself
+    await workshopModule.load(); // each admin's workshop group
+    await materialModule.load(); // pending material edit requests
+    await ratingModule.load(); ratingModule.start(); // customer rating links (sent after delivery)
+    await storyPlanner.start(); // weekly story scheduler (one photo per day, never repeated)
+    await tgApi.configureWebhook();
+    if (sheets.configured()) sheets.test().then(() => { console.log("Google Sheet connected."); return orders.length ? sheets.syncAll(orders, "Auto sync at start") : null; }).then(r => { if (r) console.log(`Google Sheet: ${r.total} existing orders synced.`); return refreshCustomerStatuses().then(() => pushAllCallers()); }).then(c => { if (c && !c.ok) console.warn("Callers tab:", c.error); }, e => console.warn("Google Sheet not ready:", e.message));
+  })().catch(error => console.error("AMBAR startup initialization failed:", error));
+});
+module.exports = app;
