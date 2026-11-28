@@ -3484,7 +3484,16 @@ const ratingModule = require("./ratings").register(app, {
 // ── Reports: Workflow / Stock / Material from a SECOND Google Sheet (separate module + page: /reports.html; main admins only) ──
 const reportsModule = require("./reports").register(app, { requireAccess, hasPerm, getOrders: () => orders, supabase, baseDir: BUSINESS_STORE_DIR, tgApi, helpers: sheets.helpers, log: sheets.log, accountFor, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 // ── Workshop v176 (rebuilt): order + readymade products → the workshop Telegram group, with the customer info (module + page: /workshop.html) ──
-const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
+// v183: a stock product sold to a customer (Workshop → Sold Out group) updates the customer's info
+async function customerBoughtFromStock(customerId, text, by) {
+  const rec = callersDb.list.find(c => c.id === String(customerId || "")); if (!rec) return false;
+  rec.history = [{ date: rec.date, time: rec.time, lastConversation: rec.lastConversation, orderStatus: rec.orderStatus, rejectionReason: rec.rejectionReason, totalSpend: rec.totalSpend, orderId: rec.orderId, by: String(by || "") }, ...(rec.history || [])].slice(0, 50);
+  rec.customerStatus = "Customer"; rec.lastConversation = ("Bought from stock (Sold Out): " + String(text || "")).slice(0, 1500);
+  rec.updatedAt = cH.stamp(); await saveCallers();
+  try { await sheets.callerSave(callerSheetRow(rec)); } catch {}
+  return true;
+}
+const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, onSold: customerBoughtFromStock, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
 // ── Material v178: alert + Telegram Approve/Reject buttons to the main admin; cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
 const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule, tgApi, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
