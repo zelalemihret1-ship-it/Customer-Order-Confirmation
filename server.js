@@ -2765,7 +2765,7 @@ app.post("/api/business/reconfigure-webhook", async (req, res) => {
   }
 });
 
-app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
+app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 8 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
   try {
     await supabaseReady;
     const order = { ...req.body };
@@ -2820,6 +2820,8 @@ app.post("/api/orders", upload.fields([{ name: "productPhoto", maxCount: 1 }, { 
     order.createdAt = order.createdAt || new Date().toISOString();
     order.comments = [];
     order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype);
+    const morePhotos = (req.files?.productPhoto || []).slice(1); // v189: several product photos — the first one is the main photo (card), the others are kept in order.photos
+    order.photos = [order.photo]; for (const f of morePhotos) { try { order.photos.push(await uploadToSupabase(f, "products", f.mimetype)); } catch (e) { console.warn("Extra order photo not saved:", e.message); } }
     order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
     order.adminId = account?.id || ""; order.adminLabel = account?.label || "Main admin";
     order.strictAdmin = !isOwner; order.onlyConnection = true;
@@ -2897,7 +2899,7 @@ async function refreshCardMessages(order, filePath) {
   }
   return { admins, customer };
 }
-app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
+app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 8 }, { name: "cardImage", maxCount: 1 }]), async (req, res) => {
   try {
     await supabaseReady; if (supabase) await loadOrders();
     const order = orders.find(x => String(x.id) === String(req.params.id));
@@ -2913,7 +2915,7 @@ app.put("/api/orders/:id", upload.fields([{ name: "productPhoto", maxCount: 1 },
     }
     if (order.deliveryType !== "By Ambar Delivery") { order.deliveryFee = ""; order.deliveryService = ""; }
     const productPhoto = req.files?.productPhoto?.[0], cardImage = req.files?.cardImage?.[0];
-    if (productPhoto) { order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype); changed.push("photo"); }
+    if (productPhoto) { order.photo = await uploadToSupabase(productPhoto, "products", productPhoto.mimetype); order.photos = [order.photo]; for (const f of (req.files?.productPhoto || []).slice(1)) { try { order.photos.push(await uploadToSupabase(f, "products", f.mimetype)); } catch {} } changed.push("photo"); }
     if (cardImage) order.cardImage = await uploadToSupabase(cardImage, "cards", "image/jpeg");
     if (!changed.length && !cardImage) return res.json({ ok: true, order, changed, warning: "Nothing was changed." });
     order.editedAt = new Date().toISOString(); order.editedBy = req.actor?.name || "Admin";
