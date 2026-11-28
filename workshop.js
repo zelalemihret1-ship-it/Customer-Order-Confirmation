@@ -63,6 +63,8 @@ function register(app, ctx) {
     return acc;
   }
   const groupOf = actor => (db.admins[keyOf(actor)] || {}).group || null;
+  // v185: the Sent tab starts from the moment the admin last pressed "Start from now" (first start of this version = now)
+  const sentFromOf = actor => { const k = keyOf(actor), a = db.admins[k] || {}; if (a.sentFrom === undefined) { db.admins[k] = { ...a, sentFrom: Date.now() }; persist(); return db.admins[k].sentFrom; } return Number(a.sentFrom) || 0; };
   const soldGroupOf = actor => (db.admins[keyOf(actor)] || {}).soldGroup || null;
   const fmtSize = v => clip(v, 80).replace(/(\d(?:\.\d+)?\s*(?:cm|mm|m)?)\s*[×✕xX*]\s*(?=\d)/gi, "$1*").replace(/\s*\*\s*/g, "*");
   const sizeOfOrder = o => [o.length, o.width, o.height].map(x => clip(x, 20)).filter(Boolean).join("*");
@@ -70,7 +72,7 @@ function register(app, ctx) {
   const customerById = id => customers().find(c => String(c.id) === String(id)) || null;
   const customerOfOrder = o => customerById(o.customerId || (typeof ctx.customerIdFor === "function" ? ctx.customerIdFor(o) : "")) || null;
   const findOrder = id => (ctx.getOrders() || []).find(o => String(o.id) === String(id));
-  const log = (actor, kind, title, ref, customer, ok, error) => { db.sent.push({ id: uid(), at: stamp(), by: clip(actor?.name || "Admin", 60), key: keyOf(actor), kind, title: clip(title, 100), ref: clip(ref, 80), customer: clip(customer, 80), ok: !!ok, error: clip(error, 200) }); if (db.sent.length > 400) db.sent.splice(0, db.sent.length - 400); persist(); };
+  const log = (actor, kind, title, ref, customer, ok, error) => { db.sent.push({ id: uid(), at: stamp(), ts: Date.now(), by: clip(actor?.name || "Admin", 60), key: keyOf(actor), kind, title: clip(title, 100), ref: clip(ref, 80), customer: clip(customer, 80), ok: !!ok, error: clip(error, 200) }); if (db.sent.length > 400) db.sent.splice(0, db.sent.length - 400); persist(); };
 
   // ── Telegram groups: @username · group id (-100…) · t.me link, + optional forum TOPIC ───────
   function parseTgLink(x) {
@@ -201,7 +203,7 @@ function register(app, ctx) {
     const cust = customerOfOrder(o), buf = await orderPhotoBuf(o);
     try { await post(actor, g, buf, orderCaption(o, cust, note)); }
     catch (e) { log(actor, "order", o.product || "Order", o.orderId || o.id, cust?.name || o.customerName, false, e.message); return { ok: false, error: e.message }; }
-    o.workshopSent = { at: stamp(), by: clip(actor?.name || "Admin", 60), count: ((o.workshopSent && o.workshopSent.count) || 0) + 1 };
+    o.workshopSent = { at: stamp(), ts: Date.now(), by: clip(actor?.name || "Admin", 60), count: ((o.workshopSent && o.workshopSent.count) || 0) + 1 };
     try { if (typeof ctx.saveOrder === "function") await ctx.saveOrder(o); } catch (e) { console.warn("Workshop: order mark not saved:", e.message); }
     log(actor, "order", o.product || "Order", o.orderId || o.id, cust?.name || o.customerName, true, "");
     return { ok: true };
@@ -236,7 +238,7 @@ function register(app, ctx) {
     return { ok: sent > 0, sent, error: err };
   }
   // ── compact views ───────────────────────────────────────────────────────────────────────────
-  const compactOrder = o => { const c = customerOfOrder(o); return { id: o.id, orderId: o.orderId || "", product: clip(o.product, 80), size: fmtSize(sizeOfOrder(o)), status: clip(o.status, 20), confirmed: o.status === "Confirmed", customerId: c?.id || clip(o.customerId, 20), customerName: clip(c?.name || o.customerName, 60), createdAt: o.createdAt || "", photo: o.photo || "", sent: o.workshopSent || null }; };
+  const compactOrder = o => { const c = customerOfOrder(o); return { id: o.id, orderId: o.orderId || "", product: clip(o.product, 80), size: fmtSize(sizeOfOrder(o)), status: clip(o.status, 20), confirmed: o.status === "Confirmed", customerId: c?.id || clip(o.customerId, 20), customerName: clip(c?.name || o.customerName, 60), createdAt: o.createdAt || "", photo: o.photo || "", sent: o.workshopSent || null, sentTs: (o.workshopSent && o.workshopSent.ts) || 0 }; };
   const stockList = () => (typeof R().wsStockView === "function" ? R().wsStockView() : []);
   const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, note: p.note, custom: !!p.custom, color: p.color || "" });
   const senderInfo = actor => { const acc = accountOf(actor); return { ready: !!acc?.ready, label: clip(acc?.label, 60) }; };
@@ -250,7 +252,8 @@ function register(app, ctx) {
       stock: stockList().filter(p => p.status === "stock" && p.wsSaved).map(compactProduct), // v178: only the Standard saved + Custom products (not the general stock)
       workflow: (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !/CUS|ORD/i.test(String(p.orderType || ""))).map(p => ({ id: p.id, code: p.code, model: p.model, desc: p.desc, ptype: p.ptype, photo: p.photo })),
       ptypes: ["Shoe Shelf", "Console Table", "TV Stand", "Wardrobe", "Bed", "Sofa", "Dining Table", "Coffee Table", "Cabinet", "Others"],
-      sent: db.sent.filter(x => owner || x.key === keyOf(actor)).slice(-80).reverse()
+      sentFrom: sentFromOf(actor),
+      sent: db.sent.filter(x => (owner || x.key === keyOf(actor)) && Number(x.ts || 0) >= sentFromOf(actor)).slice(-80).reverse()
     };
   }
 
@@ -339,6 +342,12 @@ function register(app, ctx) {
     const r = await sendProducts(list, req.actor, { customerId: String(req.body?.customerId || ""), note: req.body?.note }); // v177: the Workshop page sends no customer; Customer ID → Send to workshop still does
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} sent to the workshop group.` + (r.error ? " Not sent: " + r.error : "") : undefined });
   });
+  router.post("/sent/reset", (req, res) => { const k = keyOf(req.actor); db.admins[k] = { ...(db.admins[k] || {}), sentFrom: Date.now() }; persist(); res.json({ ...view(req.actor), ok: true, message: "✅ The Sent list now starts from now." }); });
+  // Custom → Standard (one button)
+  router.post("/to-standard", (req, res) => {
+    const r = typeof R().wsMakeStandard === "function" ? R().wsMakeStandard(String(req.body?.id || ""), clip(req.actor?.name || "Admin", 60)) : { ok: false, error: "Reports is not ready." };
+    res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? "✅ Moved to Standard." : undefined });
+  });
   // ♻️ Restock: a Sold Out product returns to In Stock
   router.post("/restock", (req, res) => {
     const r = typeof R().wsRestock === "function" ? R().wsRestock(String(req.body?.id || ""), clip(req.actor?.name || "Admin", 60)) : { ok: false, error: "Reports is not ready." };
@@ -377,7 +386,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v184" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v185" }));
 
   // Home → Stock view: every in-stock product with all its info (any assigned admin may look)
   app.get("/api/stock", requireAccess, (req, res) => {
