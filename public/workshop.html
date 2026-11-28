@@ -53,24 +53,27 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 </head>
 <body>
 <div id="gate"><div><h2>AMBAR Furniture</h2><p id="gateMsg">Checking your access…</p><a class="btn" href="/home.html" style="text-decoration:none">← Home</a></div></div>
-<header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🛠 Workshop</h1><div class="sub">Prepare products and send them to the workshop group only</div></div></div></header>
+<header><div class="in"><a class="back" href="/home.html">← Home</a><div style="flex:1;min-width:0"><h1>🛠 Workshop</h1><div class="sub">Save models · order them to the workshop · track what was sent</div></div></div></header>
 <main>
   <div class="msg" id="msg"></div>
 
   <div class="card" style="padding:10px 15px">
     <button type="button" id="grTog" style="all:unset;cursor:pointer;display:flex;align-items:center;justify-content:space-between;width:100%;font-weight:800;font-size:14px;padding:4px 0"><span>📨 Telegram groups <span id="grSum" style="font-weight:500;color:var(--muted);font-size:12px"></span></span><span id="grArrow" style="color:var(--muted)">▾</span></button>
     <div id="grBody" style="display:none;margin-top:10px">
-  <div class="card" style="box-shadow:none;margin-bottom:0">
+  <div class="card" style="box-shadow:none;margin-bottom:10px">
     <h2>📨 Workshop group</h2>
     <div class="grp"><div><b id="gName">—</b><div class="hint" id="gHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="gPick">Choose group</button><button class="btn sm sec" id="gTest">Send test</button></div></div>
+  </div>
+  <div class="card" style="box-shadow:none;margin-bottom:0">
+    <h2>🎨 Finishing group</h2>
+    <div class="grp"><div><b id="fgName">—</b><div class="hint" id="fgHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="fgPick">Choose group</button><button class="btn sm sec" id="fgTest">Send test</button></div></div>
   </div>
     </div>
   </div>
 
-  <div class="seg" id="seg"><button data-t="standard" class="on">📦 Standard</button><button data-t="custom">🎨 Custom</button><button data-t="orders">📋 Orders ↗</button><button data-t="sent">📤 Sent</button><button data-t="products">📊 Products ↗</button></div>
+  <div class="seg" id="seg"><button data-t="standard" class="on">📦 Standard</button><button data-t="custom">🎨 Custom</button><button data-t="orders">📋 Orders ↗</button><button data-t="sent">📤 Sent</button></div>
   <div id="out"></div>
 </main>
-<div class="bar" id="bar"><b id="barTxt"></b><button class="btn" id="barGo">📤 Send selected</button></div>
 
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 
@@ -109,15 +112,16 @@ const pthumb=p=>p.photo?thumb("/api/reports-photo/"+p.photo+".jpg"):'<div class=
 function render(){
   if(!S)return;
   $("gName").textContent=S.group?S.groupName:"No group chosen yet";
-  $("gHint").textContent=S.group?("Posted by "+(S.sender.ready?"your Telegram account":"the AMBAR bot")+(S.sender.ready?"":" (connect your Telegram account on Home to post as yourself)")):"Choose the Telegram group (and topic) of the workshop first.";
+  $("gHint").textContent=S.group?"Ordered products are posted here by the AMBAR bot (it must be an admin of the group) with a “Finished product” button.":"Choose the Telegram group (and topic) of the workshop first.";
   $("gTest").style.display=S.group?"":"none";
-  $("grSum").textContent="· Workshop "+(S.group?"✓":"✗");
+  $("fgName").textContent=S.finGroup?S.finGroupName:"No finishing group chosen yet";
+  $("fgHint").textContent=S.finGroup?"When the workshop man presses “Finished product”, the product is posted here with a “Finished” button.":"Choose the Telegram group (and topic) of the finishing team.";
+  $("fgTest").style.display=S.finGroup?"":"none";
+  $("grSum").textContent="· Workshop "+(S.group?"✓":"✗")+" · Finishing "+(S.finGroup?"✓":"✗");
   document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",TAB==="ready"?b.dataset.t===RTAB:b.dataset.t===TAB));
-  $("bar").classList.remove("on");
-  if(TAB==="orders")drawOrders();else if(TAB==="ready")drawReady();else drawSent();
+    if(TAB==="orders")drawOrders();else if(TAB==="ready")drawReady();else drawSent();
 }
 $("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const t=b.dataset.t;
-  if(t==="products"){location.href="/products.html"+location.hash;return;}
   if(t==="orders"){location.href="/callers.html"+location.hash;return;} // orders are sent from the customer data (Customer ID → Move)
   if(t==="standard"||t==="custom"){TAB="ready";RTAB=t;try{localStorage.setItem("wsRTab",RTAB);}catch{}}else TAB=t;
   SEL.clear();Q="";try{localStorage.setItem("wsTab",TAB);}catch{}render();});
@@ -140,40 +144,51 @@ async function sendOrder(id,again){
 }
 
 // ── READYMADE PRODUCTS ──────────────────────────────────────────────────────
+const cMeta=p=>[p.ptype,p.size&&("📏 "+p.size),p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity),p.note].filter(Boolean).join(" · ")||"—";
+const cardBtns=(p,custom)=>'<button class="btn sm" data-order="'+esc(p.id)+'">🛠 Order</button>'+(custom?'<button class="btn sm sec" data-tostd="'+esc(p.id)+'">⬆️ Standard</button>':'')+'<button class="btn sm red" data-cdel="'+esc(p.id)+'">🗑</button>';
+const bigCard=(p,custom)=>'<div class="bigc">'+(p.photo?'<img class="ph" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>')+'<div class="bd"><div class="t">'+esc(p.model)+'</div><div class="m">'+esc(cMeta(p))+'</div><div class="btns">'+cardBtns(p,custom)+'</div></div></div>';
+const prodRow=(p,custom)=>'<div class="it">'+(p.photo?thumb("/api/reports-photo/"+p.photo+".jpg"):'<div class="th">🛋</div>')+'<div class="mid"><div class="t">'+esc(p.model)+'</div><div class="m">'+esc(cMeta(p))+'</div></div><div class="rt">'+cardBtns(p,custom)+'</div></div>';
 const pMeta=p=>[p.ptype,p.desc,p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity),p.note].filter(Boolean).join(" · ")||"—";
-const pState=p=>(p.status==="workflow"?'<span class="pill wait">⏳ In workshop</span>':'<span class="pill ok">📦 In stock</span>')+' '+(p.sent?'<span class="pill blue">📤 Sent '+esc(p.sent.at||"")+'</span>':'<span class="pill wait2">Not sent yet</span>');
-const sendLbl=p=>p.sent?"📤 Send again":"📤 Send";
-const bigCard=p=>'<div class="bigc"><input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>'+(p.photo?'<img class="ph" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>')+'<div class="bd"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc(pMeta(p))+'</div><div style="margin-bottom:8px">'+pState(p)+'</div><div class="btns"><button class="btn sm '+(p.sent?"sec":"")+'" data-one="'+esc(p.id)+'">'+sendLbl(p)+'</button>'+(p.custom?'<button class="btn sm sec" data-tostd="'+esc(p.id)+'">⬆️ Standard</button>':'')+(S.me.owner?'<button class="btn sm red" data-del="'+esc(p.id)+'">🗑</button>':'')+'</div></div></div>';
-const prodRow=p=>'<div class="it"><input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc(pMeta(p))+'</div><div style="margin-top:5px">'+pState(p)+'</div></div><div class="rt"><button class="btn sm '+(p.sent?"sec":"")+'" data-one="'+esc(p.id)+'">'+sendLbl(p)+'</button>'+(p.custom?'<button class="btn sm sec" data-tostd="'+esc(p.id)+'">⬆️ Move to standard</button>':'')+(S.me.owner?'<button class="btn sm red" data-del="'+esc(p.id)+'">🗑</button>':'')+'</div></div>';
+const stState=p=>p.status==="stock"?'<span class="pill ok">📦 In stock</span>':p.status==="sold"?'<span class="pill bad">🔴 Sold</span>':p.stage==="finishing"?'<span class="pill blue">🎨 In finishing</span>':'<span class="pill wait">🛠 In workshop</span>';
 function drawReady(){
-  const custom=RTAB==="custom",q=Q.toLowerCase(),base=S.stock.filter(p=>!!p.custom===custom),L=base.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color,p.material,p.capacity].join(" ").toLowerCase().includes(q));
-  $("out").innerHTML='<div class="card"><h2>'+(custom?"🎨 Custom products":"📦 Standard products")+'</h2><div class="hint">'+(custom?'<b>Prepare new models</b> here — one-off products made to a custom design with their full info (photo, name, type, measurement, material, color, handle, shoe capacity, note). Each one is sent <b>only to the workshop group</b>.':'<b>Add a standard product</b> with its full info (photo, model, type, measurement, material, color, handle, shoe capacity, note). It is sent <b>only to the workshop group</b> and waits in <b>Products → Workshop</b> until it is finished.')+'</div>'+
+  const custom=RTAB==="custom",q=Q.toLowerCase(),base=(S.catalog||[]).filter(p=>(p.kind==="custom")===custom),L=base.filter(p=>!q||[p.model,p.ptype,p.size,p.handle,p.color,p.material,p.capacity].join(" ").toLowerCase().includes(q));
+  $("out").innerHTML='<div class="card"><h2>'+(custom?"🎨 Custom models":"📦 Standard products")+'</h2><div class="hint">'+(custom?'<b>Prepare new custom models</b> here (photo, name, type, measurement, material, color, handle, shoe capacity, note). A saved model stays <b>only in this section</b>. To make one, press <b>🛠 Order</b>, type the <b>quantity and measurement</b> and send it to the workshop.':'Save your <b>standard products</b> with their full info. A saved product stays <b>only in this section</b>. To make one, press <b>🛠 Order</b>, type the <b>quantity and measurement</b> and send it to the workshop.')+'<br>After sending, the product appears in <b>Products → Workshop</b>. In Telegram the workshop man presses <b>Finished product</b> → it goes to the <b>finishing group</b> → <b>Finished</b> puts it in Stock.</div>'+
    '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">'+(custom?"➕ New custom model":"➕ New standard product")+'</button></div>'+
-   '<label>🔎 Search</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
+   '<label>🔎 Search</label><input type="text" id="q" placeholder="Model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
    '<div class="card"><h2>'+(custom?"🎨 My custom models":"📦 My standard products")+' <span class="pill ok">'+base.length+'</span><span class="vt"><button data-view="list" class="'+(VIEW==="list"?"on":"")+'">☰ List</button><button data-view="large" class="'+(VIEW==="large"?"on":"")+'">▦ Large</button></span></h2>'+
-   (L.length?(VIEW==="large"?'<div class="bigGrid">'+L.map(bigCard).join("")+'</div>':L.map(prodRow).join("")):'<div class="empty">'+(base.length?"No product matches your search.":"<b>"+(custom?"No custom models yet.":"No standard products yet.")+"</b><br>Press <b>"+(custom?"➕ New custom model":"➕ New standard product")+"</b> to add one.")+'</div>')+'<div class="hint" style="margin-top:10px">Finish, sell and restock products in <a href="/products.html" style="color:var(--brand);font-weight:800">📊 Products</a>.</div></div>';
+   (L.length?(VIEW==="large"?'<div class="bigGrid">'+L.map(p=>bigCard(p,custom)).join("")+'</div>':L.map(p=>prodRow(p,custom)).join("")):'<div class="empty">'+(base.length?"No product matches your search.":"<b>"+(custom?"No custom models yet.":"No standard products yet.")+"</b><br>Press <b>"+(custom?"➕ New custom model":"➕ New standard product")+"</b> to save one.")+'</div>')+'</div>';
   const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawReady();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
-  bar();
 }
-function bar(){const n=SEL.size;$("bar").classList.toggle("on",TAB==="ready"&&n>0);$("barTxt").textContent=n+" selected";}
-async function sendProducts(ids){
-  if(BUSY||!ids.length)return;if(!S.group){say("First choose the workshop group.","bad");return;}
-  if(!await confirmBox("Send "+ids.length+" product"+(ids.length===1?"":"s")+" to\n"+S.groupName+"?"))return;
-  BUSY=true;const d=await api("/api/workshop/send-product",{ids});BUSY=false;SEL.clear();take(d);
+function orderSheet(id){
+  const c=(S.catalog||[]).find(x=>x.id===id);if(!c)return;
+  if(!S.group){say("First choose the workshop group.","bad");return;}
+  if(!S.finGroup){say("First choose the finishing group (📨 Telegram groups).","bad");return;}
+  open('<div class="hd"><b>🛠 Order to the workshop</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<div class="pv">'+(c.photo?'<img src="/api/reports-photo/'+esc(c.photo)+'.jpg" alt="">':'<div class="ph0">🛋</div>')+'<div><b>'+esc(c.model)+'</b><div class="hint" style="margin:3px 0 0">'+esc(cMeta(c))+'</div></div></div>'+
+   '<label>Quantity *</label><input type="number" id="oQty" value="1" min="1" max="20" inputmode="numeric">'+
+   '<label>Measurement (L*W*H) *</label><input type="text" id="oSize" value="'+esc(c.size||"")+'" placeholder="120*35*120" autocomplete="off">'+
+   '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="oNote"></textarea>'+
+   '<div class="hint">Posted to <b>'+esc(S.groupName)+'</b> with a “Finished product” button, then to <b>'+esc(S.finGroupName)+'</b> with a “Finished” button.</div>'+
+   '<div class="btns"><button class="btn block" id="oGo" type="button">📤 Send to workshop</button></div>');
+  $("oGo").onclick=async()=>{
+    const qty=parseInt($("oQty").value,10)||0,size=$("oSize").value.trim();
+    if(qty<1){fm("Type the quantity.","bad");return;}if(!size){fm("Type the measurement.","bad");return;}
+    $("oGo").disabled=true;$("oGo").textContent="Sending…";
+    const d=await api("/api/workshop/catalog/order",{id,qty,size,note:$("oNote").value});
+    if(d&&d.ok!==false){close();take(d);}else{$("oGo").disabled=false;$("oGo").textContent="📤 Send to workshop";fm((d&&d.error)||"Could not send.","bad");}
+  };
 }
-$("barGo").onclick=()=>sendProducts([...SEL]);
 $("out").addEventListener("click",async e=>{
   const t=e.target.closest("button");if(!t)return;const d=t.dataset;
   if(d.send)return sendOrder(d.send,!!(S.orders.find(o=>String(o.id)===d.send)||{}).sent);
   if(d.view){VIEW=d.view;try{localStorage.setItem("wsView",VIEW);}catch{}return render();}
-  if(d.tostd){if(await confirmBox("Move this custom product to Standard?","⬆️ Move"))take(await api("/api/workshop/to-standard",{id:d.tostd}));return;}
+  if(d.tostd){if(await confirmBox("Move this custom model to Standard?","⬆️ Move"))take(await api("/api/workshop/to-standard",{id:d.tostd}));return;}
   if(d.reset){if(await confirmBox("Hide everything sent before now? (Nothing is deleted.)","Start from now"))take(await api("/api/workshop/sent/reset",{}));return;}
-  if(d.one)return sendProducts([d.one]);
-  if(d.del){if(await confirmBox("Delete this product for good?","Delete"))take(await api("/api/workshop/product/delete",{id:d.del}));return;}
+  if(d.order)return orderSheet(d.order);
+  if(d.cdel){if(await confirmBox("Delete this saved model from the catalog? Products already ordered stay.","Delete"))take(await api("/api/workshop/catalog/delete",{id:d.cdel}));return;}
   if(d.r){RTAB=d.r;SEL.clear();Q="";try{localStorage.setItem("wsRTab",RTAB);}catch{}return render();}
   if(t.id==="addP")return addForm(RTAB==="custom");
 });
-$("out").addEventListener("change",e=>{const c=e.target.closest("[data-sel]");if(!c)return;c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);bar();});
 
 // photo → small JPEG data URL
 function shrink(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);let q=.85,out=c.toDataURL("image/jpeg",q);while(out.length>1.9e6&&q>.4){q-=.1;out=c.toDataURL("image/jpeg",q);}res(out);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});}
@@ -189,18 +204,15 @@ function addForm(custom){
    '<label>Color</label><input type="text" id="fColor" placeholder="e.g. Walnut" autocomplete="off">'+
    '<label>Handle <em style="font-weight:500;color:var(--muted)">(type)</em></label><input type="text" id="fHandle" placeholder="e.g. Gold bar handle" autocomplete="off">'+
    '<label>Shoe capacity <em style="font-weight:500;color:var(--muted)">(shoe shelves)</em></label><input type="text" id="fCap" placeholder="e.g. 24 pairs" autocomplete="off">'+
-   '<label>Quantity</label><input type="number" id="fQty" value="1" min="1" max="20" inputmode="numeric">'+
    '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="fNote"></textarea>'+
-   '<label class="opt on" style="margin-top:12px"><input class="chk" type="checkbox" id="fSend" checked><span>Send to the workshop group now<small>'+esc(S.group?S.groupName:"Choose the workshop group first")+'</small></span></label>'+
-   '<div class="btns"><button class="btn block" id="fGo" type="button">Save product</button></div>');
+   '<div class="btns"><button class="btn block" id="fGo" type="button">💾 Save</button></div>');
   $("pvPick").onclick=()=>$("pvFile").click();
   $("pvFile").onchange=async()=>{const f=$("pvFile").files[0];if(!f)return;try{PHOTO=await shrink(f);$("pvBox").innerHTML='<img src="'+PHOTO+'" style="width:84px;height:84px;border-radius:14px;object-fit:cover" alt="">';}catch(e){fm(e.message,"bad");}};
   $("fGo").onclick=async()=>{
     const model=$("fModel").value.trim();if(!model){fm(custom?"Type the custom model name.":"Type the product model / name.","bad");return;}
-    const send=$("fSend").checked;if(send&&!S.group){fm("Choose the workshop group first, or untick “Send to the workshop group”.","bad");return;}
     $("fGo").disabled=true;$("fGo").textContent="Saving…";
-    const d=await api("/api/workshop/add-product",{custom:!!custom,model,ptype:$("fType").value,size:$("fSize").value,material:$("fMaterial").value,color:$("fColor").value,handle:$("fHandle").value,capacity:$("fCap").value,qty:$("fQty").value,note:$("fNote").value,photo:PHOTO,send});
-    if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent="Save product";fm((d&&d.error)||"Could not save.","bad");}
+    const d=await api("/api/workshop/catalog/add",{custom:!!custom,model,ptype:$("fType").value,size:$("fSize").value,material:$("fMaterial").value,color:$("fColor").value,handle:$("fHandle").value,capacity:$("fCap").value,note:$("fNote").value,photo:PHOTO});
+    if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent="💾 Save";fm((d&&d.error)||"Could not save.","bad");}
   };
 }
 function fm(t,k){const m=$("fMsg");if(m){m.className="msg "+k;m.textContent=t;}}
@@ -208,10 +220,10 @@ function fm(t,k){const m=$("fMsg");if(m){m.className="msg "+k;m.textContent=t;}}
 // ── SENT LOG ────────────────────────────────────────────────────────────────
 function drawSent(){
   const sp=S.sentProducts||[],so=S.orders.filter(o=>o.sent&&Number(o.sentTs||0)>=Number(S.sentFrom||0)).slice().sort((a,b)=>Number(b.sentTs||0)-Number(a.sentTs||0)),bad=S.sent.filter(x=>!x.ok).slice(0,10);
-  const sCard=p=>VIEW==="large"?'<div class="bigc">'+(p.photo?'<img class="ph" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>')+'<div class="bd"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc(pMeta(p))+'</div><div style="margin-bottom:8px"><span class="pill blue">📤 '+esc(p.sent.at||"")+'</span> '+(p.sent.count>1?'<span class="pill">×'+p.sent.count+'</span>':'')+'<br><span class="hint">by '+esc(p.sent.by||"")+'</span></div><div class="btns"><button class="btn sm sec" data-one="'+esc(p.id)+'">📤 Send again</button></div></div></div>'
-    :'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc(pMeta(p))+'<br>📤 '+esc(p.sent.at||"")+' · '+esc(p.sent.by||"")+(p.sent.count>1?' · ×'+p.sent.count:'')+'</div></div><div class="rt"><button class="btn sm sec" data-one="'+esc(p.id)+'">📤 Send again</button></div></div>';
+  const sCard=p=>VIEW==="large"?'<div class="bigc">'+(p.photo?'<img class="ph" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>')+'<div class="bd"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc(pMeta(p))+'</div><div style="margin-bottom:4px">'+stState(p)+'</div><div class="hint" style="margin:0">📤 '+esc(p.sent.at||"")+' · '+esc(p.sent.by||"")+'</div></div></div>'
+    :'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc(pMeta(p))+'<br>📤 '+esc(p.sent.at||"")+' · '+esc(p.sent.by||"")+'</div></div><div class="rt">'+stState(p)+'</div></div>';
   $("out").innerHTML='<div class="card" style="padding:10px 15px"><div class="grp"><div style="font-size:12.5px;color:var(--muted)">Showing only what was sent <b>from now</b> on (since '+esc(S.sentFrom?new Date(S.sentFrom).toLocaleString():"the last reset")+').</div><button class="btn sm sec" data-reset="1">🔄 Start from now</button></div></div>'+
-   '<div class="card"><h2>📤 Sent products <span class="pill ok">'+sp.length+'</span><span class="vt"><button data-view="list" class="'+(VIEW==="list"?"on":"")+'">☰ List</button><button data-view="large" class="'+(VIEW==="large"?"on":"")+'">▦ Large</button></span></h2><div class="hint">Every product already sent to the workshop group, with its photo and info.</div>'+
+   '<div class="card"><h2>📤 Sent products <span class="pill ok">'+sp.length+'</span><span class="vt"><button data-view="list" class="'+(VIEW==="list"?"on":"")+'">☰ List</button><button data-view="large" class="'+(VIEW==="large"?"on":"")+'">▦ Large</button></span></h2><div class="hint">Every product sent to the workshop group, with its photo, info and where it is now (workshop → finishing → stock).</div>'+
    (sp.length?(VIEW==="large"?'<div class="bigGrid">'+sp.map(sCard).join("")+'</div>':sp.map(sCard).join("")):'<div class="empty"><b>No product sent yet.</b><br>Send a standard or custom product and it appears here.</div>')+'</div>'+
    (so.length?'<div class="card"><h2>🛠 Sent orders <span class="pill ok">'+so.length+'</span></h2>'+so.map(o=>orderRow(o,true)).join("")+'</div>':'')+
    (bad.length?'<div class="card"><h2>⚠️ Not delivered</h2><div class="hint">These tries failed — send the product again.</div>'+bad.map(x=>'<div class="it"><div class="th">⚠️</div><div class="mid"><div class="t">'+esc(x.title||"—")+'</div><div class="m">'+esc(x.at)+' · '+esc(x.by)+'<br><span style="color:var(--bad)">'+esc(x.error)+'</span></div></div></div>').join("")+'</div>':'');
@@ -220,10 +232,10 @@ function drawSent(){
 // ── GROUP PICKER ────────────────────────────────────────────────────────────
 $("grTog").onclick=()=>{const b=$("grBody"),o=b.style.display==="none";b.style.display=o?"block":"none";$("grArrow").textContent=o?"▴":"▾";}; // closed until touched
 let PICK=null,GK="work";
-$("gPick").onclick=()=>groupSheet("work");
+$("gPick").onclick=()=>groupSheet("work");$("fgPick").onclick=()=>groupSheet("finish");
 function groupSheet(k){
-  GK=k||"work";const cur=GK==="sold"?S.soldGroup:S.group;PICK=cur?{...cur}:null;
-  open('<div class="hd"><b>'+(GK==="sold"?"🔴 Sold Out group":"📨 Workshop group")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
+  GK=k||"work";const cur=GK==="finish"?S.finGroup:S.group;PICK=cur?{...cur}:null;
+  open('<div class="hd"><b>'+(GK==="finish"?"🎨 Finishing group":"📨 Workshop group")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
   gDraw();
 }
 function gDraw(extra){
@@ -231,7 +243,7 @@ function gDraw(extra){
    '<div class="btns"><button class="btn sm" id="gList">📂 Choose from my groups</button></div>'+
    '<label>…or paste a group / topic link, @username or id</label><input type="text" id="gLink" placeholder="https://t.me/c/123456789/2" autocomplete="off"><div class="btns"><button class="btn sm sec" id="gCheck">Check link</button></div>'+
    '<div id="gExtra">'+(extra||"")+'</div>'+
-   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save '+(GK==="sold"?"Sold Out":"workshop")+' group</button>'+((GK==="sold"?S.soldGroup:S.group)?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
+   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save '+(GK==="finish"?"finishing":"workshop")+' group</button>'+((GK==="finish"?S.finGroup:S.group)?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
    '<p class="hint">The group must contain your Telegram account (or the AMBAR bot as admin) so it can post.</p>';
   $("gList").onclick=async()=>{$("gList").disabled=true;$("gList").textContent="Loading…";const d=await api("/api/workshop/dialogs",{});$("gList").disabled=false;$("gList").textContent="📂 Choose from my groups";
     if(!d.ok){fm(d.error,"bad");return;}
@@ -251,6 +263,7 @@ $("sheet").addEventListener("click",async e=>{
   if(tp){PICK.topic=Number(tp.dataset.tp)>1?Number(tp.dataset.tp):0;PICK.topicTitle=tp.dataset.tt;gDraw();}
 });
 $("gTest").onclick=async()=>{$("gTest").disabled=true;const d=await api("/api/workshop/test",{kind:"work"});$("gTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
+$("fgTest").onclick=async()=>{$("fgTest").disabled=true;const d=await api("/api/workshop/test",{kind:"finish"});$("fgTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
 
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
 refresh();
