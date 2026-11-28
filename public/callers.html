@@ -308,7 +308,7 @@ let VIEWED=null;
 function openView(c){
   VIEWED=c;
   const row=(l,v)=>v?`<div><span>${l}</span><b>${esc(v)}</b></div>`:"";
-  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="wsBtn" type="button" data-go="ws">🛠 Send to workshop</button><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
+  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="wsBtn" type="button" data-go="ws">🧾 Order confirmation</button><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
   <div class="nm2">${esc(c.name)}</div>
   <div><span class="pill ${esc(c.customerStatus)}" style="margin-left:0">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></div>
   <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("✈️ Telegram name",c.telegramName)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("⭐ Wants",(c.interests||[]).join(", "))}${row("⭐ Note",c.interestNote)}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
@@ -328,10 +328,10 @@ $("cvOv").addEventListener("click",e=>{
 });
 
 // 🛠 Send to workshop (top of the customer details, beside the Customer ID): after making an order, send that order's product — or a readymade product — with this customer's info to the workshop Telegram group
-let WS=null,WSTAB="order",WSPICK=new Set();
-const wsClose=()=>{$("wsOv").classList.remove("on");WS=null;};
+let WS=null,WSTAB="order",WSPICK=new Set(),WSCONF=null;
+const wsClose=()=>{$("wsOv").classList.remove("on");WS=null;WSCONF=null;};
 async function openWs(c){
-  WS={c,data:null};WSTAB="order";WSPICK=new Set();
+  WS={c,data:null};WSTAB="order";WSPICK=new Set();WSCONF=null;
   $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div><div class="empty">Loading…</div>';
   $("wsOv").classList.add("on");
   const d=await api("/api/workshop/customer/"+encodeURIComponent(c.id));
@@ -346,31 +346,50 @@ function wsDraw(msg,kind){
   const th=u=>u?'<img loading="lazy" src="'+esc(u)+'" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>';
   const orders=(d.orders||[]).map(o=>{const can=!!o.confirmed&&o.status!=="Rejected";return '<div class="wsIt '+(WSPICK.has("o:"+o.id)?"on":"")+'"'+(can?' data-wo="'+esc(o.id)+'"':' style="opacity:.6"')+'>'+th(o.photo)+'<div><b>'+esc(o.product||"Order")+'</b><small>'+esc(o.orderId)+' · '+(can?"✅ Confirmed":o.status==="Rejected"?"❌ Rejected":"⏳ Waiting customer confirmation")+(o.sent?' · ✅ already sent '+esc(o.sent.at||""):"")+'</small></div></div>';}).join("");
   const stock=(d.stock||[]).map(p=>'<div class="wsIt '+(WSPICK.has("p:"+p.id)?"on":"")+'" data-wp="'+esc(p.id)+'">'+(p.photo?'<img loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="">':'<div class="ph">🛋</div>')+'<div><b>'+esc(p.code+(p.model?"-"+p.model:""))+'</b><small>'+esc([p.ptype,p.desc,p.handle].filter(Boolean).join(" · ")||"—")+'</small></div></div>').join("");
+  if(WSCONF){ // prepared confirmation: check it, then confirm → posted
+    const isO=T==="order",ids=[...WSPICK].filter(k=>k.startsWith(isO?"o:":"p:")).map(k=>k.slice(2));
+    const items=isO?(d.orders||[]).filter(o=>ids.includes(String(o.id))).map(o=>({ph:o.photo,t:o.product||"Order",s:o.orderId+" · ✅ Customer confirmed"})):(d.stock||[]).filter(p=>ids.includes(String(p.id))).map(p=>({ph:p.photo?"/api/reports-photo/"+p.photo+".jpg":"",t:p.code+(p.model?"-"+p.model:""),s:[p.ptype,p.desc,p.handle].filter(Boolean).join(" · ")||"—"}));
+    $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div>'+
+     (msg?'<div class="notice '+kind+'" style="display:block">'+esc(msg)+'</div>':'')+
+     '<div class="nm2">🧾 '+(isO?"Order confirmation":"Sold confirmation")+' — check &amp; confirm</div>'+
+     '<div style="font-size:13px;color:#6d675d;line-height:1.5;margin-bottom:8px">👤 <b>'+esc(c.name)+'</b>'+(c.phone?' · 📞 '+esc(c.phone):'')+(c.location?'<br>📍 '+esc(c.location):'')+'</div>'+
+     items.map(x=>'<div class="wsIt on">'+th(x.ph)+'<div><b>'+esc(x.t)+'</b><small>'+esc(x.s)+'</small></div></div>').join("")+
+     (WSCONF.note?'<div class="notice info" style="display:block;margin-top:8px">📝 '+esc(WSCONF.note)+'</div>':'')+
+     '<div class="notice info" style="display:block;margin-top:8px;font-size:12.5px">'+(isO?'➡️ Workshop group: <b>'+esc(d.group)+'</b>':'➡️ Sold Out group: <b>'+esc(d.soldGroup)+'</b><br>The product is then marked <b>Sold Out</b> and linked with this customer.')+'</div>'+
+     '<div class="acts2"><button class="mk" id="wsBack" type="button" style="background:#eee;color:#222">← Back</button><button class="mk" id="wsOk" type="button">✅ Confirm &amp; send</button></div>';
+    return;
+  }
   $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div>'+
-   '<div class="nm2">🛠 Send to workshop</div><div style="font-size:13px;color:#6d675d;line-height:1.5">👤 <b>'+esc(c.name)+'</b>'+(c.phone?' · 📞 '+esc(c.phone):'')+(c.location?'<br>📍 '+esc(c.location):'')+'</div>'+
-   '<div class="notice '+(gOk?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(T==="order"?(d.group?'Not-in-stock product → workshop group: <b>'+esc(d.group)+'</b><br>Sent only <b>after the customer confirms</b> the order.':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'):(d.soldGroup?'Product in stock → linked with this customer and posted in the Sold Out group: <b>'+esc(d.soldGroup)+'</b><br>The product is then marked <b>Sold Out</b>.':'No Sold Out group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'))+'</div>'+
-   '<div class="wsTabs"><button type="button" data-wt="order" class="'+(T==="order"?"on":"")+'">📋 Not in stock (order)</button><button type="button" data-wt="ready" class="'+(T==="ready"?"on":"")+'">🛋 In stock</button></div>'+
+   '<div class="nm2">🧾 Order confirmation</div><div style="font-size:13px;color:#6d675d;line-height:1.5">👤 <b>'+esc(c.name)+'</b>'+(c.phone?' · 📞 '+esc(c.phone):'')+(c.location?'<br>📍 '+esc(c.location):'')+'</div>'+
+   '<div class="notice '+(gOk?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(T==="order"?(d.group?'Own order → workshop group: <b>'+esc(d.group)+'</b><br>Sent only <b>after the customer confirms</b> the order.':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'):(d.soldGroup?'Product in stock → linked with this customer and posted in the Sold Out group: <b>'+esc(d.soldGroup)+'</b><br>The product is then marked <b>Sold Out</b>.':'No Sold Out group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'))+'</div>'+
+   '<div class="wsTabs"><button type="button" data-wt="order" class="'+(T==="order"?"on":"")+'">📋 Own order</button><button type="button" data-wt="ready" class="'+(T==="ready"?"on":"")+'">🛋 In stock</button></div>'+
    (msg?'<div class="notice '+kind+'" style="display:block">'+esc(msg)+'</div>':'')+
    (T==="order"?(orders||'<div class="empty">No order for this customer yet.<br>Make an order first, then come back here.</div>'):(stock||'<div class="empty">No product in stock.</div>'))+
    '<textarea id="wsNote" placeholder="Extra note (optional)" style="min-height:56px;margin-top:10px"></textarea>'+
-   '<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(gOk?"":"disabled")+'>'+(T==="order"?"📤 Send to workshop":"🔴 Sold → Sold Out group")+'</button></div>';
+   '<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(gOk?"":"disabled")+'>'+(T==="order"?"🧾 Order confirmation & send to workshop":"🧾 Prepare confirmation → Sold Out group")+'</button></div>';
 }
 $("wsOv").addEventListener("click",async e=>{
   if(e.target===$("wsOv")||e.target.closest("[data-wx]")){wsClose();return;}
   if(!WS||!WS.data)return;
-  const t=e.target.closest("[data-wt]");if(t){WSTAB=t.dataset.wt;WSPICK=new Set();wsDraw();return;}
+  const t=e.target.closest("[data-wt]");if(t){WSTAB=t.dataset.wt;WSPICK=new Set();WSCONF=null;wsDraw();return;}
   const o=e.target.closest("[data-wo]");if(o){WSPICK=new Set(["o:"+o.dataset.wo]);const n=$("wsNote").value;wsDraw();$("wsNote").value=n;return;}
   const p=e.target.closest("[data-wp]");if(p){const k="p:"+p.dataset.wp;WSPICK.has(k)?WSPICK.delete(k):WSPICK.add(k);const n=$("wsNote").value;wsDraw();$("wsNote").value=n;return;}
+  if(e.target.closest("#wsBack")){WSCONF=null;wsDraw();return;}
   if(e.target.closest("#wsGo")){
     const pick=[...WSPICK].filter(k=>k.startsWith(WSTAB==="order"?"o:":"p:")).map(k=>k.slice(2));
-    if(!pick.length){wsDraw(WSTAB==="order"?"Tap the order to send.":"Tap at least one product to send.","bad");return;}
-    const note=$("wsNote").value,b=$("wsGo");b.disabled=true;b.textContent="Sending…";
+    if(!pick.length){wsDraw(WSTAB==="order"?"Tap the order to send.":"Tap at least one product to sell.","bad");return;}
+    WSCONF={note:$("wsNote").value.trim()};wsDraw();return; // 1) prepare the confirmation
+  }
+  if(e.target.closest("#wsOk")){ // 2) confirmed → send
+    const pick=[...WSPICK].filter(k=>k.startsWith(WSTAB==="order"?"o:":"p:")).map(k=>k.slice(2)),note=(WSCONF&&WSCONF.note)||"",b=$("wsOk");
+    b.disabled=true;b.textContent="Sending…";
     let r;
     if(WSTAB==="order"){const ord=WS.data.orders.find(x=>String(x.id)===pick[0]);
       r=await api("/api/workshop/send-order","POST",{id:pick[0],note,again:!!(ord&&ord.sent)});
       if(r.ok&&ord){ord.sent={at:"just now"};}}
     else{r=await api("/api/workshop/send-sold","POST",{ids:pick,customerId:WS.c.id,note});if(r.ok){WS.data.stock=(WS.data.stock||[]).filter(x=>!pick.includes(String(x.id)));}}
-    if(r.ok){WSPICK=new Set();wsDraw("✅ "+(r.message||"Sent to the workshop group."),"ok");}
+    WSCONF=null;
+    if(r.ok){WSPICK=new Set();wsDraw("✅ "+(r.message||"Sent."),"ok");}
     else wsDraw(r.error||"Could not send.","bad");
   }
 });
