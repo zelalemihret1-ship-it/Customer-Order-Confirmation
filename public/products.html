@@ -89,7 +89,7 @@ const img=(p,cls)=>p.photo?'<img class="'+cls+'" loading="lazy" src="/api/report
 const name=p=>p.code+(p.model?"-"+p.model:"");
 const meta=p=>[p.ptype,p.desc,p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity)].filter(Boolean).join(" · ")||"—";
 const kind=p=>/CUS|ORD/i.test(p.orderType||"")?'<span class="pill wait">ORDER</span>':p.custom?'<span class="pill blue">🎨 Custom</span>':'<span class="pill ok">Standard</span>';
-const stagePill=p=>TAB==="workshop"?(p.sent?'<span class="pill blue">📤 Sent '+esc(p.sent.at||"")+'</span>':'<span class="pill wait2">Not sent yet</span>'):TAB==="sold"&&p.soldInfo?'<span class="pill sold">Sold '+esc(p.soldInfo.at||"")+'</span>':"";
+const stagePill=p=>TAB==="workshop"?((p.stage==="finishing"?'<span class="pill blue">🎨 In finishing</span>':'<span class="pill wait">🛠 In workshop</span>')+(p.sent?' <span class="pill">📤 '+esc(p.sent.at||"")+'</span>':'')):TAB==="sold"&&p.soldInfo?'<span class="pill sold">Sold '+esc(p.soldInfo.at||"")+'</span>':"";
 const list=()=>D?D[TAB]:[];
 function filtered(){const q=$("q").value.toLowerCase().trim();return list().filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color,p.material,p.capacity,p.note,p.salesName].join(" ").toLowerCase().includes(q));}
 function card(p){const a=ACT[TAB],chk=CAN?'<input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>':"";
