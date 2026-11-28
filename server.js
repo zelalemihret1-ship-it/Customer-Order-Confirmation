@@ -1639,14 +1639,19 @@ function identify(req) {
 }
 // ── v120 SECTION ACCESS: the main admin chooses which sections each assigned admin may open ──
 // Existing admins (no list saved yet) keep what they had before: everything except Reports.
-const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop", "material"];
-const DEFAULT_PERMS = ["orders", "customers", "greeting", "rating", "stories"];
-function permsOf(rec) { return Array.isArray(rec?.perms) ? ALL_PERMS.filter(p => rec.perms.includes(p)) : DEFAULT_PERMS.slice(); }
+const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop", "material", "stockview", "sheet"];
+const DEFAULT_PERMS = ["orders", "customers", "greeting", "rating", "stories", "stockview", "sheet"];
+function permsOf(rec) { // v184: "stockview" + "sheet" are new; admins saved before keep them until the main admin saves their access again
+  if (!Array.isArray(rec?.perms)) return DEFAULT_PERMS.slice();
+  const list = ALL_PERMS.filter(p => rec.perms.includes(p));
+  return Number(rec.permsVer) >= 2 ? list : [...new Set([...list, "stockview", "sheet"])];
+}
 function cleanPerms(v) { const arr = Array.isArray(v) ? v : String(v || "").split(","); return ALL_PERMS.filter(p => arr.map(x => String(x).trim()).includes(p)); }
 // which section an API path belongs to (null = open to every assigned admin)
 function permNeeded(url) {
   const p = String(url || "").split("?")[0];
   if (p.startsWith("/api/reports")) return ["reports"];
+  if (p === "/api/stock") return ["stockview", "reports", "workshop"]; // v184 Stock view
   if (p.startsWith("/api/workshop")) return ["workshop"];
   if (p.startsWith("/api/material")) return ["material", "workshop"]; // v177: the Material section (admins who already had Workshop keep access)
   if (p.startsWith("/api/ratings")) return ["rating"];
@@ -2361,7 +2366,7 @@ app.post("/api/setup/app-admins/add", async (req, res) => {
     const wantViewer = req.body?.viewer === true || req.body?.viewer === "1" || req.body?.viewer === "true" || (req.body?.viewer === undefined && !!prev?.viewer);
     const base = { ...(prev || {}) }; delete base.viewer;
     const permList = req.body?.perms !== undefined ? cleanPerms(req.body.perms) : (prev ? permsOf(prev) : DEFAULT_PERMS.slice());
-    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...base, telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", perms: permList, ...(asMain ? { main: true } : {}), ...(wantViewer && !asMain ? { viewer: true } : {}) });
+    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...base, telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", perms: permList, permsVer: 2, ...(asMain ? { main: true } : {}), ...(wantViewer && !asMain ? { viewer: true } : {}) });
     added.push(name || telegramId);
   }
   if (!added.length) return res.status(400).json({ ok: false, error: "Enter numeric Telegram IDs, one per line, e.g. 123456789 Abebe" });
@@ -2403,7 +2408,7 @@ app.post("/api/setup/app-admins/set-perms", async (req, res) => {
   const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
   const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
   if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
-  rec.perms = cleanPerms(req.body?.perms);
+  rec.perms = cleanPerms(req.body?.perms); rec.permsVer = 2;
   await saveAppAdmins();
   sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner");
   res.json({ ok: true, perms: rec.perms, message: `✅ Access saved for ${rec.name || telegramId}: ${rec.perms.length ? rec.perms.join(", ") : "no sections"}. They see the change when they reopen the app.` });
@@ -2475,7 +2480,7 @@ app.post("/api/setup/app-admins/update", async (req, res) => {
     if (wantMain && !rec.main) { rec.main = true; delete rec.viewer; extra += " Now a MAIN ADMIN — they must reopen the app once."; sheets.log("Main admin added", rec.name || rec.telegramId, identify(req).name || "Owner"); }
     else if (!wantMain && rec.main) { delete rec.main; extra += " Main-admin rights removed."; sheets.log("Main admin removed", rec.name || rec.telegramId, identify(req).name || "Owner"); }
   }
-  if (req.body?.perms !== undefined) { rec.perms = cleanPerms(req.body.perms); extra += " Section access updated."; sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner"); }
+  if (req.body?.perms !== undefined) { rec.perms = cleanPerms(req.body.perms); rec.permsVer = 2; extra += " Section access updated."; sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner"); }
   if (req.body?.viewer !== undefined) {
     const wantViewer = req.body.viewer === true || req.body.viewer === "1" || req.body.viewer === "true";
     if (wantViewer && (rec.main || OWNER_IDS.includes(oldId))) extra += " (Not set to view-only: a main admin can't be view-only.)";
