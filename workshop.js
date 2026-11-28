@@ -26,6 +26,9 @@ function register(app, ctx) {
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop2-data.json");
   const R = () => ctx.reports || {};
+  // v191: per-admin action rights chosen by the main admin (Manage Admins → Section access). Owner = everything; no choice saved = allowed.
+  const canDo = (actor, part, act) => typeof ctx.canDo === "function" ? ctx.canDo(actor, part, act) : true;
+  const NO_RIGHT = "🔒 The main admin has not allowed you to do this. Ask them to turn it on in Manage Admins → Section access.";
   let db = { admins: {}, sent: [], psent: {}, catalog: [], jobs: {}, batches: {}, savedAt: "" };
 
   // ── storage (file + Supabase) ───────────────────────────────────────────────────────────────
@@ -432,7 +435,7 @@ function register(app, ctx) {
   function view(actor) {
     const g = groupOf(actor), owner = isOwnerA(actor);
     return {
-      ok: true, me: { name: clip(actor?.name, 60), owner }, group: g, groupName: groupName(g), finGroup: finGroupOf(actor), finGroupName: groupName(finGroupOf(actor)), catalog: catalogOf(actor), sender: senderInfo(actor),
+      ok: true, me: { name: clip(actor?.name, 60), owner }, group: g, groupName: groupName(g), finGroup: finGroupOf(actor), finGroupName: groupName(finGroupOf(actor)), soldGroup: soldGroupOf(actor), soldGroupName: groupName(soldGroupOf(actor)), can: { catalog: canDo(actor, "workshop", "catalog"), order: canDo(actor, "workshop", "order"), groups: canDo(actor, "workshop", "groups"), sold: canDo(actor, "workshop", "sold") }, catalog: catalogOf(actor), sender: senderInfo(actor),
       orders: orderList(actor).slice(0, 200).map(compactOrder),
       sold: stockList().filter(p => p.status === "sold").slice(-80).reverse().map(compactProduct), // v184: Sold Out products (each has a ♻️ Restock button)
       stock: allProducts().filter(p => (p.status === "workflow" || p.status === "stock") && p.wsSaved).map(compactProduct), // v187: the products prepared in Workshop (Standard / Custom), in Workflow or already in Stock
@@ -449,6 +452,9 @@ function register(app, ctx) {
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
   router.use(express.json({ limit: "30mb" }));
+  // v191: what each route needs (the main admin turns these on/off per admin)
+  const NEED = { "/catalog/add": "catalog", "/catalog/update": "catalog", "/catalog/delete": "catalog", "/to-standard": "catalog", "/catalog/order": "order", "/send-order": "order", "/product/finish": "order", "/settings": "groups", "/settings/clear": "groups", "/dialogs": "groups", "/topics": "groups", "/resolve": "groups", "/test": "groups", "/restock": "sold", "/send-sold": "sold", "/product/sold": "sold" };
+  router.use((req, res, next) => { const need = req.method === "POST" ? NEED[req.path.replace(/\/+$/, "")] : null; return !need || canDo(req.actor, "workshop", need) ? next() : res.status(403).json({ ok: false, code: "NO_RIGHT", error: NO_RIGHT }); });
   router.get("/state", (req, res) => res.json(view(req.actor)));
   router.get("/peek", (req, res) => res.json({ ok: true, codes: peekIds(parseInt(req.query.n, 10) || 1, clip(req.query.ptype, 40)) })); // the Product IDs the next pieces will get
 
@@ -614,7 +620,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v190" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v191" }));
 
   // v187 Products page (Home → beside Stock view): Workshop · Stock · Sold Out products with ALL their info.
   // Viewing: Stock view / Reports / Workshop access. Advancing and restocking: Workshop or Reports access (view-only admins are blocked by requireAccess).
@@ -623,13 +629,16 @@ function register(app, ctx) {
     const w = keep("workflow"), st = keep("stock"), so = keep("sold");
     return { ok: true, now: nowEth(), counts: { workshop: w.length, stock: st.length, sold: so.length }, workshop: w, stock: st, sold: so };
   };
-  app.get("/api/products", requireAccess, (req, res) => res.json(productsView()));
+  app.get("/api/products", requireAccess, (req, res) => res.json({ ...productsView(), can: { advance: canDo(req.actor, "products", "advance"), sold: canDo(req.actor, "products", "sold") } }));
   app.post("/api/products/advance", requireAccess, express.json({ limit: "1mb" }), async (req, res) => {
-    if (!(hasPerm(req.actor, "workshop") || hasPerm(req.actor, "reports"))) return res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." });
+    if (!hasPerm(req.actor, "products")) return res.status(403).json({ ok: false, error: "The main admin has not given you the Products section. Ask them to turn it on in Manage Admins." });
     const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [req.body?.id]).map(x => String(x || "")).filter(Boolean).slice(0, 200);
     if (!ids.length) return res.json({ ...productsView(), ok: false, error: "Choose at least one product." });
     if (typeof R().wsAdvance !== "function") return res.json({ ...productsView(), ok: false, error: "Reports is not ready." });
     const by = clip(req.actor?.name || "Admin", 60), byId = new Map(allProducts().map(p => [p.id, p]));
+    // v191: moving to Stock needs "advance"; Sold / Restock needs "sold" (chosen per admin)
+    if (ids.some(id => byId.get(id)?.status === "workflow") && !canDo(req.actor, "products", "advance")) return res.status(403).json({ ...productsView(), ok: false, error: NO_RIGHT });
+    if (ids.some(id => ["stock", "sold"].includes(byId.get(id)?.status)) && !canDo(req.actor, "products", "sold")) return res.status(403).json({ ...productsView(), ok: false, error: NO_RIGHT });
     // v189: Stock → Sold Out needs the customer first (the customer is attached to the product and the sale is written in the customer's info)
     const selling = ids.filter(id => byId.get(id)?.status === "stock");
     let cust = null, who = "";
@@ -659,7 +668,7 @@ function register(app, ctx) {
   });
   // v189: the customer list for "Sold → choose the customer"
   app.get("/api/products/customers", requireAccess, (req, res) => {
-    if (!(hasPerm(req.actor, "workshop") || hasPerm(req.actor, "reports"))) return res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section." });
+    if (!hasPerm(req.actor, "products")) return res.status(403).json({ ok: false, error: "The main admin has not given you the Products section." });
     const q = clip(req.query.q, 60).toLowerCase();
     const list = customers().filter(c => !q || [c.id, c.name, c.phone, c.username, c.location].join(" ").toLowerCase().includes(q)).slice().sort((a, b) => Number(b.seq || 0) - Number(a.seq || 0)).slice(0, 40);
     res.json({ ok: true, customers: list.map(c => ({ id: clip(c.id, 20), name: clip(c.name, 60), phone: clip(c.phone, 30), location: clip(c.location, 80), username: clip(c.username, 40), status: clip(c.customerStatus, 30) })) });
@@ -672,6 +681,10 @@ function register(app, ctx) {
   });
 
   app.use("/api/workshop", router);
-  return { load, handleCallback };
+  // v191 START FROM ZERO / backup: the saved models, the sent list and the production jobs. The admins' Telegram groups stay connected.
+  const zeroSnapshot = () => JSON.parse(JSON.stringify({ catalog: db.catalog, sent: db.sent, psent: db.psent, jobs: db.jobs, batches: db.batches }));
+  async function zeroWipe() { const n = { models: db.catalog.length, sent: db.sent.length }; db.catalog = []; db.sent = []; db.psent = {}; db.jobs = {}; db.batches = {}; await persist(); return n; }
+  async function zeroRestore(snap) { if (!snap || typeof snap !== "object") return false; db.catalog = Array.isArray(snap.catalog) ? snap.catalog : []; db.sent = Array.isArray(snap.sent) ? snap.sent : []; db.psent = snap.psent && typeof snap.psent === "object" ? snap.psent : {}; db.jobs = snap.jobs && typeof snap.jobs === "object" ? snap.jobs : {}; db.batches = snap.batches && typeof snap.batches === "object" ? snap.batches : {}; await persist(); return true; }
+  return { load, handleCallback, zeroSnapshot, zeroWipe, zeroRestore };
 }
 module.exports = { register };
