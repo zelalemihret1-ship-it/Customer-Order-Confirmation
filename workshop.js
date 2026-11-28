@@ -1,3 +1,4 @@
+// v188: Standard / Custom are a CATALOG (saved models). Ordering one (quantity + measurement) creates the products in Reports → Workflow and posts each to the WORKSHOP group with a "Finished product" button; pressing it posts the product to the FINISHING group with a "Finished" button; pressing that puts the product In Stock. Buttons need the AMBAR bot (admin in both groups).
 // v187: Workshop sends ONLY to the workshop group (the Sold Out group is no longer part of this page) · Standard / Custom products carry full info (material, color, handle, shoe capacity …) and start in Workflow = "Workshop products" · Sent tab lists the sent products · new Products page (Home → beside Stock view): Workshop · Stock · Sold, list / large, advance + restock.
 // v178: NON-STOCK orders are sent to the workshop only AFTER the customer confirmed · Workshop → Readymade lists/sends only the Standard saved + Custom products (not the stock) · a product that IS in stock goes, linked with the customer's info, to the SOLD OUT group (+ topic) the admin selected and is marked Sold Out.
 // v177: Order products shows only the NEWEST unsent orders (sent ones move to the Sent tab) · Readymade has two types: Standard products and Custom products · no customer picker in Readymade.
@@ -25,7 +26,7 @@ function register(app, ctx) {
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop2-data.json");
   const R = () => ctx.reports || {};
-  let db = { admins: {}, sent: [], psent: {}, savedAt: "" };
+  let db = { admins: {}, sent: [], psent: {}, catalog: [], jobs: {}, savedAt: "" };
 
   // ── storage (file + Supabase) ───────────────────────────────────────────────────────────────
   let chain = Promise.resolve();
@@ -38,9 +39,11 @@ function register(app, ctx) {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "workshop2_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { admins: {}, sent: [], psent: {}, savedAt: "", ...d };
+    if (d && typeof d === "object") db = { admins: {}, sent: [], psent: {}, catalog: [], jobs: {}, savedAt: "", ...d };
     if (!db.admins || typeof db.admins !== "object" || Array.isArray(db.admins)) db.admins = {};
     if (!Array.isArray(db.sent)) db.sent = [];
+    if (!Array.isArray(db.catalog)) db.catalog = [];
+    if (!db.jobs || typeof db.jobs !== "object" || Array.isArray(db.jobs)) db.jobs = {};
     if (!db.psent || typeof db.psent !== "object" || Array.isArray(db.psent)) db.psent = {};
     if (!d) await importOldGroups(); // first start of v176: keep every admin's workshop group from the old Workshop
   }
@@ -67,6 +70,7 @@ function register(app, ctx) {
   const groupOf = actor => (db.admins[keyOf(actor)] || {}).group || null;
   // v185: the Sent tab starts from the moment the admin last pressed "Start from now" (first start of this version = now)
   const sentFromOf = actor => { const k = keyOf(actor), a = db.admins[k] || {}; if (a.sentFrom === undefined) { db.admins[k] = { ...a, sentFrom: Date.now() }; persist(); return db.admins[k].sentFrom; } return Number(a.sentFrom) || 0; };
+  const finGroupOf = actor => (db.admins[keyOf(actor)] || {}).finGroup || null;
   const soldGroupOf = actor => (db.admins[keyOf(actor)] || {}).soldGroup || null;
   const fmtSize = v => clip(v, 80).replace(/(\d(?:\.\d+)?\s*(?:cm|mm|m)?)\s*[×✕xX*]\s*(?=\d)/gi, "$1*").replace(/\s*\*\s*/g, "*");
   const sizeOfOrder = o => [o.length, o.width, o.height].map(x => clip(x, 20)).filter(Boolean).join("*");
@@ -121,14 +125,14 @@ function register(app, ctx) {
   const tg = (method, body) => ctx.tgApi.call(method, body);
 
   // ── posting: the admin's own account first, the AMBAR bot as the fallback ────────────────────
-  async function botPost(g, buf, caption) { // caption = Telegram HTML
+  async function botPost(g, buf, caption, markup) { // caption = Telegram HTML; markup = inline keyboard (only the bot can send buttons)
     const topic = g.topic > 1 ? g.topic : 0;
     if (buf) {
-      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", caption); fd.append("parse_mode", "HTML"); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
+      const build = () => { const fd = new FormData(); fd.append("chat_id", chatKey(g)); if (topic) fd.append("message_thread_id", String(topic)); fd.append("caption", caption); fd.append("parse_mode", "HTML"); if (markup) fd.append("reply_markup", JSON.stringify(markup)); fd.append("photo", new Blob([buf], { type: "image/jpeg" }), "product.jpg"); return fd; };
       try { await ctx.tgApi.sendForm("sendPhoto", build); return; }
       catch (e) { if (!/IMAGE_PROCESS_FAILED|PHOTO_INVALID|wrong file|image/i.test(String(e.message))) throw e; }
     }
-    await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: caption.slice(0, 4000), parse_mode: "HTML" });
+    await tg("sendMessage", { chat_id: chatKey(g), ...(topic ? { message_thread_id: topic } : {}), text: caption.slice(0, 4000), parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}) });
   }
   async function userPost(acc, g, buf, caption) {
     const entity = await resolveTarget(acc, g);
@@ -171,6 +175,12 @@ function register(app, ctx) {
     return capLines([...L, ...tail], 1000);
   }
 
+  // v188: workshop post (with the "Finished product" button) and finishing post (with the "Finished" button)
+  function jobCaption(p, stage, n, total, by) {
+    const L = ["<b>AMBAR FURNITURE</b>", stage === "finishing" ? "🎨 <b>FINISHING</b> · " + (p.custom ? "CUSTOM" : "STANDARD") : "🛠 <b>WORKSHOP</b> · " + (p.custom ? "CUSTOM" : "STANDARD"), "", "<b>" + esc((p.code || "—") + (p.model ? "-" + p.model : "")) + "</b>" + (total > 1 ? " · " + n + "/" + total : ""), p.ptype ? "Type: " + esc(clip(p.ptype, 40)) : false, "Measurement: " + esc(fmtSize(p.desc) || "—"), p.material ? "🧱 Material: " + esc(clip(p.material, 60)) : false, p.color ? "🎨 Color: " + esc(clip(p.color, 40)) : false, p.handle ? "🔧 Handle: " + esc(clip(p.handle, 60)) : false, p.capacity ? "👟 Capacity: " + esc(clip(p.capacity, 40)) : false, p.note ? "📝 " + esc(clip(p.note, 300)) : false, "", by ? "Sent by " + esc(clip(by, 60)) : false];
+    return capLines(L, 1000);
+  }
+  const jobButton = (stage, id) => ({ inline_keyboard: [[stage === "finishing" ? { text: "✅ Finished", callback_data: "ws:d:" + id } : { text: "✅ Finished product", callback_data: "ws:f:" + id }]] });
   function soldCaption(p, cust, note, by) {
     const L = ["<b>AMBAR FURNITURE</b>", "🔴 <b>SOLD OUT</b> · from stock", "", "<b>" + esc((p.code || "—") + (p.model ? "-" + p.model : "")) + "</b>", p.ptype ? "Type: " + esc(clip(p.ptype, 40)) : false, "Measurement: " + esc(fmtSize(p.desc) || "—"), p.color ? "🎨 Color: " + esc(clip(p.color, 40)) : false, p.handle ? "🔧 Handle: " + esc(clip(p.handle, 60)) : false, p.capacity ? "Capacity: " + esc(clip(p.capacity, 40)) : false, p.note ? "📝 " + esc(clip(p.note, 200)) : false, ...custLines(cust, null)];
     const tail = clip(note, 300) ? ["", "📝 " + esc(clip(note, 300))] : [];
@@ -239,17 +249,78 @@ function register(app, ctx) {
     if (sentNames.length && typeof ctx.onSold === "function") { try { await ctx.onSold(cust.id, sentNames.join(", "), by); } catch (e) { console.warn("Workshop: customer info not updated:", e.message); } } // the customer becomes "Customer" and the sale is written in the customer's info
     return { ok: sent > 0, sent, error: err };
   }
+  // ── v188 catalog: saved Standard / Custom models; ordering one makes real products (Reports → Workflow) ──
+  const catItem = c => ({ id: c.id, kind: c.kind, model: c.model, ptype: c.ptype, size: c.size, material: c.material, color: c.color, handle: c.handle, capacity: c.capacity, note: c.note, photo: c.photo || "", at: c.at, by: c.by, ordered: db.psent && Object.values(db.jobs).filter(j => j.cat === c.id).length });
+  const catalogOf = actor => db.catalog.filter(c => isOwnerA(actor) || actor?.viewer || c.key === keyOf(actor)).map(catItem);
+  async function orderFromCatalog(c, actor, { qty, size, note }) {
+    const g = groupOf(actor), fg = finGroupOf(actor);
+    if (!g) return { ok: false, error: noGroup };
+    if (!fg) return { ok: false, error: "First choose the finishing group (Workshop page → Telegram groups → Finishing group)." };
+    qty = Math.max(1, Math.min(parseInt(qty, 10) || 1, 20));
+    const by = clip(actor?.name || "Admin", 60), measure = fmtSize(size) || c.size, custom = c.kind === "custom";
+    let buf = null; try { buf = c.photo ? await R().wsPhotoBuf(c.photo) : null; } catch {}
+    const made = [];
+    try {
+      for (let i = 0; i < qty; i++) {
+        const p = await R().wsAddProduct({ ptype: c.ptype, model: c.model, desc: measure, seqId: true, orderType: "READYMADE", priority: "MEDIUM", handle: c.handle, note: clip(note, 300) || c.note, photoBuf: buf, salesName: by, custom, wsSaved: true, color: c.color, capacity: c.capacity, material: c.material }, by);
+        made.push(p.id);
+      }
+    } catch (e) { if (made.length) R().wsRemove(made); return { ok: false, error: "Could not create the products: " + e.message }; }
+    const all = allProducts().filter(p => made.includes(p.id)); let sent = 0, err = ""; const failed = [];
+    for (let i = 0; i < all.length; i++) {
+      const p = all[i]; if (i) await wait(700);
+      try {
+        await botPost(g, buf, jobCaption(p, "workshop", i + 1, all.length, by), jobButton("workshop", p.id)); sent++;
+        db.jobs[p.id] = { cat: c.id, key: keyOf(actor), fin: fg, stage: "workshop", by, at: stamp() };
+        db.psent[p.id] = { at: stamp(), ts: Date.now(), by, key: keyOf(actor), count: 1 };
+        R().wsSetStage(p.id, "workshop", by); R().wsMarkSent(p.id, by);
+        log(actor, "readymade", c.model, p.code, "", true, "");
+      } catch (e) { err = botFriendly(e); failed.push(p.id); log(actor, "readymade", c.model, p.code, "", false, err); }
+    }
+    if (failed.length) R().wsRemove(failed); // a product that never reached the workshop is not kept in Workflow
+    persist();
+    return { ok: sent > 0, sent, error: err, codes: all.filter(p => !failed.includes(p.id)).map(p => p.code) };
+  }
+  // Telegram buttons: "ws:f:<id>" (workshop → finishing group) and "ws:d:<id>" (finishing → Stock)
+  async function handleCallback(cb) {
+    const m = /^ws:([fdn]):([0-9a-f]{6,32})?$/.exec(String(cb?.data || "")); if (!m) return false;
+    const answer = (text, alert) => ctx.tgApi.call("answerCallbackQuery", { callback_query_id: cb.id, text: String(text || "").slice(0, 190), ...(alert ? { show_alert: true } : {}) }).catch(() => {});
+    if (m[1] === "n") { await answer(""); return true; }
+    const id = m[2], job = db.jobs[id], st = typeof R().wsStatus === "function" ? R().wsStatus(id) : null;
+    const who = clip([cb.from?.first_name, cb.from?.last_name].filter(Boolean).join(" ") || cb.from?.username || "Workshop", 60);
+    const chat = cb.message?.chat?.id, mid = cb.message?.message_id;
+    const mark = text => { if (chat && mid) ctx.tgApi.call("editMessageReplyMarkup", { chat_id: chat, message_id: mid, reply_markup: { inline_keyboard: [[{ text, callback_data: "ws:n:" }]] } }).catch(() => {}); };
+    if (!job || !st) { await answer("This product was not found any more.", true); return true; }
+    if (st.status !== "workflow") { await answer("Already done — this product is in " + (st.status === "stock" ? "Stock" : "the " + st.status + " list") + ".", true); mark("✔ Already in Stock"); return true; }
+    if (m[1] === "f") {
+      if (job.stage === "finishing") { await answer("Already sent to the finishing group."); mark("✔ Sent to finishing"); return true; }
+      const p = allProducts().find(x => x.id === id); if (!p) { await answer("Product not found.", true); return true; }
+      try { await botPost(job.fin, await productPhotoBuf(p), jobCaption(p, "finishing", 1, 1, who), jobButton("finishing", id)); }
+      catch (e) { await answer("Could not post in the finishing group: " + botFriendly(e), true); return true; }
+      job.stage = "finishing"; job.finBy = who; job.finAt = stamp(); persist();
+      R().wsSetStage(id, "finishing", who);
+      await answer("✅ Sent to the finishing group"); mark("✔ Finished product · sent to finishing (" + who + ")");
+      return true;
+    }
+    if (job.stage !== "finishing") { await answer("This product has not passed the workshop yet.", true); return true; }
+    const r = R().wsFinish(id, who);
+    if (!r.ok) { await answer(r.error || "Could not finish.", true); return true; }
+    job.stage = "done"; job.doneBy = who; job.doneAt = stamp(); persist();
+    await answer("✅ Finished — now in Stock"); mark("✔ Finished · now in Stock (" + who + ")");
+    return true;
+  }
+
   // ── compact views ───────────────────────────────────────────────────────────────────────────
   const compactOrder = o => { const c = customerOfOrder(o); return { id: o.id, orderId: o.orderId || "", product: clip(o.product, 80), size: fmtSize(sizeOfOrder(o)), status: clip(o.status, 20), confirmed: o.status === "Confirmed", customerId: c?.id || clip(o.customerId, 20), customerName: clip(c?.name || o.customerName, 60), createdAt: o.createdAt || "", photo: o.photo || "", sent: o.workshopSent || null, sentTs: (o.workshopSent && o.workshopSent.ts) || 0 }; };
   const stockList = () => (typeof R().wsStockView === "function" ? R().wsStockView() : []);
-  const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, material: p.material || "", note: p.note, custom: !!p.custom, color: p.color || "", sent: db.psent[p.id] || null });
+  const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, material: p.material || "", note: p.note, custom: !!p.custom, color: p.color || "", stage: p.stage || "", sent: db.psent[p.id] || null });
   const allProducts = () => (typeof R().wsProductsAll === "function" ? R().wsProductsAll() : []);
   const senderInfo = actor => { const acc = accountOf(actor); return { ready: !!acc?.ready, label: clip(acc?.label, 60) }; };
   const orderList = actor => (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   function view(actor) {
     const g = groupOf(actor), owner = isOwnerA(actor);
     return {
-      ok: true, me: { name: clip(actor?.name, 60), owner }, group: g, groupName: groupName(g), soldGroup: soldGroupOf(actor), soldGroupName: groupName(soldGroupOf(actor)), sender: senderInfo(actor),
+      ok: true, me: { name: clip(actor?.name, 60), owner }, group: g, groupName: groupName(g), finGroup: finGroupOf(actor), finGroupName: groupName(finGroupOf(actor)), catalog: catalogOf(actor), sender: senderInfo(actor),
       orders: orderList(actor).slice(0, 200).map(compactOrder),
       sold: stockList().filter(p => p.status === "sold").slice(-80).reverse().map(compactProduct), // v184: Sold Out products (each has a ♻️ Restock button)
       stock: allProducts().filter(p => (p.status === "workflow" || p.status === "stock") && p.wsSaved).map(compactProduct), // v187: the products prepared in Workshop (Standard / Custom), in Workflow or already in Stock
@@ -278,15 +349,16 @@ function register(app, ctx) {
   router.post("/settings", (req, res) => {
     const g = cleanGroup(req.body?.group); if (!g) return res.json({ ok: false, error: "Choose a Telegram group first." });
     const k = keyOf(req.actor), old = db.admins[k] || {};
+    if (req.body?.kind === "finish") { db.admins[k] = { ...old, finGroup: g, updatedAt: stamp() }; persist(); return res.json({ ...view(req.actor), message: "✅ Saved. Products finished in the workshop will be posted in " + groupName(g) + "." }); }
     if (req.body?.kind === "sold") { db.admins[k] = { ...old, soldGroup: g, updatedAt: stamp() }; persist(); return res.json({ ...view(req.actor), message: "✅ Saved. Products found in stock and sold to a customer will be posted in " + groupName(g) + "." }); }
     db.admins[k] = { ...old, group: g, updatedAt: stamp() }; persist();
     res.json({ ...view(req.actor), message: "✅ Saved. Products will be sent to " + groupName(g) + "." });
   });
   router.post("/settings/clear", (req, res) => {
-    const k = keyOf(req.actor), old = db.admins[k] || {}, sold = req.body?.kind === "sold";
-    if (sold) delete old.soldGroup; else delete old.group;
-    if (old.group || old.soldGroup) db.admins[k] = old; else delete db.admins[k];
-    persist(); res.json({ ...view(req.actor), message: sold ? "Sold Out group removed." : "Workshop group removed." });
+    const k = keyOf(req.actor), old = db.admins[k] || {}, kind = req.body?.kind;
+    if (kind === "sold") delete old.soldGroup; else if (kind === "finish") delete old.finGroup; else delete old.group;
+    if (old.group || old.soldGroup || old.finGroup) db.admins[k] = old; else delete db.admins[k];
+    persist(); res.json({ ...view(req.actor), message: kind === "sold" ? "Sold Out group removed." : kind === "finish" ? "Finishing group removed." : "Workshop group removed." });
   });
 
   router.post("/dialogs", async (req, res) => {
@@ -328,8 +400,9 @@ function register(app, ctx) {
     } catch (e) { res.json({ ok: false, error: tgFriendly(e) }); }
   });
   router.post("/test", async (req, res) => {
-    const sold = req.body?.kind === "sold", g = sold ? soldGroupOf(req.actor) : groupOf(req.actor); if (!g) return res.json({ ok: false, error: sold ? noSoldGroup : noGroup });
-    try { const via = await post(req.actor, g, null, `<b>AMBAR ${sold ? "SOLD OUT" : "WORKSHOP"} TEST</b>\nThis group receives products from ${esc(clip(req.actor?.name || "the admin", 60))}.`); res.json({ ok: true, message: "✅ Test message posted in " + groupName(g) + " (sent by " + via + ")." }); }
+    const kind = req.body?.kind === "sold" ? "sold" : req.body?.kind === "finish" ? "finish" : "work";
+    const g = kind === "sold" ? soldGroupOf(req.actor) : kind === "finish" ? finGroupOf(req.actor) : groupOf(req.actor); if (!g) return res.json({ ok: false, error: kind === "sold" ? noSoldGroup : kind === "finish" ? "First choose the finishing group." : noGroup });
+    try { const via = await post(req.actor, g, null, `<b>AMBAR ${kind === "sold" ? "SOLD OUT" : kind === "finish" ? "FINISHING" : "WORKSHOP"} TEST</b>\nThis group receives products from ${esc(clip(req.actor?.name || "the admin", 60))}.`); res.json({ ok: true, message: "✅ Test message posted in " + groupName(g) + " (sent by " + via + ")." }); }
     catch (e) { res.json({ ok: false, error: e.message }); }
   });
 
@@ -339,19 +412,7 @@ function register(app, ctx) {
     const r = await sendOrder(o, req.actor, { note: req.body?.note, again: !!req.body?.again });
     res.json({ ...view(req.actor), ok: r.ok, code: r.code, error: r.error, message: r.ok ? `✅ Order ${o.orderId || o.id} sent to the workshop group.` : undefined });
   });
-  router.post("/send-product", async (req, res) => {
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 30) : [];
-    const list = allProducts().filter(p => ids.includes(p.id) && (p.status === "workflow" || p.status === "stock") && p.wsSaved);
-    if (!list.length) return res.json({ ...view(req.actor), ok: false, error: "Choose at least one Standard or Custom product. Products from the general stock are sold through Customer ID → Send to workshop." });
-    const r = await sendProducts(list, req.actor, { customerId: String(req.body?.customerId || ""), note: req.body?.note }); // v177: the Workshop page sends no customer; Customer ID → Send to workshop still does
-    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} sent to the workshop group.` + (r.error ? " Not sent: " + r.error : "") : undefined });
-  });
   router.post("/sent/reset", (req, res) => { const k = keyOf(req.actor); db.admins[k] = { ...(db.admins[k] || {}), sentFrom: Date.now() }; persist(); res.json({ ...view(req.actor), ok: true, message: "✅ The Sent list now starts from now." }); });
-  // Custom → Standard (one button)
-  router.post("/to-standard", (req, res) => {
-    const r = typeof R().wsMakeStandard === "function" ? R().wsMakeStandard(String(req.body?.id || ""), clip(req.actor?.name || "Admin", 60)) : { ok: false, error: "Reports is not ready." };
-    res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? "✅ Moved to Standard." : undefined });
-  });
   // ♻️ Restock: a Sold Out product returns to In Stock
   router.post("/restock", (req, res) => {
     const r = typeof R().wsRestock === "function" ? R().wsRestock(String(req.body?.id || ""), clip(req.actor?.name || "Admin", 60)) : { ok: false, error: "Reports is not ready." };
@@ -365,23 +426,35 @@ function register(app, ctx) {
     const r = await sendSold(list, req.actor, String(req.body?.customerId || ""), req.body?.note);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} posted in the Sold Out group, marked Sold Out and written in the customer's info.` + (r.error ? " Not sent: " + r.error : "") : undefined });
   });
-  // a NEW readymade product — STANDARD (a regular model) or CUSTOM (a one-off custom design, with a color): saved to Stock (Reports) and, if asked, sent to the workshop group
-  router.post("/add-product", async (req, res) => {
-    const b = req.body || {}, custom = b.custom === true || b.custom === "true", model = clip(b.model, 40), qty = Math.max(1, Math.min(parseInt(b.qty, 10) || 1, 20));
-    if (!model) return res.json({ ok: false, error: custom ? "Type the custom product name." : "Type the product model / name." });
-    if (typeof R().wsAddProduct !== "function") return res.json({ ok: false, error: "Reports is not ready." });
+  // v188 catalog: save a Standard / Custom model (no sending here)
+  router.post("/catalog/add", async (req, res) => {
+    const b = req.body || {}, kind = b.custom === true || b.custom === "true" ? "custom" : "standard", model = clip(b.model, 40);
+    if (!model) return res.json({ ok: false, error: kind === "custom" ? "Type the custom model name." : "Type the product model / name." });
+    if (typeof R().wsSavePhoto !== "function") return res.json({ ok: false, error: "Reports is not ready." });
     let buf = null; try { buf = photoFromDataUrl(b.photo); } catch (e) { return res.json({ ok: false, error: e.message }); }
-    const by = clip(req.actor?.name || "Admin", 60), made = [];
-    try {
-      for (let i = 0; i < qty; i++) {
-        const p = await R().wsAddProduct({ ptype: clip(b.ptype, 40), model, desc: clip(b.size, 160), seqId: true, orderType: "READYMADE", priority: "MEDIUM", handle: clip(b.handle, 60), note: clip(b.note, 300), photoBuf: buf, salesName: by, custom, wsSaved: true, color: clip(b.color, 40), capacity: clip(b.capacity, 40), material: clip(b.material, 60) }, by); // v187: stays in Workflow (= Workshop products); the Products page advances it
-        made.push(p.id);
-      }
-    } catch (e) { return res.json({ ok: false, error: "Could not save the product: " + e.message }); }
-    const list = allProducts().filter(p => made.includes(p.id)), word = custom ? "custom product" : "product";
-    if (!b.send) return res.json({ ...view(req.actor), ok: true, message: `✅ ${list.length} ${word}${list.length === 1 ? "" : "s"} saved (${list.map(p => p.code).join(", ")}) — not sent yet.` });
-    const r = await sendProducts(list, req.actor, { note: "" });
-    res.json({ ...view(req.actor), ok: true, message: `✅ Saved (${list.map(p => p.code).join(", ")})` + (r.sent ? ` and ${r.sent} sent to the workshop group.` : "."), warning: r.error ? "Saved, but NOT sent: " + r.error + " — use Send on the product to try again." : "" });
+    let photo = ""; try { photo = buf ? await R().wsSavePhoto(buf) : ""; } catch (e) { return res.json({ ok: false, error: "The photo could not be saved: " + e.message }); }
+    db.catalog.unshift({ id: uid(), kind, model, ptype: clip(b.ptype, 40), size: fmtSize(b.size), material: clip(b.material, 60), color: clip(b.color, 40), handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), note: clip(b.note, 300), photo, at: stamp(), by: clip(req.actor?.name || "Admin", 60), key: keyOf(req.actor) });
+    if (db.catalog.length > 500) db.catalog.length = 500;
+    persist(); res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "custom" ? "Custom model" : "Standard product"} “${model}” saved. Select it to order.` });
+  });
+  router.post("/catalog/delete", async (req, res) => {
+    const c = db.catalog.find(x => x.id === String(req.body?.id || "")); if (!c) return res.json({ ...view(req.actor), ok: false, error: "Not found." });
+    if (!isOwnerA(req.actor) && c.key !== keyOf(req.actor)) return res.json({ ...view(req.actor), ok: false, error: "Only the one who saved it (or the main admin) can delete it." });
+    db.catalog = db.catalog.filter(x => x !== c); persist();
+    if (c.photo && typeof R().wsDropPhoto === "function") { try { await R().wsDropPhoto(c.photo); } catch {} }
+    res.json({ ...view(req.actor), ok: true, message: "🗑 Deleted from the catalog (products already ordered stay)." });
+  });
+  // Custom → Standard (the model changes section)
+  router.post("/to-standard", (req, res) => {
+    const c = db.catalog.find(x => x.id === String(req.body?.id || "") && x.kind === "custom"); if (!c) return res.json({ ...view(req.actor), ok: false, error: "Custom model not found." });
+    c.kind = "standard"; persist(); res.json({ ...view(req.actor), ok: true, message: "✅ Moved to Standard." });
+  });
+  // select a saved model, type the quantity + measurement → products appear in Products → Workshop and are posted to the workshop group
+  router.post("/catalog/order", async (req, res) => {
+    const c = db.catalog.find(x => x.id === String(req.body?.id || "")); if (!c) return res.json({ ...view(req.actor), ok: false, error: "Model not found." });
+    if (!fmtSize(req.body?.size) && !c.size) return res.json({ ...view(req.actor), ok: false, error: "Type the measurement." });
+    const r = await orderFromCatalog(c, req.actor, { qty: req.body?.qty, size: req.body?.size, note: req.body?.note });
+    res.json({ ...view(req.actor), ok: r.ok, error: r.ok ? "" : r.error, warning: r.ok && r.error ? "Some were not sent: " + r.error : "", message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} (${r.codes.join(", ")}) sent to the workshop group and added to Products → Workshop.` : undefined });
   });
   router.post("/product/finish", (req, res) => { const r = typeof R().wsFinish === "function" ? R().wsFinish(String(req.body?.id || ""), clip(req.actor?.name, 60)) : { ok: false, error: "Reports is not ready." }; res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? `✅ ${r.code} is now in Stock.` : undefined }); });
   router.post("/product/sold", (req, res) => { const r = R().wsSoldOut(String(req.body?.id || ""), clip(req.actor?.name, 60)); res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? `✅ ${r.code} marked Sold Out.` : undefined }); });
@@ -390,7 +463,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v187" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v188" }));
 
   // v187 Products page (Home → beside Stock view): Workshop · Stock · Sold Out products with ALL their info.
   // Viewing: Stock view / Reports / Workshop access. Advancing and restocking: Workshop or Reports access (view-only admins are blocked by requireAccess).
@@ -418,6 +491,6 @@ function register(app, ctx) {
   });
 
   app.use("/api/workshop", router);
-  return { load };
+  return { load, handleCallback };
 }
 module.exports = { register };
