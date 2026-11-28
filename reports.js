@@ -1008,6 +1008,23 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, wsStockView, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsMakeStandard, wsSavePhoto: async buf => (buf && buf.length > 200 && buf.length <= 1.5 * 1024 * 1024 ? await savePhoto("data:image/jpeg;base64," + buf.toString("base64")) : ""), wsDropPhoto: id => dropPhoto(id), wsProductsAll, wsAdvance, wsMarkSent, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  // v191 START FROM ZERO / backup (Reports data): products (workshop · stock · sold), materials, movement log, cut/add requests and the Product-ID counters.
+  // The Telegram report settings, the Google-Sheet link and the product photo files are kept (so a restore brings everything back).
+  const ZERO_KEYS = ["products", "materials", "log", "matGroups", "materialCutRequests", "materialAddRequests", "idCounters"];
+  const zeroSnapshot = () => JSON.parse(JSON.stringify(Object.fromEntries(ZERO_KEYS.map(k => [k, db[k]]))));
+  async function zeroWipe() {
+    const n = { products: db.products.length, materials: db.materials.length, movements: db.log.length };
+    db.products = []; db.materials = []; db.log = []; db.matGroups = []; db.materialCutRequests = []; db.materialAddRequests = []; db.idCounters = {};
+    await persist(); try { scheduleBackup(1500); } catch {}
+    audit("Reports: START FROM ZERO", `${n.products} product(s), ${n.materials} material(s), ${n.movements} movement(s) cleared (backup made first)`, { name: "Main admin" });
+    return n;
+  }
+  async function zeroRestore(snap) {
+    if (!snap || typeof snap !== "object") return false;
+    for (const k of ZERO_KEYS) if (snap[k] !== undefined) db[k] = snap[k];
+    await persist(); try { scheduleBackup(1500); } catch {}
+    return true;
+  }
+  return { zeroSnapshot, zeroWipe, zeroRestore, wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, wsStockView, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsMakeStandard, wsSavePhoto: async buf => (buf && buf.length > 200 && buf.length <= 1.5 * 1024 * 1024 ? await savePhoto("data:image/jpeg;base64," + buf.toString("base64")) : ""), wsDropPhoto: id => dropPhoto(id), wsProductsAll, wsAdvance, wsMarkSent, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
