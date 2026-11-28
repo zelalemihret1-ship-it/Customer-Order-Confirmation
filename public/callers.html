@@ -363,12 +363,12 @@ function wsDraw(msg,kind){
   }
   $("wsBox").innerHTML='<div class="hd"><span class="cid">'+esc(c.id)+'</span><button class="x" type="button" data-wx="1" aria-label="Close">✕</button></div>'+
    '<div class="nm2">🧾 Order confirmation</div><div style="font-size:13px;color:#6d675d;line-height:1.5">👤 <b>'+esc(c.name)+'</b>'+(c.phone?' · 📞 '+esc(c.phone):'')+(c.location?'<br>📍 '+esc(c.location):'')+'</div>'+
-   '<div class="notice '+(gOk?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(T==="order"?(d.group?'New product → workshop group: <b>'+esc(d.group)+'</b><br>Send whatever you want — the customer does not have to confirm first.':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'):(d.soldGroup?'Readymade product → the card (product + customer info) goes to the Sold Out group, <b>not</b> to the customer: <b>'+esc(d.soldGroup)+'</b><br>The product is then marked <b>Sold Out</b>.':'No Sold Out group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'))+'</div>'+
+   (T==="ready"&&d.soldGroup?'':'<div class="notice '+(gOk?"info":"bad")+'" style="display:block;margin:10px 0 0;font-size:12.5px">'+(T==="order"?(d.group?'New product → workshop group: <b>'+esc(d.group)+'</b><br>Send whatever you want — the customer does not have to confirm first.':'No workshop group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'):(d.soldGroup?'':'No Sold Out group chosen yet. <a href="/workshop.html'+esc(location.hash)+'" style="color:inherit;text-decoration:underline">Choose it in Workshop</a>.'))+'</div>')+
    '<div style="font-size:12.5px;font-weight:800;color:#6d675d;margin:12px 0 6px">What is this customer ordering?</div><div class="wsTabs"><button type="button" data-wt="order" class="'+(T==="order"?"on":"")+'">🆕 New product (order)</button><button type="button" data-wt="ready" class="'+(T==="ready"?"on":"")+'">🛋 Readymade product</button></div>'+
    (msg?'<div class="notice '+kind+'" style="display:block">'+esc(msg)+'</div>':'')+
    (T==="order"?(orders||'<div class="empty">No order for this customer yet.<br>Make an order first, then come back here.</div>'):(stock||'<div class="empty">No product in stock.</div>'))+
    '<textarea id="wsNote" placeholder="Extra note (optional)" style="min-height:56px;margin-top:10px"></textarea>'+
-   (T==="order"?'<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(gOk?"":"disabled")+'>🧾 Order confirmation & send to workshop</button></div>':'<div class="hint" style="margin-top:10px;font-size:12.5px;color:#6d675d;line-height:1.5">👆 <b>Tap a product</b> — it is sent to the Sold Out group at once, marked <b>Sold Out</b>, and this customer\'s info changes.</div>');
+   (T==="order"?'<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(gOk?"":"disabled")+'>🧾 Order confirmation & send to workshop</button></div>':'<div class="acts2"><button class="mk" id="wsGo" type="button" style="grid-column:1/-1" '+(gOk?"":"disabled")+'>🔴 Send'+(WSPICK.size?' ('+WSPICK.size+')':'')+' to Sold Out group</button></div>');
 }
 async function wsSend(b){
   const pick=[...WSPICK].filter(k=>k.startsWith(WSTAB==="order"?"o:":"p:")).map(k=>k.slice(2)),note=(WSCONF&&WSCONF.note)||"";
@@ -387,11 +387,7 @@ $("wsOv").addEventListener("click",async e=>{
   if(!WS||!WS.data)return;
   const t=e.target.closest("[data-wt]");if(t){WSTAB=t.dataset.wt;WSPICK=new Set();WSCONF=null;wsDraw();return;}
   const o=e.target.closest("[data-wo]");if(o){WSPICK=new Set(["o:"+o.dataset.wo]);const n=$("wsNote").value;wsDraw();$("wsNote").value=n;return;}
-  const p=e.target.closest("[data-wp]");if(p){
-    if(!WS.data.soldGroup){wsDraw("Choose the Sold Out group first (Workshop page).","bad");return;}
-    if(WSBUSY)return;WSBUSY=true;p.style.opacity=".5";
-    WSPICK=new Set(["p:"+p.dataset.wp]);WSCONF={note:($("wsNote")?$("wsNote").value:"").trim()};
-    try{await wsSend({});}finally{WSBUSY=false;}return;} // readymade: sent straight after the selection
+  const p=e.target.closest("[data-wp]");if(p){const k="p:"+p.dataset.wp;WSPICK.has(k)?WSPICK.delete(k):WSPICK.add(k);const n=$("wsNote").value;wsDraw();$("wsNote").value=n;return;} // select one or more products
   if(e.target.closest("#wsBack")){WSCONF=null;wsDraw();return;}
   if(e.target.closest("#wsGo")){
     const pick=[...WSPICK].filter(k=>k.startsWith(WSTAB==="order"?"o:":"p:")).map(k=>k.slice(2));
