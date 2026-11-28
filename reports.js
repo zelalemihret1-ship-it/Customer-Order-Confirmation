@@ -791,6 +791,15 @@ function register(app, ctx) {
     persist(); scheduleBackup(); audit("Report: product restocked", `${p.code} returned to stock`, req.actor);
     return { ok: true, code: p.code };
   }
+  function wsMakeStandard(id, byName) { // Workshop → Custom → "Move to standard"
+    const p = findP(id); if (!p) return { ok: false, error: "The product is not in Reports any more." };
+    if (!p.custom) return { ok: true, already: true, code: p.code };
+    const req = wsReq(byName);
+    p.custom = false; p.wsSaved = true;
+    hist(p, "Moved from Custom to Standard (Workshop)", req);
+    persist(); scheduleBackup(); audit("Report: product moved to standard", `${p.code} custom → standard`, req.actor);
+    return { ok: true, code: p.code };
+  }
   // v174: Workshop runs the product / material write handlers (edit, correct, delete, arrange …). Same data, same Google Sheet backup (done() schedules it).
   async function wsOp(name, body, actor) {
     const fn = OPS[name]; if (!fn) return { ok: false, error: "Unknown action." };
@@ -979,6 +988,6 @@ function register(app, ctx) {
     const a = await callScript({ action: "archive", data: { now: nowEth() } });
     return { archived: a.archived || 0, connected: true };
   }
-  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, wsStockView, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
+  return { wsReportData, wsResetKeep, wsArchiveSheet, wsPhotoBuf: id => photoBuf(id), load, readymade, inProgress, peekSeqCodes, wsCutRequests, wsRequestCut, wsApproveCut, wsAddRequests, wsAddHistory, wsRequestAdd, wsApproveAdd, codeTaken: c => codeTaken(c), setReservedCodes(fn) { reservedFn = typeof fn === "function" ? fn : null; }, wsOp, wsRecords, wsStockView, setWorkshopSource(fn) { workshopSource = typeof fn === "function" ? fn : null; }, wsPendingCuts: () => db.materialCutRequests.filter(x => x.status === "pending").length, wsAddProduct, wsMaterials, wsMaterial, wsCutNow, wsRevertCut, wsStockProducts, wsSetStage, wsFinish, wsSoldOut, wsRestock, wsMakeStandard, wsRemove, wsStatus, setWorkshopDeleteProducts(fn) { workshopDeleteProducts = typeof fn === "function" ? fn : null; } };
 }
 module.exports = { register };
