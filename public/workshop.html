@@ -152,7 +152,7 @@ const pMeta=p=>[p.ptype,p.desc,p.material&&("🧱 "+p.material),p.color&&("🎨 
 const stState=p=>p.status==="stock"?'<span class="pill ok">📦 In stock</span>':p.status==="sold"?'<span class="pill bad">🔴 Sold</span>':p.stage==="finishing"?'<span class="pill blue">🎨 In finishing</span>':'<span class="pill wait">🛠 In workshop</span>';
 function drawReady(){
   const custom=RTAB==="custom",q=Q.toLowerCase(),base=(S.catalog||[]).filter(p=>(p.kind==="custom")===custom),L=base.filter(p=>!q||[p.model,p.ptype,p.size,p.handle,p.color,p.material,p.capacity].join(" ").toLowerCase().includes(q));
-  $("out").innerHTML='<div class="card"><h2>'+(custom?"🎨 Custom models":"📦 Standard products")+'</h2><div class="hint">'+(custom?'<b>Prepare new custom models</b> here (photo, name, type, measurement, material, color, handle, shoe capacity, note). A saved model stays <b>only in this section</b>. To make one, press <b>🛠 Order</b>, type the <b>quantity and measurement</b> and send it to the workshop.':'Save your <b>standard products</b> with their full info. A saved product stays <b>only in this section</b>. To make one, press <b>🛠 Order</b>, type the <b>quantity and measurement</b> and send it to the workshop.')+'<br>After sending, the product appears in <b>Products → Workshop</b>. In Telegram the workshop man presses <b>Finished product</b> → it goes to the <b>finishing group</b> → <b>Finished</b> puts it in Stock.</div>'+
+  $("out").innerHTML='<div class="card"><h2>'+(custom?"🎨 Custom models":"📦 Standard products")+'</h2><div class="hint">'+(custom?'<b>Prepare new custom models</b> here (photo, name, <b>type (choose)</b>, measurement, material, color, handle, shoe capacity, note). A saved model stays <b>only in this section</b>. To make one, press <b>🛠 Order</b>, type the <b>quantity and measurement</b> and send it to the workshop.':'Save your <b>standard products</b> with their full info. A saved product stays <b>only in this section</b>. To make one, press <b>🛠 Order</b>, type the <b>quantity and measurement</b> and send it to the workshop.')+'<br>After sending, the pieces appear in <b>Products → Workshop</b> (each with its own Product ID). In Telegram the workshop man presses <b>Finished product</b> and <b>selects which pieces are finished</b> → they go to the <b>finishing group</b> → <b>Finished</b> (select the pieces) puts them in Stock.</div>'+
    '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">'+(custom?"➕ New custom model":"➕ New standard product")+'</button></div>'+
    '<label>🔎 Search</label><input type="text" id="q" placeholder="Model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
    '<div class="card"><h2>'+(custom?"🎨 My custom models":"📦 My standard products")+' <span class="pill ok">'+base.length+'</span><span class="vt"><button data-view="list" class="'+(VIEW==="list"?"on":"")+'">☰ List</button><button data-view="large" class="'+(VIEW==="large"?"on":"")+'">▦ Large</button></span></h2>'+
@@ -165,11 +165,13 @@ function orderSheet(id){
   if(!S.finGroup){say("First choose the finishing group (📨 Telegram groups).","bad");return;}
   open('<div class="hd"><b>🛠 Order to the workshop</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
    '<div class="pv">'+(c.photo?'<img src="/api/reports-photo/'+esc(c.photo)+'.jpg" alt="">':'<div class="ph0">🛋</div>')+'<div><b>'+esc(c.model)+'</b><div class="hint" style="margin:3px 0 0">'+esc(cMeta(c))+'</div></div></div>'+
-   '<label>Quantity *</label><input type="number" id="oQty" value="1" min="1" max="20" inputmode="numeric">'+
+   '<label>Quantity *</label><input type="number" id="oQty" value="1" min="1" max="20" inputmode="numeric"><div class="hint" id="oIds" style="margin:6px 0 0"></div>'+
    '<label>Measurement (L*W*H) *</label><input type="text" id="oSize" value="'+esc(c.size||"")+'" placeholder="120*35*120" autocomplete="off">'+
    '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="oNote"></textarea>'+
-   '<div class="hint">Posted to <b>'+esc(S.groupName)+'</b> with a “Finished product” button, then to <b>'+esc(S.finGroupName)+'</b> with a “Finished” button.</div>'+
+   '<div class="hint">All the pieces go to <b>'+esc(S.groupName)+'</b> as <b>one post</b> with a “Finished product” button. The workshop man <b>selects which pieces are finished</b> (and presses the button again until all are done). The finished pieces go to <b>'+esc(S.finGroupName)+'</b>, where the same selection is made before they enter Stock.</div>'+
    '<div class="btns"><button class="btn block" id="oGo" type="button">📤 Send to workshop</button></div>');
+  const idsPrev=async()=>{const n=Math.max(1,Math.min(parseInt($("oQty").value,10)||1,20)),d=await api("/api/workshop/peek?n="+n+"&ptype="+encodeURIComponent(c.ptype||""));if(d&&d.ok&&$("oIds"))$("oIds").innerHTML="🆔 Product IDs prepared: <b>"+esc((d.codes||[]).join(", "))+"</b>";};
+  $("oQty").addEventListener("input",idsPrev);idsPrev();
   $("oGo").onclick=async()=>{
     const qty=parseInt($("oQty").value,10)||0,size=$("oSize").value.trim();
     if(qty<1){fm("Type the quantity.","bad");return;}if(!size){fm("Type the measurement.","bad");return;}
@@ -193,25 +195,40 @@ $("out").addEventListener("click",async e=>{
 // photo → small JPEG data URL
 function shrink(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);let q=.85,out=c.toDataURL("image/jpeg",q);while(out.length>1.9e6&&q>.4){q-=.1;out=c.toDataURL("image/jpeg",q);}res(out);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});}
 let PHOTO="";
+// v189: a prepared list (choose) + "Other" to type something new
+function chooseField(id,label,opts,ph){return '<label>'+label+' <em style="font-weight:500;color:var(--muted)">(choose)</em></label><select id="'+id+'S"><option value="">— Choose —</option>'+opts.map(o=>'<option>'+esc(o)+'</option>').join("")+'<option value="__other">✍️ Other (type it)</option></select><input type="text" id="'+id+'" style="display:none;margin-top:6px" placeholder="'+esc(ph)+'" autocomplete="off">';}
+function wireChoice(id){const sel=$(id+"S");if(sel)sel.onchange=()=>{const o=sel.value==="__other";$(id).style.display=o?"block":"none";if(o)$(id).focus();};}
+function choiceVal(id){const sel=$(id+"S");if(!sel)return"";return sel.value==="__other"?$(id).value.trim():sel.value;}
 function addForm(custom){
   PHOTO="";
   open('<div class="hd"><b>'+(custom?"➕ New custom model":"➕ New standard product")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
    '<div class="pv"><div class="ph0" id="pvBox">📷</div><div><button class="btn sm sec" id="pvPick" type="button">📷 Choose photo</button><input type="file" id="pvFile" accept="image/*" style="display:none"></div></div>'+
    '<label>'+(custom?"Custom model name *":"Model / name *")+'</label><input type="text" id="fModel" placeholder="'+(custom?"e.g. Client shoe shelf":"e.g. LUNA")+'" autocomplete="off">'+
-   '<label>Product type</label><input type="text" id="fType" list="ptl" placeholder="Shoe Shelf, Console Table…" autocomplete="off"><datalist id="ptl">'+S.ptypes.map(x=>'<option value="'+esc(x)+'">').join("")+'</datalist>'+
+   '<label>Product type *</label><select id="fTypeS"><option value="">— Choose the product type —</option>'+S.ptypes.map(x=>'<option>'+esc(x)+'</option>').join("")+'</select><input type="text" id="fTypeO" style="display:none;margin-top:6px" placeholder="Type the product type (optional)" autocomplete="off">'+
+   '<div class="hint" id="idPrev" style="margin:6px 0 0"></div>'+
    '<label>Measurement (L*W*H)</label><input type="text" id="fSize" placeholder="120*35*120" autocomplete="off">'+
-   '<label>Material</label><input type="text" id="fMaterial" placeholder="e.g. MDF, Oak, Laminate" autocomplete="off">'+
-   '<label>Color</label><input type="text" id="fColor" placeholder="e.g. Walnut" autocomplete="off">'+
-   '<label>Handle <em style="font-weight:500;color:var(--muted)">(type)</em></label><input type="text" id="fHandle" placeholder="e.g. Gold bar handle" autocomplete="off">'+
-   '<label>Shoe capacity <em style="font-weight:500;color:var(--muted)">(shoe shelves)</em></label><input type="text" id="fCap" placeholder="e.g. 24 pairs" autocomplete="off">'+
+   chooseField("fMaterial","Material",S.presets.material,"e.g. MDF")+
+   chooseField("fColor","Color",S.presets.color,"e.g. Walnut")+
+   chooseField("fHandle","Handle",S.presets.handle,"e.g. Gold bar handle")+
+   '<div id="capBox" style="display:none">'+chooseField("fCap","Shoe capacity",S.presets.capacity,"e.g. 24 pairs")+'</div>'+
    '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="fNote"></textarea>'+
    '<div class="btns"><button class="btn block" id="fGo" type="button">💾 Save</button></div>');
   $("pvPick").onclick=()=>$("pvFile").click();
   $("pvFile").onchange=async()=>{const f=$("pvFile").files[0];if(!f)return;try{PHOTO=await shrink(f);$("pvBox").innerHTML='<img src="'+PHOTO+'" style="width:84px;height:84px;border-radius:14px;object-fit:cover" alt="">';}catch(e){fm(e.message,"bad");}};
+  wireChoice("fMaterial");wireChoice("fColor");wireChoice("fHandle");wireChoice("fCap");
+  const typeVal=()=>{const t=$("fTypeS").value;return t==="Others"?($("fTypeO").value.trim()||"Others"):t;};
+  $("fTypeS").onchange=()=>{
+    const t=$("fTypeS").value,shoe=t==="Shoe Shelf";
+    $("fTypeO").style.display=t==="Others"?"block":"none";
+    $("capBox").style.display=shoe?"block":"none";if(!shoe){$("fCapS").value="";$("fCap").style.display="none";$("fCap").value="";}
+    $("fSize").placeholder=(S.presets.sizeHint&&S.presets.sizeHint[t])||"120*35*120";
+    $("idPrev").innerHTML=t&&S.nextIds&&S.nextIds[t]?'🆔 Product ID is prepared automatically — the next one is <b>'+esc(S.nextIds[t])+'</b> (each piece gets its own ID when you order).':"";
+  };
   $("fGo").onclick=async()=>{
     const model=$("fModel").value.trim();if(!model){fm(custom?"Type the custom model name.":"Type the product model / name.","bad");return;}
+    if(!$("fTypeS").value){fm("Choose the product type.","bad");return;}
     $("fGo").disabled=true;$("fGo").textContent="Saving…";
-    const d=await api("/api/workshop/catalog/add",{custom:!!custom,model,ptype:$("fType").value,size:$("fSize").value,material:$("fMaterial").value,color:$("fColor").value,handle:$("fHandle").value,capacity:$("fCap").value,note:$("fNote").value,photo:PHOTO});
+    const d=await api("/api/workshop/catalog/add",{custom:!!custom,model,ptype:typeVal(),size:$("fSize").value,material:choiceVal("fMaterial"),color:choiceVal("fColor"),handle:choiceVal("fHandle"),capacity:choiceVal("fCap"),note:$("fNote").value,photo:PHOTO});
     if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent="💾 Save";fm((d&&d.error)||"Could not save.","bad");}
   };
 }
