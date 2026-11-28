@@ -1,3 +1,7 @@
+## v182 — Customer ID: "Order confirmation" with a prepared confirmation step
+- The customer-details button **🛠 Send to workshop** is now **🧾 Order confirmation**; the tab **Not in stock** is now **📋 Own order**. Own order → **🧾 Order confirmation & send to workshop**; In stock → **🧾 Prepare confirmation → Sold Out group**.
+- After choosing the order / stock product(s), a **prepared confirmation** page shows the customer, the product(s), the note and the destination group. **✅ Confirm & send** posts it (workshop group for an own order; Sold Out group for stock, which also marks the product Sold Out); **← Back** edits. File: `public/callers.html`.
+
 ## v181 — Material → Confirmation is a small closed bar
 - ✅ Confirmation is now a small bar (with the "N waiting" count) that opens when tapped; the red alert's "Review below" button opens it. File: `public/material.html`.
 
