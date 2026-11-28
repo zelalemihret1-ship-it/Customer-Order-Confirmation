@@ -49,6 +49,8 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 .chk{width:22px;height:22px;flex:none;accent-color:var(--brand2)}
 .bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));display:none;gap:8px;align-items:center;justify-content:space-between;z-index:20;box-shadow:0 -8px 24px rgba(16,24,40,.08)}.bar.on{display:flex}
 #gate{display:none;position:fixed;inset:0;z-index:99;background:#0b1511;color:#fff;align-items:center;justify-content:center;padding:24px;text-align:center}
+.hint:not(.keep){display:none!important}header .sub{display:none!important}
+.dl div span{display:block;font-size:11px;color:var(--muted);font-weight:700}.dl div b{font-size:13.5px;word-break:break-word}.tg{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
 </style>
 </head>
 <body>
@@ -144,10 +146,11 @@ async function sendOrder(id,again){
 }
 
 // ── READYMADE PRODUCTS ──────────────────────────────────────────────────────
-const cMeta=p=>[p.ptype,p.size&&("📏 "+p.size),p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity),p.note].filter(Boolean).join(" · ")||"—";
-const cardBtns=(p,custom)=>'<button class="btn sm" data-order="'+esc(p.id)+'">🛠 Order</button>'+(custom?'<button class="btn sm sec" data-tostd="'+esc(p.id)+'">⬆️ Standard</button>':'')+'<button class="btn sm red" data-cdel="'+esc(p.id)+'">🗑</button>';
-const bigCard=(p,custom)=>'<div class="bigc">'+(p.photo?'<img class="ph" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>')+'<div class="bd"><div class="t">'+esc(p.model)+'</div><div class="m">'+esc(cMeta(p))+'</div><div class="btns">'+cardBtns(p,custom)+'</div></div></div>';
-const prodRow=(p,custom)=>'<div class="it">'+(p.photo?thumb("/api/reports-photo/"+p.photo+".jpg"):'<div class="th">🛋</div>')+'<div class="mid"><div class="t">'+esc(p.model)+'</div><div class="m">'+esc(cMeta(p))+'</div></div><div class="rt">'+cardBtns(p,custom)+'</div></div>';
+const sizesTxt=p=>(p.sizes&&p.sizes.length?p.sizes:(p.size?[p.size]:[])).join(" / ");
+const cMeta=p=>[p.ptype,sizesTxt(p)&&("📏 "+sizesTxt(p)),p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity),p.note].filter(Boolean).join(" · ")||"—";
+const cardBtns=(p,custom)=>'<button class="btn sm" data-order="'+esc(p.id)+'">🛠 Order</button><button class="btn sm sec" data-cedit="'+esc(p.id)+'">✏️</button>'+(custom?'<button class="btn sm sec" data-tostd="'+esc(p.id)+'">⬆️ Standard</button>':'')+'<button class="btn sm red" data-cdel="'+esc(p.id)+'">🗑</button>';
+const bigCard=(p,custom)=>'<div class="bigc" data-open="'+esc(p.id)+'" style="cursor:pointer">'+(p.photo?'<img class="ph" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=ph>🛋</div>\'">':'<div class="ph">🛋</div>')+'<div class="bd"><div class="t">'+esc(p.model)+'</div><div class="m">'+esc(cMeta(p))+'</div><div class="btns">'+cardBtns(p,custom)+'</div></div></div>';
+const prodRow=(p,custom)=>'<div class="it" data-open="'+esc(p.id)+'" style="cursor:pointer">'+(p.photo?thumb("/api/reports-photo/"+p.photo+".jpg"):'<div class="th">🛋</div>')+'<div class="mid"><div class="t">'+esc(p.model)+'</div><div class="m">'+esc(cMeta(p))+'</div></div><div class="rt">'+cardBtns(p,custom)+'</div></div>';
 const pMeta=p=>[p.ptype,p.desc,p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity),p.note].filter(Boolean).join(" · ")||"—";
 const stState=p=>p.status==="stock"?'<span class="pill ok">📦 In stock</span>':p.status==="sold"?'<span class="pill bad">🔴 Sold</span>':p.stage==="finishing"?'<span class="pill blue">🎨 In finishing</span>':'<span class="pill wait">🛠 In workshop</span>';
 function drawReady(){
@@ -163,25 +166,50 @@ function orderSheet(id){
   const c=(S.catalog||[]).find(x=>x.id===id);if(!c)return;
   if(!S.group){say("First choose the workshop group.","bad");return;}
   if(!S.finGroup){say("First choose the finishing group (📨 Telegram groups).","bad");return;}
+  const sz=(c.sizes&&c.sizes.length)?c.sizes:(c.size?[c.size]:[]);
   open('<div class="hd"><b>🛠 Order to the workshop</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
-   '<div class="pv">'+(c.photo?'<img src="/api/reports-photo/'+esc(c.photo)+'.jpg" alt="">':'<div class="ph0">🛋</div>')+'<div><b>'+esc(c.model)+'</b><div class="hint" style="margin:3px 0 0">'+esc(cMeta(c))+'</div></div></div>'+
-   '<label>Quantity *</label><input type="number" id="oQty" value="1" min="1" max="20" inputmode="numeric"><div class="hint" id="oIds" style="margin:6px 0 0"></div>'+
-   '<label>Measurement (L*W*H) *</label><input type="text" id="oSize" value="'+esc(c.size||"")+'" placeholder="120*35*120" autocomplete="off">'+
+   '<div class="pv">'+(c.photo?'<img src="/api/reports-photo/'+esc(c.photo)+'.jpg" alt="">':'<div class="ph0">🛋</div>')+'<div><b>'+esc(c.model)+'</b><div class="hint keep" style="margin:3px 0 0">'+esc(cMeta(c))+'</div></div></div>'+
+   '<label>Measurements — choose what to send (quantity for each)</label><div id="oRows"></div>'+
+   '<div class="btns" style="margin-top:6px"><button class="btn sm sec" id="oAddRow" type="button">➕ Another measurement</button></div>'+
+   '<div class="hint keep" id="oIds" style="margin:8px 0 0"></div>'+
    '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="oNote"></textarea>'+
-   '<div class="hint">All the pieces go to <b>'+esc(S.groupName)+'</b> as <b>one post</b> with a “Finished product” button. The workshop man <b>selects which pieces are finished</b> (and presses the button again until all are done). The finished pieces go to <b>'+esc(S.finGroupName)+'</b>, where the same selection is made before they enter Stock.</div>'+
    '<div class="btns"><button class="btn block" id="oGo" type="button">📤 Send to workshop</button></div>');
-  const idsPrev=async()=>{const n=Math.max(1,Math.min(parseInt($("oQty").value,10)||1,20)),d=await api("/api/workshop/peek?n="+n+"&ptype="+encodeURIComponent(c.ptype||""));if(d&&d.ok&&$("oIds"))$("oIds").innerHTML="🆔 Product IDs prepared: <b>"+esc((d.codes||[]).join(", "))+"</b>";};
-  $("oQty").addEventListener("input",idsPrev);idsPrev();
+  const rows=$("oRows");
+  const addRow=(size,qty,ro)=>{const d=document.createElement("div");d.style.cssText="display:flex;gap:8px;margin-top:6px;align-items:center";d.innerHTML='<input type="text" class="oS" value="'+esc(size||"")+'" placeholder="120*35*120" autocomplete="off" style="flex:1"'+(ro?' readonly':'')+'><input type="number" class="oQ" value="'+(qty||0)+'" min="0" max="20" inputmode="numeric" style="width:78px" title="Quantity">'+(ro?'':'<button type="button" class="btn sm red oX">✕</button>');rows.appendChild(d);const x=d.querySelector(".oX");if(x)x.onclick=()=>{d.remove();idsPrev();};d.querySelector(".oQ").addEventListener("input",idsPrev);};
+  const total=()=>[...rows.querySelectorAll(".oQ")].reduce((n,i)=>n+Math.max(0,Math.min(parseInt(i.value,10)||0,20)),0);
+  const idsPrev=async()=>{const n=total();if(!n){$("oIds").innerHTML="";return;}const d=await api("/api/workshop/peek?n="+n+"&ptype="+encodeURIComponent(c.ptype||""));if(d&&d.ok&&$("oIds"))$("oIds").innerHTML="🆔 Product IDs prepared: <b>"+esc((d.codes||[]).join(", "))+"</b>";};
+  if(sz.length)sz.forEach((x,i)=>addRow(x,i===0?1:0,true));else addRow("",1,false);
+  $("oAddRow").onclick=()=>addRow("",0,false);
+  idsPrev();
   $("oGo").onclick=async()=>{
-    const qty=parseInt($("oQty").value,10)||0,size=$("oSize").value.trim();
-    if(qty<1){fm("Type the quantity.","bad");return;}if(!size){fm("Type the measurement.","bad");return;}
+    const items=[...rows.children].map(r=>({size:r.querySelector(".oS").value.trim(),qty:parseInt(r.querySelector(".oQ").value,10)||0})).filter(x=>x.qty>0);
+    if(!items.length){fm("Type a quantity for at least one measurement.","bad");return;}
+    if(items.some(x=>!x.size)){fm("Type the measurement.","bad");return;}
     $("oGo").disabled=true;$("oGo").textContent="Sending…";
-    const d=await api("/api/workshop/catalog/order",{id,qty,size,note:$("oNote").value});
+    const d=await api("/api/workshop/catalog/order",{id,items,note:$("oNote").value});
     if(d&&d.ok!==false){close();take(d);}else{$("oGo").disabled=false;$("oGo").textContent="📤 Send to workshop";fm((d&&d.error)||"Could not send.","bad");}
   };
 }
+// product detail (click a saved product): all the info + ✏️ Edit
+function detailSheet(id){
+  const c=(S.catalog||[]).find(x=>x.id===id);if(!c)return;
+  const ph=(c.photos&&c.photos.length?c.photos:(c.photo?[c.photo]:[]));
+  const r=(l,v)=>v?'<div><span>'+l+'</span><b>'+esc(v)+'</b></div>':"";
+  open('<div class="hd"><b>'+esc(c.model)+'</b><button class="x" type="button">✕</button></div>'+
+   (ph.length?'<div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:8px">'+ph.map(x=>'<img src="/api/reports-photo/'+esc(x)+'.jpg" alt="" style="height:200px;max-width:100%;border-radius:14px;object-fit:cover;flex:none">').join("")+'</div>':"")+
+   '<div class="tg"><span class="pill '+(c.kind==="custom"?"blue":"ok")+'">'+(c.kind==="custom"?"🎨 Custom":"Standard")+'</span></div>'+
+   '<div class="dl" style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:10px 0">'+r("Product type",c.ptype)+r("📏 Measurements",sizesTxt(c))+r("🧱 Material",c.material)+r("🎨 Color",c.color)+r("🔧 Handle",c.handle)+r("👟 Shoe capacity",c.capacity)+r("📝 Note",c.note)+r("Saved",c.at+(c.by?" · "+c.by:""))+r("Ordered so far",c.ordered?String(c.ordered):"")+'</div>'+
+   '<div class="btns"><button class="btn" id="dOrder" type="button">🛠 Order</button><button class="btn gold" id="dEdit" type="button">✏️ Edit</button>'+(c.kind==="custom"?'<button class="btn sec" id="dStd" type="button">⬆️ Standard</button>':'')+'<button class="btn red" id="dDel" type="button">🗑</button></div>');
+  $("dOrder").onclick=()=>orderSheet(id);
+  $("dEdit").onclick=()=>itemForm(c.kind==="custom",c);
+  if($("dStd"))$("dStd").onclick=async()=>{close();if(await confirmBox("Move this custom model to Standard?","⬆️ Move"))take(await api("/api/workshop/to-standard",{id}));};
+  $("dDel").onclick=async()=>{close();if(await confirmBox("Delete this saved model from the catalog? Products already ordered stay.","Delete"))take(await api("/api/workshop/catalog/delete",{id}));};
+}
 $("out").addEventListener("click",async e=>{
-  const t=e.target.closest("button");if(!t)return;const d=t.dataset;
+  const t=e.target.closest("button");
+  if(!t){const o=e.target.closest("[data-open]");if(o&&!e.target.closest("input,select,textarea,a,label"))detailSheet(o.dataset.open);return;}
+  const d=t.dataset;
+  if(d.cedit){const c=(S.catalog||[]).find(x=>x.id===d.cedit);if(c)itemForm(c.kind==="custom",c);return;}
   if(d.send)return sendOrder(d.send,!!(S.orders.find(o=>String(o.id)===d.send)||{}).sent);
   if(d.view){VIEW=d.view;try{localStorage.setItem("wsView",VIEW);}catch{}return render();}
   if(d.tostd){if(await confirmBox("Move this custom model to Standard?","⬆️ Move"))take(await api("/api/workshop/to-standard",{id:d.tostd}));return;}
@@ -189,47 +217,67 @@ $("out").addEventListener("click",async e=>{
   if(d.order)return orderSheet(d.order);
   if(d.cdel){if(await confirmBox("Delete this saved model from the catalog? Products already ordered stay.","Delete"))take(await api("/api/workshop/catalog/delete",{id:d.cdel}));return;}
   if(d.r){RTAB=d.r;SEL.clear();Q="";try{localStorage.setItem("wsRTab",RTAB);}catch{}return render();}
-  if(t.id==="addP")return addForm(RTAB==="custom");
+  if(t.id==="addP")return itemForm(RTAB==="custom",null);
 });
 
 // photo → small JPEG data URL
-function shrink(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);let q=.85,out=c.toDataURL("image/jpeg",q);while(out.length>1.9e6&&q>.4){q-=.1;out=c.toDataURL("image/jpeg",q);}res(out);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});}
-let PHOTO="";
-// v189: a prepared list (choose) + "Other" to type something new
-function chooseField(id,label,opts,ph){return '<label>'+label+' <em style="font-weight:500;color:var(--muted)">(choose)</em></label><select id="'+id+'S"><option value="">— Choose —</option>'+opts.map(o=>'<option>'+esc(o)+'</option>').join("")+'<option value="__other">✍️ Other (type it)</option></select><input type="text" id="'+id+'" style="display:none;margin-top:6px" placeholder="'+esc(ph)+'" autocomplete="off">';}
+function shrink(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);let q=.85,out=c.toDataURL("image/jpeg",q);while(out.length>1.1e6&&q>.4){q-=.1;out=c.toDataURL("image/jpeg",q);}res(out);};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("This photo format is not supported. Choose a JPG or PNG photo."));};im.src=u;});}
+let NEWP=[],KEEP=[]; // new photos (data URLs) and the saved photo ids that stay
+// a prepared list (choose) + "Other" (last) to type something new
+function chooseField(id,label,opts,ph,cur){const has=cur&&opts.includes(cur),oth=cur&&!has;return '<label>'+label+'</label><select id="'+id+'S"><option value="">— Choose —</option>'+opts.map(o=>'<option'+(has&&o===cur?' selected':'')+'>'+esc(o)+'</option>').join("")+'<option value="__other"'+(oth?' selected':'')+'>✍️ Other (type it)</option></select><input type="text" id="'+id+'" value="'+(oth?esc(cur):"")+'" style="'+(oth?"":"display:none;")+'margin-top:6px" placeholder="'+esc(ph)+'" autocomplete="off">';}
 function wireChoice(id){const sel=$(id+"S");if(sel)sel.onchange=()=>{const o=sel.value==="__other";$(id).style.display=o?"block":"none";if(o)$(id).focus();};}
 function choiceVal(id){const sel=$(id+"S");if(!sel)return"";return sel.value==="__other"?$(id).value.trim():sel.value;}
-function addForm(custom){
-  PHOTO="";
-  open('<div class="hd"><b>'+(custom?"➕ New custom model":"➕ New standard product")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
-   '<div class="pv"><div class="ph0" id="pvBox">📷</div><div><button class="btn sm sec" id="pvPick" type="button">📷 Choose photo</button><input type="file" id="pvFile" accept="image/*" style="display:none"></div></div>'+
-   '<label>'+(custom?"Custom model name *":"Model / name *")+'</label><input type="text" id="fModel" placeholder="'+(custom?"e.g. Client shoe shelf":"e.g. LUNA")+'" autocomplete="off">'+
-   '<label>Product type *</label><select id="fTypeS"><option value="">— Choose the product type —</option>'+S.ptypes.map(x=>'<option>'+esc(x)+'</option>').join("")+'</select><input type="text" id="fTypeO" style="display:none;margin-top:6px" placeholder="Type the product type (optional)" autocomplete="off">'+
-   '<div class="hint" id="idPrev" style="margin:6px 0 0"></div>'+
-   '<label>Measurement (L*W*H)</label><input type="text" id="fSize" placeholder="120*35*120" autocomplete="off">'+
-   chooseField("fMaterial","Material",S.presets.material,"e.g. MDF")+
-   chooseField("fColor","Color",S.presets.color,"e.g. Walnut")+
-   chooseField("fHandle","Handle",S.presets.handle,"e.g. Gold bar handle")+
-   '<div id="capBox" style="display:none">'+chooseField("fCap","Shoe capacity",S.presets.capacity,"e.g. 24 pairs")+'</div>'+
-   '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="fNote"></textarea>'+
-   '<div class="btns"><button class="btn block" id="fGo" type="button">💾 Save</button></div>');
+function drawPhotos(){
+  const h=KEEP.map((id,i)=>'<div style="position:relative"><img src="/api/reports-photo/'+esc(id)+'.jpg" style="width:72px;height:72px;border-radius:12px;object-fit:cover" alt=""><button type="button" data-pk="'+i+'" style="position:absolute;top:-6px;right:-6px;border:0;border-radius:50%;width:22px;height:22px;background:#b3261e;color:#fff;font-weight:800">✕</button></div>').join("")+
+    NEWP.map((u,i)=>'<div style="position:relative"><img src="'+u+'" style="width:72px;height:72px;border-radius:12px;object-fit:cover" alt=""><button type="button" data-pn="'+i+'" style="position:absolute;top:-6px;right:-6px;border:0;border-radius:50%;width:22px;height:22px;background:#b3261e;color:#fff;font-weight:800">✕</button></div>').join("");
+  $("pvBox").innerHTML=h||'<div class="ph0">📷</div>';$("pvCount").textContent=(KEEP.length+NEWP.length)?(KEEP.length+NEWP.length)+" photo"+((KEEP.length+NEWP.length)===1?"":"s"):"No photo yet";
+  $("pvBox").querySelectorAll("[data-pk]").forEach(b=>b.onclick=()=>{KEEP.splice(+b.dataset.pk,1);drawPhotos();});
+  $("pvBox").querySelectorAll("[data-pn]").forEach(b=>b.onclick=()=>{NEWP.splice(+b.dataset.pn,1);drawPhotos();});
+}
+// add (item=null) or edit (item=saved model) a Standard / Custom product
+function itemForm(custom,item){
+  NEWP=[];KEEP=item?(item.photos&&item.photos.length?item.photos.slice():(item.photo?[item.photo]:[])):[];
+  const it=item||{},isNew=!item,inList=it.ptype&&S.ptypes.includes(it.ptype),otherT=it.ptype&&!inList;
+  open('<div class="hd"><b>'+(isNew?(custom?"➕ New custom model":"➕ New standard product"):"✏️ Edit “"+esc(it.model)+"”")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div>'+
+   '<div class="pv"><div id="pvBox" style="display:flex;gap:8px;flex-wrap:wrap;flex:1"></div></div><div style="display:flex;align-items:center;gap:10px;margin-top:6px"><button class="btn sm sec" id="pvPick" type="button">📷 Choose photos</button><input type="file" id="pvFile" accept="image/*" multiple style="display:none"><span id="pvCount" style="font-size:12.5px;color:var(--muted)"></span></div>'+
+   '<label>'+(custom?"Custom model name *":"Model / name *")+'</label><input type="text" id="fModel" value="'+esc(it.model||"")+'" placeholder="'+(custom?"e.g. Client shoe shelf":"e.g. LUNA")+'" autocomplete="off">'+
+   '<label>Product type *</label><select id="fTypeS"><option value="">— Choose the product type —</option>'+S.ptypes.map(x=>'<option'+(x===it.ptype||(otherT&&x==="Other")?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select><input type="text" id="fTypeO" value="'+(otherT&&it.ptype!=="Other"?esc(it.ptype):"")+'" style="'+(otherT||it.ptype==="Other"?"":"display:none;")+'margin-top:6px" placeholder="Type the product type" autocomplete="off">'+
+   '<div class="hint keep" id="idPrev" style="margin:6px 0 0"></div>'+
+   '<label>Measurements (L*W*H) — add as many as you need</label><div id="sizeRows"></div><div class="btns" style="margin-top:6px"><button class="btn sm sec" id="addSize" type="button">➕ Add measurement</button></div>'+
+   chooseField("fMaterial","Material",S.presets.material,"e.g. MDF",it.material)+
+   chooseField("fColor","Color",S.presets.color,"e.g. Walnut",it.color)+
+   chooseField("fHandle","Handle",S.presets.handle,"e.g. Gold bar handle",it.handle)+
+   '<div id="capBox" style="display:none">'+chooseField("fCap","Shoe capacity",S.presets.capacity,"e.g. 24 pairs",it.capacity)+'</div>'+
+   '<label>Note <em style="font-weight:500;color:var(--muted)">(optional)</em></label><textarea id="fNote">'+esc(it.note||"")+'</textarea>'+
+   '<div class="btns"><button class="btn block" id="fGo" type="button">'+(isNew?"💾 Save":"💾 Save changes")+'</button></div>');
+  drawPhotos();
+  const sizeRows=$("sizeRows"),hint=()=>(S.presets.sizeHint&&S.presets.sizeHint[$("fTypeS").value])||"120*35*120";
+  const addSize=v=>{const d=document.createElement("div");d.style.cssText="display:flex;gap:8px;margin-top:6px";d.innerHTML='<input type="text" class="fS" value="'+esc(v||"")+'" placeholder="'+esc(hint())+'" autocomplete="off" style="flex:1"><button type="button" class="btn sm red">✕</button>';d.querySelector("button").onclick=()=>{if(sizeRows.children.length>1)d.remove();else d.querySelector("input").value="";};sizeRows.appendChild(d);};
+  (it.sizes&&it.sizes.length?it.sizes:(it.size?[it.size]:[""])).forEach(addSize);
+  $("addSize").onclick=()=>{if(sizeRows.children.length<12)addSize("");};
   $("pvPick").onclick=()=>$("pvFile").click();
-  $("pvFile").onchange=async()=>{const f=$("pvFile").files[0];if(!f)return;try{PHOTO=await shrink(f);$("pvBox").innerHTML='<img src="'+PHOTO+'" style="width:84px;height:84px;border-radius:14px;object-fit:cover" alt="">';}catch(e){fm(e.message,"bad");}};
-  wireChoice("fMaterial");wireChoice("fColor");wireChoice("fHandle");wireChoice("fCap");
-  const typeVal=()=>{const t=$("fTypeS").value;return t==="Others"?($("fTypeO").value.trim()||"Others"):t;};
-  $("fTypeS").onchange=()=>{
-    const t=$("fTypeS").value,shoe=t==="Shoe Shelf";
-    $("fTypeO").style.display=t==="Others"?"block":"none";
-    $("capBox").style.display=shoe?"block":"none";if(!shoe){$("fCapS").value="";$("fCap").style.display="none";$("fCap").value="";}
-    $("fSize").placeholder=(S.presets.sizeHint&&S.presets.sizeHint[t])||"120*35*120";
-    $("idPrev").innerHTML=t&&S.nextIds&&S.nextIds[t]?'🆔 Product ID is prepared automatically — the next one is <b>'+esc(S.nextIds[t])+'</b> (each piece gets its own ID when you order).':"";
+  $("pvFile").onchange=async()=>{
+    const fs=[...$("pvFile").files];$("pvFile").value="";
+    for(const f of fs){if(KEEP.length+NEWP.length>=6){fm("Up to 6 photos.","bad");break;}try{NEWP.push(await shrink(f));}catch(e){fm(e.message,"bad");}}
+    drawPhotos();
   };
+  wireChoice("fMaterial");wireChoice("fColor");wireChoice("fHandle");wireChoice("fCap");
+  const typeVal=()=>{const t=$("fTypeS").value;return t==="Other"?($("fTypeO").value.trim()||"Other"):t;};
+  const onType=()=>{
+    const t=$("fTypeS").value,shoe=t==="Shoe Shelf";
+    $("fTypeO").style.display=t==="Other"?"block":"none";
+    $("capBox").style.display=shoe?"block":"none";if(!shoe){$("fCapS").value="";$("fCap").style.display="none";$("fCap").value="";}
+    sizeRows.querySelectorAll(".fS").forEach(i=>i.placeholder=hint());
+    $("idPrev").innerHTML=isNew&&t&&S.nextIds&&S.nextIds[t]?'🆔 Product ID is prepared automatically — the next one is <b>'+esc(S.nextIds[t])+'</b>.':"";
+  };
+  $("fTypeS").onchange=onType;onType();
   $("fGo").onclick=async()=>{
     const model=$("fModel").value.trim();if(!model){fm(custom?"Type the custom model name.":"Type the product model / name.","bad");return;}
     if(!$("fTypeS").value){fm("Choose the product type.","bad");return;}
     $("fGo").disabled=true;$("fGo").textContent="Saving…";
-    const d=await api("/api/workshop/catalog/add",{custom:!!custom,model,ptype:typeVal(),size:$("fSize").value,material:choiceVal("fMaterial"),color:choiceVal("fColor"),handle:choiceVal("fHandle"),capacity:choiceVal("fCap"),note:$("fNote").value,photo:PHOTO});
-    if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent="💾 Save";fm((d&&d.error)||"Could not save.","bad");}
+    const body={model,ptype:typeVal(),sizes:[...sizeRows.querySelectorAll(".fS")].map(i=>i.value.trim()).filter(Boolean),material:choiceVal("fMaterial"),color:choiceVal("fColor"),handle:choiceVal("fHandle"),capacity:choiceVal("fCap"),note:$("fNote").value};
+    const d=isNew?await api("/api/workshop/catalog/add",{...body,custom:!!custom,photos:NEWP}):await api("/api/workshop/catalog/update",{...body,id:it.id,keepPhotos:KEEP,newPhotos:NEWP});
+    if(d&&d.ok){close();take(d);}else{$("fGo").disabled=false;$("fGo").textContent=isNew?"💾 Save":"💾 Save changes";fm((d&&d.error)||"Could not save.","bad");}
   };
 }
 function fm(t,k){const m=$("fMsg");if(m){m.className="msg "+k;m.textContent=t;}}
