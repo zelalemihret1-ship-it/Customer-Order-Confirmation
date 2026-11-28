@@ -223,16 +223,17 @@ function register(app, ctx) {
   async function sendSold(list, actor, customerId, note) {
     const g = soldGroupOf(actor); if (!g) return { ok: false, error: noSoldGroup, sent: 0 };
     const cust = customerById(customerId); if (!cust) return { ok: false, error: "Customer not found.", sent: 0 };
-    const by = clip(actor?.name || "Admin", 60), who = clip(cust.name, 60) + " (ID " + clip(cust.id, 20) + ")"; let sent = 0, err = "";
+    const by = clip(actor?.name || "Admin", 60), who = clip(cust.name, 60) + " (ID " + clip(cust.id, 20) + ")"; let sent = 0, err = ""; const sentNames = [];
     for (const p of list) {
       if (sent || err) await wait(700);
       const buf = await productPhotoBuf(p);
       try { await post(actor, g, buf, soldCaption(p, cust, note, by)); }
       catch (e) { err = e.message; log(actor, "sold", p.model || p.desc || "Product", p.code, cust.name, false, e.message); continue; }
-      sent++;
+      sent++; sentNames.push((p.code || "") + (p.model ? "-" + p.model : ""));
       const r = typeof R().wsSoldOut === "function" ? R().wsSoldOut(p.id, by, who) : { ok: false, error: "Reports is not ready." };
       log(actor, "sold", p.model || p.desc || "Product", p.code, cust.name, true, r.ok ? "" : "Posted, but not marked Sold Out: " + (r.error || ""));
     }
+    if (sentNames.length && typeof ctx.onSold === "function") { try { await ctx.onSold(cust.id, sentNames.join(", "), by); } catch (e) { console.warn("Workshop: customer info not updated:", e.message); } } // the customer becomes "Customer" and the sale is written in the customer's info
     return { ok: sent > 0, sent, error: err };
   }
   // ── compact views ───────────────────────────────────────────────────────────────────────────
@@ -344,7 +345,7 @@ function register(app, ctx) {
     const list = stockList().filter(p => ids.includes(p.id) && p.status === "stock");
     if (!list.length) return res.json({ ...view(req.actor), ok: false, error: "Choose at least one product that is in stock." });
     const r = await sendSold(list, req.actor, String(req.body?.customerId || ""), req.body?.note);
-    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} linked with the customer, posted in the Sold Out group and marked Sold Out.` + (r.error ? " Not sent: " + r.error : "") : undefined });
+    res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} posted in the Sold Out group, marked Sold Out and written in the customer's info.` + (r.error ? " Not sent: " + r.error : "") : undefined });
   });
   // a NEW readymade product — STANDARD (a regular model) or CUSTOM (a one-off custom design, with a color): saved to Stock (Reports) and, if asked, sent to the workshop group
   router.post("/add-product", async (req, res) => {
@@ -371,7 +372,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v178" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v183" }));
 
   // Home → Stock view: every in-stock product with all its info (any assigned admin may look)
   app.get("/api/stock", requireAccess, (req, res) => {
