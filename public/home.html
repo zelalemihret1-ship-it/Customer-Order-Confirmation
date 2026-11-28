@@ -180,6 +180,10 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
   <div class="hide" data-perm="stockview"><div class="sec">Stock</div>
   <div class="list">
     <button type="button" class="row" id="stBtn" style="width:100%;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Stock view</b><span class="d" id="stSub">Products in stock with photos and all info</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></button>
+  </div></div>
+
+  <div class="hide" data-perm="products"><div class="sec">Products</div>
+  <div class="list">
     <a class="row" href="/products.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Products</b><span class="d" id="prSub">Workshop · Stock · Sold — list or large, advance &amp; restock</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
   </div></div>
 
@@ -204,7 +208,7 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
     </div>
   </div>
 
-  <div class="hide" data-perm="material,workshop">
+  <div class="hide" data-perm="material">
     <div class="sec">Material</div>
     <div class="list">
       <a class="row" href="/material.html"><svg class="d3 " viewBox="0 0 64 64"><use href="#d-sheet"/></svg><div><b>Material</b><span class="d" id="matSub">Cut · Add · Edit materials — with confirmation</span></div><div class="chev"><svg class="i"><use href="#i-chev"/></svg></div></a>
@@ -217,7 +221,7 @@ body.hasq #ambToast{bottom:calc(var(--q-h,70px) + 80px)}
       <a class="at" href="/orders.html?open=cfg"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-bolt"/></svg><div><b>Connect Google Sheet</b><span class="d">One click · all data</span></div></a>
       <a class="at" href="/orders.html?open=admins"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-admin"/></svg><div><b>Manage Admins</b><span class="d">Add admins · make main admins</span></div></a>
       <a class="at" href="/setup.html"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-gear"/></svg><div><b>Setup &amp; Checks</b><span class="d">Status and setup key tools</span></div></a>
-      <a class="at danger" href="/orders.html?open=zero"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-trash"/></svg><div><b>Start from ZERO</b><span class="d">Backup, then clear all orders</span></div></a>
+      <a class="at danger" href="/orders.html?open=zero"><svg class="d3 sm" viewBox="0 0 64 64"><use href="#d-trash"/></svg><div><b>Start from ZERO</b><span class="d">Backup first · keeps orders &amp; customers</span></div></a>
     </div></div>
   </div>
 </main>
