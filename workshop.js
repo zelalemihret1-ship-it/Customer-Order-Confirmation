@@ -75,7 +75,7 @@ function register(app, ctx) {
   const soldGroupOf = actor => (db.admins[keyOf(actor)] || {}).soldGroup || null;
   const fmtSize = v => clip(v, 80).replace(/(\d(?:\.\d+)?\s*(?:cm|mm|m)?)\s*[×✕xX*]\s*(?=\d)/gi, "$1*").replace(/\s*\*\s*/g, "*");
   // v189: product types are CHOSEN (not typed) and the info fields are PREPARED lists (the admin can still pick "Other" and type). Values saved before are added to the lists automatically.
-  const PTYPES = ["Shoe Shelf", "Console Table", "Chest Drawer", "Center Table", "TV Stand", "Dining Table", "Coffee Table", "Wardrobe", "Bed", "Sofa", "Cabinet", "Mirror", "Others"];
+  const PTYPES = ["Shoe Shelf", "Console Table", "Chest Drawer", "Center Table", "TV Stand", "Dining Table", "Coffee Table", "Wardrobe", "Bed", "Sofa", "Cabinet", "Mirror", "Other"];
   const PRESET = {
     material: ["MDF", "Plywood", "Solid wood", "Laminate", "Melamine", "Veneer", "Glass", "Metal"],
     color: ["White", "Black", "Walnut", "Oak", "Grey", "Beige", "Brown", "Wenge", "Gold", "Natural wood"],
@@ -265,7 +265,7 @@ function register(app, ctx) {
     return { ok: sent > 0, sent, error: err };
   }
   // ── v188 catalog: saved Standard / Custom models; ordering one makes real products (Reports → Workflow) ──
-  const catItem = c => ({ id: c.id, kind: c.kind, model: c.model, ptype: c.ptype, size: c.size, material: c.material, color: c.color, handle: c.handle, capacity: c.capacity, note: c.note, photo: c.photo || "", at: c.at, by: c.by, ordered: db.psent && Object.values(db.jobs).filter(j => j.cat === c.id).length });
+  const catItem = c => ({ id: c.id, kind: c.kind, model: c.model, ptype: c.ptype, size: c.size, sizes: Array.isArray(c.sizes) && c.sizes.length ? c.sizes : (c.size ? [c.size] : []), photos: Array.isArray(c.photos) && c.photos.length ? c.photos : (c.photo ? [c.photo] : []), material: c.material, color: c.color, handle: c.handle, capacity: c.capacity, note: c.note, photo: c.photo || "", at: c.at, by: c.by, ordered: db.psent && Object.values(db.jobs).filter(j => j.cat === c.id).length });
   const catalogOf = actor => db.catalog.filter(c => isOwnerA(actor) || actor?.viewer || c.key === keyOf(actor)).map(catItem);
   // v189: ONE Telegram post per order (all the same pieces together). The workshop man presses "Finished product", chooses which pieces are finished (repeat until all are done);
   // the chosen pieces go to the finishing group as one post, where the same choice is made before they enter Stock.
@@ -448,7 +448,7 @@ function register(app, ctx) {
   const router = express.Router();
   router.use(requireAccess);
   router.use((req, res, next) => hasPerm(req.actor, "workshop") ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." }));
-  router.use(express.json({ limit: "10mb" }));
+  router.use(express.json({ limit: "30mb" }));
   router.get("/state", (req, res) => res.json(view(req.actor)));
   router.get("/peek", (req, res) => res.json({ ok: true, codes: peekIds(parseInt(req.query.n, 10) || 1, clip(req.query.ptype, 40)) })); // the Product IDs the next pieces will get
 
@@ -540,22 +540,45 @@ function register(app, ctx) {
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} posted in the Sold Out group, marked Sold Out and written in the customer's info.` + (r.error ? " Not sent: " + r.error : "") : undefined });
   });
   // v188 catalog: save a Standard / Custom model (no sending here)
+  const sizesOf = b => { const raw = Array.isArray(b.sizes) ? b.sizes : [b.size]; const out = []; for (const x of raw) { const v = fmtSize(x); if (v && !out.includes(v)) out.push(v); } return out.slice(0, 12); };
+  async function savePhotos(list) { // data URLs → saved photo ids (max 6)
+    const ids = [];
+    for (const d of (Array.isArray(list) ? list : []).filter(Boolean).slice(0, 6)) {
+      const buf = photoFromDataUrl(d); const id = buf ? await R().wsSavePhoto(buf) : ""; if (id) ids.push(id);
+    }
+    return ids;
+  }
+  const canEditCat = (actor, c) => isOwnerA(actor) || c.key === keyOf(actor);
+  function catFields(b) { return { ptype: clip(b.ptype, 40), size: sizesOf(b)[0] || "", sizes: sizesOf(b), material: clip(b.material, 60), color: clip(b.color, 40), handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), note: clip(b.note, 300) }; }
+  // v189: a saved model can have several photos and several measurements
   router.post("/catalog/add", async (req, res) => {
     const b = req.body || {}, kind = b.custom === true || b.custom === "true" ? "custom" : "standard", model = clip(b.model, 40);
     if (!model) return res.json({ ok: false, error: kind === "custom" ? "Type the custom model name." : "Type the product model / name." });
     if (!clip(b.ptype, 40)) return res.json({ ok: false, error: "Choose the product type." });
     if (typeof R().wsSavePhoto !== "function") return res.json({ ok: false, error: "Reports is not ready." });
-    let buf = null; try { buf = photoFromDataUrl(b.photo); } catch (e) { return res.json({ ok: false, error: e.message }); }
-    let photo = ""; try { photo = buf ? await R().wsSavePhoto(buf) : ""; } catch (e) { return res.json({ ok: false, error: "The photo could not be saved: " + e.message }); }
-    db.catalog.unshift({ id: uid(), kind, model, ptype: clip(b.ptype, 40), size: fmtSize(b.size), material: clip(b.material, 60), color: clip(b.color, 40), handle: clip(b.handle, 60), capacity: clip(b.capacity, 40), note: clip(b.note, 300), photo, at: stamp(), by: clip(req.actor?.name || "Admin", 60), key: keyOf(req.actor) });
+    let photos = []; try { photos = await savePhotos(Array.isArray(b.photos) ? b.photos : [b.photo]); } catch (e) { return res.json({ ok: false, error: e.message }); }
+    db.catalog.unshift({ id: uid(), kind, model, ...catFields(b), photo: photos[0] || "", photos, at: stamp(), by: clip(req.actor?.name || "Admin", 60), key: keyOf(req.actor) });
     if (db.catalog.length > 500) db.catalog.length = 500;
     persist(); res.json({ ...view(req.actor), ok: true, message: `✅ ${kind === "custom" ? "Custom model" : "Standard product"} “${model}” saved. Select it to order.` });
   });
+  router.post("/catalog/update", async (req, res) => {
+    const b = req.body || {}, c = db.catalog.find(x => x.id === String(b.id || "")); if (!c) return res.json({ ...view(req.actor), ok: false, error: "Not found." });
+    if (!canEditCat(req.actor, c)) return res.json({ ...view(req.actor), ok: false, error: "Only the one who saved it (or the main admin) can edit it." });
+    const model = clip(b.model, 40); if (!model) return res.json({ ...view(req.actor), ok: false, error: "Type the product model / name." });
+    if (!clip(b.ptype, 40)) return res.json({ ...view(req.actor), ok: false, error: "Choose the product type." });
+    const old = Array.isArray(c.photos) && c.photos.length ? c.photos : (c.photo ? [c.photo] : []);
+    const keep = (Array.isArray(b.keepPhotos) ? b.keepPhotos.map(String) : old).filter(x => old.includes(x));
+    let added = []; try { added = await savePhotos(b.newPhotos); } catch (e) { return res.json({ ...view(req.actor), ok: false, error: e.message }); }
+    const photos = [...keep, ...added].slice(0, 6);
+    for (const id of old.filter(x => !photos.includes(x))) { if (typeof R().wsDropPhoto === "function") { try { await R().wsDropPhoto(id); } catch {} } }
+    Object.assign(c, { model }, catFields(b), { photo: photos[0] || "", photos });
+    persist(); res.json({ ...view(req.actor), ok: true, message: `✅ “${model}” updated. Products already ordered keep their old info.` });
+  });
   router.post("/catalog/delete", async (req, res) => {
     const c = db.catalog.find(x => x.id === String(req.body?.id || "")); if (!c) return res.json({ ...view(req.actor), ok: false, error: "Not found." });
-    if (!isOwnerA(req.actor) && c.key !== keyOf(req.actor)) return res.json({ ...view(req.actor), ok: false, error: "Only the one who saved it (or the main admin) can delete it." });
+    if (!canEditCat(req.actor, c)) return res.json({ ...view(req.actor), ok: false, error: "Only the one who saved it (or the main admin) can delete it." });
     db.catalog = db.catalog.filter(x => x !== c); persist();
-    if (c.photo && typeof R().wsDropPhoto === "function") { try { await R().wsDropPhoto(c.photo); } catch {} }
+    for (const id of (Array.isArray(c.photos) && c.photos.length ? c.photos : [c.photo]).filter(Boolean)) { if (typeof R().wsDropPhoto === "function") { try { await R().wsDropPhoto(id); } catch {} } }
     res.json({ ...view(req.actor), ok: true, message: "🗑 Deleted from the catalog (products already ordered stay)." });
   });
   // Custom → Standard (the model changes section)
@@ -564,11 +587,19 @@ function register(app, ctx) {
     c.kind = "standard"; persist(); res.json({ ...view(req.actor), ok: true, message: "✅ Moved to Standard." });
   });
   // select a saved model, type the quantity + measurement → products appear in Products → Workshop and are posted to the workshop group
+  // v189: choose one or several saved measurements (each with its own quantity) → one workshop post per measurement
   router.post("/catalog/order", async (req, res) => {
     const c = db.catalog.find(x => x.id === String(req.body?.id || "")); if (!c) return res.json({ ...view(req.actor), ok: false, error: "Model not found." });
-    if (!fmtSize(req.body?.size) && !c.size) return res.json({ ...view(req.actor), ok: false, error: "Type the measurement." });
-    const r = await orderFromCatalog(c, req.actor, { qty: req.body?.qty, size: req.body?.size, note: req.body?.note });
-    res.json({ ...view(req.actor), ok: r.ok, error: r.ok ? "" : r.error, warning: r.ok && r.error ? "Some were not sent: " + r.error : "", message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} (${r.codes.join(", ")}) sent to the workshop group and added to Products → Workshop.` : undefined });
+    let items = Array.isArray(req.body?.items) ? req.body.items : [{ size: req.body?.size, qty: req.body?.qty }];
+    items = items.map(x => ({ size: fmtSize(x?.size), qty: Math.max(0, Math.min(parseInt(x?.qty, 10) || 0, 20)) })).filter(x => x.qty > 0).slice(0, 12);
+    if (!items.length) return res.json({ ...view(req.actor), ok: false, error: "Choose a measurement and type its quantity." });
+    if (items.some(x => !x.size)) return res.json({ ...view(req.actor), ok: false, error: "Type the measurement." });
+    let sent = 0, err = ""; const codes = [];
+    for (const it of items) {
+      const r = await orderFromCatalog(c, req.actor, { qty: it.qty, size: it.size, note: req.body?.note });
+      if (r.ok) { sent += r.sent; codes.push(...r.codes); } else { err = r.error; break; }
+    }
+    res.json({ ...view(req.actor), ok: sent > 0, error: sent ? "" : err, warning: sent && err ? "Some were not sent: " + err : "", message: sent ? `✅ ${sent} product${sent === 1 ? "" : "s"} (${codes.join(", ")}) sent to the workshop group and added to Products → Workshop.` : undefined });
   });
   router.post("/product/finish", (req, res) => { const r = typeof R().wsFinish === "function" ? R().wsFinish(String(req.body?.id || ""), clip(req.actor?.name, 60)) : { ok: false, error: "Reports is not ready." }; res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? `✅ ${r.code} is now in Stock.` : undefined }); });
   router.post("/product/sold", async (req, res) => { // v189: a product is never Sold Out without its customer
@@ -583,7 +614,7 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v189" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v190" }));
 
   // v187 Products page (Home → beside Stock view): Workshop · Stock · Sold Out products with ALL their info.
   // Viewing: Stock view / Reports / Workshop access. Advancing and restocking: Workshop or Reports access (view-only admins are blocked by requireAccess).
