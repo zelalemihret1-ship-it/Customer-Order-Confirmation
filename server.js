@@ -3162,6 +3162,8 @@ app.post("/api/telegram/webhook", async (req, res) => {
     const callback = update.callback_query;
     if (callback && String(callback.data || "").startsWith("mat:")) { // v178: Material ✅ Approve / ❌ Reject buttons (sent to the main admin)
       await safely("material callback", () => materialModule.handleCallback(callback));
+    } else if (callback && String(callback.data || "").startsWith("ws:")) { // v188: Workshop "Finished product" / finishing "Finished" buttons
+      await safely("workshop callback", () => workshopModule.handleCallback(callback));
     } else if (callback) {
       const [action, id] = String(callback.data || "").split(":");
       await supabaseReady;
