@@ -70,30 +70,30 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
   <div class="tools"><input type="text" id="q" placeholder="🔎 Code, model, type, handle…" autocomplete="off"><span class="vt"><button data-view="list">☰ List</button><button data-view="large">▦ Large</button></span></div>
   <div id="out"></div>
 </main>
-<div class="bar" id="bar"><b id="barTxt"></b><button class="btn" id="barGo">Advance</button></div>
+<div class="bar" id="bar"><b id="barTxt"></b><span style="display:flex;gap:8px"><button class="btn red" id="barDel" style="display:none">🗑 Delete</button><button class="btn" id="barGo">Advance</button></span></div>
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let D=null,TAB="workshop",VIEW="list",SEL=new Set(),BUSY=false,CAN=true;
+let D=null,TAB="workshop",VIEW="list",SEL=new Set(),BUSY=false,CAN=true,OWNER=false,ONCLOSE=null;
 try{const t=localStorage.getItem("prTab");if(["workshop","stock","sold"].includes(t))TAB=t;if(localStorage.getItem("prView")==="large")VIEW="large";}catch{}
-const ACT={workshop:{label:"✅ Finished → Stock",bulk:"✅ Finished → Stock",ask:"Move to Stock? The product is finished in the workshop."},stock:{label:"🔴 Sold",bulk:"🔴 Mark sold",ask:"Mark as Sold Out? It leaves the stock."},sold:{label:"♻️ Restock",bulk:"♻️ Restock",ask:"Restock? The product goes back In Stock."}};
+const ACT={workshop:{label:"✅ Finished → Stock",bulk:"✅ Finished → Stock",ask:"Move to Stock? The product is finished in the workshop."},stock:{label:"🔴 Sold",bulk:"🔴 Sold → customer",ask:"Mark as Sold Out? It leaves the stock."},sold:{label:"♻️ Restock",bulk:"♻️ Restock",ask:"Restock? The product goes back In Stock."}};
 const EMPTY={workshop:"<b>No product in the workshop.</b><br>Products you save in <b>Workshop → Standard / Custom</b> appear here until they are finished.",stock:"<b>Nothing in stock.</b><br>Finish a workshop product to move it here.",sold:"<b>No sold product.</b><br>Products marked sold appear here — you can restock them."};
 async function api(path,body){try{const r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});let d={};try{d=await r.json();}catch{}if(r.status===401||(r.status===403&&d.code==="NO_PERMISSION")){gate(d.error||"No access.");}return d;}catch(e){return{ok:false,error:"Could not reach the server. Try again."};}}
 function gate(t){$("gate").style.display="flex";$("gateMsg").textContent=t;}
 function say(text,kind){const m=$("msg");m.className="msg "+(kind||"ok");m.textContent=text;m.scrollIntoView({block:"nearest"});if(kind!=="bad"&&kind!=="warn")setTimeout(()=>{if(m.textContent===text)m.className="msg";},6000);}
-function open(h){$("sheet").innerHTML=h;$("ov").classList.add("on");}function close(){$("ov").classList.remove("on");}
+function open(h){$("sheet").innerHTML=h;$("ov").classList.add("on");}function close(){$("ov").classList.remove("on");if(ONCLOSE){const f=ONCLOSE;ONCLOSE=null;f();}}
 $("ov").addEventListener("click",e=>{if(e.target===$("ov")||e.target.closest(".x"))close();});
 function confirmBox(text,okLabel){return new Promise(res=>{open('<div class="hd"><b>Please confirm</b></div><p style="font-size:14.5px;line-height:1.6;white-space:pre-wrap">'+esc(text)+'</p><div class="btns"><button class="btn" id="cOk">'+esc(okLabel)+'</button><button class="btn sec" id="cNo">Cancel</button></div>');$("cOk").onclick=()=>{close();res(true);};$("cNo").onclick=()=>{close();res(false);};});}
 const img=(p,cls)=>p.photo?'<img class="'+cls+'" loading="lazy" src="/api/reports-photo/'+esc(p.photo)+'.jpg" alt="" onerror="this.outerHTML=\'<div class=&quot;'+cls+'&quot;>🛋</div>\'">':'<div class="'+cls+'">🛋</div>';
 const name=p=>p.code+(p.model?"-"+p.model:"");
 const meta=p=>[p.ptype,p.desc,p.material&&("🧱 "+p.material),p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle),p.capacity&&("👟 "+p.capacity)].filter(Boolean).join(" · ")||"—";
 const kind=p=>/CUS|ORD/i.test(p.orderType||"")?'<span class="pill wait">ORDER</span>':p.custom?'<span class="pill blue">🎨 Custom</span>':'<span class="pill ok">Standard</span>';
-const stagePill=p=>TAB==="workshop"?((p.stage==="finishing"?'<span class="pill blue">🎨 In finishing</span>':'<span class="pill wait">🛠 In workshop</span>')+(p.sent?' <span class="pill">📤 '+esc(p.sent.at||"")+'</span>':'')):TAB==="sold"&&p.soldInfo?'<span class="pill sold">Sold '+esc(p.soldInfo.at||"")+'</span>':"";
+const stagePill=p=>TAB==="workshop"?((p.stage==="finishing"?'<span class="pill blue">🎨 In finishing</span>':'<span class="pill wait">🛠 In workshop</span>')+(p.sent?' <span class="pill">📤 '+esc(p.sent.at||"")+'</span>':'')):TAB==="sold"&&p.soldInfo?'<span class="pill sold">Sold '+esc(p.soldInfo.at||"")+'</span>'+(p.soldInfo.info?' <span class="pill blue">👤 '+esc(p.soldInfo.info)+'</span>':""):"";
 const list=()=>D?D[TAB]:[];
 function filtered(){const q=$("q").value.toLowerCase().trim();return list().filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color,p.material,p.capacity,p.note,p.salesName].join(" ").toLowerCase().includes(q));}
 function card(p){const a=ACT[TAB],chk=CAN?'<input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>':"";
-  const btn=CAN?'<button class="btn sm '+(TAB==="sold"?"sec":"")+'" data-adv="'+esc(p.id)+'">'+a.label+'</button>':"";
+  const btn=CAN?'<button class="btn sm '+(TAB==="sold"?"sec":"")+'" data-adv="'+esc(p.id)+'">'+a.label+'</button>'+(OWNER?'<button class="btn sm red" data-del="'+esc(p.id)+'" title="Delete">🗑</button>':""):"";
   if(VIEW==="large")return'<div class="bigc" data-open="'+esc(p.id)+'">'+chk+img(p,"ph")+'<div class="bd"><div class="t">'+esc(name(p))+'</div><div class="m">'+esc(meta(p))+'</div><div class="tg">'+kind(p)+stagePill(p)+'</div><div class="btns" style="margin-top:8px">'+btn+'</div></div></div>';
   return'<div class="it" data-open="'+esc(p.id)+'">'+chk+img(p,"th")+'<div class="mid"><div class="t">'+esc(name(p))+'</div><div class="m">'+esc(meta(p))+'</div><div class="tg">'+kind(p)+stagePill(p)+'</div></div><div class="rt">'+btn+'</div></div>';}
 function render(){
@@ -107,22 +107,56 @@ function render(){
     (L.length?(VIEW==="large"?'<div class="bigGrid">'+L.map(card).join("")+'</div>':'<div class="card" style="padding:4px 15px">'+L.map(card).join("")+'</div>'):'<div class="card"><div class="empty">'+(all.length?"No product matches your search.":EMPTY[TAB])+'</div></div>');
   bar();
 }
-function bar(){const n=SEL.size;$("bar").classList.toggle("on",CAN&&n>0);$("barTxt").textContent=n+" selected";$("barGo").textContent=ACT[TAB].bulk+" ("+n+")";}
-async function advance(ids){
-  if(BUSY||!ids.length)return;const a=ACT[TAB];
-  if(!await confirmBox((ids.length>1?ids.length+" products: ":"")+a.ask,a.bulk))return;
-  BUSY=true;const d=await api("/api/products/advance",{ids,from:TAB});BUSY=false;SEL.clear();
+function bar(){const n=SEL.size;$("bar").classList.toggle("on",CAN&&n>0);$("barTxt").textContent=n+" selected";$("barGo").textContent=ACT[TAB].bulk+" ("+n+")";$("barDel").style.display=OWNER?"inline-flex":"none";$("barDel").textContent="🗑 Delete ("+n+")";}
+function apply(d){
+  BUSY=false;SEL.clear();
   if(d&&d.counts)D=d;
   if(d&&d.ok===false)say(d.error||"Something went wrong.","bad");else if(d&&d.warning)say(d.warning,"warn");else if(d&&d.message)say(d.message,"ok");
   render();
+}
+// Stock → Sold: the customer must be attached first
+function pickCustomer(n){
+  return new Promise(res=>{
+    let chosen=null,T=null,done=false;const fin=v=>{if(done)return;done=true;ONCLOSE=null;res(v);};
+    open('<div class="hd"><b>🔴 Sold — attach the customer</b><button class="x" type="button">✕</button></div>'+
+      '<div class="hint">Choose the customer who bought '+(n>1?"these "+n+" products":"this product")+'. The sale is attached to the product and written in the customer’s info.</div>'+
+      '<input type="text" id="cq" placeholder="🔎 Customer name, ID or phone…" autocomplete="off"><div id="cl" style="margin-top:6px"></div>'+
+      '<div class="btns"><button class="btn block" id="cGo" type="button" disabled>Choose a customer</button></div>');
+    ONCLOSE=()=>fin(null);
+    const list=async()=>{
+      const box=$("cl");if(!box)return;
+      const d=await api("/api/products/customers?q="+encodeURIComponent($("cq").value.trim()));
+      if(!$("cl"))return;
+      if(!d||!d.ok){$("cl").innerHTML='<div class="empty">'+esc((d&&d.error)||"Could not load the customers.")+'</div>';return;}
+      $("cl").innerHTML=d.customers.length?d.customers.map(c=>'<div class="opt'+(chosen&&chosen.id===c.id?" on":"")+'" data-c="'+esc(c.id)+'"><div>'+esc(c.name||"—")+' <span class="pill">ID '+esc(c.id)+'</span><small>'+esc([c.phone,c.location,c.username&&("@"+String(c.username).replace(/^@/,""))].filter(Boolean).join(" · ")||"—")+'</small></div></div>').join(""):'<div class="empty">No customer found.</div>';
+      $("cl").querySelectorAll("[data-c]").forEach(el=>el.onclick=()=>{chosen=d.customers.find(c=>c.id===el.dataset.c);$("cl").querySelectorAll(".opt").forEach(o=>o.classList.toggle("on",o===el));$("cGo").disabled=!chosen;$("cGo").textContent="🔴 Sold to "+(chosen.name||chosen.id);});
+    };
+    $("cq").addEventListener("input",()=>{clearTimeout(T);T=setTimeout(list,250);});
+    $("cGo").onclick=()=>{if(!chosen)return;const c=chosen;ONCLOSE=null;close();fin(c);};
+    list();
+  });
+}
+async function advance(ids){
+  if(BUSY||!ids.length)return;const a=ACT[TAB];let body={ids,from:TAB};
+  if(TAB==="stock"){const c=await pickCustomer(ids.length);if(!c)return;body.customerId=c.id;}
+  else if(!await confirmBox((ids.length>1?ids.length+" products: ":"")+a.ask,a.bulk))return;
+  BUSY=true;apply(await api("/api/products/advance",body));
+}
+async function removeProducts(ids){
+  if(BUSY||!ids.length||!OWNER)return;
+  const one=list().find(p=>p.id===ids[0]);
+  if(!await confirmBox(ids.length===1&&one?"Delete “"+name(one)+"” for good? Its Product ID is never reused.":"Delete these "+ids.length+" products for good?","🗑 Delete"))return;
+  BUSY=true;apply(await api("/api/products/delete",{ids}));
 }
 $("tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TAB=b.dataset.t;SEL.clear();try{localStorage.setItem("prTab",TAB);}catch{}render();});
 document.querySelector(".vt").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;VIEW=b.dataset.view;try{localStorage.setItem("prView",VIEW);}catch{}render();});
 $("q").addEventListener("input",render);
 $("barGo").onclick=()=>advance([...SEL]);
+$("barDel").onclick=()=>removeProducts([...SEL]);
 $("out").addEventListener("change",e=>{const c=e.target;if(c.id==="selAll"){const L=filtered();c.checked?L.forEach(p=>SEL.add(p.id)):L.forEach(p=>SEL.delete(p.id));return render();}if(c.dataset&&c.dataset.sel){c.checked?SEL.add(c.dataset.sel):SEL.delete(c.dataset.sel);bar();}});
 $("out").addEventListener("click",e=>{
   if(e.target.closest("input,label"))return;
+  const x=e.target.closest("[data-del]");if(x){e.stopPropagation();return removeProducts([x.dataset.del]);}
   const a=e.target.closest("[data-adv]");if(a){e.stopPropagation();return advance([a.dataset.adv]);}
   const o=e.target.closest("[data-open]");if(o)detail(o.dataset.open);
 });
@@ -131,11 +165,12 @@ function detail(id){
   const r=(l,v)=>v?'<div><span>'+l+'</span><b>'+esc(v)+'</b></div>':"";
   open('<div class="hd"><b>'+esc(name(p))+'</b><button class="x" type="button">✕</button></div>'+(p.photo?img(p,"bigimg"):"")+'<div class="tg">'+kind(p)+stagePill(p)+'</div><div class="dl">'+
     r("Product ID",p.code)+r("Model",p.model)+r("Type",p.ptype)+r("Measurement",p.desc)+r("🧱 Material",p.material)+r("🎨 Color",p.color)+r("🔧 Handle",p.handle)+r("👟 Shoe capacity",p.capacity)+r("Category",p.category)+r("📍 Location",p.location)+r("Order",p.orderRef)+r("Priority",p.priority)+r("👤 Sales",p.salesName)+r("Delivery date",p.deliveryDate)+r("Started",p.added)+r("Sent to workshop",p.sent?p.sent.at+" · "+p.sent.by:"")+r("Finished",p.finished)+r("Sold",p.soldInfo?p.soldInfo.at+(p.soldInfo.info?" · "+p.soldInfo.info:""):"")+r("📝 Note",p.note)+'</div>'+
-    (CAN?'<div class="btns"><button class="btn block" id="dAdv">'+ACT[TAB].label+'</button></div>':""));
+    (CAN?'<div class="btns"><button class="btn block" id="dAdv">'+ACT[TAB].label+'</button>'+(OWNER?'<button class="btn red block" id="dDel">🗑 Delete product</button>':"")+'</div>':""));
   if($("dAdv"))$("dAdv").onclick=()=>{close();advance([id]);};
+  if($("dDel"))$("dDel").onclick=()=>{close();removeProducts([id]);};
 }
 async function refresh(){const d=await api("/api/products");if(d&&d.ok){D=d;render();}else if(!D)$("out").innerHTML='<div class="card"><div class="empty">'+esc((d&&d.error)||"Could not load.")+'</div></div>';}
-(async()=>{try{const m=await (await fetch("/api/me")).json();if(m&&m.role){CAN=!m.viewer&&(m.role==="owner"||(m.perms||[]).some(k=>k==="workshop"||k==="reports"))||m.enforced===false&&!m.viewer;}}catch{}refresh();})();
+(async()=>{try{const m=await (await fetch("/api/me")).json();if(m&&m.role){CAN=!m.viewer&&(m.role==="owner"||(m.perms||[]).some(k=>k==="workshop"||k==="reports"))||m.enforced===false&&!m.viewer;OWNER=!m.viewer&&(m.role==="owner"||m.role==="open"||m.enforced===false);}}catch{}refresh();})();
 setInterval(()=>{if(document.visibilityState==="visible"&&!BUSY&&!$("ov").classList.contains("on"))refresh();},20000);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!BUSY&&!$("ov").classList.contains("on"))refresh();});
 </script>
