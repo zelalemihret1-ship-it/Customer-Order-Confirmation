@@ -145,6 +145,7 @@ function drawReady(){
    '<label>🔎 Search</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
    '<div class="card"><h2>'+(custom?"🎨 Saved custom products":"📦 Saved standard products")+' <span class="pill ok">'+base.length+'</span></h2>'+
    (L.length?L.map(prodRow).join(""):'<div class="empty">'+(base.length?"No product matches your search.":"<b>"+(custom?"No custom products yet.":"No saved standard products yet.")+"</b><br>Press <b>"+(custom?"➕ New custom product":"➕ New standard product")+"</b> to add one.")+'</div>')+'</div>'+
+   (()=>{const SL=(S.sold||[]).filter(p=>!!p.custom===custom);return SL.length?'<div class="card"><h2>🔴 Sold out <span class="pill">'+SL.length+'</span></h2><div class="hint">Sold Out products. Tap <b>♻️ Restock</b> to return one to stock.</div>'+SL.map(p=>'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+' <span class="pill sold">Sold</span></div><div class="m">'+esc([p.ptype,p.desc,p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle)].filter(Boolean).join(" · ")||"—")+'</div></div><div class="rt"><button class="btn sm sec" data-resto="'+esc(p.id)+'">♻️ Restock</button></div></div>').join("")+'</div>':"";})()+
    (!custom&&S.workflow.length?'<div class="card"><h2>⏳ Not in stock yet <span class="pill wait">'+S.workflow.length+'</span></h2><div class="hint">Older products still in Workflow. Move them to Stock when they are ready.</div>'+S.workflow.map(p=>'<div class="it">'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+'</div><div class="m">'+esc([p.ptype,p.desc].filter(Boolean).join(" · "))+'</div></div><div class="rt"><button class="btn sm" data-fin="'+esc(p.id)+'">→ Stock</button></div></div>').join("")+'</div>':"");
   const qi=$("q");qi.addEventListener("input",()=>{Q=qi.value;const p=qi.selectionStart;drawReady();const n=$("q");n.focus();try{n.setSelectionRange(p,p);}catch{}});
   bar();
@@ -160,6 +161,7 @@ $("out").addEventListener("click",async e=>{
   const t=e.target.closest("button");if(!t)return;const d=t.dataset;
   if(d.send)return sendOrder(d.send,!!(S.orders.find(o=>String(o.id)===d.send)||{}).sent);
   if(d.one)return sendProducts([d.one]);
+  if(d.resto){if(await confirmBox("Restock this product? It goes back In Stock.","♻️ Restock"))take(await api("/api/workshop/restock",{id:d.resto}));return;}
   if(d.sold){if(await confirmBox("Mark this product Sold Out? It leaves the stock.","Yes, sold out"))take(await api("/api/workshop/product/sold",{id:d.sold}));return;}
   if(d.del){if(await confirmBox("Delete this product for good?","Delete"))take(await api("/api/workshop/product/delete",{id:d.del}));return;}
   if(d.fin){take(await api("/api/workshop/product/finish",{id:d.fin}));return;}
