@@ -64,7 +64,7 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
     <div class="grp"><div><b id="sName">—</b><div class="hint" id="sHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="sPick">Choose group</button><button class="btn sm sec" id="sTest">Send test</button></div></div>
   </div>
 
-  <div class="seg" id="seg"><button data-t="orders" class="on">📋 Order products</button><button data-t="ready">🛋 Readymade</button><button data-t="sent">📤 Sent products</button></div>
+  <div class="seg" id="seg"><button data-t="standard" class="on">📦 Standard</button><button data-t="custom">🎨 Custom</button><button data-t="orders">📋 Orders ↗</button><button data-t="sent">📤 Sent</button></div>
   <div id="out"></div>
 </main>
 <div class="bar" id="bar"><b id="barTxt"></b><button class="btn" id="barGo">📤 Send selected</button></div>
@@ -74,8 +74,8 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
 <script>
 const $=id=>document.getElementById(id);
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let S=null,TAB="orders",SEL=new Set(),Q="",BUSY=false;
-try{const t=localStorage.getItem("wsTab");if(["orders","ready","sent"].includes(t))TAB=t;}catch{}
+let S=null,TAB="ready",SEL=new Set(),Q="",BUSY=false;
+try{const t=localStorage.getItem("wsTab");if(["ready","sent"].includes(t))TAB=t;}catch{}
 let RTAB="standard";try{const t=localStorage.getItem("wsRTab");if(["standard","custom"].includes(t))RTAB=t;}catch{}
 
 async function api(path,body){
@@ -110,11 +110,14 @@ function render(){
   $("sName").textContent=S.soldGroup?S.soldGroupName:"No Sold Out group chosen yet";
   $("sHint").textContent=S.soldGroup?"A product that is in stock and sold to a customer (Customer ID → Send to workshop) is posted here with the customer's info.":"Choose the Telegram group (and topic) where sold stock products are posted.";
   $("sTest").style.display=S.soldGroup?"":"none";
-  document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.t===TAB));
+  document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",TAB==="ready"?b.dataset.t===RTAB:b.dataset.t===TAB));
   $("bar").classList.remove("on");
   if(TAB==="orders")drawOrders();else if(TAB==="ready")drawReady();else drawSent();
 }
-$("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;TAB=b.dataset.t;SEL.clear();Q="";try{localStorage.setItem("wsTab",TAB);}catch{}render();});
+$("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const t=b.dataset.t;
+  if(t==="orders"){location.href="/callers.html"+location.hash;return;} // orders are sent from the customer data (Customer ID → Move)
+  if(t==="standard"||t==="custom"){TAB="ready";RTAB=t;try{localStorage.setItem("wsRTab",RTAB);}catch{}}else TAB=t;
+  SEL.clear();Q="";try{localStorage.setItem("wsTab",TAB);}catch{}render();});
 
 // ── ORDER PRODUCTS ──────────────────────────────────────────────────────────
 const orderRow=(o,again)=>'<div class="it">'+thumb(o.photo)+'<div class="mid"><div class="t">'+esc(o.product||"Order")+'</div><div class="m">'+esc(o.orderId)+' · 👤 '+esc(o.customerName||"—")+(o.customerId?' ('+esc(o.customerId)+')':'')+'<br>'+esc(when(o.createdAt))+' <span class="pill '+(o.status==="Confirmed"?"ok":"wait")+'">'+esc(o.status||"Pending")+'</span> '+(o.sent?'<span class="pill blue">Sent '+esc(o.sent.at||"")+'</span>':'')+'</div></div><div class="rt">'+(o.confirmed?'<button class="btn sm '+(again?"sec":"")+'" data-send="'+esc(o.id)+'">'+(again?"Send again":"🛠 Send")+'</button>':'<span class="pill wait2">⏳ Waiting customer confirmation</span>')+'</div></div>';
@@ -137,8 +140,7 @@ async function sendOrder(id,again){
 const prodRow=p=>'<div class="it"><input class="chk" type="checkbox" data-sel="'+esc(p.id)+'" '+(SEL.has(p.id)?"checked":"")+'>'+pthumb(p)+'<div class="mid"><div class="t">'+esc(p.code+(p.model?"-"+p.model:""))+(p.custom?' <span class="pill blue">🎨 Custom</span>':'')+'</div><div class="m">'+esc([p.ptype,p.desc,p.color&&("🎨 "+p.color),p.handle&&("🔧 "+p.handle)].filter(Boolean).join(" · ")||"—")+'</div></div><div class="rt"><button class="btn sm" data-one="'+esc(p.id)+'">📤 Send</button><button class="btn sm sec" data-sold="'+esc(p.id)+'">Sold out</button>'+(S.me.owner?'<button class="btn sm red" data-del="'+esc(p.id)+'">🗑</button>':'')+'</div></div>';
 function drawReady(){
   const custom=RTAB==="custom",q=Q.toLowerCase(),base=S.stock.filter(p=>!!p.custom===custom),L=base.filter(p=>!q||[p.code,p.model,p.ptype,p.desc,p.handle,p.color].join(" ").toLowerCase().includes(q)),nStd=S.stock.filter(p=>!p.custom).length,nCus=S.stock.filter(p=>p.custom).length;
-  $("out").innerHTML='<div class="seg" id="rseg" style="margin-bottom:12px"><button data-r="standard" class="'+(custom?"":"on")+'">📦 Standard products <span class="pill">'+nStd+'</span></button><button data-r="custom" class="'+(custom?"on":"")+'">🎨 Custom products <span class="pill">'+nCus+'</span></button></div>'+
-   '<div class="card"><h2>'+(custom?"🎨 Custom products":"📦 Standard products")+'</h2><div class="hint">'+(custom?'One-off products made to a custom design (photo, name, measurement, color). A new custom product is saved and can be sent to the workshop group at once.':'Your <b>saved standard products</b> (regular models). Only products saved here are listed — the general stock is <b>not</b> sent from this page (stock products are sold to a customer from <b>Customer ID → Send to workshop</b>). A new standard product is saved and can be sent to the workshop group at once.')+'</div>'+
+  $("out").innerHTML='<div class="card"><h2>'+(custom?"🎨 Custom products":"📦 Standard products")+'</h2><div class="hint">'+(custom?'One-off products made to a custom design (photo, name, measurement, color). A new custom product is saved and can be sent to the workshop group at once.':'Your <b>saved standard products</b> (regular models). Only products saved here are listed — the general stock is <b>not</b> sent from this page (stock products are sold to a customer from <b>Customer ID → Send to workshop</b>). A new standard product is saved and can be sent to the workshop group at once.')+'</div>'+
    '<div class="btns" style="margin-top:4px"><button class="btn gold" id="addP">'+(custom?"➕ New custom product":"➕ New standard product")+'</button></div>'+
    '<label>🔎 Search</label><input type="text" id="q" placeholder="Code, model, type…" value="'+esc(Q)+'" autocomplete="off"></div>'+
    '<div class="card"><h2>'+(custom?"🎨 Saved custom products":"📦 Saved standard products")+' <span class="pill ok">'+base.length+'</span></h2>'+
