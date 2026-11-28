@@ -66,9 +66,13 @@ textarea{min-height:70px;resize:vertical}label{display:block;font-size:12.5px;fo
     <h2>📨 Workshop group</h2>
     <div class="grp"><div><b id="gName">—</b><div class="hint" id="gHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="gPick">Choose group</button><button class="btn sm sec" id="gTest">Send test</button></div></div>
   </div>
-  <div class="card" style="box-shadow:none;margin-bottom:0">
+  <div class="card" style="box-shadow:none;margin-bottom:10px">
     <h2>🎨 Finishing group</h2>
     <div class="grp"><div><b id="fgName">—</b><div class="hint" id="fgHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="fgPick">Choose group</button><button class="btn sm sec" id="fgTest">Send test</button></div></div>
+  </div>
+  <div class="card" style="box-shadow:none;margin-bottom:0" id="sgCard">
+    <h2>🔴 Sold Out group</h2>
+    <div class="grp"><div><b id="sgName">—</b><div class="hint" id="sgHint" style="margin:2px 0 0"></div></div><div class="btns" style="margin:0"><button class="btn sm" id="sgPick">Choose group</button><button class="btn sm sec" id="sgTest">Send test</button></div></div>
   </div>
     </div>
   </div>
@@ -119,7 +123,11 @@ function render(){
   $("fgName").textContent=S.finGroup?S.finGroupName:"No finishing group chosen yet";
   $("fgHint").textContent=S.finGroup?"When the workshop man presses “Finished product”, the product is posted here with a “Finished” button.":"Choose the Telegram group (and topic) of the finishing team.";
   $("fgTest").style.display=S.finGroup?"":"none";
-  $("grSum").textContent="· Workshop "+(S.group?"✓":"✗")+" · Finishing "+(S.finGroup?"✓":"✗");
+  $("sgName").textContent=S.soldGroup?S.soldGroupName:"No Sold Out group chosen yet";
+  $("sgHint").textContent=S.soldGroup?"Products sold from stock (Customer ID → Move → Readymade, Products → Sold) are posted here with the customer info.":"Choose the Telegram group (and topic) that receives the sold products.";
+  $("sgTest").style.display=S.soldGroup?"":"none";
+  const CAN=S.can||{};$("sgCard").style.display=CAN.sold===false?"none":"";$("grTog").closest(".card").style.display=CAN.groups===false?"none":""; // v191: the main admin can switch the group choice off for an admin
+  $("grSum").textContent="· Workshop "+(S.group?"✓":"✗")+" · Finishing "+(S.finGroup?"✓":"✗")+(CAN.sold===false?"":" · Sold Out "+(S.soldGroup?"✓":"✗"));
   document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",TAB==="ready"?b.dataset.t===RTAB:b.dataset.t===TAB));
     if(TAB==="orders")drawOrders();else if(TAB==="ready")drawReady();else drawSent();
 }
@@ -297,10 +305,11 @@ function drawSent(){
 // ── GROUP PICKER ────────────────────────────────────────────────────────────
 $("grTog").onclick=()=>{const b=$("grBody"),o=b.style.display==="none";b.style.display=o?"block":"none";$("grArrow").textContent=o?"▴":"▾";}; // closed until touched
 let PICK=null,GK="work";
-$("gPick").onclick=()=>groupSheet("work");$("fgPick").onclick=()=>groupSheet("finish");
+$("gPick").onclick=()=>groupSheet("work");$("fgPick").onclick=()=>groupSheet("finish");$("sgPick").onclick=()=>groupSheet("sold");
+const GKN={work:["📨 Workshop group","workshop"],finish:["🎨 Finishing group","finishing"],sold:["🔴 Sold Out group","Sold Out"]},curOf=k=>k==="finish"?S.finGroup:k==="sold"?S.soldGroup:S.group;
 function groupSheet(k){
-  GK=k||"work";const cur=GK==="finish"?S.finGroup:S.group;PICK=cur?{...cur}:null;
-  open('<div class="hd"><b>'+(GK==="finish"?"🎨 Finishing group":"📨 Workshop group")+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
+  GK=k||"work";const cur=curOf(GK);PICK=cur?{...cur}:null;
+  open('<div class="hd"><b>'+GKN[GK][0]+'</b><button class="x" type="button">✕</button></div><div class="msg" id="fMsg"></div><div id="gBody"></div>');
   gDraw();
 }
 function gDraw(extra){
@@ -308,7 +317,7 @@ function gDraw(extra){
    '<div class="btns"><button class="btn sm" id="gList">📂 Choose from my groups</button></div>'+
    '<label>…or paste a group / topic link, @username or id</label><input type="text" id="gLink" placeholder="https://t.me/c/123456789/2" autocomplete="off"><div class="btns"><button class="btn sm sec" id="gCheck">Check link</button></div>'+
    '<div id="gExtra">'+(extra||"")+'</div>'+
-   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save '+(GK==="finish"?"finishing":"workshop")+' group</button>'+((GK==="finish"?S.finGroup:S.group)?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
+   '<div class="btns"><button class="btn block" id="gSave" '+(PICK?"":"disabled")+'>💾 Save '+GKN[GK][1]+' group</button>'+(curOf(GK)?'<button class="btn sm red" id="gClear">Remove</button>':'')+'</div>'+
    '<p class="hint">The group must contain your Telegram account (or the AMBAR bot as admin) so it can post.</p>';
   $("gList").onclick=async()=>{$("gList").disabled=true;$("gList").textContent="Loading…";const d=await api("/api/workshop/dialogs",{});$("gList").disabled=false;$("gList").textContent="📂 Choose from my groups";
     if(!d.ok){fm(d.error,"bad");return;}
@@ -329,6 +338,7 @@ $("sheet").addEventListener("click",async e=>{
 });
 $("gTest").onclick=async()=>{$("gTest").disabled=true;const d=await api("/api/workshop/test",{kind:"work"});$("gTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
 $("fgTest").onclick=async()=>{$("fgTest").disabled=true;const d=await api("/api/workshop/test",{kind:"finish"});$("fgTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
+$("sgTest").onclick=async()=>{$("sgTest").disabled=true;const d=await api("/api/workshop/test",{kind:"sold"});$("sgTest").disabled=false;say(d.ok?d.message:d.error,d.ok?"ok":"bad");};
 
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&!$("ov").classList.contains("on")&&!BUSY)refresh();});
 refresh();
