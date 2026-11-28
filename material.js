@@ -168,9 +168,9 @@ function register(app, ctx) {
   // ── routes ──────────────────────────────────────────────────────────────────────────────────
   const router = express.Router();
   router.use(requireAccess);
-  // the Material section is open to admins who have "material" (or the older "workshop" section) — the main admin always
+  // the Material section is open to admins who have "material" — the main admin always
   router.use((req, res, next) => {
-    const a = req.actor, ok = isOwnerA(a) || (a?.perms || []).includes("material") || (a?.perms || []).includes("workshop");
+    const a = req.actor, ok = isOwnerA(a) || (a?.perms || []).includes("material"); // v191: its own switch (admins saved before v191 who had Workshop were given it automatically)
     return ok ? next() : res.status(403).json({ ok: false, error: "The main admin has not given you the Material section. Ask them to turn it on in Manage Admins." });
   });
   router.use(express.json({ limit: "1mb" }));
@@ -280,6 +280,10 @@ function register(app, ctx) {
 
   app.get("/api/material-version", (req, res) => res.json({ ok: true, material: "v181" }));
   app.use("/api/material", router);
-  return { load, handleCallback, pending: () => allRequests({ role: "owner" }).pending.length };
+  // v191 START FROM ZERO / backup: only the edit requests are cleared; the admins\' rights and the confirmation group stay.
+  const zeroSnapshot = () => JSON.parse(JSON.stringify({ editRequests: db.editRequests }));
+  async function zeroWipe() { const n = { editRequests: db.editRequests.length }; db.editRequests = []; await persist(); return n; }
+  async function zeroRestore(snap) { if (!snap || typeof snap !== "object") return false; db.editRequests = Array.isArray(snap.editRequests) ? snap.editRequests : []; await persist(); return true; }
+  return { load, handleCallback, pending: () => allRequests({ role: "owner" }).pending.length, zeroSnapshot, zeroWipe, zeroRestore };
 }
 module.exports = { register };
