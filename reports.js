@@ -166,7 +166,10 @@ function register(app, ctx) {
   // v174: SEQUENTIAL Product IDs by type — footwear (Shoe Shelf) → CH1, CH2, CH3 …; Console products → CON1, CON2, CON3 … Numbers only go up (a deleted ID is never handed out again).
   // Every other product type keeps 1A, 1B … 1Z, 2A …
   const isConType = pt => /\b(console|consult)/i.test(String(pt || ""));
-  const prefixOf = pt => isShoeType(pt) ? "CH" : isConType(pt) ? "CON" : "";
+  // v189: EVERY product type has its own ID prefix (CH1, CON1, TV1, WD1 …). Unknown / "Others" types use OT1, OT2 … so every product gets an ID.
+  const ID_PREFIXES = [["CH", /shoe\s*shelf/i], ["CON", /\b(console|consult)/i], ["CD", /chest\s*drawer/i], ["CTR", /\bcent(er|re)\b/i], ["TV", /\btv\b/i], ["DT", /dining/i], ["CT", /coffee/i], ["WD", /wardrobe/i], ["BD", /\bbed\b/i], ["SF", /sofa/i], ["CB", /cabinet/i], ["MR", /mirror/i]];
+  const ALL_PREFIXES = [...ID_PREFIXES.map(x => x[0]), "OT"];
+  const prefixOf = pt => { const t = String(pt || ""); const hit = ID_PREFIXES.find(([, re]) => re.test(t)); return hit ? hit[0] : "OT"; };
   const numOf = (prefix, code) => { const m = new RegExp("^" + prefix + "(\\d+)$", "i").exec(String(code || "").trim()); return m ? +m[1] : 0; };
   const counterOf = prefix => { let max = Math.max(0, Number((db.idCounters || {})[prefix]) || 0); for (const p of db.products) max = Math.max(max, numOf(prefix, p.code)); for (const c of reservedSet()) max = Math.max(max, numOf(prefix, c)); return max; };
   const peekSeqCodes = (n, ptype) => {
@@ -176,7 +179,7 @@ function register(app, ctx) {
     for (let i = 0; out.length < n && i < 100000; i++) { const c = otherCode(i); if (!used.has(c.toLowerCase()) && !rs.has(c)) out.push(c); }
     return out;
   };
-  const bumpCounter = code => { for (const prefix of ["CH", "CON"]) { const k = numOf(prefix, code); if (k) { db.idCounters = db.idCounters || {}; if (k > (db.idCounters[prefix] || 0)) db.idCounters[prefix] = k; } } };
+  const bumpCounter = code => { for (const prefix of ALL_PREFIXES) { const k = numOf(prefix, code); if (k) { db.idCounters = db.idCounters || {}; if (k > (db.idCounters[prefix] || 0)) db.idCounters[prefix] = k; } } };
   const nextSeqCode = ptype => peekSeqCodes(1, ptype)[0];
   const addLog = (req, m, type, qty, balance, note) => {
     db.log.unshift({ id: uid(), matId: m.id, material: m.name, mtype: m.type || "", group: m.group || "MATERIAL", unit: m.unit, type, qty, balance, note: clip(note, 200), ...stamp(req) });
