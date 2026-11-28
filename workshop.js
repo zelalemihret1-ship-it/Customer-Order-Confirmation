@@ -1,3 +1,4 @@
+// v187: Workshop sends ONLY to the workshop group (the Sold Out group is no longer part of this page) · Standard / Custom products carry full info (material, color, handle, shoe capacity …) and start in Workflow = "Workshop products" · Sent tab lists the sent products · new Products page (Home → beside Stock view): Workshop · Stock · Sold, list / large, advance + restock.
 // v178: NON-STOCK orders are sent to the workshop only AFTER the customer confirmed · Workshop → Readymade lists/sends only the Standard saved + Custom products (not the stock) · a product that IS in stock goes, linked with the customer's info, to the SOLD OUT group (+ topic) the admin selected and is marked Sold Out.
 // v177: Order products shows only the NEWEST unsent orders (sent ones move to the Sent tab) · Readymade has two types: Standard products and Custom products · no customer picker in Readymade.
 // ── WORKSHOP v176 — rebuilt from scratch (module + page: /workshop.html) ─────────────────────────────
@@ -24,7 +25,7 @@ function register(app, ctx) {
   const hasPerm = typeof ctx.hasPerm === "function" ? ctx.hasPerm : (actor, key) => actor?.role === "owner" || actor?.role === "open" || (actor?.perms || []).includes(key);
   const DATA_FILE = path.join(baseDir, "workshop2-data.json");
   const R = () => ctx.reports || {};
-  let db = { admins: {}, sent: [], savedAt: "" };
+  let db = { admins: {}, sent: [], psent: {}, savedAt: "" };
 
   // ── storage (file + Supabase) ───────────────────────────────────────────────────────────────
   let chain = Promise.resolve();
@@ -37,9 +38,10 @@ function register(app, ctx) {
     let d = null;
     if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "workshop2_data").maybeSingle(); if (data?.value && typeof data.value === "object") d = data.value; } catch {} }
     if (!d) { try { d = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch {} }
-    if (d && typeof d === "object") db = { admins: {}, sent: [], savedAt: "", ...d };
+    if (d && typeof d === "object") db = { admins: {}, sent: [], psent: {}, savedAt: "", ...d };
     if (!db.admins || typeof db.admins !== "object" || Array.isArray(db.admins)) db.admins = {};
     if (!Array.isArray(db.sent)) db.sent = [];
+    if (!db.psent || typeof db.psent !== "object" || Array.isArray(db.psent)) db.psent = {};
     if (!d) await importOldGroups(); // first start of v176: keep every admin's workshop group from the old Workshop
   }
   async function importOldGroups() {
@@ -164,7 +166,7 @@ function register(app, ctx) {
     return capLines([...L, ...(d.length ? ["ADDITIONAL TEXTS:", ...d] : []), ...tail], 1000);
   }
   function readymadeCaption(p, cust, note) {
-    const L = ["<b>AMBAR FURNITURE</b>", p.custom ? "🎨 <b>CUSTOM PRODUCT</b>" : "📦 <b>READYMADE PRODUCT</b> · STANDARD", "", "<b>" + esc((p.code || "—") + (p.model ? "-" + p.model : "")) + "</b>", p.ptype ? "Type: " + esc(clip(p.ptype, 40)) : "", "Measurement: " + esc(fmtSize(p.desc) || "—"), p.color ? "🎨 Color: " + esc(clip(p.color, 40)) : "", p.handle ? "🔧 Handle: " + esc(clip(p.handle, 60)) : "", p.capacity ? "Capacity: " + esc(clip(p.capacity, 40)) : "", p.note ? "📝 " + esc(clip(p.note, 200)) : "", ...custLines(cust, null)];
+    const L = ["<b>AMBAR FURNITURE</b>", p.custom ? "🎨 <b>CUSTOM PRODUCT</b>" : "📦 <b>READYMADE PRODUCT</b> · STANDARD", "", "<b>" + esc((p.code || "—") + (p.model ? "-" + p.model : "")) + "</b>", p.ptype ? "Type: " + esc(clip(p.ptype, 40)) : "", "Measurement: " + esc(fmtSize(p.desc) || "—"), p.material ? "🧱 Material: " + esc(clip(p.material, 60)) : "", p.color ? "🎨 Color: " + esc(clip(p.color, 40)) : "", p.handle ? "🔧 Handle: " + esc(clip(p.handle, 60)) : "", p.capacity ? "👟 Capacity: " + esc(clip(p.capacity, 40)) : "", p.note ? "📝 " + esc(clip(p.note, 200)) : "", ...custLines(cust, null)];
     const tail = clip(note, 300) ? ["", "📝 " + esc(clip(note, 300))] : [];
     return capLines([...L, ...tail], 1000);
   }
@@ -214,7 +216,7 @@ function register(app, ctx) {
     for (const p of list) {
       if (sent || err) await wait(700);
       const buf = await productPhotoBuf(p);
-      try { await post(actor, g, buf, readymadeCaption(p, cust, note)); sent++; log(actor, "readymade", (p.model || p.desc || "Product"), p.code, cust?.name || "", true, ""); }
+      try { await post(actor, g, buf, readymadeCaption(p, cust, note)); sent++; const prev = db.psent[p.id] || {}; db.psent[p.id] = { at: stamp(), ts: Date.now(), by: clip(actor?.name || "Admin", 60), key: keyOf(actor), count: (prev.count || 0) + 1 }; log(actor, "readymade", (p.model || p.desc || "Product"), p.code, cust?.name || "", true, ""); try { if (typeof R().wsMarkSent === "function") R().wsMarkSent(p.id, actor?.name); if (typeof R().wsSetStage === "function") R().wsSetStage(p.id, "workshop", actor?.name); } catch {} }
       catch (e) { err = e.message; log(actor, "readymade", (p.model || p.desc || "Product"), p.code, cust?.name || "", false, e.message); }
     }
     return { ok: sent > 0, sent, error: err };
@@ -240,7 +242,8 @@ function register(app, ctx) {
   // ── compact views ───────────────────────────────────────────────────────────────────────────
   const compactOrder = o => { const c = customerOfOrder(o); return { id: o.id, orderId: o.orderId || "", product: clip(o.product, 80), size: fmtSize(sizeOfOrder(o)), status: clip(o.status, 20), confirmed: o.status === "Confirmed", customerId: c?.id || clip(o.customerId, 20), customerName: clip(c?.name || o.customerName, 60), createdAt: o.createdAt || "", photo: o.photo || "", sent: o.workshopSent || null, sentTs: (o.workshopSent && o.workshopSent.ts) || 0 }; };
   const stockList = () => (typeof R().wsStockView === "function" ? R().wsStockView() : []);
-  const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, note: p.note, custom: !!p.custom, color: p.color || "" });
+  const compactProduct = p => ({ id: p.id, code: p.code, model: p.model, ptype: p.ptype, desc: p.desc, handle: p.handle, photo: p.photo, status: p.status, capacity: p.capacity, material: p.material || "", note: p.note, custom: !!p.custom, color: p.color || "", sent: db.psent[p.id] || null });
+  const allProducts = () => (typeof R().wsProductsAll === "function" ? R().wsProductsAll() : []);
   const senderInfo = actor => { const acc = accountOf(actor); return { ready: !!acc?.ready, label: clip(acc?.label, 60) }; };
   const orderList = actor => (ctx.getOrders() || []).filter(o => mineOnly(actor, o)).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   function view(actor) {
@@ -249,7 +252,8 @@ function register(app, ctx) {
       ok: true, me: { name: clip(actor?.name, 60), owner }, group: g, groupName: groupName(g), soldGroup: soldGroupOf(actor), soldGroupName: groupName(soldGroupOf(actor)), sender: senderInfo(actor),
       orders: orderList(actor).slice(0, 200).map(compactOrder),
       sold: stockList().filter(p => p.status === "sold").slice(-80).reverse().map(compactProduct), // v184: Sold Out products (each has a ♻️ Restock button)
-      stock: stockList().filter(p => p.status === "stock" && p.wsSaved).map(compactProduct), // v178: only the Standard saved + Custom products (not the general stock)
+      stock: allProducts().filter(p => (p.status === "workflow" || p.status === "stock") && p.wsSaved).map(compactProduct), // v187: the products prepared in Workshop (Standard / Custom), in Workflow or already in Stock
+      sentProducts: allProducts().filter(p => db.psent[p.id] && (owner || db.psent[p.id].key === keyOf(actor)) && Number(db.psent[p.id].ts || 0) >= sentFromOf(actor)).map(compactProduct).sort((a, b) => Number(b.sent.ts || 0) - Number(a.sent.ts || 0)).slice(0, 150),
       workflow: (typeof R().inProgress === "function" ? R().inProgress() : []).filter(p => !/CUS|ORD/i.test(String(p.orderType || ""))).map(p => ({ id: p.id, code: p.code, model: p.model, desc: p.desc, ptype: p.ptype, photo: p.photo })),
       ptypes: ["Shoe Shelf", "Console Table", "TV Stand", "Wardrobe", "Bed", "Sofa", "Dining Table", "Coffee Table", "Cabinet", "Others"],
       sentFrom: sentFromOf(actor),
@@ -337,7 +341,7 @@ function register(app, ctx) {
   });
   router.post("/send-product", async (req, res) => {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).slice(0, 30) : [];
-    const list = stockList().filter(p => ids.includes(p.id) && p.status === "stock" && p.wsSaved);
+    const list = allProducts().filter(p => ids.includes(p.id) && (p.status === "workflow" || p.status === "stock") && p.wsSaved);
     if (!list.length) return res.json({ ...view(req.actor), ok: false, error: "Choose at least one Standard or Custom product. Products from the general stock are sold through Customer ID → Send to workshop." });
     const r = await sendProducts(list, req.actor, { customerId: String(req.body?.customerId || ""), note: req.body?.note }); // v177: the Workshop page sends no customer; Customer ID → Send to workshop still does
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? `✅ ${r.sent} product${r.sent === 1 ? "" : "s"} sent to the workshop group.` + (r.error ? " Not sent: " + r.error : "") : undefined });
@@ -370,14 +374,14 @@ function register(app, ctx) {
     const by = clip(req.actor?.name || "Admin", 60), made = [];
     try {
       for (let i = 0; i < qty; i++) {
-        const p = await R().wsAddProduct({ ptype: clip(b.ptype, 40), model, desc: clip(b.size, 160), seqId: true, orderType: "READYMADE", priority: "MEDIUM", handle: clip(b.handle, 60), note: clip(b.note, 300), photoBuf: buf, salesName: by, custom, wsSaved: true, color: custom ? clip(b.color, 40) : "" }, by);
-        R().wsFinish(p.id, by); made.push(p.id);
+        const p = await R().wsAddProduct({ ptype: clip(b.ptype, 40), model, desc: clip(b.size, 160), seqId: true, orderType: "READYMADE", priority: "MEDIUM", handle: clip(b.handle, 60), note: clip(b.note, 300), photoBuf: buf, salesName: by, custom, wsSaved: true, color: clip(b.color, 40), capacity: clip(b.capacity, 40), material: clip(b.material, 60) }, by); // v187: stays in Workflow (= Workshop products); the Products page advances it
+        made.push(p.id);
       }
     } catch (e) { return res.json({ ok: false, error: "Could not save the product: " + e.message }); }
-    const list = stockList().filter(p => made.includes(p.id)), word = custom ? "custom product" : "product";
-    if (!b.send) return res.json({ ...view(req.actor), ok: true, message: `✅ ${list.length} ${word}${list.length === 1 ? "" : "s"} added to Stock (${list.map(p => p.code).join(", ")}).` });
+    const list = allProducts().filter(p => made.includes(p.id)), word = custom ? "custom product" : "product";
+    if (!b.send) return res.json({ ...view(req.actor), ok: true, message: `✅ ${list.length} ${word}${list.length === 1 ? "" : "s"} saved (${list.map(p => p.code).join(", ")}) — not sent yet.` });
     const r = await sendProducts(list, req.actor, { note: "" });
-    res.json({ ...view(req.actor), ok: true, message: `✅ Added to Stock (${list.map(p => p.code).join(", ")})` + (r.sent ? ` and ${r.sent} sent to the workshop group.` : "."), warning: r.error ? "Saved in Stock, but NOT sent: " + r.error + " — use Send on the product to try again." : "" });
+    res.json({ ...view(req.actor), ok: true, message: `✅ Saved (${list.map(p => p.code).join(", ")})` + (r.sent ? ` and ${r.sent} sent to the workshop group.` : "."), warning: r.error ? "Saved, but NOT sent: " + r.error + " — use Send on the product to try again." : "" });
   });
   router.post("/product/finish", (req, res) => { const r = typeof R().wsFinish === "function" ? R().wsFinish(String(req.body?.id || ""), clip(req.actor?.name, 60)) : { ok: false, error: "Reports is not ready." }; res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? `✅ ${r.code} is now in Stock.` : undefined }); });
   router.post("/product/sold", (req, res) => { const r = R().wsSoldOut(String(req.body?.id || ""), clip(req.actor?.name, 60)); res.json({ ...view(req.actor), ok: !!r.ok, error: r.error, message: r.ok ? `✅ ${r.code} marked Sold Out.` : undefined }); });
@@ -386,7 +390,26 @@ function register(app, ctx) {
     const r = await R().wsOp("/product/delete", { id: String(req.body?.id || "") }, req.actor);
     res.json({ ...view(req.actor), ok: r.ok, error: r.error, message: r.ok ? "🗑 Product deleted." : undefined });
   });
-  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v185" }));
+  app.get("/api/workshop-version", (req, res) => res.json({ ok: true, workshop: "v187" }));
+
+  // v187 Products page (Home → beside Stock view): Workshop · Stock · Sold Out products with ALL their info.
+  // Viewing: Stock view / Reports / Workshop access. Advancing and restocking: Workshop or Reports access (view-only admins are blocked by requireAccess).
+  const productsView = () => {
+    const all = allProducts(), keep = st => all.filter(p => p.status === st).map(p => ({ ...compactProduct(p), ptype: p.ptype, category: p.category, location: p.location, priority: p.priority, orderType: p.orderType, orderRef: p.orderRef, salesName: p.salesName, deliveryDate: p.deliveryDate, added: p.added, finished: p.finished, stage: p.stage, soldInfo: p.sold }));
+    const w = keep("workflow"), st = keep("stock"), so = keep("sold");
+    return { ok: true, now: nowEth(), counts: { workshop: w.length, stock: st.length, sold: so.length }, workshop: w, stock: st, sold: so };
+  };
+  app.get("/api/products", requireAccess, (req, res) => res.json(productsView()));
+  app.post("/api/products/advance", requireAccess, express.json({ limit: "1mb" }), (req, res) => {
+    if (!(hasPerm(req.actor, "workshop") || hasPerm(req.actor, "reports"))) return res.status(403).json({ ok: false, error: "The main admin has not given you the Workshop section. Ask them to turn it on in Manage Admins." });
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [req.body?.id]).map(x => String(x || "")).filter(Boolean).slice(0, 200);
+    if (!ids.length) return res.json({ ...productsView(), ok: false, error: "Choose at least one product." });
+    if (typeof R().wsAdvance !== "function") return res.json({ ...productsView(), ok: false, error: "Reports is not ready." });
+    const by = clip(req.actor?.name || "Admin", 60); let done = 0, err = "";
+    for (const id of ids) { const r = R().wsAdvance(id, by); if (r.ok && !r.already) done++; else if (!r.ok && !err) err = r.error || "Could not advance."; }
+    const word = { workshop: "now in Stock", stock: "marked Sold Out", sold: "restocked (back In Stock)" }[String(req.body?.from || "")] || "advanced";
+    res.json({ ...productsView(), ok: done > 0, error: done ? "" : err, warning: done && err ? "Done for " + done + ", but: " + err : "", message: done ? `✅ ${done} product${done === 1 ? "" : "s"} ${word}.` : undefined });
+  });
 
   // Home → Stock view: every in-stock product with all its info (any assigned admin may look)
   app.get("/api/stock", requireAccess, (req, res) => {
