@@ -1636,26 +1636,36 @@ function identify(req) {
   const id = String(user.id), name = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || id;
   const a = appAdmins.find(x => String(x.telegramId) === id);
   if (OWNER_IDS.includes(id)) return { role: "owner", name: (a && a.name) || name, telegramId: id, accountId: (a && a.accountId) || "", primary: ENV_OWNER_IDS.includes(id) };
-  return a ? { role: "admin", viewer: !!a.viewer, name: a.name || name, telegramId: id, accountId: a.accountId || "", perms: permsOf(a) } : { telegramId: id, name };
+  return a ? { role: "admin", viewer: !!a.viewer, name: a.name || name, telegramId: id, accountId: a.accountId || "", perms: permsOf(a), rights: a.rights || {} } : { telegramId: id, name };
 }
 // ── v120 SECTION ACCESS: the main admin chooses which sections each assigned admin may open ──
 // Existing admins (no list saved yet) keep what they had before: everything except Reports.
-const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop", "material", "stockview", "sheet"];
-const DEFAULT_PERMS = ["orders", "customers", "greeting", "rating", "stories", "stockview", "sheet"];
+const ALL_PERMS = ["orders", "customers", "greeting", "rating", "stories", "reports", "workshop", "material", "products", "stockview", "sheet"];
+const DEFAULT_PERMS = ["orders", "customers", "greeting", "rating", "stories", "products", "stockview", "sheet"];
 function permsOf(rec) { // v184: "stockview" + "sheet" are new; admins saved before keep them until the main admin saves their access again
   if (!Array.isArray(rec?.perms)) return DEFAULT_PERMS.slice();
-  const list = ALL_PERMS.filter(p => rec.perms.includes(p));
-  return Number(rec.permsVer) >= 2 ? list : [...new Set([...list, "stockview", "sheet"])];
+  const list = ALL_PERMS.filter(p => rec.perms.includes(p)), v = Number(rec.permsVer) || 0, out = new Set(list);
+  if (v < 2) { out.add("stockview"); out.add("sheet"); }
+  if (v < 3) { out.add("products"); if (list.includes("workshop")) out.add("material"); } // v191: Products + Material became their own switches; admins saved before keep what they had
+  return ALL_PERMS.filter(p => out.has(p));
 }
+// v191 ACTION RIGHTS: for every part except the five customer-side ones (Order Confirmation, Customer ID, First Greeting, Customer Rating, Weekly Story)
+// the main admin can switch single actions on/off per admin. No choice saved = allowed. Material keeps its own Cut / Add / Edit choice on the Material page.
+const PART_RIGHTS = {
+  workshop: [["catalog", "Save · edit · delete Standard / Custom models"], ["order", "Order to the workshop · send orders · finish"], ["groups", "Choose / test the Telegram groups"], ["sold", "Sold Out group: send · mark sold · restock"]],
+  products: [["advance", "Move Workshop → Stock"], ["sold", "Mark Sold (attach a customer) · Restock"]]
+};
+function rightsOf(rec) { const out = {}; for (const [part, acts] of Object.entries(PART_RIGHTS)) { out[part] = {}; for (const [a] of acts) out[part][a] = (rec?.rights?.[part] || {})[a] !== false; } return out; }
+function canDo(actor, part, act) { return actor?.role === "owner" || actor?.role === "open" || ((actor?.rights || {})[part] || {})[act] !== false; }
 function cleanPerms(v) { const arr = Array.isArray(v) ? v : String(v || "").split(","); return ALL_PERMS.filter(p => arr.map(x => String(x).trim()).includes(p)); }
 // which section an API path belongs to (null = open to every assigned admin)
 function permNeeded(url) {
   const p = String(url || "").split("?")[0];
   if (p.startsWith("/api/reports")) return ["reports"];
   if (p === "/api/stock") return ["stockview", "reports", "workshop"]; // v184 Stock view
-  if (p.startsWith("/api/products")) return ["stockview", "reports", "workshop"]; // v187 Products page (advancing needs Workshop / Reports — checked in the route)
+  if (p.startsWith("/api/products")) return ["products"]; // v191: the Products page is its own switch (Move / Sold / Restock are per-admin rights)
   if (p.startsWith("/api/workshop")) return ["workshop"];
-  if (p.startsWith("/api/material")) return ["material", "workshop"]; // v177: the Material section (admins who already had Workshop keep access)
+  if (p.startsWith("/api/material")) return ["material"]; // v191: its own switch (admins saved before v191 who had Workshop were given it)
   if (p.startsWith("/api/ratings")) return ["rating"];
   if (p.startsWith("/api/greetings")) return ["greeting"];
   if (p.startsWith("/api/stories")) return ["stories"];
@@ -2349,9 +2359,9 @@ app.get("/api/setup/app-admins", (req, res) => {
   if (!setupAuth(req, res)) return;
   const people = appAdmins.map(person => {
     const account = admins.get(String(person.accountId || ""));
-    return { ...person, perms: permsOf(person), connected: !!account?.ready, accountLabel: account?.label || "", connectionError: account && !account.ready ? (account.error || "Not connected") : "" };
+    return { ...person, perms: permsOf(person), rights: rightsOf(person), connected: !!account?.ready, accountLabel: account?.label || "", connectionError: account && !account.ready ? (account.error || "Not connected") : "" };
   });
-  res.json({ ok: true, allPerms: ALL_PERMS, enforced: accessEnforced(), owners: OWNER_IDS, primaryOwners: ENV_OWNER_IDS, appAdmins: people, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: !!a.ready, ownerTelegramId: a.ownerTelegramId || "", error: a.ready ? "" : (a.error || "Not connected") })) });
+  res.json({ ok: true, allPerms: ALL_PERMS, partRights: PART_RIGHTS, enforced: accessEnforced(), owners: OWNER_IDS, primaryOwners: ENV_OWNER_IDS, appAdmins: people, accounts: [...admins.values()].map(a => ({ id: a.id, label: a.label, ready: !!a.ready, ownerTelegramId: a.ownerTelegramId || "", error: a.ready ? "" : (a.error || "Not connected") })) });
 });
 app.post("/api/setup/app-admins/add", async (req, res) => {
   if (!setupAuth(req, res)) return;
@@ -2368,7 +2378,7 @@ app.post("/api/setup/app-admins/add", async (req, res) => {
     const wantViewer = req.body?.viewer === true || req.body?.viewer === "1" || req.body?.viewer === "true" || (req.body?.viewer === undefined && !!prev?.viewer);
     const base = { ...(prev || {}) }; delete base.viewer;
     const permList = req.body?.perms !== undefined ? cleanPerms(req.body.perms) : (prev ? permsOf(prev) : DEFAULT_PERMS.slice());
-    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...base, telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", perms: permList, permsVer: 2, ...(asMain ? { main: true } : {}), ...(wantViewer && !asMain ? { viewer: true } : {}) });
+    appAdmins = appAdmins.filter(a => String(a.telegramId) !== telegramId).concat({ ...base, telegramId, name: name || prev?.name || "", accountId: prev?.accountId || "", perms: permList, permsVer: 3, ...(asMain ? { main: true } : {}), ...(wantViewer && !asMain ? { viewer: true } : {}) });
     added.push(name || telegramId);
   }
   if (!added.length) return res.status(400).json({ ok: false, error: "Enter numeric Telegram IDs, one per line, e.g. 123456789 Abebe" });
@@ -2405,12 +2415,23 @@ app.post("/api/setup/app-admins/set-viewer", async (req, res) => {
   sheets.log(make ? "Admin set to view-only" : "Admin may edit again", rec.name || rec.telegramId, identify(req).name || "Owner");
   res.json({ ok: true, message: make ? `👁 ${rec.name || telegramId} is now VIEW-ONLY: can watch, cannot change anything.` : `${rec.name || telegramId} is a normal assigned admin again (can create and edit).` });
 });
+app.post("/api/setup/app-admins/set-right", async (req, res) => { // v191: one action of one part, on/off, for one admin
+  if (!setupAuth(req, res)) return;
+  const telegramId = String(req.body?.telegramId || "").replace(/\D/g, ""), part = String(req.body?.part || ""), act = String(req.body?.act || "");
+  const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
+  if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
+  if (!PART_RIGHTS[part] || !PART_RIGHTS[part].some(x => x[0] === act)) return res.status(400).json({ ok: false, error: "Unknown action." });
+  rec.rights = { ...(rec.rights || {}), [part]: { ...((rec.rights || {})[part] || {}), [act]: req.body?.value !== false && req.body?.value !== "false" && req.body?.value !== 0 } };
+  await saveAppAdmins();
+  sheets.log("Admin action right changed", (rec.name || rec.telegramId) + ": " + part + "/" + act + " = " + (rec.rights[part][act] ? "on" : "off"), identify(req).name || "Owner");
+  res.json({ ok: true, rights: rightsOf(rec) });
+});
 app.post("/api/setup/app-admins/set-perms", async (req, res) => {
   if (!setupAuth(req, res)) return;
   const telegramId = String(req.body?.telegramId || "").replace(/\D/g, "");
   const rec = appAdmins.find(a => String(a.telegramId) === telegramId);
   if (!rec) return res.status(404).json({ ok: false, error: "That admin was not found. Refresh the list and try again." });
-  rec.perms = cleanPerms(req.body?.perms); rec.permsVer = 2;
+  rec.perms = cleanPerms(req.body?.perms); rec.permsVer = 3;
   await saveAppAdmins();
   sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner");
   res.json({ ok: true, perms: rec.perms, message: `✅ Access saved for ${rec.name || telegramId}: ${rec.perms.length ? rec.perms.join(", ") : "no sections"}. They see the change when they reopen the app.` });
@@ -2482,7 +2503,7 @@ app.post("/api/setup/app-admins/update", async (req, res) => {
     if (wantMain && !rec.main) { rec.main = true; delete rec.viewer; extra += " Now a MAIN ADMIN — they must reopen the app once."; sheets.log("Main admin added", rec.name || rec.telegramId, identify(req).name || "Owner"); }
     else if (!wantMain && rec.main) { delete rec.main; extra += " Main-admin rights removed."; sheets.log("Main admin removed", rec.name || rec.telegramId, identify(req).name || "Owner"); }
   }
-  if (req.body?.perms !== undefined) { rec.perms = cleanPerms(req.body.perms); rec.permsVer = 2; extra += " Section access updated."; sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner"); }
+  if (req.body?.perms !== undefined) { rec.perms = cleanPerms(req.body.perms); rec.permsVer = 3; extra += " Section access updated."; sheets.log("Admin access changed", (rec.name || rec.telegramId) + ": " + (rec.perms.join(", ") || "none"), identify(req).name || "Owner"); }
   if (req.body?.viewer !== undefined) {
     const wantViewer = req.body.viewer === true || req.body.viewer === "1" || req.body.viewer === "true";
     if (wantViewer && (rec.main || OWNER_IDS.includes(oldId))) extra += " (Not set to view-only: a main admin can't be view-only.)";
@@ -2993,21 +3014,11 @@ app.post("/api/sheets/start-new", async (req, res) => { // MAIN ADMIN ONLY (shee
     res.json({ ok: true, ...r, message: r.sent ? "✅ Request sent. Within a minute the old list is archived in the sheet and a clean new month tab appears." : `✅ Started as NEW. ${r.archived} old tab(s) were kept as "Archive …" tabs; new orders go into ${r.name}.` });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
-app.post("/api/sheets/reset-all", async (req, res) => { // MAIN ADMIN ONLY: backup to the sheet, then wipe every order and start from zero
+app.post("/api/sheets/reset-all", async (req, res) => { // v191: same as /api/zero/run — orders, customers, greeting, rating and stories are no longer erased
   try {
     if (req.body?.confirm !== "ZERO") return res.json({ ok: false, error: "Not confirmed." });
-    await supabaseReady; if (supabase) await loadOrders();
-    const by = req.actor?.name || "Owner", total = orders.length;
-    let backup = "";
-    if (sheets.configured()) { // 1) every order is written to the sheet first, 2) the sheet keeps it all as "Backup …" tabs and starts new. Any failure here STOPS the reset (nothing is deleted).
-      if (total) await sheets.syncAll(orders, by);
-      const r = await sheets.startFresh(by);
-      backup = r.sent ? " The sheet backup is being created (about a minute)." : ` The sheet kept ${r.archived} old tab(s) as "Backup …" tabs and started a clean one.`;
-    } else backup = " (Google Sheet is not connected, so there is no sheet backup.)";
-    if (supabase) { const { error } = await supabase.from("orders").delete().not("id", "is", null); if (error) throw new Error("Could not delete orders: " + error.message); }
-    orders = []; nextId = 1; invalidateOrders();
-    res.json({ ok: true, removed: total, message: `✅ Started from ZERO. ${total} order(s) removed from the app.${backup}` });
-  } catch (e) { res.json({ ok: false, error: e.message + " — nothing was deleted from the app." }); }
+    return res.json(await zeroRun(req.actor?.name || "Owner"));
+  } catch (e) { return res.json({ ok: false, error: e.message + " — nothing was deleted from the app." }); }
 });
 // SYNC ALL: one button, one Google Sheet. Orders AND customer data are sent together; the result reports each part separately
 // (one part failing never hides the other).
@@ -3507,6 +3518,60 @@ async function customerBoughtFromStock(customerId, text, by) {
 const workshopModule = require("./workshop").register(app, { requireAccess, hasPerm, onSold: customerBoughtFromStock, getOrders: () => orders, getCustomerRecords: () => callersDb.list, customerIdFor, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, accountFor, admins, uploadDir, reports: reportsModule, tgApi, saveOrder: saveOrderRecordCore });
 // ── Material v178: alert + Telegram Approve/Reject buttons to the main admin; cut · add · edit materials with main-admin confirmation (module + page: /material.html) ──
 const materialModule = require("./material").register(app, { requireAccess, supabase, baseDir: BUSINESS_STORE_DIR, helpers: sheets.helpers, reports: reportsModule, tgApi, ownerIds: OWNER_IDS, getAppAdmins: () => appAdmins });
+// ── v191 START FROM ZERO + BACKUP ───────────────────────────────────────────────────────────────────────────────
+// Erases the workshop side only: Reports data (products · stock · sold · materials · movements), Workshop models / sent list / jobs, material edit requests.
+// NEVER touched: Customer Order Confirmation (orders), Customer ID, First Greeting, Customer Rating, Weekly Story, admins, Telegram groups, Google Sheet link.
+// A full backup is saved FIRST (server file + Supabase); if the backup (or the Google-Sheet archive) fails, nothing is erased. Backups can be restored.
+const ZERO_DIR = path.join(BUSINESS_STORE_DIR, "backups");
+const zeroParts = () => ({ reports: reportsModule, workshop: workshopModule, material: materialModule });
+async function zeroMakeBackup(by, why) {
+  const P = zeroParts(), snap = { version: 1, at: new Date().toISOString(), by: String(by || ""), why: String(why || ""), reports: P.reports.zeroSnapshot(), workshop: P.workshop.zeroSnapshot(), material: P.material.zeroSnapshot() };
+  snap.counts = { products: (snap.reports.products || []).length, materials: (snap.reports.materials || []).length, movements: (snap.reports.log || []).length, models: (snap.workshop.catalog || []).length, sent: (snap.workshop.sent || []).length };
+  const id = "zero-" + snap.at.replace(/[:.]/g, "-").slice(0, 19), text = JSON.stringify(snap);
+  fs.mkdirSync(ZERO_DIR, { recursive: true });
+  const f = path.join(ZERO_DIR, id + ".json"); fs.writeFileSync(f, text);
+  if (fs.readFileSync(f, "utf8") !== text) throw new Error("The backup file could not be checked");
+  if (supabase) { const { error } = await supabase.from("app_settings").upsert({ key: "zero_backup_" + id, value: snap, updated_at: snap.at }); if (error) throw new Error("The backup could not be saved online (" + error.message + ")"); }
+  return { id, counts: snap.counts };
+}
+async function zeroLoadBackup(id) {
+  id = String(id || "").replace(/[^\w-]/g, "");
+  if (!/^zero-/.test(id)) return null;
+  try { return JSON.parse(fs.readFileSync(path.join(ZERO_DIR, id + ".json"), "utf8")); } catch {}
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("value").eq("key", "zero_backup_" + id).maybeSingle(); if (data?.value && typeof data.value === "object") return data.value; } catch {} }
+  return null;
+}
+async function zeroList() {
+  const map = new Map();
+  try { for (const n of fs.readdirSync(ZERO_DIR)) if (/^zero-.*\.json$/.test(n)) { const id = n.replace(/\.json$/, ""); try { const j = JSON.parse(fs.readFileSync(path.join(ZERO_DIR, n), "utf8")); map.set(id, { id, at: j.at, by: j.by, why: j.why, counts: j.counts || {} }); } catch {} } } catch {}
+  if (supabase) { try { const { data } = await supabase.from("app_settings").select("key,updated_at").like("key", "zero_backup_%"); for (const r of data || []) { const id = String(r.key).replace(/^zero_backup_/, ""); if (!map.has(id)) map.set(id, { id, at: r.updated_at, by: "", why: "", counts: {} }); } } catch {} }
+  return [...map.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30);
+}
+async function zeroRun(by) {
+  const b = await zeroMakeBackup(by, "before Start from ZERO");            // 1) backup — stops everything if it fails
+  let sheetNote = "";
+  try { const a = await reportsModule.wsArchiveSheet(); sheetNote = a.connected ? ` The Google Sheet kept ${a.archived} old tab(s) as "Archive …" tabs.` : ""; }   // 2) sheet archive — stops everything if the sheet is connected but fails
+  catch (e) { throw new Error("The Google Sheet backup failed: " + e.message); }
+  const P = zeroParts(), r = await P.reports.zeroWipe(), w = await P.workshop.zeroWipe(); await P.material.zeroWipe();   // 3) erase only the workshop side
+  try { sheets.log("START FROM ZERO", `backup ${b.id}; ${r.products} product(s), ${r.materials} material(s), ${w.models} model(s) erased`, by); } catch {}
+  return { ok: true, backupId: b.id, message: `✅ Started from ZERO. A backup was saved first (${b.id}).${sheetNote}\nErased: ${r.products} product(s), ${r.materials} material(s), ${r.movements} movement(s), ${w.models} saved model(s).\nNOT touched: Customer Order Confirmation, Customer ID, First Greeting, Customer Rating, Weekly Story.` };
+}
+app.use("/api/zero", requireAccess, ownerOnly);
+app.get("/api/zero/backups", async (req, res) => res.json({ ok: true, backups: await zeroList() }));
+app.post("/api/zero/run", async (req, res) => {
+  try { if (req.body?.confirm !== "ZERO") return res.json({ ok: false, error: "Not confirmed." }); res.json(await zeroRun(req.actor?.name || "Owner")); }
+  catch (e) { res.json({ ok: false, error: e.message + " — nothing was erased." }); }
+});
+app.post("/api/zero/restore", async (req, res) => {
+  try {
+    if (req.body?.confirm !== "RESTORE") return res.json({ ok: false, error: "Not confirmed." });
+    const snap = await zeroLoadBackup(req.body?.id); if (!snap) return res.json({ ok: false, error: "That backup was not found." });
+    const by = req.actor?.name || "Owner", pre = await zeroMakeBackup(by, "before restoring " + req.body.id), P = zeroParts();   // the current data is saved first, so a restore can be undone too
+    await P.reports.zeroRestore(snap.reports); await P.workshop.zeroRestore(snap.workshop); await P.material.zeroRestore(snap.material);
+    try { sheets.log("BACKUP RESTORED", String(req.body.id) + " (current data saved as " + pre.id + ")", by); } catch {}
+    res.json({ ok: true, message: `✅ Backup restored. The data that was there before is saved as ${pre.id}.` });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 app.use((error, req, res, next) => res.status(400).json({ ok: false, error: error.message || "Upload failed." }));
 app.get("*", sendHome);
 
