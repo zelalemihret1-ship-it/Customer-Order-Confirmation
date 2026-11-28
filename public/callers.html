@@ -78,6 +78,8 @@ button:disabled{opacity:.5;cursor:default}
 .dl div:last-child{border-bottom:0}
 .dl span{flex:0 0 112px;color:#6d675d;font-weight:700}
 .dl b{flex:1;font-weight:600;color:#18382e;word-break:break-word;white-space:pre-wrap}
+@keyframes mvArrow{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+.wsBtn .arr{display:inline-block;animation:mvArrow .9s ease-in-out infinite}
 .wsBtn{border:0;background:linear-gradient(135deg,#ffd877,#e0b22e);color:#153a2e;border-radius:999px;padding:8px 13px;font-weight:800;font-size:12.5px;cursor:pointer;margin-left:auto;margin-right:8px;white-space:nowrap}
 .wsTabs{display:flex;gap:6px;margin:10px 0}.wsTabs button{flex:1;border:1.5px solid #ddd4c4;background:#fff;border-radius:11px;padding:10px 4px;font-weight:800;font-size:13px;color:#153a2e;cursor:pointer}.wsTabs button.on{background:#153a2e;color:#fff;border-color:#153a2e}
 .wsIt{display:flex;gap:10px;align-items:center;padding:10px;border:1.5px solid #e4ded2;border-radius:13px;margin-top:8px;cursor:pointer}.wsIt.on{border-color:#17604b;background:#eef8f3}.wsIt img,.wsIt .ph{width:52px;height:52px;border-radius:10px;object-fit:cover;background:#f1ede2;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px}.wsIt b{font-size:14px}.wsIt small{display:block;color:#6d675d;font-size:12px;line-height:1.45;margin-top:2px}
@@ -308,7 +310,7 @@ let VIEWED=null;
 function openView(c){
   VIEWED=c;
   const row=(l,v)=>v?`<div><span>${l}</span><b>${esc(v)}</b></div>`:"";
-  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="wsBtn" type="button" data-go="ws">🧾 Order confirmation</button><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
+  $("cvBox").innerHTML=`<div class="hd"><span class="cid">${esc(c.id)}</span><button class="wsBtn" type="button" data-go="ws">Move <span class="arr">➜</span></button><button class="x" type="button" data-x="1" aria-label="Close">✕</button></div>
   <div class="nm2">${esc(c.name)}</div>
   <div><span class="pill ${esc(c.customerStatus)}" style="margin-left:0">${esc(c.customerStatus)}</span><span class="pill ${esc(c.orderStatus)}">${esc(c.orderStatus)}</span></div>
   <div class="dl">${row("📞 Phone",c.phone)}${row("📞 Other phone",c.additionalPhone)}${row("Username",c.username)}${row("✈️ Telegram name",c.telegramName)}${row("📍 Location",c.location)}${row("🗓 Date",(c.date?c.date+" ":"")+(c.time||""))}${row("Source",c.source)}${row("👤 Sales",c.salesName)}${row("🧾 Order ID",c.orderId)}${row("💰 Total spend",c.totalSpend?Number(c.totalSpend).toLocaleString()+" Birr":"")}${row("⭐ Wants",(c.interests||[]).join(", "))}${row("⭐ Note",c.interestNote)}${row("💬 Last talk",c.lastConversation)}${row("❌ Rejection",c.rejectionReason)}</div>
